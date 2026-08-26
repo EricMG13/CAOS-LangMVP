@@ -1,0 +1,108 @@
+# Migration Decision Record — CAOS on LangGraph
+
+Status: proposed 2026-08-26 (phase 1). Legacy source: `/Users/ericguei/Claude/Projects/CAOS` at `84f9705`.
+This record is the contract for the build. Deviations require a new dated entry, not an edit.
+
+## 1. The MVP cut
+
+**Pathways in (both depths, 8 routes):** FULL_CREDIT, EARNINGS_UPDATE, COVENANT_REFINANCING, RELATIVE_VALUE.
+
+**Pathways out:** DEEP_RESEARCH (CP-DR is out of scope by brief), DISTRESSED_RESTRUCTURING, and the two internal pathways PORTFOLIO_DECISION and DECISION_LEDGER (their terminal modules CP-6 and CP-8 never had real execution in legacy and none of the four MVP deliverable audiences need them). Routes remain compilable from the catalog — `StartRunRequest` validation simply refuses the cut pathways.
+
+**Module execution in:** real agent execution (LLM against verified skill authority) for **nine** modules — the legacy canonical six (CP-1, CP-1A, CP-1B, CP-2, CP-2A, CP-2G) plus three newly wired modules that legacy could never reach: **CP-1C PeerBenchmark, CP-1D EarningsQuality, CP-5 EvidenceTraceValidator**. These three satisfy the "three unreachable live catalog modules" criterion and are chosen for pathway value: CP-5 gives EARNINGS_UPDATE and COVENANT_REFINANCING a real QA terminal, CP-1C serves RELATIVE_VALUE and FULL_CREDIT, CP-1D feeds CP-2G. Every other route module (CP-PARSE, CP-0, CP-L10, CP-2E, CP-2H, CP-3, CP-4, CP-4C) executes as a **deterministic host module** — the same typed `SYSTEM_ANALYSIS` payload contract legacy used for them, ported as plain functions. Agent execution runs at FULL depth only; SCREEN routes are deterministic end to end (LITE profile is SCREENING_ONLY by catalog design). Upgrading a deterministic module to agent execution later is one registry entry.
+
+**Features in:** source ingestion with the full validation/vault/ClamAV posture; runs on LangGraph with events and Run Console; snapshot accept/switch/diff/lens; the complete Model Builder chain (CP-MODEL build, assumption registry, previews, scenarios, one-way sensitivities, revisions, Sign-Off, exports, verified downloads); the Deliverables pipeline (drafts, freeze, approval-gated filing, request-changes, md/pdf/xlsx exports); RV loan-universe import and reads; append-only audit; admin bundle-verify and audit endpoints; the legacy auth edge model unchanged; the ported frontend.
+
+**Features out (each is a superseded or unreachable surface, not an invariant):**
+- The legacy report era: thesis, recommendation matrix, notes (incl. promotion), assumptions, report freeze/approve/export endpoints. Superseded by the Deliverables pipeline; the current frontend calls none of them. Their contractual tests are excluded with per-test justification in the invariant reconciliation (the invariants they protect — CAS writes, withdrawn-evidence bans, approval digest pinning — are asserted on the surviving surfaces).
+- Methodology draft editing (admin drafts/validate/confirm). Bundle verify and audit stay; editing methodology is not an MVP activity.
+- CP-MEMO (docx consolidation; `navigable: false`, no route) and CP-DR anything.
+- Run upgrade (screen→full re-run) stays IN — it is one endpoint over the same engine.
+
+## 2. Graph decomposition
+
+**Run graphs.** One compiled `StateGraph` per (pathway, depth) — eight static graphs built at startup from the verified catalog routes, CP-PARSE at stage 0. Node = live catalog module. Edges = the catalog navigation dependencies exactly as `bundle.compile()` resolves them today (modules with no in-route upstream depend on CP-0; CP-0 depends on CP-PARSE). Where the DAG allows parallelism (e.g. CP-1A/CP-1B/CP-1D after CP-1) the graph fans out; LangGraph's superstep semantics replace the legacy 4-thread inner pool. **There is no dynamic routing: a run's path is fixed by (pathway, depth) at start, satisfying invariant 10 structurally.** Failure routing is a fixed conditional edge per node: success → declared successors, typed failure → finalize-failed. A blocked DAG (pending nodes, none ready) cannot occur in a static compiled graph; the compile step asserts acyclicity and coverage at startup, which is where legacy's `DAG_BLOCKED` guarantee moves.
+
+**Thread = run.** `thread_id = run_id`. The source-set-empty pause is an entry-gate `interrupt()` (resume after upload re-checks and proceeds). Finalize node re-verifies every module artifact (existence, run ownership, module match, digest) before the run reaches SUCCEEDED — legacy's finalization gate, kept verbatim as a node.
+
+**Deliverable lifecycle graph.** Freeze → render exports → `interrupt()` awaiting approval → file / request-changes. Thread per frozen deliverable. This makes invariant 5 a literal graph gate: filing resumes the same thread, approval binds to `preview_digest` + `input_fingerprint` at the resume boundary, and the store CAS on the frozen record remains the final arbiter under concurrent approvals. Model **Sign-Off stays a store CAS transaction, not an interrupt**: Sign-Off is the author's self-release (CONTEXT.md) — nothing suspends waiting for a second human, so a graph gate would be ceremony. Justified here so the "approval gates are graph interrupts" criterion is read as: every gate where execution waits on a human is an interrupt (source gate, deliverable filing); gates that are single-actor atomic commits stay transactions.
+
+## 3. State schema (run graph)
+
+Pydantic state, lean by design — large payloads live in the domain store, the checkpointer carries identity and control state:
+
+- Pinned at start, never rewritten: `run_id, case_id, pathway, depth, profile_id, selection_id, plan_digest, methodology_build_id, model, source_set_id, source_set_version, source_set_digest, issuer identity`.
+- `artifacts: dict[module_id → {artifact_id, digest}]` (merge reducer; payload markdown/tables live in the store; digests in state keep content addressing checkpoint-stable).
+- `node_status: dict[module_id → status]` (merge reducer) — feeds the RunRecord read model.
+- `error: {code, module_id?} | None` — typed terminal codes preserved verbatim from legacy taxonomy.
+- Budget **snapshot** for visibility only. The budget ledger of record is in the domain store (below).
+
+## 4. Persistence boundary
+
+Three stores, one database:
+
+1. **LangGraph checkpointer** (`langgraph-checkpoint-postgres` in production, `-sqlite` in dev/tests) owns execution state: node progress, interrupts, resumability. A worker restart resumes every unfinished thread from its last checkpoint at startup (re-invoke with `None` input); the kill/resume test proves it.
+2. **Domain store** (one SQLAlchemy-Core schema, SQLite dev/tests + Postgres prod) owns the entities: cases/members, sources/blocks, source_sets + immutable history, runs (read model row), run_events (append-only, per-run monotonic sequence), artifacts, snapshots, model builds/jobs/revisions/exports, deliverable revisions/frozen/exports, loan universes, audit (append-only). Store transactions keep the legacy atomicity contracts: state+audit together, state+event together, CAS with typed conflicts carrying current state.
+3. **Vault** — content-addressed bytes (sources, model workbooks, deliverable exports), atomic fsync+rename writes, sha256-verified on every read. Ported from legacy `sources/domain.py` semantics unchanged.
+
+The **budget ledger** (reserve → reconcile, inflight request digest, active-time, evidence read/byte counters, attempts audit) lives in the domain store keyed by run_id with atomic operations — not in graph state — because parallel module nodes must contend on one fail-closed ledger, and because an unresolved inflight digest surviving a crash must fail the resumed run closed (legacy semantics, kept).
+
+## 5. Legacy machinery → framework primitive
+
+| Legacy machinery | Replaced by |
+|---|---|
+| ThreadPoolExecutor dispatch, `pending_runs()` polling, worker loop | asyncio tasks running `graph.ainvoke`; startup recovery re-invokes unfinished threads from checkpoints |
+| Leases, 20s heartbeats, `_LeaseFence`, `JobFencedError`, attempt tokens | Single-writer-per-thread via the checkpointer in a single-service MVP; crash recovery = checkpoint resume; the global MAX_ACTIVE_JOBS=20 admission ceiling survives as a store-backed counter checked at run/build start (contractual) |
+| Store run-row read-modify-write merges | LangGraph state channels with reducers; domain entities in store transactions |
+| Hand-rolled SSE bus (`wait_for_events` condition variables) | Append-only `run_events` table (contractual: atomic with state changes) + a thin SSE endpoint tailing it with Last-Event-ID resume, keepalives, and the legacy event names verbatim. The frontend never reads payloads — event names trigger a refetch of the RunRecord — so the contract to preserve is names + RunRecord shape |
+| `AnthropicGateway` + hand-rolled tool loop | `langchain-anthropic` `ChatAnthropic` (`max_retries=0` — the host owns retry policy) with `read_evidence` as a bound `@tool` (Pydantic args, strict), structured output via the adapter's JSON-schema output mode; the loop is a small bounded function: count → reserve (store) → invoke → validate usage → reconcile, one retry on timeout with byte-identical request digest, one repair turn, every legacy stop-reason/strictness rule kept as validation |
+| `_PlanningPause` / paused-run application state | `interrupt()` — source gate now; deliverable filing gate; (CP-DR plan approval would be one too, but is out of scope) |
+| memory_ledgers/postgres_ledgers dual implementations (6,655 lines) | One SQLAlchemy-Core store, two engine dialects |
+| Legacy migrations runner | Fresh schema; `create_all` + a single baseline migration. No live data migrates (greenfield) |
+
+**What copies across as domain code (decision, per file):** `contracts.py` (already seeded), the methodology package (`bundle.py`, `canonical.py` validation/envelope/projection halves, `prompt.py`, `cpdr.py` excluded), the vendored Deploy V bundle (already seeded, byte-identical), source ingestion/extraction (`sources/domain.py`), artifact validation (`artifacts/domain.py`), the CP-MODEL calculation engine (`engine/`), deliverable domain + export renderers, loan-universe parser. **What does not, in any form:** `workflows/domain.py`, `workflows/provider.py`, `http.py`, and the store implementations — rewritten against the framework. The runner halves of `canonical.py` (anything driving the loop) are rewritten; its validators/canonicalize/envelope stamping copy.
+
+## 6. Budgets (invariant 8)
+
+Limits stay host-owned code constants exactly as legacy set them: canonical envelope (evidence_reads 60, evidence_bytes 5 MiB, input 500k, output = Σ per-module caps, active 15 min, retries 1, repairs 1, turns = evidence_reads + module_count + repairs) generalised so the turn arithmetic covers the nine agent modules; per-module max_tokens from the registry (CP-1 32k, CP-1A/1B 12k, CP-2/2A 16k, CP-2G 24k; new: CP-1C 12k, CP-1D 12k, CP-5 16k — the caps legacy assigned to comparable table-count modules, recorded in the registry, not inferred methodology). Manifest bounding caps, attempt-audit allowlist/truncation, per-call timeout = min(150s, remaining active time) all carry over as store/loop validation.
+
+## 7. Module registry (the declarative seam)
+
+`modules/registry.py`: one dict entry per live catalog module — `{module_id, mode: agent|deterministic, skill_slug, reference_files, max_output_tokens, aliases: [...superseded ids]}` plus the CP-2B derived-projection declaration on CP-2A. The graph builder consumes only the registry and the catalog routes; **adding or upgrading a module touches the registry alone.** The three new wirings land as three isolated commits touching only registry entries (plus their tests) to prove it. Superseded IDs resolve through the alias map, so both forms address the same node (see MODULE_GRANULARITY.md).
+
+## 8. Testing and verification
+
+- Contractual tests from TEST_INVENTORY.md are ported per their porting briefs; the reconciliation table lands with the invariant-to-test table. Exclusions (report-era, CP-DR, methodology-draft rows) each get one line.
+- Kill/resume: a test kills the process (or cancels the task and reopens the checkpointer) mid-run and asserts resume from the last checkpoint, not restart.
+- Adversarial `read_evidence`: a scripted provider requests a block outside the pinned source set / withdrawn source / foreign case; the test asserts typed refusal and run failure, with no block text returned.
+- Every invariant 1–10 gets a named test in the final table.
+- Fresh-context verifier subagents check each phase gate against this record and the brief; nothing merges on self-review alone.
+
+## 9. Phases (one branch each, merged at gate)
+
+1. `phase-1-design` — this record, MODULE_GRANULARITY.md, red-team pass. Gate: objections fixed or accepted.
+2. `phase-2-foundation` — pyproject/venv, package skeleton, domain code ported (bundle+integrity, ingestion, engine, contracts wiring), domain store schema, vault. Gate: bundle verify + ingestion/store tests green.
+3. `phase-3-run-engine` — registry, graphs, deterministic modules, budgets, provider loop, events/SSE, run+snapshot endpoints, kill/resume + adversarial tests. Gate: run-engine tests green.
+4. `phase-4-model-builder` — CP-MODEL chain on the new store. Gate: model contractual tests green.
+5. `phase-5-deliverables` — deliverable graph with filing interrupt, exports, RV surfaces. Gate: deliverable tests green.
+6. `phase-6-ship` — frontend served, deploy, README/CLAUDE.md, invariant table, TEST_INVENTORY reconciliation, final verifier pass. Gate: success criteria demonstrably true.
+
+## 10. Red-team amendments (2026-08-26, adopted — binding overrides of §§1–8)
+
+The phase-1 red-team pass (.agent-reviews/redteam.md, same date) raised fifteen objections; all fifteen are adopted. Where this section conflicts with §§1–8, this section wins.
+
+1. **Exactly-once module execution.** Every agent node is reuse-first: before any provider work it looks up a valid artifact by (run_id, module_id, input_fingerprint), re-validates, and relinks with zero provider calls. All store state transitions are conditional CAS updates so a re-executed node no-ops. The kill/resume suite includes a crash injected between the store commit and the checkpoint write, asserting one artifact, one budget charge, one `run.succeeded`.
+2. **Agent execution serialises per run.** A per-run `asyncio.Lock` wraps agent-module execution (legacy `_canonical_generation_lock` semantics); deterministic nodes still fan out. The budget ledger keeps its single inflight slot and sequential active-time meaning.
+3. **Single-writer per thread is enforced, not assumed.** Per-thread in-process `asyncio.Lock` plus a Postgres advisory lock held for the duration of any `ainvoke`/resume; recovery and API resumes skip held threads. (SQLite dev is single-process; the process lock suffices.)
+4. **Pin-time is entry-gate exit.** The gate node loops `while current source set is empty: interrupt()`; on a non-empty set it reads one store snapshot, compiles the plan, and writes the complete pin (source_set id+version+digest, plan_digest) exactly once. Nothing is pinned before the gate; §3's "pinned at start" reads "pinned at gate exit, then never rewritten".
+5. **Startup recovery discriminates thread populations.** Enumerate threads; skip any whose latest checkpoint holds a pending interrupt; reconcile store statuses; re-admit only crashed mid-run threads through the normal admission gate with bounded concurrency. Superseding a frozen deliverable terminalises its thread (typed SUPERSEDED outcome) — no zombie interrupt population.
+6. **Envelope arithmetic corrected and generalised.** Output ceiling = Σ per-module caps **+ max cap** (repair headroom), matching legacy `canonical.py`. The whole envelope (turns = evidence_reads + |route agent modules| + repairs, output, completion set) is a pure function of (compiled route, registry), tested per route. CP-MODEL's six-module `validate_bundle` is invoked only for accepted FULL_CREDIT runs — the only source of model builds.
+7. **Deliverable thread choreography.** thread_id = digest(case_id, pathway, draft_version, draft_digest) so racing freezes converge; resume is refused unless the thread's current state shows the pending filing interrupt; the gate validates the resume payload and re-interrupts on typed rejection (record stays retryable); store CAS remains the final arbiter of FILED.
+8. **No event-loop starvation.** All ported sync domain code runs via `asyncio.to_thread` on a bounded pool (recorded constant); CP-MODEL calculation keeps process isolation with the legacy aggregate per-request deadline.
+9. **Admission ceiling is derived, not stored.** `COUNT(*)` of non-terminal runs/builds inside the admission transaction (MAX_ACTIVE_JOBS = 20); recovery reconciles statuses first. Capacity self-heals after crashes.
+10. **Cut narrowed.** Notes (including promotion) and assumptions stay in the MVP — promotion mints sources and carries invariant-1 guarantees (no withdrawn-source resurrection, cross-ledger atomicity) with no other asserting surface. The report-era cut is now only: thesis, recommendation matrix, legacy report freeze/approve/export.
+11. **Registry honesty and caps.** The rewritten runner drives every per-module table (authority files, output caps, projections, bundle membership) from the registry — then the three new wirings genuinely touch only the registry. Recorded host budget policy: CP-1C 12k, CP-1D 12k, **CP-5 24k** (it consumes every upstream artifact; 16k plausibly truncates). A `max_tokens` stop-reason fails the module immediately as AGENT_OUTPUT_INVALID and does not consume the shared repair.
+12. **Execution-schema versioning.** A state schema version is stamped into pinned state; resume under a mismatched version fails closed with a typed error (operator path: re-freeze / re-run). langgraph, checkpointer, and langchain-anthropic versions pinned exactly.
+13. **Event log correctness under parallelism.** Per-run sequence from a counter row locked in the event-writing transaction; every event insert rides a conditional state transition (zero rows updated → no event), giving exactly-once terminal events by construction.
+14. **Host-owned request identity.** Reservation digests and token-count preimages are computed from host-owned canonical fields only, never adapter internals; a congruence test asserts count/create equivalence and that refusal / max_tokens / pause_turn stop reasons reach the host validator.
+15. **Provider concurrency cap restored.** One `asyncio.Semaphore(2)` at the model boundary; acquisition waits bounded by remaining wall clock; queue-wait is excluded from the active-time meter.

@@ -6,3 +6,5 @@ Two sibling repos both contain a `caos/tests/` directory and look like plausible
 - `/Users/ericguei/Claude/Projects/Credit Operating System` — a different, larger era of the codebase (60k+ test lines, alerts/research-report/playwright suites). Not the rebuild's reference. Its path also contains spaces, which breaks naive `xargs`.
 
 Why it mattered: an agent grepping for "caos/tests" finds both; classifying or porting from the wrong one silently imports guarantees the rebuild never promised. Also: briefs may quote stale line counts ("~7,000 lines") — verify with `wc -l` before scoping, and say so when the numbers disagree.
+
+Brief orientation goes stale in structure too, not just counts: the brief's "store.py 2,147 lines" is now store.py 317 + ledgers.py 553 + memory_ledgers.py 2,973 + postgres_ledgers.py 3,682, and workflows/domain.py is 2,024 not 1,491. The forbidden-to-port set is the *store layer and orchestrator*, whatever files they currently live in — resolve the spirit against the live tree before planning a port list.
