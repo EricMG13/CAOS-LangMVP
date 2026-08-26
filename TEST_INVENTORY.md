@@ -12,13 +12,13 @@ Classification of every test in the legacy CAOS suite ahead of the LangGraph reb
 
 | Classification | Tests |
 |---|---:|
-| CONTRACTUAL | 228 |
+| CONTRACTUAL | 229 |
 | MECHANISM | 95 |
 | OBSOLETE | 23 |
-| UNCLEAR | 1 |
+| UNCLEAR | 0 |
 | **Total** | **347** |
 
-## CONTRACTUAL (228)
+## CONTRACTUAL (229)
 
 One row per test: the invariant it protects, a note on how the legacy test proves it, and the porting brief — how to assert the same guarantee against a graph runtime (LangGraph nodes/edges, checkpointer state, `interrupt()` gates, reducers).
 
@@ -207,6 +207,7 @@ One row per test: the invariant it protects, a note on how the legacy test prove
 | test_http_response_contracts.py | `test_snapshot_diff_accepts_added_artifacts_without_snapshot_ids` | snapshot diffs identify entries by module_id plus digest only (content addressing) | Added/removed entries carry no artifact or snapshot ids — digest identity suffices | Compute diffs from digests in checkpointed snapshots and assert diff entries of module_id+digest validate strictly and round-trip |
 | test_http_response_contracts.py | `test_openapi_declares_strict_models_for_every_json_success_response` | every 2xx JSON API response is governed by a named strict declared schema | Exempts SSE events and binary download routes; also pins additionalProperties=false on 11 named schemas and exact refs for key routes | Walk the new service's OpenAPI and assert every /api 2xx JSON response refs a component schema and that response schemas set additionalProperties=false (streams/downloads whitelisted) |
 | test_http_response_contracts.py | `test_canonical_generation_is_strict_and_preserves_completed_module_omission` | canonical generation progress state strict (budget limits/used, per-module tokens); optional omission preserved; unknown keys rejected | canonical_generation is the in-scope CP module generation state; budget ceilings are a listed contractual category | Assert serialized generation-progress graph state (module token map, budget_limits vs budget_used, inflight digest, attempts) validates extra=forbid and preserves omitted completed_modules |
+| test_http_response_contracts.py | `test_loan_universe_findings_are_strict` | RV loan-universe import results are strict-schema down to nested findings: full payload (provenance sha256, template/importer versions, universe digest, status, finding code/detail with sheet/row/column locators) round-trips exactly and an unknown key inside a finding is rejected | Reclassified from UNCLEAR after the ruling that RV ships in MVP; asserts LoanUniverseResponse.model_validate round-trip equality and ValidationError on an injected unknown finding field | Port LoanUniverseResponse and its nested finding model as extra=forbid schemas over the import node's output; assert round-trip equality on a full REJECTED payload and validation failure when any unknown key is injected into a finding |
 | test_http_response_contracts.py | `test_idempotent_loan_import_uses_fastapi_response_validation` | server-side response validation fails closed — an invalid payload can never be served, even on the idempotent/already-exists path | Demonstrated on the RV loan route via monkeypatched importer and FastAPI's ResponseValidationError, but the fail-closed enforcement invariant is system-wide (carve-out applied); re-target any in-scope route | Stub one node/service to emit a schema-invalid payload and assert the serving layer raises/500s instead of returning it, including the fast path that returns a pre-existing resource |
 | test_cp_dr_planning.py | `test_research_brief_rejects_caller_owned_authority_fields` | callers cannot forge server-owned authority fields (approvals, plan hashes, budgets, model, scope) | CP-DR brief hosts the assertion, but no-forgery of server-owned authority state is a system-wide approval-gate invariant — carve-out applied | For every client input feeding a gated node, interrupt() resume payloads included, assert extra=forbid rejection of server-owned fields: approved_by/approved_at, plan/authority hashes, budgets, model, scope |
 | test_cp_dr_planning.py | `test_plan_approval_request_requires_exact_canonical_hash` | approvals bind to the exact canonical sha256:64-lowercase-hex content digest | CP-DR request model, but canonical-digest binding of approval payloads (no truncated/uppercase/md5 aliases) is the system-wide gate contract — carve-out applied | Assert the gate's approve/resume payload schema accepts only ^sha256:[0-9a-f]{64}$ and that the gate compares it against the stored canonical digest |
@@ -385,9 +386,7 @@ Out of MVP scope — all CP-DR (pathway schema, planner content, pilot gating, f
 | test_run_launcher.py | `test_cpdr_settings_parse_strict_flag_and_bounded_exact_allowlists` | Parsing of CPDR_PILOT_CASE_IDS/SUBJECTS as bounded exact deduplicated allowlists plus enable flags; CP-DR pilot scoping is out of MVP scope |
 | test_run_launcher.py | `test_cpdr_settings_reject_noncanonical_boolean` | Old Settings parser rejects non-literal booleans ("1", "TRUE", "yes", "False") for CPDR_AGENT_ENABLED; the flag dies with CP-DR (parametrized x4) |
 
-## UNCLEAR (1)
+## UNCLEAR (0)
 
-| File | Test | What is needed to classify |
-|---|---|---|
-| test_http_response_contracts.py | `test_loan_universe_findings_are_strict` | Need an MVP scope ruling for the RV loan-universe importer (cp3-sector-rv template): the brief excludes only CP-DR, so this strict-schema test is contractual if RV ships in MVP and obsolete if it does not |
+None. The single UNCLEAR (`test_loan_universe_findings_are_strict`) was resolved to CONTRACTUAL on 2026-08-26 by the ruling that the RV (relative value) loan-universe importer is in MVP scope.
 
