@@ -8,7 +8,7 @@ from fastapi import HTTPException
 from caos.sources import domain as sources_domain
 from caos.sources.domain import Vault, ingest_upload
 
-from conftest import blank_pdf_bytes, make_upload, xlsx_bytes
+from helpers import blank_pdf_bytes, make_upload, xlsx_bytes
 
 
 @pytest.fixture()
