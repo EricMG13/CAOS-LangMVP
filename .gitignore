@@ -1,0 +1,40 @@
+# OS
+.DS_Store
+
+# Editor
+.vscode/
+
+# Node / Next.js (caos/frontend)
+node_modules/
+.pnpm-store/
+.next/
+.next-qa*/
+.next-*/
+caos/frontend/next-env.d.ts
+out/
+*.tsbuildinfo
+
+# Python (deploy_v vendored skills, contracts.py, caos/deploy scripts)
+__pycache__/
+*.pyc
+.venv*/
+
+# Secrets / local env
+.env
+.env.local
+caos/deploy/rclone.conf
+
+# Test artifacts
+.pytest_cache/
+coverage/
+caos/frontend/test-results/
+caos/frontend/playwright-report/
+caos/frontend/private/
+
+# Local static-analysis databases and diagnostics
+/static_analysis_codeql_*/
+
+# impeccable hook cache (generated per app dir) — design.json is the one
+# tracked exception, mirroring the legacy repo's convention.
+**/.impeccable/*
+!**/.impeccable/design.json

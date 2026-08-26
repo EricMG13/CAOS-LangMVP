@@ -1,0 +1,55 @@
+# Dependency scanning (Phase-4 launch gate). Native GitHub feature — surfaces
+# security alerts and opens update PRs; no CI runtime, no blocking gate.
+# Five ecosystems: frontend (npm), server (pip), the CI workflows (github-actions),
+# the deploy Dockerfile base images (docker), and the compose service image pins
+# (docker-compose). The two docker ecosystems close the gap that let
+# oauth2-proxy drift behind its CVE-fixed release: the security CI job audits pip
+# and npm dependencies but never scans container image tags.
+version: 2
+updates:
+  # Grouped deliberately. One grouped PR per ecosystem means one review instead of
+  # several concurrent range bumps; major updates stay separate because they need
+  # individual judgement. The server currently uses its checked-in requirements
+  # ranges directly; no generated lockfile gate is assumed here.
+  - package-ecosystem: npm
+    directory: /caos/frontend
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 3
+    groups:
+      npm-minor-patch:
+        patterns: ["*"]
+        update-types: [minor, patch]
+
+  - package-ecosystem: pip
+    directory: /caos/server
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 3
+    groups:
+      pip-minor-patch:
+        patterns: ["*"]
+        update-types: [minor, patch]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      github-actions:
+        patterns: ["*"]
+
+  # Dockerfile base images (node:24-slim, python:3.14-slim).
+  - package-ecosystem: docker
+    directory: /caos/deploy
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+
+  # Compose service image pins (oauth2-proxy, postgres, caddy). docker-compose
+  # support is GA since Feb 2025; scans the `image:` tags docker can't see.
+  - package-ecosystem: docker-compose
+    directory: /caos/deploy
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
