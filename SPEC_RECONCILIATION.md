@@ -5,7 +5,7 @@ Every row classified CONTRACTUAL in TEST_INVENTORY.md (229 after the RV reclassi
 (b) a phase-2 test in `caos/tests/` that already passes because its surface was built in phase 2, or
 (c) an entry in the exclusion/deferral lists at the end.
 
-Spec-suite state at tag `spec-v1`: **315 red (122 failed + 193 errors), 0 passing.** The 53 passing tests
+Spec-suite state at tag `spec-v1`: **314 red (122 failed + 192 errors), 0 passing.** The 53 passing tests
 in the repo are all phase-2 tests (`test_bundle` 7, `test_config_and_vault` 10, `test_source_ingestion` 29,
 `test_store` 7) — green because ingestion, the domain store, the bundle loader, and config were built in
 phase 2 before this spec suite was ordered; each asserts a real contractual guarantee and fails on regression.
