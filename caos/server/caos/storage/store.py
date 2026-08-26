@@ -1,0 +1,428 @@
+"""Domain store: cases, sources, source sets, notes, assumptions, audit.
+
+Fresh code (the legacy ledger implementations are not ported). Guarantees kept
+from the legacy contracts:
+- every governed write commits domain state and its audit event in ONE transaction;
+- source ingest is content-addressed per case (active sha256 unique, DB-enforced);
+- source-set versions are immutable history rows — a source_set_id pins membership;
+- withdrawal atomically versions the set, stales citing assumptions, and audits;
+- public source reads never expose storage-private fields (vault_path, withdrawn_at).
+"""
+
+from __future__ import annotations
+
+import json
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+from uuid import uuid4
+
+import sqlalchemy as sa
+from sqlalchemy.exc import IntegrityError
+
+
+def now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def new_id(prefix: str) -> str:
+    return f"{prefix}-{uuid4().hex[:20]}"
+
+
+metadata = sa.MetaData()
+
+cases = sa.Table(
+    "cases", metadata,
+    sa.Column("id", sa.String, primary_key=True),
+    sa.Column("name", sa.String, nullable=False),
+    sa.Column("issuer", sa.String, nullable=False),
+    sa.Column("sector", sa.String, nullable=False),
+    sa.Column("created_by", sa.String, nullable=False),
+    sa.Column("created_at", sa.String, nullable=False),
+    sa.Column("accepted_snapshot_id", sa.String),
+    sa.Column("visible_snapshot_id", sa.String),
+    sa.Column("current_execution_id", sa.String),
+)
+
+case_members = sa.Table(
+    "case_members", metadata,
+    sa.Column("case_id", sa.String, sa.ForeignKey("cases.id"), primary_key=True),
+    sa.Column("subject", sa.String, primary_key=True),
+    sa.Column("role", sa.String, nullable=False),
+)
+
+sources = sa.Table(
+    "sources", metadata,
+    sa.Column("id", sa.String, primary_key=True),
+    sa.Column("case_id", sa.String, sa.ForeignKey("cases.id"), nullable=False),
+    sa.Column("filename", sa.String, nullable=False),
+    sa.Column("media_type", sa.String, nullable=False),
+    sa.Column("bytes", sa.Integer, nullable=False),
+    sa.Column("sha256", sa.String(64), nullable=False),
+    sa.Column("vault_path", sa.String),
+    sa.Column("blocks", sa.JSON, nullable=False),
+    sa.Column("created_by", sa.String, nullable=False),
+    sa.Column("created_at", sa.String, nullable=False),
+    sa.Column("withdrawn", sa.Boolean, nullable=False, default=False),
+    sa.Column("withdrawn_at", sa.String),
+    sa.Column("source_kind", sa.String),
+    # One ACTIVE source per (case, content). Partial unique index on both dialects.
+    sa.Index(
+        "ix_sources_active_content", "case_id", "sha256",
+        unique=True,
+        sqlite_where=sa.text("NOT withdrawn"),
+        postgresql_where=sa.text("NOT withdrawn"),
+    ),
+)
+
+source_sets = sa.Table(
+    "source_sets", metadata,
+    sa.Column("id", sa.String, primary_key=True),
+    sa.Column("case_id", sa.String, sa.ForeignKey("cases.id"), nullable=False),
+    sa.Column("version", sa.Integer, nullable=False),
+    sa.Column("source_ids", sa.JSON, nullable=False),
+    sa.Column("created_by", sa.String, nullable=False),
+    sa.Column("created_at", sa.String, nullable=False),
+    sa.UniqueConstraint("case_id", "version", name="uq_source_sets_case_version"),
+)
+
+notes = sa.Table(
+    "notes", metadata,
+    sa.Column("id", sa.String, primary_key=True),
+    sa.Column("case_id", sa.String, sa.ForeignKey("cases.id"), nullable=False),
+    sa.Column("body", sa.Text, nullable=False),
+    sa.Column("created_by", sa.String, nullable=False),
+    sa.Column("created_at", sa.String, nullable=False),
+    sa.Column("promoted", sa.Boolean, nullable=False, default=False),
+    sa.Column("promoted_source_id", sa.String),
+)
+
+assumptions = sa.Table(
+    "assumptions", metadata,
+    sa.Column("id", sa.String, primary_key=True),
+    sa.Column("case_id", sa.String, sa.ForeignKey("cases.id"), nullable=False),
+    sa.Column("data", sa.JSON, nullable=False),
+    sa.Column("evidence_ids", sa.JSON, nullable=False),
+    sa.Column("status", sa.String, nullable=False),
+    sa.Column("stale", sa.Boolean, nullable=False, default=False),
+)
+
+audit_events = sa.Table(
+    "audit_events", metadata,
+    sa.Column("seq", sa.Integer, primary_key=True, autoincrement=True),
+    sa.Column("id", sa.String, nullable=False),
+    sa.Column("action", sa.String, nullable=False),
+    sa.Column("actor", sa.String, nullable=False),
+    sa.Column("at", sa.String, nullable=False),
+    sa.Column("data", sa.JSON, nullable=False),
+)
+
+PUBLIC_SOURCE_HIDDEN = {"vault_path", "withdrawn_at"}
+
+
+def _public_source(row: dict[str, Any]) -> dict[str, Any]:
+    return {key: value for key, value in row.items() if key not in PUBLIC_SOURCE_HIDDEN}
+
+
+class DomainStore:
+    def __init__(self, engine: sa.Engine) -> None:
+        self.engine = engine
+
+    @classmethod
+    def from_url(cls, url: str) -> "DomainStore":
+        engine = sa.create_engine(url, json_serializer=lambda value: json.dumps(value, sort_keys=True))
+        metadata.create_all(engine)
+        return cls(engine)
+
+    # -- audit ------------------------------------------------------------
+
+    def _audit(self, conn: sa.Connection, action: str, actor: str, **details: Any) -> None:
+        conn.execute(audit_events.insert().values(
+            id=new_id("aud"), action=action, actor=actor, at=now_iso(), data=details,
+        ))
+
+    def audit_event(self, action: str, actor: str, **details: Any) -> None:
+        with self.engine.begin() as conn:
+            self._audit(conn, action, actor, **details)
+
+    def audit_trail(self, limit: int = 500) -> list[dict[str, Any]]:
+        with self.engine.connect() as conn:
+            rows = conn.execute(
+                sa.select(audit_events).order_by(audit_events.c.seq.desc()).limit(limit)
+            ).mappings().all()
+        return [{"id": r["id"], "action": r["action"], "actor": r["actor"], "at": r["at"], **r["data"]} for r in rows]
+
+    # -- cases ------------------------------------------------------------
+
+    def create_case(self, name: str, issuer: str, sector: str, actor: str) -> dict[str, Any]:
+        case_id = new_id("case")
+        with self.engine.begin() as conn:
+            conn.execute(cases.insert().values(
+                id=case_id, name=name, issuer=issuer, sector=sector,
+                created_by=actor, created_at=now_iso(),
+            ))
+            conn.execute(case_members.insert().values(case_id=case_id, subject=actor, role="ANALYST"))
+            self._audit(conn, "case.created", actor, case_id=case_id)
+        return self.get_case(case_id)  # type: ignore[return-value]
+
+    def get_case(self, case_id: str) -> dict[str, Any] | None:
+        with self.engine.connect() as conn:
+            row = conn.execute(sa.select(cases).where(cases.c.id == case_id)).mappings().first()
+            if row is None:
+                return None
+            members = conn.execute(
+                sa.select(case_members).where(case_members.c.case_id == case_id)
+            ).mappings().all()
+        case = dict(row)
+        case["members"] = {m["subject"]: m["role"] for m in members}
+        return case
+
+    def list_cases(self, actor: str) -> list[dict[str, Any]]:
+        with self.engine.connect() as conn:
+            ids = conn.execute(
+                sa.select(case_members.c.case_id).where(case_members.c.subject == actor)
+            ).scalars().all()
+        return [case for case_id in ids if (case := self.get_case(case_id))]
+
+    def is_member(self, case_id: str, actor: str, roles: set[str] | None = None) -> bool:
+        with self.engine.connect() as conn:
+            role = conn.execute(
+                sa.select(case_members.c.role).where(
+                    case_members.c.case_id == case_id, case_members.c.subject == actor
+                )
+            ).scalar()
+        return role is not None and (roles is None or role in roles)
+
+    def add_member(self, case_id: str, actor: str, member: str, role: str, actor_role: str | None = None) -> bool:
+        with self.engine.begin() as conn:
+            case = conn.execute(sa.select(cases.c.id).where(cases.c.id == case_id)).first()
+            actor_case_role = conn.execute(
+                sa.select(case_members.c.role).where(
+                    case_members.c.case_id == case_id, case_members.c.subject == actor
+                )
+            ).scalar()
+            if case is None or (actor_role != "ADMIN" and actor_case_role not in {"ADMIN", "APPROVER"}):
+                return False
+            existing = conn.execute(
+                sa.select(case_members.c.subject).where(
+                    case_members.c.case_id == case_id, case_members.c.subject == member
+                )
+            ).first()
+            if existing:
+                conn.execute(sa.update(case_members).where(
+                    case_members.c.case_id == case_id, case_members.c.subject == member
+                ).values(role=role))
+            else:
+                conn.execute(case_members.insert().values(case_id=case_id, subject=member, role=role))
+            self._audit(conn, "case.member_added", actor, case_id=case_id, member=member, role=role)
+        return True
+
+    def update_case(self, case_id: str, **changes: Any) -> None:
+        allowed = {"accepted_snapshot_id", "visible_snapshot_id", "current_execution_id"}
+        bad = set(changes) - allowed
+        if bad:
+            raise ValueError(f"unsupported case update: {sorted(bad)}")
+        with self.engine.begin() as conn:
+            conn.execute(sa.update(cases).where(cases.c.id == case_id).values(**changes))
+
+    # -- sources / source sets --------------------------------------------
+
+    def _current_set_locked(self, conn: sa.Connection, case_id: str) -> dict[str, Any] | None:
+        row = conn.execute(
+            sa.select(source_sets).where(source_sets.c.case_id == case_id)
+            .order_by(source_sets.c.version.desc()).limit(1)
+        ).mappings().first()
+        return dict(row) if row else None
+
+    def _active_ids(self, conn: sa.Connection, ids: list[str]) -> list[str]:
+        if not ids:
+            return []
+        active = set(conn.execute(
+            sa.select(sources.c.id).where(sources.c.id.in_(ids), sources.c.withdrawn.is_(False))
+        ).scalars().all())
+        return [source_id for source_id in ids if source_id in active]
+
+    def _next_source_set(self, conn: sa.Connection, case_id: str, actor: str, add: list[str], remove: set[str]) -> dict[str, Any]:
+        current = self._current_set_locked(conn, case_id)
+        base = self._active_ids(conn, [s for s in (current["source_ids"] if current else []) if s not in remove])
+        source_set = {
+            "id": new_id("set"),
+            "case_id": case_id,
+            "version": (current["version"] + 1) if current else 1,
+            "source_ids": [*base, *add],
+            "created_by": actor,
+            "created_at": now_iso(),
+        }
+        conn.execute(source_sets.insert().values(**source_set))
+        return source_set
+
+    def ingest(self, source: dict[str, Any], actor: str) -> dict[str, Any]:
+        saved = dict(source)
+        saved.setdefault("id", new_id("src"))
+        saved.setdefault("created_by", actor)
+        saved.setdefault("created_at", now_iso())
+        saved.setdefault("withdrawn", False)
+        try:
+            with self.engine.begin() as conn:
+                duplicate = conn.execute(
+                    sa.select(sources.c.id).where(
+                        sources.c.case_id == saved["case_id"],
+                        sources.c.sha256 == saved["sha256"],
+                        sources.c.withdrawn.is_(False),
+                    )
+                ).first()
+                if duplicate:
+                    raise ValueError("source content already active")
+                conn.execute(sources.insert().values(**{k: saved.get(k) for k in (
+                    "id", "case_id", "filename", "media_type", "bytes", "sha256",
+                    "vault_path", "blocks", "created_by", "created_at", "withdrawn", "source_kind",
+                )}))
+                source_set = self._next_source_set(conn, saved["case_id"], actor, add=[saved["id"]], remove=set())
+                self._audit(conn, "source.ingested", actor, case_id=saved["case_id"], source_id=saved["id"], sha256=saved.get("sha256"))
+        except IntegrityError as exc:
+            raise ValueError("source content already active") from exc
+        return {**_public_source(saved), "source_set": source_set}
+
+    def withdraw(self, case_id: str, source_id: str, actor: str) -> dict[str, Any] | None:
+        with self.engine.begin() as conn:
+            row = conn.execute(sa.select(sources).where(sources.c.id == source_id)).mappings().first()
+            if row is None or row["case_id"] != case_id or row["withdrawn"]:
+                return None
+            withdrawn_at = now_iso()
+            conn.execute(sa.update(sources).where(sources.c.id == source_id).values(withdrawn=True, withdrawn_at=withdrawn_at))
+            if self._current_set_locked(conn, case_id):
+                self._next_source_set(conn, case_id, actor, add=[], remove={source_id})
+            citing = conn.execute(sa.select(assumptions).where(assumptions.c.case_id == case_id)).mappings().all()
+            for assumption in citing:
+                if source_id in (assumption["evidence_ids"] or []):
+                    conn.execute(sa.update(assumptions).where(assumptions.c.id == assumption["id"]).values(stale=True, status="STALE"))
+            # ponytail: loan-universe deactivation on withdrawal lands with the RV store (phase 5).
+            self._audit(conn, "source.withdrawn", actor, case_id=case_id, source_id=source_id)
+            result = dict(row)
+            result.update(withdrawn=True)
+            return _public_source(result)
+
+    def list_sources(self, case_id: str) -> list[dict[str, Any]]:
+        with self.engine.connect() as conn:
+            rows = conn.execute(sa.select(sources).where(
+                sources.c.case_id == case_id, sources.c.withdrawn.is_(False)
+            ).order_by(sources.c.created_at)).mappings().all()
+        return [_public_source(dict(row)) for row in rows]
+
+    def get_source(self, source_id: str) -> dict[str, Any] | None:
+        with self.engine.connect() as conn:
+            row = conn.execute(sa.select(sources).where(sources.c.id == source_id)).mappings().first()
+        return _public_source(dict(row)) if row else None
+
+    def get_source_private(self, source_id: str) -> dict[str, Any] | None:
+        """Full row including vault_path — host-side use only, never serialized out."""
+        with self.engine.connect() as conn:
+            row = conn.execute(sa.select(sources).where(sources.c.id == source_id)).mappings().first()
+        return dict(row) if row else None
+
+    def read_source_bytes(self, source_id: str, limit: int) -> bytes:
+        row = self.get_source_private(source_id)
+        vault_path = row.get("vault_path") if row else None
+        path = Path(vault_path) if isinstance(vault_path, str) else None
+        if path is None or not path.is_file():
+            raise FileNotFoundError("SOURCE_BYTES_UNAVAILABLE")
+        with path.open("rb") as stored:
+            return stored.read(limit)
+
+    def current_source_set(self, case_id: str) -> dict[str, Any] | None:
+        with self.engine.connect() as conn:
+            return self._current_set_locked(conn, case_id)
+
+    def source_set(self, source_set_id: str | None) -> dict[str, Any] | None:
+        if not source_set_id:
+            return None
+        with self.engine.connect() as conn:
+            row = conn.execute(sa.select(source_sets).where(source_sets.c.id == source_set_id)).mappings().first()
+        return dict(row) if row else None
+
+    # -- notes -------------------------------------------------------------
+
+    def create_note(self, case_id: str, body: str, actor: str) -> dict[str, Any]:
+        note = {
+            "id": new_id("note"), "case_id": case_id, "body": body,
+            "created_by": actor, "created_at": now_iso(),
+            "promoted": False, "promoted_source_id": None,
+        }
+        with self.engine.begin() as conn:
+            conn.execute(notes.insert().values(**note))
+            self._audit(conn, "note.created", actor, case_id=case_id, note_id=note["id"])
+        return note
+
+    def list_notes(self, case_id: str) -> list[dict[str, Any]]:
+        with self.engine.connect() as conn:
+            rows = conn.execute(sa.select(notes).where(notes.c.case_id == case_id).order_by(notes.c.created_at)).mappings().all()
+        return [dict(row) for row in rows]
+
+    def promote_note(self, case_id: str, note_id: str, actor: str) -> dict[str, Any]:
+        import hashlib
+
+        with self.engine.begin() as conn:
+            note_row = conn.execute(sa.select(notes).where(notes.c.id == note_id)).mappings().first()
+            if note_row is None or note_row["case_id"] != case_id:
+                raise KeyError("note not found")
+            note = dict(note_row)
+            if note["promoted"] and note["promoted_source_id"]:
+                promoted = conn.execute(
+                    sa.select(sources).where(sources.c.id == note["promoted_source_id"])
+                ).mappings().first()
+                if promoted is not None and not promoted["withdrawn"]:
+                    return note  # idempotent replay while the promoted source stays active
+            body: str = note["body"]
+            body_bytes = body.encode()
+            sha256 = hashlib.sha256(body_bytes).hexdigest()
+            duplicate = conn.execute(
+                sa.select(sources.c.id).where(
+                    sources.c.case_id == case_id,
+                    sources.c.sha256 == sha256,
+                    sources.c.withdrawn.is_(False),
+                )
+            ).first()
+            if duplicate:
+                raise ValueError("source content already active")
+            source_id = new_id("src-note")
+            conn.execute(sources.insert().values(
+                id=source_id, case_id=case_id,
+                filename=f"analyst-note-{note['id']}.md", media_type="text/markdown",
+                bytes=len(body_bytes), sha256=sha256, vault_path=None,
+                blocks=[{
+                    "block_id": "b00001", "locator": {"note_id": note["id"]}, "text": body,
+                    "extractor_version": "analyst-note-v1", "confidence": "HIGH", "untrusted_data": True,
+                }],
+                created_by=actor, created_at=now_iso(), withdrawn=False, source_kind="analyst_note",
+            ))
+            self._next_source_set(conn, case_id, actor, add=[source_id], remove=set())
+            conn.execute(sa.update(notes).where(notes.c.id == note_id).values(promoted=True, promoted_source_id=source_id))
+            self._audit(conn, "note.promoted", actor, case_id=case_id, note_id=note_id, source_id=source_id)
+            note.update(promoted=True, promoted_source_id=source_id)
+            return note
+
+    # -- assumptions (write surface lands in phase 5; staleness is live now) --
+
+    def save_assumption(self, case_id: str, data: dict[str, Any], evidence_ids: list[str], actor: str) -> dict[str, Any]:
+        with self.engine.begin() as conn:
+            active = set(conn.execute(
+                sa.select(sources.c.id).where(
+                    sources.c.id.in_(evidence_ids or []), sources.c.withdrawn.is_(False),
+                    sources.c.case_id == case_id,
+                )
+            ).scalars().all()) if evidence_ids else set()
+            missing = [evidence_id for evidence_id in (evidence_ids or []) if evidence_id not in active]
+            if missing:
+                raise ValueError("EVIDENCE_SOURCE_WITHDRAWN")
+            record = {
+                "id": new_id("asm"), "case_id": case_id, "data": data,
+                "evidence_ids": evidence_ids, "status": "READY", "stale": False,
+            }
+            conn.execute(assumptions.insert().values(**record))
+            self._audit(conn, "assumption.saved", actor, case_id=case_id, assumption_id=record["id"])
+        return record
+
+    def list_assumptions(self, case_id: str) -> list[dict[str, Any]]:
+        with self.engine.connect() as conn:
+            rows = conn.execute(sa.select(assumptions).where(assumptions.c.case_id == case_id)).mappings().all()
+        return [dict(row) for row in rows]

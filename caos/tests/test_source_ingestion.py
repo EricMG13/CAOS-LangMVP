@@ -1,0 +1,162 @@
+"""Source ingestion contracts (invariant 1 boundary): ported per TEST_INVENTORY briefs."""
+
+from __future__ import annotations
+
+import pytest
+from fastapi import HTTPException
+
+from caos.sources import domain as sources_domain
+from caos.sources.domain import Vault, ingest_upload
+
+from conftest import blank_pdf_bytes, make_upload, xlsx_bytes
+
+
+@pytest.fixture()
+def vault(settings):
+    return Vault(settings)
+
+
+@pytest.fixture()
+def case_id(store):
+    return store.create_case("Case", "Issuer", "Services", "analyst")["id"]
+
+
+async def ingest(store, vault, case_id, filename, content, content_type="application/octet-stream"):
+    return await ingest_upload(store, vault, case_id, "analyst", make_upload(filename, content, content_type), max_bytes=vault.settings.max_upload_bytes)
+
+
+async def assert_rejected(store, vault, case_id, filename, content, status=422):
+    before = store.current_source_set(case_id)
+    with pytest.raises(HTTPException) as excinfo:
+        await ingest(store, vault, case_id, filename, content)
+    assert excinfo.value.status_code == status
+    assert store.current_source_set(case_id) == before, "rejection must leave no source-set delta"
+    return excinfo.value
+
+
+async def test_zero_byte_source_is_rejected_before_source_set_creation(store, vault, case_id):
+    await assert_rejected(store, vault, case_id, "empty.txt", b"")
+    assert store.list_sources(case_id) == []
+
+
+async def test_evidence_free_text_csv_and_xlsx_are_rejected(store, vault, case_id):
+    await assert_rejected(store, vault, case_id, "ws.txt", b"   \n\t\n")
+    await assert_rejected(store, vault, case_id, "ws.md", b" \n \n")
+    await assert_rejected(store, vault, case_id, "empty.csv", b",,,\n,,,\n")
+    await assert_rejected(store, vault, case_id, "blank.xlsx", xlsx_bytes([[None, None]]))
+
+
+@pytest.mark.parametrize("payload", [
+    b'{"amount":NaN}', b'{"amount":Infinity}', b'{"amount":-Infinity}',
+    b'{"amount":1e999}', b'{"amount":-1e999}',
+])
+async def test_non_finite_json_values_are_rejected(store, vault, case_id, payload):
+    await assert_rejected(store, vault, case_id, "figures.json", payload)
+
+
+@pytest.mark.parametrize("payload", [
+    b'{"a":1,"a":2}', b'{"outer":{"a":1,"a":2}}',
+])
+async def test_duplicate_json_keys_are_rejected(store, vault, case_id, payload):
+    await assert_rejected(store, vault, case_id, "dupe.json", payload)
+
+
+@pytest.mark.parametrize("payload", [b"{}", b"[]", b'""', b'"   "', b"null"])
+async def test_evidence_free_json_values_are_rejected(store, vault, case_id, payload):
+    await assert_rejected(store, vault, case_id, "empty.json", payload)
+
+
+async def test_json_scalar_values_are_accepted(store, vault, case_id):
+    for name, payload in (("zero.json", b"0"), ("false.json", b"false"), ("big.json", b"1e308")):
+        result = await ingest(store, vault, case_id, name, payload)
+        assert result["sha256"]
+    assert store.current_source_set(case_id)["version"] == 3
+
+
+@pytest.mark.parametrize("name", ["bad.txt", "bad.md", "bad.csv"])
+async def test_non_utf8_text_sources_are_rejected(store, vault, case_id, name):
+    await assert_rejected(store, vault, case_id, name, b"\xff\xfe\x00bad")
+
+
+async def test_invalid_pdf_is_rejected(store, vault, case_id):
+    await assert_rejected(store, vault, case_id, "fake.pdf", b"not a pdf at all")
+
+
+async def test_valid_no_text_pdf_is_accepted(store, vault, case_id):
+    result = await ingest(store, vault, case_id, "scan.pdf", blank_pdf_bytes(), "application/pdf")
+    assert result["source_set"]["version"] == 1
+    assert sources_domain.pathway_fit(store, case_id)["fit"] == "READY"
+
+
+async def test_non_empty_xlsx_is_accepted(store, vault, case_id):
+    result = await ingest(store, vault, case_id, "book.xlsx", xlsx_bytes([["Revenue", 100]]))
+    assert result["source_set"]["version"] == 1
+
+
+async def test_unsupported_type_is_rejected_415(store, vault, case_id):
+    await assert_rejected(store, vault, case_id, "prog.exe", b"MZ", status=415)
+
+
+async def test_oversize_upload_is_rejected_413(store, vault, case_id, settings):
+    small = Vault(type(settings)(storage_dir=settings.storage_dir, max_upload_bytes=10))
+    with pytest.raises(HTTPException) as excinfo:
+        await ingest_upload(store, small, case_id, "analyst", make_upload("big.txt", b"x" * 11), max_bytes=10)
+    assert excinfo.value.status_code == 413
+
+
+async def test_xlsx_extraction_caps_fail_closed(store, vault, case_id, monkeypatch):
+    monkeypatch.setattr(sources_domain, "MAX_XLSX_EXTRACT_ROWS", 2)
+    await assert_rejected(store, vault, case_id, "rows.xlsx", xlsx_bytes([["a"], ["b"], ["c"]]))
+    monkeypatch.setattr(sources_domain, "MAX_XLSX_EXTRACT_ROWS", 25_000)
+    monkeypatch.setattr(sources_domain, "MAX_XLSX_EXTRACT_WORKSHEETS", 1)
+    await assert_rejected(store, vault, case_id, "sheets.xlsx", xlsx_bytes([["a"]], sheets=2))
+
+
+async def test_long_line_extraction_cap_fails_closed(store, vault, case_id, monkeypatch):
+    monkeypatch.setattr(sources_domain, "MAX_SOURCE_LINE", 8)
+    await assert_rejected(store, vault, case_id, "line.txt", b"far too long a line")
+
+
+async def test_eicar_content_is_rejected(store, vault, case_id):
+    await assert_rejected(store, vault, case_id, "sig.txt", b"X5O!P%@AP[4\\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*")
+
+
+async def test_duplicate_active_content_rejected_and_withdrawal_reopens(store, vault, case_id):
+    first = await ingest(store, vault, case_id, "doc.txt", b"material evidence")
+    assert first["source_set"]["version"] == 1
+    error = await assert_rejected(store, vault, case_id, "again.txt", b"material evidence", status=409)
+    assert "already active" in str(error.detail)
+    assert store.current_source_set(case_id)["version"] == 1
+    assert store.withdraw(case_id, first["id"], "analyst") is not None
+    assert store.current_source_set(case_id)["version"] == 2
+    third = await ingest(store, vault, case_id, "doc2.txt", b"material evidence")
+    assert third["source_set"]["version"] == 3
+    assert store.current_source_set(case_id)["source_ids"] == [third["id"]]
+
+
+async def test_ingestion_rolls_back_atomically_when_persistence_fails(store, vault, case_id, monkeypatch):
+    audit_before = store.audit_trail()
+
+    def failing_audit(conn, action, actor, **details):
+        raise RuntimeError("injected persistence failure")
+
+    monkeypatch.setattr(store, "_audit", failing_audit)
+    with pytest.raises(RuntimeError):
+        await ingest(store, vault, case_id, "doc.txt", b"good evidence")
+    monkeypatch.undo()
+    assert store.list_sources(case_id) == []
+    assert store.current_source_set(case_id) is None
+    assert store.audit_trail() == audit_before, "failed write must append no audit"
+    recovered = await ingest(store, vault, case_id, "doc.txt", b"good evidence")
+    assert recovered["source_set"]["version"] == 1
+
+
+async def test_public_source_reads_hide_storage_private_fields(store, vault, case_id):
+    result = await ingest(store, vault, case_id, "doc.txt", b"the evidence")
+    assert "vault_path" not in result
+    listed = store.list_sources(case_id)[0]
+    assert "vault_path" not in listed and "withdrawn_at" not in listed
+    fetched = store.get_source(result["id"])
+    assert "vault_path" not in fetched
+    raw = store.read_source_bytes(result["id"], limit=1024)
+    assert raw == b"the evidence"

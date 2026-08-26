@@ -1,0 +1,120 @@
+"""Domain-store contracts: atomic audited writes, promotion, staleness, pinning."""
+
+from __future__ import annotations
+
+import pytest
+
+
+@pytest.fixture()
+def case_id(store):
+    return store.create_case("Case", "Issuer", "Services", "analyst")["id"]
+
+
+def seed_source(store, case_id, body: bytes, name="doc.txt"):
+    import hashlib
+
+    return store.ingest({
+        "case_id": case_id,
+        "filename": name,
+        "media_type": "text/plain",
+        "bytes": len(body),
+        "sha256": hashlib.sha256(body).hexdigest(),
+        "vault_path": None,
+        "blocks": [{"block_id": "b00001", "locator": {"line": 1}, "text": body.decode(), "extractor_version": "builtin-v1", "confidence": "MEDIUM", "untrusted_data": True}],
+        "withdrawn": False,
+    }, "analyst")
+
+
+def test_governed_writes_commit_state_and_audit_together(store, case_id):
+    seed_source(store, case_id, b"evidence one")
+    actions = [event["action"] for event in store.audit_trail()]
+    assert "source.ingested" in actions and "case.created" in actions
+    before = store.audit_trail()
+    with pytest.raises(ValueError, match="already active"):
+        seed_source(store, case_id, b"evidence one", name="copy.txt")
+    assert store.audit_trail() == before
+
+
+def test_source_set_id_pins_immutable_membership(store, case_id):
+    first = seed_source(store, case_id, b"one")
+    pinned_id = first["source_set"]["id"]
+    pinned_members = list(first["source_set"]["source_ids"])
+    seed_source(store, case_id, b"two")
+    seed_source(store, case_id, b"three")
+    historical = store.source_set(pinned_id)
+    assert historical["version"] == 1
+    assert historical["source_ids"] == pinned_members
+    assert store.current_source_set(case_id)["version"] == 3
+
+
+def test_note_promotion_is_idempotent_and_content_addressed(store, case_id):
+    note = store.create_note(case_id, "analyst observation", "analyst")
+    promoted = store.promote_note(case_id, note["id"], "analyst")
+    source_id = promoted["promoted_source_id"]
+    assert source_id
+    assert store.current_source_set(case_id)["version"] == 1
+    replay = store.promote_note(case_id, note["id"], "analyst")
+    assert replay["promoted_source_id"] == source_id
+    assert store.current_source_set(case_id)["version"] == 1, "replay must not version the set"
+    second = store.create_note(case_id, "analyst observation", "analyst")
+    with pytest.raises(ValueError, match="already active"):
+        store.promote_note(case_id, second["id"], "analyst")
+    assert store.current_source_set(case_id)["version"] == 1
+
+
+def test_promotion_after_withdrawal_mints_new_identity_without_resurrection(store, case_id):
+    note = store.create_note(case_id, "recurring observation", "analyst")
+    first = store.promote_note(case_id, note["id"], "analyst")
+    old_source = first["promoted_source_id"]
+    store.withdraw(case_id, old_source, "analyst")
+    assert store.current_source_set(case_id)["version"] == 2
+    again = store.promote_note(case_id, note["id"], "analyst")
+    new_source = again["promoted_source_id"]
+    assert new_source != old_source, "withdrawn source id must never be resurrected"
+    current = store.current_source_set(case_id)
+    assert current["version"] == 3
+    assert current["source_ids"] == [new_source]
+
+
+def test_promotion_rolls_back_atomically_on_downstream_failure(store, case_id, monkeypatch):
+    note = store.create_note(case_id, "atomic observation", "analyst")
+    audit_before = store.audit_trail()
+
+    def failing_audit(conn, action, actor, **details):
+        raise RuntimeError("injected failure after source insert")
+
+    monkeypatch.setattr(store, "_audit", failing_audit)
+    with pytest.raises(RuntimeError):
+        store.promote_note(case_id, note["id"], "analyst")
+    monkeypatch.undo()
+    assert store.list_sources(case_id) == []
+    assert store.current_source_set(case_id) is None
+    assert store.audit_trail() == audit_before
+    fresh = store.list_notes(case_id)[0]
+    assert fresh["promoted"] is False and fresh["promoted_source_id"] is None
+    retry = store.promote_note(case_id, note["id"], "analyst")
+    assert retry["promoted_source_id"]
+
+
+def test_withdrawal_stales_citing_assumptions_and_bans_new_citations(store, case_id):
+    source = seed_source(store, case_id, b"assumption evidence")
+    assumption = store.save_assumption(case_id, {"name": "margin"}, [source["id"]], "analyst")
+    assert assumption["status"] == "READY"
+    store.withdraw(case_id, source["id"], "analyst")
+    stale = store.list_assumptions(case_id)[0]
+    assert stale["stale"] is True and stale["status"] == "STALE"
+    with pytest.raises(ValueError, match="EVIDENCE_SOURCE_WITHDRAWN"):
+        store.save_assumption(case_id, {"name": "coverage"}, [source["id"]], "analyst")
+
+
+def test_membership_and_roles_gate_access(store):
+    case = store.create_case("Case", "Issuer", "Services", "creator")
+    case_id = case["id"]
+    assert store.is_member(case_id, "creator")
+    assert store.is_member(case_id, "creator", roles={"ANALYST", "APPROVER", "ADMIN"})
+    assert not store.is_member(case_id, "outsider")
+    assert not store.add_member(case_id, "outsider", "friend", "ANALYST")
+    assert store.add_member(case_id, "platform-admin", "reviewer", "READER", actor_role="ADMIN")
+    assert store.is_member(case_id, "reviewer", roles={"READER"})
+    assert not store.is_member(case_id, "reviewer", roles={"ANALYST", "APPROVER", "ADMIN"})
+    assert [c["id"] for c in store.list_cases("reviewer")] == [case_id]

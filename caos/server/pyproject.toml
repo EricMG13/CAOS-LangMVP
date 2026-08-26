@@ -1,0 +1,32 @@
+[project]
+name = "caos-server"
+version = "0.1.0"
+description = "CAOS credit-analysis server on LangGraph"
+requires-python = ">=3.12"
+dependencies = [
+    # Execution schema versioning (DECISIONS.md §10.12): exact pins on the run engine.
+    "langgraph==1.2.11",
+    "langgraph-checkpoint-sqlite==3.1.1",
+    "langgraph-checkpoint-postgres==3.1.2",
+    "langchain-anthropic==1.6.1",
+    "fastapi==0.139.*",
+    "uvicorn>=0.30",
+    "pydantic>=2.7",
+    "sqlalchemy>=2.0",
+    "openpyxl>=3.1",
+    "pypdf>=4.0",
+    "python-multipart>=0.0.9",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8",
+    "pytest-asyncio>=0.24",
+    "httpx>=0.27",
+]
+
+[tool.setuptools.packages.find]
+include = ["caos*"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
