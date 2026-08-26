@@ -41,3 +41,18 @@ Two structural notes that are *not* splits:
 3. CP-3B's ancestor skips T3B.9; CP-4D↔CP-3B ordering conflict as tabled above.
 4. **CP-5B and CP-6E** exist in Modular OS/ with full contracts but are absent from the Deploy V manifest entirely — neither physical nor alias. They are not among the 19 and are not registered; nothing in the runtime may address them. If methodology ever reinstates them it is a Deploy V bundle change, not a registry change.
 5. CP-MON, CP-SR, CP-X (Modular OS layers 7/orchestration) are likewise outside the catalog; CP-X's dispatch role is exactly what the compiled route DAG replaces.
+
+## Amendment (2026-08-26, second red-team pass)
+
+**Why no-split is vacuous, by catalog receipt:** absorbed phases have no separate output contracts because their tables are already contracted on the absorbing parent — a split node would need a Deploy-V-conformant phase contract that exists nowhere, and writing one is writing methodology.
+
+| Absorbed | Its tables live in the parent's `artifact_contract` |
+|---|---|
+| CP-2B | CP-2A `required_table_ids: T2B.1–9` |
+| CP-1E | CP-1D `T1E.1–6` |
+| CP-6A / CP-6E | CP-6 `T6A.4/6/7/11` + `T6E.4/6/7/11` |
+| CP-5A / CP-5B | CP-5 `T5.1–9` + `T5B.*` |
+
+**CP-PARSE alias carve-out:** CP-PARSE is simultaneously `superseded_module_ids["CP-PARSE"].absorbed_by = "CP-0"` and `preparation_stage {runnable: true, required_before: "CP-0"}`, and `compile()` emits it as its own stage-0 node that CP-0 depends on. The registry alias map therefore resolves CP-PARSE to **its own node**, never to CP-0 — the one alias of the 19 that does not resolve to its recorded parent. The other 18 resolve plainly, with one two-hop chain (CP-4D → CP-4B → CP-4).
+
+Counts verified against the manifest: 41 logical = 22 physical + 19 aliases.
