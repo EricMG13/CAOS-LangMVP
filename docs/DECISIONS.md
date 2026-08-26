@@ -119,3 +119,82 @@ The phase-1 red-team pass (.agent-reviews/redteam.md, same date) raised fifteen 
 8. **Active time is measured segments, never wall-clock subtraction.** The ledger accrues only explicitly timed host-operation segments; nothing derives from `now - started_at`. An interrupted run accrues zero at a human gate (`test_cpdr_approval_wait_is_excluded_while_planning_time_is_charged` re-hosts on the new gates).
 9. **CP-DR contractual rows re-host; they are not an exclusion category.** The 44 contractual rows in CP-DR files re-host as follows: budget/ledger/validation/prompt-separation/secret-hygiene/finalization rows onto the nine agent modules and the shared loop; the eight plan-approval-gate rows onto the deliverable filing interrupt. Only nine report-era rows (thesis/recommendation CAS + legacy report freeze/approve family, incl. the thesis halves of two mixed tests) and one methodology-draft row are excluded outright; `test_production_rejects_forged_forwarded_identity`'s auth assertions re-host on the new edge.
 10. **Notes and assumptions confirmed in scope** (restates §10.10 after this pass's independent confirmation: promotion is an ingestion surface minting content-addressed sources).
+
+## 12. Third-pass amendments (2026-08-26, six-area red-team — binding; wins over §§1–11 where they conflict)
+
+Consolidation note: where §6 conflicts with §10/§11/§12 (output Σ vs Σ+max; CP-5 16k vs 24k), the §12 restatement below is the single binding budget contract. Sources: .agent-reviews/redteam.md third pass.
+
+### 12.A Pin, digest, and state discipline
+
+1. **Digest-preimage meta-rule.** Every digest preimage is an exact pinned projection — fields × order × time-source — implemented once per record type and shared by the writer and every later verifier. Digests are carried outside the digested blob; preimage = record minus the per-type exclusion set ({plan_digest}; snapshot {digest, id, previous_snapshot_id}; …). Optional keys are absent, never null. Golden tests: compile → checkpoint round-trip → re-assert passes; one-byte mutation fails.
+2. **State is JSON-native plain data only** (str/int/float/bool/None/list/dict). No Pydantic models, tuples, datetimes, Decimals, or dataclasses in channel values; models exist only inside node bodies. The plan blob is deepcopied at gate exit and treated read-only. CI round-trips every state field through JsonPlusSerializer against BOTH savers asserting equality and recursive type identity. `durability="sync"` on gate and finalize supersteps.
+3. **Unicode boundary.** Every string that can enter pinned state or events is validated at the API boundary: must UTF-8-encode, lone surrogates rejected, NFC-normalized — before any pin is computed.
+4. **Single time authority.** The only timestamp below the pin is the pinned run `created_at` (microsecond-truncated ISO); `reporting_period`, analysis dates, and filenames are slices of it; nodes never call the clock for artifact content. Snapshot `accepted_at` is the recorded exception (snapshot digests are integrity-only, never content addresses). Test: mocked day-later clock reproduces identical artifact digests.
+5. **Ordered preimage lists.** Upstream artifact refs iterate the pinned plan's dependency order; `source_ids` carry an explicit position; the digested source-set identity is the pinned six-field projection {id, case_id, version, source_ids, created_by, created_at}. Test: a resumed node recomputes a byte-identical input_fingerprint.
+
+### 12.B Methodology authority
+
+6. **Verify-at-use.** The plan pins the integrity-manifest digest at gate exit. Every authority-file read used for prompt assembly hashes the exact bytes fed to the model against the PINNED build's manifest entry; `plan.build_id == bundle.build_id` is checked per node pre-flight but the byte-level check is the guarantee. Mixed-authority and silent-swap scenarios are typed AGENT_AUTHORITY_MISMATCH failures.
+7. **Authority assembly is methodology surface.** Wrapper text, reference-file order, and the "\n\n" join are pinned; a golden authority-digest test per module locks them; changing assembly is a methodology change. Acceptance-time recomputation (authority digest, CP-2B projection) stays byte-identical via the same registry-driven functions.
+
+### 12.C Run and artifact lifecycle
+
+8. **complete_node semantics.** (run_id, module_id, input_fingerprint) is a unique key enforced at commit with validate-then-replace arbitration: existing valid artifact → discard candidate, relink old id; existing invalid → delete and insert fresh id; final candidate re-validated. The relink path emits byte-identical write payloads (ids from the store lookup, never regenerated). Completion markers (completed_modules, phase) commit in the same transaction as artifact link/relink. All three branches tested.
+9. **Error taxonomy is contract.** Store failure codes are a typed enum with the exact legacy strings; in evidence reads, authority checks (case/set/withdrawn) precede block-existence checks — AGENT_AUTHORITY_MISMATCH before AGENT_OUTPUT_INVALID; the adversarial suite asserts which code each refusal carries. Agent-module failures surface at run level as CANONICAL_GENERATION_FAILED with the specific code in the terminal attempt row.
+10. **Citation contract = delivered-evidence exact set.** Inside the read_evidence tool: ledger charge → returned-set update → return is one ordered unit; a ceiling-rejected read leaves no expectation; final validation requires evidence_refs to equal the delivered set exactly.
+11. **Repair and recorder rules.** Repairable iff ValueError-family raised by validate; the repair turn is tool-less; repair text ≤ 1,500 chars; a max_tokens stop-reason is immediate AGENT_OUTPUT_INVALID and does not consume the repair. Attempt recorder: scalar allowlist with str[:200], lists only ≤50 items × ≤160-char strings, kind[:40]; terminal rows are cap-exempt (append then [-100:] trim) and recorded only after provider interaction; non-terminal rows fail closed at 100; every row snapshots the digests in force at write time.
+12. **Reservation semantics.** Canonical rules only: reserve persists the inflight digest before create; a timeout retry requires inflight == digest and is budget-free; reconcile adjusts to actuals and clears inflight; an unresolved inflight on resume is terminal budget-exceeded. CP-DR's divergent double-charging retry semantics do not port; affected re-hosted rows adjust with one-line justifications.
+13. **Finalization prepay exception.** Terminal commits are prepaid at the fixed 5.0s allowance and bounded by a monotonic deadline enforced inside the store transaction (TimeoutError → budget-exceeded, rolled back).
+
+### 12.D Budget metering and the model boundary
+
+14. **Active-time = bracketed segments** (supersedes §11.8 and the second-pass revert). Σ of explicitly bracketed single-operation segments — one provider await, one evidence read, one validation, one store write, one sync CPU block — with no other await inside a bracket; charge-then-suspend at every lock, gate, and interrupt; budget check after every bracket; the reuse-validation and completion-write segments are bracketed; check_budget is the last statement before a node reports success. Coverage by construction: one `timed()` wrapper is the only call site, and a test asserts every step in the node sequence is wrapped. Gate/interrupt wait time accrues nothing (the re-hosted approval-wait row).
+15. **Wall-clock enforcement is `asyncio.timeout`.** Every provider await (count and create) runs inside `asyncio.timeout(min(150, remaining_active_seconds))` mapped to AGENT_PROVIDER_TIMEOUT with the inflight digest left unresolved. The SDK per-request timeout is an inner hint; `default_request_timeout=150` is pinned and never None.
+16. **One host-owned request builder.** The payload is built once per turn from host-canonical fields; count and create go directly to the adapter's async client (`messages.count_tokens` / `messages.create`); the count body is the payload restricted to the endpoint's accepted fields; read_evidence is the raw Anthropic tool dict (strict); system is a plain string. ChatAnthropic serves as message formatter, output normalizer, and pinned client factory; `invoke()`/`bind_tools`/`with_structured_output` are not on the metered path. The reservation digest covers the host-built payload minus timeout.
+17. **Usage validation targets raw usage** (response_metadata / llm_output), never `usage_metadata` (which zero-fills): the usage key must be present with `input_tokens` int > 0, `output_tokens` int ≥ 0, cache-token fields absent or 0; violation is AGENT_OUTPUT_INVALID with the reservation unresolved.
+18. **Adapter pins asserted by test:** `max_retries=0`, `disable_streaming=True`, `cache=False`; `max_tokens` set from the registry unconditionally per call (startup assert + per-module congruence test); two-build byte-equality test for retry identity; per-stop-reason stub tests (`refusal`, `max_tokens`, `pause_turn`, absent) proving each reaches the host validator; the validator's single authority is `stop_reason` ∈ {tool_use, end_turn}.
+19. **Provider concurrency: integer slot counter (2)**, synchronous check-and-decrement on the event loop, typed AGENT_BUDGET_EXCEEDED denial (legacy semantics restored; supersedes §10.15's blocking semaphore), release in finally.
+20. **Envelope scaling.** Per-route envelope from (compiled route, registry): N = route agent-module count; evidence_reads = 10·N; evidence_bytes = ⌈(5 MiB/6)·N⌉; input_tokens = ⌈(500,000/6)·N⌉; output_tokens = Σ per-module caps + max(caps); turns = evidence_reads + N + repairs; active_minutes 15; provider_retries 1; repairs 1. N=6 reproduces legacy exactly. count_tokens never charges a turn (tested). Residual liveness risk owned by the lead engineer, checked at the phase-6 live smoke.
+
+### 12.E Interrupt and resume correctness
+
+21. **Resume ticket.** A one-shot CAS row keyed (thread_id, interrupt_id) is written when an interrupt surfaces; the gate consumes it transactionally before acting on the resume value; a racing second execution finds it consumed and terminates without side effects. The §10.3 per-thread locks remain on every resume entry point (API, recovery, upgrade).
+22. **Resume APIs verify effect.** After any resume, the endpoint re-reads state and requires the targeted interrupt gone AND the domain CAS advanced; anything else returns typed RESUME_NOT_APPLIED with the current interrupt id (late/duplicate/stale resumes are silent no-ops in langgraph 1.2.11 and must never surface as success).
+23. **Deliverable thread identity includes build_id:** thread_id = digest(case_id, pathway, draft_version, draft_digest, build_id); the filing gate re-asserts frozen.build_id == plan.build_id == approval.build_id and serves only the already-rendered vault bytes whose digest equals the approved preview_digest — filing never re-renders.
+24. **Schema version at the raw layer.** The stamp is read from the raw checkpoint channel values and checked before any Pydantic coercion; pinned fields have no defaults, so an old checkpoint missing a new pinned field raises instead of fabricating.
+25. **Retention and upgrades.** Terminalized threads are deleted (`delete_thread`) once the domain store holds the full audit trail; any dependency-pin bump requires draining parked threads or a park→resume test on a copied thread first; prod uses `psycopg_pool` with health checks.
+
+### 12.F Module wiring dispositions (attended-surface audit)
+
+26. All nine agent modules replicate the five legacy neutralization mechanisms: host wrapper (no conversational channel; declared safe defaults govern in silence), pins labeled untrusted, conflict→fail-closed validation, host discard-and-recompute of identity/trace/registry/confidence, and the qa-Passed gate (non-Passed module QA is terminal).
+27. CP-2G's three staged questions are pinned from its own contract defaults (three consecutive fiscal years after the latest CP-1 actual; CP-1-anchored base; BASE+DOWNSIDE), validated pre-dispatch. CP-1C is pinned to supplied-only evidence (web discovery is structurally banned by invariant 1); absent disclosed peers it emits its Blocked/document-disclosed terminal; a pin-time peer_list is the recorded future upgrade. CP-5 runs unattended (deterministic Severity Engine); reviewer authority maps onto existing gates — snapshot acceptance refuses a CP-5 Blocked artifact, and Restricted rides the snapshot into deliverables as a surfaced limitation. CP-2's superseded deep-synthesis phrase-trigger is declared inert by the wrapper (the bundle is never edited).
+
+### Appendix A — transcribed budget constants (the literal contract; each gets a test asserting the literal value)
+
+| Constant | Value | Legacy source | New home | Test |
+|---|---|---|---|---|
+| Manifest max blocks | 2,000 | workflows/domain.py:44 | budget/constants.py | test_manifest_caps_literal |
+| Manifest max bytes | 262,144 (256 KiB, canonical-JSON measure) | :45 | budget/constants.py | test_manifest_caps_literal |
+| Manifest filename chars | 255 | :46 | budget/constants.py | test_manifest_caps_literal |
+| Manifest media-type chars | 160 | :47 | budget/constants.py | test_manifest_caps_literal |
+| Manifest field chars | 160 | :48 | budget/constants.py | test_manifest_caps_literal |
+| Locator string chars | 500 | :49 | budget/constants.py | test_manifest_caps_literal |
+| Locator items/container | 100 | :50 | budget/constants.py | test_manifest_caps_literal |
+| Locator depth | 8 | :51 | budget/constants.py | test_manifest_caps_literal |
+| Locator total nodes | 500 | :52 | budget/constants.py | test_manifest_caps_literal |
+| Locator floats must be finite | — | :66-67 | manifest validator | test_manifest_caps_literal |
+| Finalization allowance | 5.0 s (prepaid, in-transaction deadline) | :54 | budget/constants.py | test_finalization_allowance |
+| Per-module output caps | CP-1 32k; CP-1A 12k; CP-1B 12k; CP-2 16k; CP-2A 16k; CP-2G 24k; CP-1C 12k; CP-1D 12k; CP-5 24k | canonical.py:96-105 + §10.11 policy | modules/registry.py | test_registry_output_caps |
+| Per-module allowances | 10 evidence reads; 5 MiB/6 evidence bytes; 500k/6 input tokens | canonical.py:106-121 ÷ 6 | budget/envelope.py | test_route_envelopes (N=6 == legacy) |
+| Output ceiling | Σ caps + max(caps) | canonical.py:109 | budget/envelope.py | test_route_envelopes |
+| Turns | evidence_reads + N + repairs | canonical.py:107-121 | budget/envelope.py | test_route_envelopes |
+| Active minutes | 15 | canonical.py envelope | budget/constants.py | test_route_envelopes |
+| Provider retries / repairs | 1 / 1 | canonical.py envelope | budget/constants.py | test_route_envelopes |
+| Provider timeout | 150.0 s (outer asyncio.timeout; SDK hint) | config.py:40, provider.py:98 | config.py + loop | test_timeout_clamp |
+| Provider concurrency slots | 2 (non-blocking, typed denial) | provider semaphore | budget/constants.py | test_provider_slots |
+| Evidence read block_ids per call | 1–50 unique | domain.py read_evidence | evidence tool | test_read_evidence_bounds |
+| Evidence bytes measure | len(json.dumps(result, sort_keys=True)) — identical serialization to the tool_result | domain.py:1447, provider.py:412 | shared function | test_evidence_bytes_identity |
+| Attempt caps | non-terminal fail at 100; terminal [-100:] ring | domain.py:1359-1376 | recorder | test_attempt_recorder |
+| Repair text limit | 1,500 chars | provider.py:437 | loop | test_repair_rules |
+| Max active jobs (admission) | 20, derived by COUNT(non-terminal RUNNING executions); interrupt-paused threads hold no slot | store.py MAX_ACTIVE_JOBS | admission gate | test_admission_ceiling |
+| Lease/heartbeat/fencing | replaced by: per-thread locks + advisory lock + execution epoch WHERE-predicate on every ledger/event/artifact write + resume tickets | store.py, domain.py | storage layer | test_epoch_fencing (re-hosts excluded fencing rows) |
