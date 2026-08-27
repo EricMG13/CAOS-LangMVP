@@ -37,12 +37,9 @@ GOLDEN_AUTHORITY_DIGESTS = {
     "CP-1": "71dd70efc79410edd80af7648572782cd694f05aa754d1abd03b6dcb93885cd6",
     "CP-1A": "9157ed912eb73e21cd51479abe8fc446f895949da673a3e366df8f7c76a9eede",
     "CP-1B": "1d2757874da74caa48ac88d2474d1d5b4ff48982414bb53ba785296f3e684bc1",
-    "CP-1C": "01f2787934b06e900125cd3119324621c8436e51683b7a5644db7b77dc75342c",
-    "CP-1D": "0d2841369e275c430434d0c5287ef223dd2ec3c0d404ac1660efc8f028697939",
     "CP-2": "5fb286e7d673de8f621df805948409062da8dd469930bc8df83a92044e440e41",
     "CP-2A": "842663c8c017297102b9abd8569e782103f982d8b62cfafe52a2e9f8c3b390ef",
     "CP-2G": "86d9b25b264c1f1f94690fa61bdd9944acd0201264f287aa41049225bb84931c",
-    "CP-5": "96521991f728f5bd1ced1b8441e23496b22f55eb6b77da42e4d8c884a1d5cee2",
 }
 
 
@@ -65,16 +62,10 @@ MODULES: dict[str, ModuleSpec] = {
         max_output_tokens=12_000,
     ),
     "CP-1C": ModuleSpec(
-        "CP-1C", "agent", skill_slug="cp-1c-peer-benchmark",
-        reference_files=("references/CP-1C_SCHEMA_REFERENCE.md", "references/REF_CP-1C_STEPS.md"),
-        max_output_tokens=12_000,
+        "CP-1C", "deterministic", skill_slug="cp-1c-peer-benchmark",
         source_mode="supplied_only",  # web discovery is structurally banned (invariant 1)
     ),
-    "CP-1D": ModuleSpec(
-        "CP-1D", "agent", skill_slug="cp-1d-earnings-quality",
-        reference_files=("references/CP-1D_SCHEMA_REFERENCE.md",),
-        max_output_tokens=12_000,
-    ),
+    "CP-1D": ModuleSpec("CP-1D", "deterministic", skill_slug="cp-1d-earnings-quality"),
     "CP-2": ModuleSpec(
         "CP-2", "agent", skill_slug="cp-2-fundamental-credit-synthesizer",
         reference_files=("references/CP-2_SCHEMA_REFERENCE.md", "references/REF_CP-2_STEPS.md"),
@@ -101,11 +92,7 @@ MODULES: dict[str, ModuleSpec] = {
     "CP-3": ModuleSpec("CP-3", "deterministic", skill_slug="cp-3-relative-value-security-selection"),
     "CP-4": ModuleSpec("CP-4", "deterministic", skill_slug="cp-4-legal-covenant-interpreter"),
     "CP-4C": ModuleSpec("CP-4C", "deterministic", skill_slug="cp-4c-restructuring-fulcrum"),
-    "CP-5": ModuleSpec(
-        "CP-5", "agent", skill_slug="cp-5-evidence-trace-validator",
-        reference_files=("references/CP-5_RUNBOOK.md", "references/CP-5_SCHEMA_REFERENCE.md", "references/REF_CP-5_STEPS.md"),
-        max_output_tokens=24_000,  # §10.11: it consumes every upstream artifact; 16k plausibly truncates
-    ),
+    "CP-5": ModuleSpec("CP-5", "deterministic", skill_slug="cp-5-evidence-trace-validator"),
     "CP-6": ModuleSpec("CP-6", "deterministic", skill_slug="cp-6-ic-debate-challenge"),
     "CP-L10": ModuleSpec("CP-L10", "deterministic", skill_slug="cp-l10-financial-change-screen"),
 }
