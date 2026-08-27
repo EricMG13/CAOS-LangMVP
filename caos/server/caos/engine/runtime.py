@@ -333,6 +333,7 @@ class Engine:
                 payload = build_deterministic_payload(
                     module_id, plan, input_fingerprint=fingerprint,
                     upstream_digests=[a["digest"] for a in upstream],
+                    source_ids=source_set["source_ids"],
                     loan_universe=universe,
                 )
                 markdown, qa_status = None, "Passed"
@@ -914,8 +915,10 @@ class Engine:
         plan = run["plan"]
         upstream = self._upstream_digests(run_id, plan, module_id)
         fingerprint = self._input_fingerprint(plan, run["plan_digest"], module_id, [a["digest"] for a in upstream])
+        source_set = state_mod.verify_source_set_expectation(self.store, plan["source_set_id"], plan["source_set_digest"])
         payload = build_deterministic_payload(module_id, plan, input_fingerprint=fingerprint,
-                                              upstream_digests=[a["digest"] for a in upstream])
+                                              upstream_digests=[a["digest"] for a in upstream],
+                                              source_ids=source_set["source_ids"])
         return {"module_id": module_id, "digest": digest(payload)}
 
     def write_legacy_schema_checkpoint_for_tests(self, *, schema_version: str) -> str:

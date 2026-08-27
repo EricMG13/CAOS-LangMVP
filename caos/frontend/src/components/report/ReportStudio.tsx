@@ -192,7 +192,7 @@ export default function ReportStudio({ caseId, role, selectedCase, onDraftStateC
     setLoading(true); setLoadError(""); setError(""); setMessage(""); setSelectedFrozen(null); setConflict(null);
     try {
       const [next, sourceResult] = await Promise.all([
-        reportRequest<WorkspaceResponse>(`/api/cases/${caseId}/deliverables/${pathway}`, {}, signal),
+        reportRequest<WorkspaceResponse>(`/api/cases/${caseId}/deliverables/${pathway}/draft`, {}, signal),
         request<SourceRecord[]>(`/api/cases/${caseId}/sources`, {}, signal).then((value) => ({ value, error: "" })).catch((caught) => ({ value: [], error: caught instanceof Error ? caught.message : "Evidence inventory unavailable" })),
       ]);
       if (generation !== loadGeneration.current || currentScope.current !== scope) return;

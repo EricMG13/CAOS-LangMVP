@@ -34,7 +34,7 @@ export type CaseRecord = {
   issuer: string;
   sector: string;
   source_count?: number;
-  accepted_snapshot?: Snapshot | null;
+  accepted_snapshot_id?: string | null;
   pathway_fit?: { fit: string; message: string };
   current_execution_id?: string | null;
   deep_research_available?: boolean;
