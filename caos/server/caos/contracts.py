@@ -134,6 +134,11 @@ class StartRunRequest(StrictModel):
     focus_questions: list[str] = Field(default_factory=list, max_length=5)
     research_brief: ResearchBrief | None = None
 
+    @field_validator("focus_questions")
+    @classmethod
+    def boundary_clean_questions(cls, value: list[str]) -> list[str]:
+        return [validate_boundary_text(question) for question in value]
+
     @field_validator("pathway")
     @classmethod
     def known_pathway(cls, value: str) -> str:
@@ -509,6 +514,21 @@ class ApproveRequest(StrictModel):
 
 class SnapshotSwitchRequest(StrictModel):
     snapshot_id: str = Field(min_length=1, max_length=120)
+
+
+def validate_boundary_text(value: str) -> str:
+    """Unicode boundary (DECISIONS §12.3): strings that can enter pinned state
+    or events must UTF-8-encode (no lone surrogates), carry no control bytes,
+    and are NFC-normalized before any pin is computed."""
+    import unicodedata
+
+    try:
+        value.encode("utf-8")
+    except UnicodeEncodeError as exc:
+        raise ValueError("text contains unencodable code points") from exc
+    if any(ord(ch) < 32 and ch not in "\n\r\t" for ch in value):
+        raise ValueError("text contains control characters")
+    return unicodedata.normalize("NFC", value)
 
 
 def canonical_json(value: Any) -> str:
