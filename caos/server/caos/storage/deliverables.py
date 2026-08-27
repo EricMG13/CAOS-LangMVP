@@ -53,6 +53,7 @@ deliverable_frozen = sa.Table(
     sa.Column("superseded_by_id", sa.String),
     sa.Column("filed_by", sa.String),
     sa.Column("filed_at", sa.String),
+    sa.Column("change_request", sa.JSON),
     sa.Column("created_by", sa.String, nullable=False),
     sa.Column("created_at", sa.String, nullable=False),
 )
@@ -100,7 +101,8 @@ class DeliverableStore:
 
     @staticmethod
     def _revision(row: dict[str, Any]) -> dict[str, Any]:
-        return {key: row[key] for key in ("draft_id", "revision_id", "version", "digest", "content")}
+        return {key: row[key] for key in ("draft_id", "revision_id", "case_id", "pathway", "version",
+                                          "digest", "content", "created_by", "created_at")}
 
     def append_revision(self, case_id: str, pathway: str, expected_version: int,
                         content: dict[str, Any], content_digest: str, actor: str, audit: Any) -> dict[str, Any]:
@@ -165,7 +167,7 @@ class DeliverableStore:
         "deliverable_id", "thread_id", "case_id", "pathway", "status", "preview_digest",
         "input_fingerprint", "build_id", "payload", "exports", "authority",
         "draft_version", "draft_digest", "superseded_by_id", "filed_by", "filed_at",
-        "created_by", "created_at",
+        "change_request", "created_by", "created_at",
     )
 
     def _frozen(self, row: dict[str, Any]) -> dict[str, Any]:
@@ -178,7 +180,8 @@ class DeliverableStore:
             ).mappings().first()
             if existing is not None:
                 return self._frozen(dict(existing)), False
-            row = {**record, "superseded_by_id": None, "filed_by": None, "filed_at": None, "created_at": now_iso()}
+            row = {**record, "superseded_by_id": None, "filed_by": None, "filed_at": None,
+                   "change_request": None, "created_at": now_iso()}
             conn.execute(deliverable_frozen.insert().values(**row))
             conn.execute(deliverable_threads.insert().values(
                 thread_id=record["thread_id"], case_id=record["case_id"],
@@ -260,7 +263,9 @@ class DeliverableStore:
                 sa.update(deliverable_frozen)
                 .where(deliverable_frozen.c.deliverable_id == deliverable_id,
                        deliverable_frozen.c.status == "FROZEN")
-                .values(status="CHANGES_REQUESTED")
+                .values(status="CHANGES_REQUESTED", change_request={
+                    "comment": comment, "requested_by": actor, "requested_at": now_iso(),
+                })
             ).rowcount
             if not changed:
                 return None

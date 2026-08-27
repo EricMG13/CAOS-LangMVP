@@ -81,9 +81,30 @@ function initializeBlocks(template: DeliverableTemplate): DeliverableBlock[] {
     : { kind: "NARRATIVE", block_id: block.block_id, slot_id: block.slot_id, text: "", content_mode: "ANALYST_JUDGMENT", citations: [] }) as DeliverableBlock[];
 }
 
+const CONTRACT_KEYS: Record<DeliverableBlock["kind"], string[]> = {
+  NARRATIVE: ["text", "content_mode", "citations"],
+  EVIDENCE_REGISTER: ["citations"],
+  LIMITATIONS: ["text", "citations"],
+  GENERATED_METRIC: ["metric_ids"],
+  GENERATED_TABLE: ["table_id", "field_ids"],
+  GENERATED_CHART: ["recipe"],
+  SCENARIO_EXHIBIT: ["title", "shocks", "scenario", "scenario_digest"],
+  MODEL_APPENDIX: [],
+};
+
+function contractBlock(block: DeliverableBlock): DeliverableBlock {
+  const record = block as unknown as Record<string, unknown>;
+  return Object.fromEntries([
+    ["kind", block.kind], ["block_id", block.block_id], ["slot_id", block.slot_id],
+    ...CONTRACT_KEYS[block.kind].map((key) => [key, record[key]]),
+  ]) as unknown as DeliverableBlock;
+}
+
 function blocksForSave(blocks: DeliverableBlock[]): DeliverableBlock[] {
   const citations = aggregateCitations(blocks.filter((block) => block.kind !== "EVIDENCE_REGISTER"));
-  return blocks.map((block) => block.kind === "EVIDENCE_REGISTER" ? { ...block, citations } : block);
+  // Server-computed enrichments (generated values, model digests) never round-trip:
+  // the strict wire contract rejects client-supplied copies of them.
+  return blocks.map((block) => contractBlock(block.kind === "EVIDENCE_REGISTER" ? { ...block, citations } : block));
 }
 
 function draftIsValid(blocks: DeliverableBlock[], template: DeliverableTemplate): boolean {
@@ -346,7 +367,7 @@ export default function ReportStudio({ caseId, role, selectedCase, onDraftStateC
     const token = beginLifecycle("restore");
     if (!token) return;
     try {
-      const next = await reportRequest<WorkspaceResponse>(`/api/cases/${caseId}/deliverables/${pathway}/draft`, { method: "PUT", body: JSON.stringify({ expected_version: workspace.current?.version || 0, template_id: workspace.template.template_id, template_version: workspace.template.template_version, model_selection: revision.content.model_selection, blocks: revision.content.blocks }) });
+      const next = await reportRequest<WorkspaceResponse>(`/api/cases/${caseId}/deliverables/${pathway}/draft`, { method: "PUT", body: JSON.stringify({ expected_version: workspace.current?.version || 0, template_id: workspace.template.template_id, template_version: workspace.template.template_version, model_selection: revision.content.model_selection, blocks: revision.content.blocks.map(contractBlock) }) });
       if (!lifecycleIsCurrent(token)) return;
       savedVersion.current = next.current?.version || savedVersion.current; unsavedDraft.current = false; setDraftIsUnsaved(false); setPersistedVersion(savedVersion.current); setWorkspace(next); setBlocks(next.current?.content.blocks || revision.content.blocks); setModelSelection(next.current?.content.model_selection || null); setSelectedFrozen(null); setSaveState({ kind: "SAVED", version: savedVersion.current }); onDraftStateChange(false); setMessage(`Restored v${revision.version} as new revision v${savedVersion.current}.`); editorFocus.current?.focus();
     } catch (caught) { if (lifecycleIsCurrent(token)) setError(caught instanceof Error ? caught.message : "Unable to restore revision"); }

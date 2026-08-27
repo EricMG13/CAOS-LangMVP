@@ -83,17 +83,15 @@ def _never_render(payload, fmt):
 
 
 def required_blocks(template, source, *, narrative_text="Leverage is manageable."):
-    """Blocks satisfying every required template slot, in template order.
+    """Blocks satisfying every required template block, in template order.
 
-    Spec: required slots use only non-model kinds — anything else is a template defect.
+    Spec: required blocks use only non-model kinds — anything else is a template defect.
     """
     blocks = []
-    for slot in template["slots"]:
-        base = {"block_id": f"blk-{slot['slot_id']}", "slot_id": slot["slot_id"]}
-        kind = slot["kind"]
-        if kind == "HEADING":
-            blocks.append({**base, "kind": "HEADING", "text": "Credit Opinion"})
-        elif kind == "NARRATIVE":
+    for item in template["blocks"]:
+        base = {"block_id": item["block_id"], "slot_id": item["slot_id"]}
+        kind = item["kind"]
+        if kind == "NARRATIVE":
             blocks.append({**base, "kind": "NARRATIVE", "text": narrative_text, "content_mode": "ANALYST_JUDGMENT", "citations": []})
         elif kind == "EVIDENCE_REGISTER":
             blocks.append({**base, "kind": "EVIDENCE_REGISTER", "citations": [
@@ -102,7 +100,7 @@ def required_blocks(template, source, *, narrative_text="Leverage is manageable.
         elif kind == "LIMITATIONS":
             blocks.append({**base, "kind": "LIMITATIONS", "text": "Scope-limited review.", "citations": []})
         else:
-            raise AssertionError(f"required slots must be non-model kinds, got {kind}")
+            raise AssertionError(f"required blocks must be non-model kinds, got {kind}")
     return blocks
 
 
@@ -136,7 +134,7 @@ def file_request(frozen, **overrides):
 
 def optional_slot(template, kind, n=1):
     policy = next(p for p in template["optional_blocks"] if p["kind"] == kind)
-    return f"{policy['slot_stem']}-{n}"
+    return f"{policy['slot_stem']}.{n:02d}"
 
 
 def optional_block(template, kind, n=1, **fields):
@@ -239,17 +237,19 @@ def test_template_registry_serves_six_pathways_with_stable_identity_and_evidence
     assert set(templates) == set(SIX_PATHWAYS)
     assert service.templates() == templates, "registry identity is stable across reads"
     for pathway, template in templates.items():
-        assert template["template_id"] and template["template_version"], pathway
-        slot_ids = [s["slot_id"] for s in template["slots"]]
-        assert len(slot_ids) == len(set(slot_ids)), f"{pathway}: slot ids must be unique"
-        assert [s for s in template["slots"] if s["kind"] == "EVIDENCE_REGISTER"], f"{pathway}: mandatory evidence register"
+        assert template["template_id"] and template["template_version"] and template["title"], pathway
+        assert template["model_requirement"] in {"REQUIRED", "OPTIONAL"}, pathway
+        block_ids = [b["block_id"] for b in template["blocks"]]
+        assert len(block_ids) == len(set(block_ids)), f"{pathway}: block ids must be unique"
+        assert all(b["title"] and b["required"] for b in template["blocks"]), f"{pathway}: required blocks are titled"
+        assert [b for b in template["blocks"] if b["kind"] == "EVIDENCE_REGISTER"], f"{pathway}: mandatory evidence register"
 
 
 def test_template_owns_optional_block_kind_stem_cap_order_and_model_dependence(service):
     template = service.templates()["RELATIVE_VALUE"]
     policy = template["optional_blocks"]
     for entry in policy:
-        assert {"kind", "slot_stem", "max", "order", "model_dependent"} <= set(entry)
+        assert {"kind", "slot_stem", "max_items", "order", "model_dependent"} <= set(entry)
     by_kind = {entry["kind"]: entry for entry in policy}
     for kind in ("GENERATED_METRIC", "GENERATED_TABLE", "GENERATED_CHART", "SCENARIO_EXHIBIT", "MODEL_APPENDIX"):
         assert by_kind[kind]["model_dependent"] is True, kind
@@ -324,14 +324,15 @@ def test_http_stale_draft_put_returns_409_with_current_revision_and_by_id_read_r
     body = draft_request(template, source).model_dump(mode="json")
     first = client.put(url, json=body, headers=ANALYST_H)
     assert first.status_code in (200, 201)
-    saved = first.json()
+    saved = first.json()["current"]
+    assert saved["version"] == 1 and first.json()["history"], "the PUT returns the full workspace envelope"
     stale = client.put(url, json=body, headers=ANALYST_H)  # expected_version still 0
     assert stale.status_code == 409
     detail = stale.json()["detail"]
     assert detail["code"], "409 shape carries a typed code"
     assert detail["current"]["version"] == 1, "conflict embeds the full current revision for rebase"
-    assert detail["current"]["revision_id"] == saved["revision_id"]
-    by_id = client.get(f"/api/cases/{case['id']}/deliverables/revisions/{saved['revision_id']}", headers=ANALYST_H)
+    assert detail["current"]["id"] == saved["id"]
+    by_id = client.get(f"/api/cases/{case['id']}/deliverables/revisions/{saved['id']}", headers=ANALYST_H)
     assert by_id.status_code == 200
     assert by_id.json()["content"] == saved["content"], "any revision stays fetchable by stable id"
 
@@ -601,6 +602,76 @@ def test_scenario_digest_must_equal_server_computed_digest(service, store):
         )
 
 
+def test_live_model_builder_authority_feeds_eligibility_selection_scenario_and_freeze(settings, store, engine, tmp_path):
+    """Model Builder is the system of record when nothing is seeded: eligibility,
+    the ANALYST_REVISION selection, scenario revalidation through the real
+    calculator, generated blocks, and the frozen model embedding all resolve live."""
+    import asyncio
+
+    from caos.contracts import ModelPreviewRequest, ModelScenarioRequest, ModelSignOffRequest
+    from caos.deliverables.service import DeliverableService
+    from caos.models.service import ModelService
+
+    models = ModelService(store=store, vault_dir=settings.storage_dir, engine=engine)
+    service = DeliverableService(store=store, vault_dir=tmp_path / "deliverable-vault", models=models)
+    case, source = seed_case_with_source(store)
+
+    async def accept_scripted():
+        run = await engine.run_scripted_for_tests(case["id"])
+        await engine.accept(run["id"], actor="analyst")
+
+    asyncio.run(accept_scripted())
+    build = models.run_build_for_tests(models.queue_build(case["id"], "analyst")["id"])
+    registry = models.assumption_registry(case["id"], build["id"])
+    preview = models.preview(case["id"], ModelPreviewRequest.model_validate({
+        "build_id": build["id"], "parent_revision_id": None, "registry_version": registry["version"],
+        "registry_digest": registry["digest"], "assumptions": registry["defaults"], "draft_generation": 1,
+    }))
+    signed = models.sign_off(case["id"], ModelSignOffRequest.model_validate({
+        "build_id": build["id"], "parent_revision_id": None, "registry_version": registry["version"],
+        "registry_digest": registry["digest"], "assumptions": registry["defaults"], "draft_generation": 1,
+        "preview_digest": preview["preview_digest"], "expected_head_revision_id": None,
+        "note": "Live authority spec sign-off.",
+    }), actor="approver-user")
+
+    eligibility = service.model_eligibility(case["id"])
+    assert eligibility["active_revision"]["revision_id"] == signed["id"]
+    assert eligibility["application_build"]["build_id"] == build["id"]
+    assert eligibility["fallback_acknowledgement_required"] is False
+    selection = eligibility["default_model_selection"]
+    assert selection == {"kind": "ANALYST_REVISION", "build_id": build["id"], "revision_id": signed["id"]}
+
+    shock_row = next(row for row in registry["defaults"] if row["status"] == "READY" and row["case"] == "BASE")
+    shocks = [{"assumption_id": shock_row["assumption_id"], "case": shock_row["case"],
+               "period_id": shock_row["period_id"], "value": 0.07}]
+    calculated = models.scenario(case["id"], ModelScenarioRequest.model_validate({
+        "build_id": build["id"], "base_revision_id": signed["id"], "registry_version": registry["version"],
+        "registry_digest": registry["digest"], "shocks": shocks, "draft_generation": 1,
+    }))
+    template = service.templates()["FULL_CREDIT"]
+    scenario_slot = optional_slot(template, "SCENARIO_EXHIBIT")
+    revision = service.save_draft(case["id"], "FULL_CREDIT", draft_request(
+        template, source, model_selection=selection,
+        extra_blocks=[
+            optional_block(template, "GENERATED_METRIC", metric_ids=["total_leverage"]),
+            {"block_id": scenario_slot, "slot_id": scenario_slot, "kind": "SCENARIO_EXHIBIT",
+             "title": "Downside revenue shock", "shocks": shocks,
+             "scenario": calculated["scenario"], "scenario_digest": calculated["scenario_digest"]},
+        ],
+    ), actor="analyst")
+
+    content = service.workspace(case["id"], "FULL_CREDIT")["draft"]["content"]
+    assert content["model_selection"] == selection
+    metric_slot = optional_slot(template, "GENERATED_METRIC")
+    assert content["generated_blocks"][f"blk-{metric_slot}"]["status"] == "READY"
+    assert content["generated_blocks"][scenario_slot]["outputs"] == calculated["scenario"]["outputs"]
+
+    frozen = service.freeze(case["id"], freeze_request(revision), actor="analyst")
+    assert frozen["payload"]["model"]["outputs"] == signed["outputs"], "live revision outputs embedded verbatim"
+    assert frozen["payload"]["authority"]["build_id"] == build["id"]
+    assert frozen["payload"]["template"]["title"] == "Investment Committee Credit Memo"
+
+
 # --- reader authorization ---------------------------------------------------------
 
 
@@ -622,14 +693,15 @@ def test_case_reader_reads_workspace_but_cannot_write_draft(client, settings, st
 def test_each_pathway_frozen_payload_renders_substantive_md_pdf_xlsx(service, store, pathway):
     case, source, revision, frozen = freeze_min(service, store, pathway)
 
+    first_section = service.templates()[pathway]["blocks"][0]["title"]
     md, md_sha = service.export(frozen["deliverable_id"], "md")
     assert hashlib.sha256(md).hexdigest() == md_sha
     text = md.decode("utf-8")
-    assert "Credit Opinion" in text and "Leverage is manageable." in text
+    assert first_section in text and "Leverage is manageable." in text
 
     pdf, _ = service.export(frozen["deliverable_id"], "pdf")
     assert pdf[:5] == b"%PDF-", "structurally a PDF"
-    assert "Credit Opinion" in service.export_text_for_tests(frozen["deliverable_id"], "pdf")
+    assert first_section in service.export_text_for_tests(frozen["deliverable_id"], "pdf")
 
     xlsx, _ = service.export(frozen["deliverable_id"], "xlsx")
     from openpyxl import load_workbook
@@ -650,9 +722,9 @@ def test_freeze_embeds_selected_revision_outputs_assumptions_and_build_payload_v
     frozen = service.freeze(case["id"], freeze_request(revision), actor="analyst")
     pinned = frozen["payload"]["model"]
     assert pinned["outputs"] == model["outputs"], "signed revision outputs embedded verbatim"
-    assert pinned["assumptions"] == model["assumptions"], "effective assumptions embedded verbatim"
-    assert pinned["build"]["payload"] == model["build_payload"], "application-build payload embedded verbatim"
-    assert pinned["build"]["qa"] == model["build_qa"], "build QA embedded verbatim"
+    assert pinned["effective_assumptions"] == model["assumptions"], "effective assumptions embedded verbatim"
+    assert pinned["application_build"]["payload"] == model["build_payload"], "application-build payload embedded verbatim"
+    assert pinned["application_build"]["qa"] == model["build_qa"], "build QA embedded verbatim"
     assert "4.2" in service.export_text_for_tests(frozen["deliverable_id"], "md"), "exports show the exact pinned figures"
 
 
@@ -883,7 +955,9 @@ def test_http_request_changes_requires_approver_and_nonblank_comment_and_appends
     assert client.post(url, json=good, headers=ANALYST_H).status_code == 403, "request-changes is approver-only"
     resp = client.post(url, json=good, headers=APPROVER_H)
     assert resp.status_code == 200
-    assert resp.json()["status"] == "CHANGES_REQUESTED"
+    assert resp.json()["frozen"]["status"] == "CHANGES_REQUESTED"
+    assert resp.json()["frozen"]["change_request"]["comment"] == good["comment"]
+    assert resp.json()["draft"]["version"] == revision["version"] + 1
     draft = svc.workspace(case["id"], "FULL_CREDIT")["draft"]
     assert draft["version"] == revision["version"] + 1, "a traceable replacement draft is appended"
     assert "Tighten the covenant discussion." in str(draft["content"]), "the replacement draft carries the comment"

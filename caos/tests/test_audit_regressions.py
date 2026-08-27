@@ -50,12 +50,13 @@ def _draft(service, store, case, source):
         template_version=template["template_version"],
         model_selection=None,
         blocks=[
-            {"block_id": "b1", "slot_id": "headline", "kind": "HEADING", "text": "Credit Opinion"},
-            {"block_id": "b2", "slot_id": "thesis", "kind": "NARRATIVE", "text": "View.",
-             "content_mode": "ANALYST_JUDGMENT", "citations": []},
-            {"block_id": "b3", "slot_id": "evidence", "kind": "EVIDENCE_REGISTER", "citations": [
+            {"block_id": item["block_id"], "slot_id": item["slot_id"], "kind": "NARRATIVE", "text": "View.",
+             "content_mode": "ANALYST_JUDGMENT", "citations": []}
+            if item["kind"] == "NARRATIVE" else
+            {"block_id": item["block_id"], "slot_id": item["slot_id"], "kind": "EVIDENCE_REGISTER", "citations": [
                 {"source_id": source["id"], "block_ids": ["b00001"], "claim": "Supported."},
-            ]},
+            ]}
+            for item in template["blocks"]
         ],
     ), actor="analyst")
 
