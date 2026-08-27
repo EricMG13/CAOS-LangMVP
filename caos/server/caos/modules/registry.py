@@ -42,6 +42,7 @@ GOLDEN_AUTHORITY_DIGESTS = {
     "CP-2": "5fb286e7d673de8f621df805948409062da8dd469930bc8df83a92044e440e41",
     "CP-2A": "842663c8c017297102b9abd8569e782103f982d8b62cfafe52a2e9f8c3b390ef",
     "CP-2G": "86d9b25b264c1f1f94690fa61bdd9944acd0201264f287aa41049225bb84931c",
+    "CP-5": "96521991f728f5bd1ced1b8441e23496b22f55eb6b77da42e4d8c884a1d5cee2",
 }
 
 
@@ -100,7 +101,11 @@ MODULES: dict[str, ModuleSpec] = {
     "CP-3": ModuleSpec("CP-3", "deterministic", skill_slug="cp-3-relative-value-security-selection"),
     "CP-4": ModuleSpec("CP-4", "deterministic", skill_slug="cp-4-legal-covenant-interpreter"),
     "CP-4C": ModuleSpec("CP-4C", "deterministic", skill_slug="cp-4c-restructuring-fulcrum"),
-    "CP-5": ModuleSpec("CP-5", "deterministic", skill_slug="cp-5-evidence-trace-validator"),
+    "CP-5": ModuleSpec(
+        "CP-5", "agent", skill_slug="cp-5-evidence-trace-validator",
+        reference_files=("references/CP-5_RUNBOOK.md", "references/CP-5_SCHEMA_REFERENCE.md", "references/REF_CP-5_STEPS.md"),
+        max_output_tokens=24_000,  # §10.11: it consumes every upstream artifact; 16k plausibly truncates
+    ),
     "CP-6": ModuleSpec("CP-6", "deterministic", skill_slug="cp-6-ic-debate-challenge"),
     "CP-L10": ModuleSpec("CP-L10", "deterministic", skill_slug="cp-l10-financial-change-screen"),
 }

@@ -130,3 +130,10 @@ async def test_cp1d_agent_wiring_is_registry_only(tmp_path):
     """CP-1D EarningsQuality executes as an agent on FULL_CREDIT full depth."""
     artifacts, provider = await _run_pathway(tmp_path, "FULL_CREDIT")
     _assert_agent_executed(artifacts, provider, "CP-1D")
+
+
+async def test_cp5_agent_wiring_is_registry_only(tmp_path):
+    """CP-5 EvidenceTraceValidator executes as an agent on COVENANT_REFINANCING
+    full depth — the QA terminal the pathway gains from this wiring."""
+    artifacts, provider = await _run_pathway(tmp_path, "COVENANT_REFINANCING")
+    _assert_agent_executed(artifacts, provider, "CP-5")
