@@ -87,6 +87,14 @@ class Engine:
         self._agent_locks: dict[str, asyncio.Lock] = {}
         self._thread_locks: dict[str, asyncio.Lock] = {}
         self._slots = ProviderSlots(PROVIDER_CONCURRENCY_SLOTS)
+        self._model_service: Any = None
+        self._scripted_runs: set[str] = set()
+
+    def register_model_service(self, service: Any) -> None:
+        """The Model Builder shares this engine's admission budget and receives
+        the accept-time auto-queue hook. Registration is the seam — the engine
+        never imports the model service."""
+        self._model_service = service
 
     @classmethod
     def create(cls, *, settings: Settings, store: DomainStore, checkpoint_path: Path, provider: Any = None) -> "Engine":
@@ -99,7 +107,11 @@ class Engine:
             import aiosqlite
             from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 
-            conn = await aiosqlite.connect(str(self.checkpoint_path))
+            connector = aiosqlite.connect(str(self.checkpoint_path))
+            # The worker thread must not block interpreter shutdown (tests and
+            # scripts would otherwise hang at exit joining it).
+            connector.daemon = True
+            conn = await connector
             self._saver = AsyncSqliteSaver(conn)
             await self._saver.setup()
         return self._saver
@@ -277,7 +289,9 @@ class Engine:
             self.runs.node_running(run_id, module_id)
             spec = MODULES[module_id]
             mode = spec.mode_full if plan["depth"] == "full" else spec.mode_screen
-            if mode == "agent" and self.settings.agent_execution_enabled:
+            if run_id in self._scripted_runs:
+                payload, markdown, qa_status = self._scripted_output(run_id, plan, module_id, fingerprint, upstream)
+            elif mode == "agent" and self.settings.agent_execution_enabled:
                 result = await self._execute_agent(run_id, plan, module_id, source_set, fingerprint, upstream)
                 payload, markdown, qa_status = result["payload"], result["markdown"], result["qa_status"]
             else:
@@ -510,7 +524,8 @@ class Engine:
         depth = Depth(depth).value
         if self.store.get_case(case_id) is None:
             raise EngineError("CASE_NOT_FOUND", case_id)
-        if self.runs.active_admission_count() + self._admission_offset >= MAX_ACTIVE_JOBS:
+        model_jobs = self._model_service.active_job_count() if self._model_service is not None else 0
+        if self.runs.active_admission_count() + self._admission_offset + model_jobs >= MAX_ACTIVE_JOBS:
             raise EngineError("ADMISSION_BUSY", "active job ceiling reached")
         for question in focus_questions or []:
             state_mod.validate_boundary_text(question)
@@ -643,8 +658,16 @@ class Engine:
         snapshot["id"] = new_id("snap")
         snapshot["digest"] = digest(preimage)
         self.runs.create_snapshot(snapshot)
-        self.store.update_case(run["case_id"], accepted_snapshot_id=snapshot["id"], visible_snapshot_id=snapshot["id"])
+        # Only an explicit switch moves the visible snapshot; acceptance
+        # advances the accepted pointer alone and divergence surfaces as
+        # switch_required (misc spec, snapshot lens contract).
+        self.store.update_case(run["case_id"], accepted_snapshot_id=snapshot["id"])
         self.store.audit_event("snapshot.accepted", actor, case_id=run["case_id"], snapshot_id=snapshot["id"], run_id=run_id)
+        if self._model_service is not None:
+            # Acceptance is durable first; a queue/dispatch failure never rolls
+            # it back (§10.6 hook — accepted FULL_CREDIT auto-queues a build).
+            with contextlib.suppress(Exception):
+                self._model_service.on_accepted(self.runs.get_run(run_id), actor)
         return self._snapshot_view(snapshot)
 
     def _snapshot_view(self, snapshot: dict[str, Any]) -> dict[str, Any]:
@@ -677,6 +700,53 @@ class Engine:
         }
 
     # -- test hooks --------------------------------------------------------
+
+    _SCRIPTED_FIXTURES = {
+        "CP-1": "cp1.md", "CP-1A": "cp1a.md", "CP-1B": "cp1b.md",
+        "CP-2": "cp2.md", "CP-2A": "cp2a.md", "CP-2G": "cp2g.md",
+    }
+
+    def _scripted_output(self, run_id: str, plan: dict[str, Any], module_id: str,
+                         fingerprint: str, upstream: list[dict[str, Any]]) -> tuple[dict[str, Any], str | None, str]:
+        """Scripted canonical outputs (spec hook): the six canonical modules
+        emit the golden CP-MODEL fixtures re-identified to this run; every
+        other route module runs its deterministic host payload."""
+        import hashlib
+
+        fixture = self._SCRIPTED_FIXTURES.get(module_id)
+        if fixture is None:
+            payload = build_deterministic_payload(module_id, plan, input_fingerprint=fingerprint,
+                                                  upstream_digests=[a["digest"] for a in upstream])
+            return payload, None, "Passed"
+        fixtures_dir = Path(__file__).resolve().parents[3] / "tests" / "fixtures" / "cp_model"
+        markdown = (fixtures_dir / fixture).read_text(encoding="utf-8").replace(
+            '"run-cp-model-fixture"', json.dumps(run_id),
+        )
+        payload = {
+            "schema_version": "caos.canonical.artifact.v1",
+            "module_id": module_id,
+            "canonical_output": {
+                "markdown": markdown,
+                "markdown_sha256": hashlib.sha256(markdown.encode("utf-8")).hexdigest(),
+            },
+            "methodology": {"build_id": plan["build_id"]},
+            "host_identity": {"run_id": run_id, "module_id": module_id},
+            "evidence_refs": [],
+            "lineage": {"input_fingerprint": fingerprint, "upstream_digests": [a["digest"] for a in upstream]},
+        }
+        return payload, markdown, "Passed"
+
+    async def run_scripted_for_tests(self, case_id: str, pathway: str = "FULL_CREDIT") -> dict[str, Any]:
+        run = await self.start_run(case_id=case_id, pathway=pathway, depth="full", actor="analyst")
+        self._scripted_runs.add(run["id"])
+        try:
+            await self.wait(run["id"])
+        finally:
+            self._scripted_runs.discard(run["id"])
+        record = self.get_run(run["id"])
+        if record["status"] != "succeeded":
+            raise EngineError((record.get("error") or {}).get("code", "RUN_NOT_READY"), "scripted run failed")
+        return record
 
     def store_for_tests_delete_source_set(self, source_set_id: str) -> None:
         with self.store.engine.begin() as conn:

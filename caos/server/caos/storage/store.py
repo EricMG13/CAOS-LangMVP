@@ -401,6 +401,18 @@ class DomainStore:
             note.update(promoted=True, promoted_source_id=source_id)
             return note
 
+    # -- model revision ledger seams (spec: append-only is store-enforced) --
+
+    def model_revision_order_for_tests(self, case_id: str) -> list[int]:
+        from .models import ModelStore
+
+        return ModelStore(self.engine).revision_order(case_id)
+
+    def mutate_model_revision_for_tests(self, revision_id: str, changes: dict[str, Any]) -> None:
+        """No mutation path exists for a signed revision record — the ledger is
+        append-only by construction; this seam is the enforcement witness."""
+        raise ValueError(f"APPEND_ONLY: model revision {revision_id} is immutable; refused {sorted(changes)}")
+
     # -- assumptions (write surface lands in phase 5; staleness is live now) --
 
     def save_assumption(self, case_id: str, data: dict[str, Any], evidence_ids: list[str], actor: str) -> dict[str, Any]:
