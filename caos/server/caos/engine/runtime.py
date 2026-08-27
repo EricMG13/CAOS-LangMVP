@@ -299,9 +299,12 @@ class Engine:
             self.runs.node_running(run_id, module_id)
             spec = MODULES[module_id]
             mode = spec.mode_full if plan["depth"] == "full" else spec.mode_screen
-            if run_id in self._scripted_runs:
+            if run_id in self._scripted_runs and module_id in self._SCRIPTED_FIXTURES:
+                # Canonical modules take the golden fixtures; every other node
+                # (CP-3's universe binding included) runs its real
+                # deterministic path.
                 payload, markdown, qa_status = self._scripted_output(run_id, plan, module_id, fingerprint, upstream)
-            elif mode == "agent" and self.settings.agent_execution_enabled:
+            elif mode == "agent" and self.settings.agent_execution_enabled and run_id not in self._scripted_runs:
                 result = await self._execute_agent(run_id, plan, module_id, source_set, fingerprint, upstream)
                 payload, markdown, qa_status = result["payload"], result["markdown"], result["qa_status"]
             else:
@@ -725,15 +728,10 @@ class Engine:
     def _scripted_output(self, run_id: str, plan: dict[str, Any], module_id: str,
                          fingerprint: str, upstream: list[dict[str, Any]]) -> tuple[dict[str, Any], str | None, str]:
         """Scripted canonical outputs (spec hook): the six canonical modules
-        emit the golden CP-MODEL fixtures re-identified to this run; every
-        other route module runs its deterministic host payload."""
+        emit the golden CP-MODEL fixtures re-identified to this run."""
         import hashlib
 
-        fixture = self._SCRIPTED_FIXTURES.get(module_id)
-        if fixture is None:
-            payload = build_deterministic_payload(module_id, plan, input_fingerprint=fingerprint,
-                                                  upstream_digests=[a["digest"] for a in upstream])
-            return payload, None, "Passed"
+        fixture = self._SCRIPTED_FIXTURES[module_id]
         fixtures_dir = Path(__file__).resolve().parents[3] / "tests" / "fixtures" / "cp_model"
         markdown = (fixtures_dir / fixture).read_text(encoding="utf-8").replace(
             '"run-cp-model-fixture"', json.dumps(run_id),

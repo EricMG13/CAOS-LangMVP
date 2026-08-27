@@ -232,3 +232,11 @@ Consolidation note: where §6 conflicts with §10/§11/§12 (output Σ vs Σ+max
 7. **§7's three isolated registry-only wiring commits are performed**
    (a0ff900, 9a50c5b, fa72153, ddb014b) — see MODULE_GRANULARITY.md's dated
    amendment for the receipts.
+
+8. **(2026-08-27, user-approved spec amendment)** The CP-3 loan-universe
+   binding test now targets the RELATIVE_VALUE FULL route via the
+   scripted-canonical run seam — resolving §13.6's first contradiction the
+   right way round (the LITE selection stays untouched). Scripted runs now
+   take fixtures only for the six canonical modules; every other node runs its
+   real deterministic path, so the CP-3 binding is exercised by the same code
+   production uses. Red count drops to 13 (12 environment + the CP-2G row).

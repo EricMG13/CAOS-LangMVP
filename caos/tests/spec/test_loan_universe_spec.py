@@ -451,13 +451,16 @@ def test_withdrawal_injected_inside_the_import_window_never_yields_an_active_uni
 
 
 async def test_cp3_artifact_binds_the_pinned_normalized_loan_universe(client, store, engine):
+    # Amended 2026-08-27 with user sign-off: CP-3 rides only full-depth routes
+    # (the verified catalog LITE_RELATIVE_VALUE selection is CP-0/CP-L10/CP-1C,
+    # and adding a node is a methodology change), so this binds on the
+    # RELATIVE_VALUE full route via the scripted-canonical run seam.
     case_id = _create_case(client)
     source = _upload_workbook(client, case_id, _workbook_bytes())
     universe = _import(client, case_id, source["id"]).json()
     active_rows = _active(client, case_id).json()["rows"]
-    run = await engine.start_run(case_id=case_id, pathway="RELATIVE_VALUE", depth="screen", actor="analyst")
-    await engine.wait(run["id"])
-    assert engine.get_run(run["id"])["status"] == "succeeded"
+    run = await engine.run_scripted_for_tests(case_id, pathway="RELATIVE_VALUE")
+    assert run["status"] == "succeeded"
     cp3 = next(artifact for artifact in engine.artifacts_for_run(run["id"]) if artifact["module_id"] == "CP-3")
     identity = cp3["payload"]["lineage"]["loan_universe"]
     assert identity == {
