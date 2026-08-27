@@ -75,8 +75,8 @@ class Engine:
         self.checkpoint_path = Path(checkpoint_path)
         self.runs = RunStore(store.engine)
         self.bundle = DeployVBundle(settings.deploy_v_root)
-        self._saver = None
-        self._graphs: dict[tuple[str, str], Any] = {}
+        self._savers: dict[int, Any] = {}
+        self._graphs: dict[tuple[int, str, str], Any] = {}
         self._clock = time.monotonic
         self._active_invocations = 0
         self._admission_offset = 0
@@ -84,8 +84,8 @@ class Engine:
         self._build_override: str | None = None
         self._crash_gap: dict[str, str] = {}
         self._crash_before_create: set[str] = set()
-        self._agent_locks: dict[str, asyncio.Lock] = {}
-        self._thread_locks: dict[str, asyncio.Lock] = {}
+        self._agent_locks: dict[tuple[int, str], asyncio.Lock] = {}
+        self._thread_locks: dict[tuple[int, str], asyncio.Lock] = {}
         self._slots = ProviderSlots(PROVIDER_CONCURRENCY_SLOTS)
         self._model_service: Any = None
         self._scripted_runs: set[str] = set()
@@ -102,8 +102,17 @@ class Engine:
 
     # -- infrastructure ----------------------------------------------------
 
+    def _loop_key(self) -> int:
+        # Savers, compiled graphs, and asyncio locks are event-loop-bound.
+        # Production runs one loop; a second key only appears at the test-client
+        # boundary, where the HTTP portal loop and the test loop never drive the
+        # same thread concurrently.
+        return id(asyncio.get_running_loop())
+
     async def _ensure_saver(self):
-        if self._saver is None:
+        key = self._loop_key()
+        saver = self._savers.get(key)
+        if saver is None:
             import aiosqlite
             from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 
@@ -112,9 +121,10 @@ class Engine:
             # scripts would otherwise hang at exit joining it).
             connector.daemon = True
             conn = await connector
-            self._saver = AsyncSqliteSaver(conn)
-            await self._saver.setup()
-        return self._saver
+            saver = AsyncSqliteSaver(conn)
+            await saver.setup()
+            self._savers[key] = saver
+        return saver
 
     def _sync_saver(self):
         from langgraph.checkpoint.sqlite import SqliteSaver
@@ -129,7 +139,7 @@ class Engine:
         return self._build_override or self.bundle.build_id
 
     async def _graph(self, pathway: str, depth: str):
-        key = (pathway, depth)
+        key = (self._loop_key(), pathway, depth)
         if key not in self._graphs:
             from langgraph.graph import END, START, StateGraph
 
@@ -181,7 +191,7 @@ class Engine:
         graph = await self._graph(run["pathway"], run["depth"])
         # §10.3: single writer per thread, enforced on every drive entry point
         # (start, resume, wait, recovery, test hooks) — never assumed.
-        async with self._thread_locks.setdefault(run_id, asyncio.Lock()):
+        async with self._thread_locks.setdefault((self._loop_key(), run_id), asyncio.Lock()):
             if self.runs.get_run(run_id)["status"] in {"succeeded", "failed"}:
                 return None
             self._active_invocations += 1
@@ -338,7 +348,7 @@ class Engine:
 
         if self.provider is None:
             raise AgentError("AGENT_PROVIDER_UNAVAILABLE", "no provider is configured")
-        lock = self._agent_locks.setdefault(run_id, asyncio.Lock())
+        lock = self._agent_locks.setdefault((self._loop_key(), run_id), asyncio.Lock())
         async with lock:  # §10.2: agent execution serialises per run
             run = self.runs.get_run(run_id)
             agent_modules = [

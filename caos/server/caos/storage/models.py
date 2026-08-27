@@ -42,7 +42,9 @@ model_builds = sa.Table(
     sa.Column("error", sa.JSON),
     sa.Column("export", sa.JSON),
     sa.Column("queued_at", sa.String, nullable=False),
+    sa.Column("started_at", sa.String),
     sa.Column("completed_at", sa.String),
+    sa.Column("worksheet_schema_version", sa.String),
     sa.Column("created_by", sa.String, nullable=False),
     sa.UniqueConstraint("case_id", "input_fingerprint", name="uq_model_builds_case_fingerprint"),
 )
@@ -74,7 +76,7 @@ PUBLIC_BUILD_KEYS = (
     "input_fingerprint", "methodology_build_id", "calculation_runtime",
     "registry_version", "registry_digest", "assumptions_digest", "outputs_digest",
     "payload", "payload_digest", "qa", "error", "export", "queued_at",
-    "completed_at", "created_by",
+    "started_at", "completed_at", "worksheet_schema_version", "created_by",
 )
 
 
@@ -111,7 +113,7 @@ class ModelStore:
             **{key: build.get(key) for key in (
                 "case_id", "accepted_run_id", "snapshot_id", "source_set_id",
                 "input_fingerprint", "methodology_build_id", "calculation_runtime",
-                "registry_version", "registry_digest",
+                "registry_version", "registry_digest", "worksheet_schema_version",
             )},
         }
         try:

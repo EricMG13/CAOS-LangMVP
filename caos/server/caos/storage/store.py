@@ -552,6 +552,38 @@ class DomainStore:
             ).mappings().first()
         return dict(row) if row else None
 
+    # -- model build seams (http-contract surface) --------------------------
+
+    def queue_model_build(self, spec: dict[str, Any], actor: str) -> tuple[dict[str, Any], bool]:
+        from .models import ModelStore
+
+        record, created = ModelStore(self.engine).queue_build({
+            "case_id": spec["case_id"],
+            "accepted_run_id": spec.get("accepted_run_id"),
+            "snapshot_id": spec.get("accepted_snapshot_id"),
+            "source_set_id": spec.get("source_set_id"),
+            "input_fingerprint": spec["input_fingerprint"],
+            "calculation_runtime": spec.get("calculation_runtime"),
+            "worksheet_schema_version": spec.get("worksheet_schema_version"),
+        }, actor)
+        return record, created
+
+    def fail_model_build_for_tests(self, build_id: str, error: dict[str, Any]) -> None:
+        from .models import ModelStore
+
+        ModelStore(self.engine).update_build(build_id, status="FAILED", error=error)
+
+    def complete_model_build_for_tests(self, build_id: str, result: dict[str, Any]) -> None:
+        from .models import ModelStore
+
+        ModelStore(self.engine).update_build(
+            build_id, status="READY", payload=result["payload"],
+            payload_digest=result["payload_digest"], qa=result["qa"], completed_at=now_iso(),
+        )
+
+    def list_audit(self, limit: int = 500) -> list[dict[str, Any]]:
+        return self.audit_trail(limit)
+
     # -- model revision ledger seams (spec: append-only is store-enforced) --
 
     def model_revision_order_for_tests(self, case_id: str) -> list[int]:
