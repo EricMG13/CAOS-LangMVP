@@ -38,8 +38,36 @@ def build_deterministic_payload(
     *,
     input_fingerprint: str = "unavailable",
     upstream_digests: list[str] | None = None,
+    loan_universe: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     summary = _SUMMARIES.get(module_id, f"{module_id} deterministic host analysis.")
+    if loan_universe is not None:
+        # CP-3 binds the pinned normalized loan universe: the identity triple
+        # rides lineage AND provenance; the artifact consumes exactly the
+        # pinned rows.
+        identity = {
+            "id": loan_universe["id"],
+            "universe_digest": loan_universe["universe_digest"],
+            "source_id": loan_universe["source_id"],
+        }
+        return {
+            **build_deterministic_payload(
+                module_id, plan_context,
+                input_fingerprint=input_fingerprint, upstream_digests=upstream_digests,
+            ),
+            "lineage": {
+                "input_fingerprint": input_fingerprint,
+                "upstream_digests": list(upstream_digests or []),
+                "loan_universe": identity,
+            },
+            "provenance": {
+                "executor": "caos.engine.deterministic",
+                "profile_id": plan_context.get("profile_id"),
+                "selection_id": plan_context.get("selection_id"),
+                "loan_universe": identity,
+            },
+            "inputs": {"loan_universe": {"identity": identity, "rows": loan_universe["rows"]}},
+        }
     return {
         "module_id": module_id,
         "schema_version": "caos.system_analysis.v1",

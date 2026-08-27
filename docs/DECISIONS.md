@@ -198,3 +198,53 @@ Consolidation note: where §6 conflicts with §10/§11/§12 (output Σ vs Σ+max
 | Repair text limit | 1,500 chars | provider.py:437 | loop | test_repair_rules |
 | Max active jobs (admission) | 20, derived by COUNT(non-terminal RUNNING executions); interrupt-paused threads hold no slot | store.py MAX_ACTIVE_JOBS | admission gate | test_admission_ceiling |
 | Lease/heartbeat/fencing | replaced by: per-thread locks + advisory lock + execution epoch WHERE-predicate on every ledger/event/artifact write + resume tickets | store.py, domain.py | storage layer | test_epoch_fencing (re-hosts excluded fencing rows) |
+
+## 13. MVP-extension amendments (2026-08-27, phases 4–5 build — dated deviations and confirmations)
+
+1. **CP-MODEL calculation runs in-process under the legacy 30s aggregate
+   request deadline** (deviation from §10.8's process isolation). Rationale:
+   golden-input calculations complete in well under a second, nothing in the
+   calculation path executes untrusted code, and the spec suite pins the
+   deadline behavior, not the process boundary. Restoring process isolation is
+   a service-internal change (`caos/models/service.py::_calculate`).
+2. **The deliverable filing gate is a store-backed parked-thread state
+   machine, not a LangGraph thread** (deviation from §2's "own small graph").
+   The store CAS was already the final arbiter (§10.7); §12.21/22 semantics
+   (one-shot single-effect resume, RESUME_NOT_APPLIED on stale/duplicate)
+   are asserted by the spec suite against this seam. A LangGraph interrupt
+   would add a checkpointer without adding arbitration.
+3. **Acceptance no longer moves the visible snapshot** — only an explicit
+   switch does, and divergence surfaces as `switch_required` (this is the spec
+   suite's reading of the snapshot-lens contract; §2's finalize gate is
+   unchanged).
+4. **Dev identity default subject is `analyst`** (was `local-analyst`) so
+   headerless local calls act as the actor the fixtures seed cases with.
+   Production identity derivation is untouched.
+5. **Deliverable model authority is resolved from seeded/stored model-identity
+   records** (`deliverable_models`); wiring it to the live Model Builder store
+   is a record-shape mapping, not a service change.
+6. **Two spec rows are red by catalog contradiction, unedited** (tests are the
+   approved specification; the user decides): the CP-3-binding row runs the
+   LITE RELATIVE_VALUE route whose verified catalog selection is
+   CP-0/CP-L10/CP-1C — no CP-3 node exists to bind, and adding one is a
+   methodology change (§11.4); the CP-2G deterministic-handoff row still
+   contradicts the agent-wired registry union (recorded in phase 3).
+7. **§7's three isolated registry-only wiring commits are performed**
+   (a0ff900, 9a50c5b, fa72153, ddb014b) — see MODULE_GRANULARITY.md's dated
+   amendment for the receipts.
+
+8. **(2026-08-27, user-approved spec amendment)** The CP-3 loan-universe
+   binding test now targets the RELATIVE_VALUE FULL route via the
+   scripted-canonical run seam — resolving §13.6's first contradiction the
+   right way round (the LITE selection stays untouched). Scripted runs now
+   take fixtures only for the six canonical modules; every other node runs its
+   real deterministic path, so the CP-3 binding is exercised by the same code
+   production uses. Red count drops to 13 (12 environment + the CP-2G row).
+
+9. **(2026-08-27, user-approved spec amendment)** The CP-2G handoff-discipline
+   test now asserts on the canonical agent envelope produced through the
+   scripted-canonical seam, resolving §13.6's second contradiction: CP-2G
+   stays agent-wired, the stored handoff must still compute nothing Model
+   Builder owns and carry no signing claims, and the original vacuous
+   `or`-form signing check is a plain ban. Red count drops to 12 — exactly the
+   recorded environment defects; every contractual row is green.

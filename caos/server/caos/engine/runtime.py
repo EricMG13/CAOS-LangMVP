@@ -75,8 +75,8 @@ class Engine:
         self.checkpoint_path = Path(checkpoint_path)
         self.runs = RunStore(store.engine)
         self.bundle = DeployVBundle(settings.deploy_v_root)
-        self._saver = None
-        self._graphs: dict[tuple[str, str], Any] = {}
+        self._savers: dict[int, Any] = {}
+        self._graphs: dict[tuple[int, str, str], Any] = {}
         self._clock = time.monotonic
         self._active_invocations = 0
         self._admission_offset = 0
@@ -84,9 +84,17 @@ class Engine:
         self._build_override: str | None = None
         self._crash_gap: dict[str, str] = {}
         self._crash_before_create: set[str] = set()
-        self._agent_locks: dict[str, asyncio.Lock] = {}
-        self._thread_locks: dict[str, asyncio.Lock] = {}
+        self._agent_locks: dict[tuple[int, str], asyncio.Lock] = {}
+        self._thread_locks: dict[tuple[int, str], asyncio.Lock] = {}
         self._slots = ProviderSlots(PROVIDER_CONCURRENCY_SLOTS)
+        self._model_service: Any = None
+        self._scripted_runs: set[str] = set()
+
+    def register_model_service(self, service: Any) -> None:
+        """The Model Builder shares this engine's admission budget and receives
+        the accept-time auto-queue hook. Registration is the seam — the engine
+        never imports the model service."""
+        self._model_service = service
 
     @classmethod
     def create(cls, *, settings: Settings, store: DomainStore, checkpoint_path: Path, provider: Any = None) -> "Engine":
@@ -94,15 +102,29 @@ class Engine:
 
     # -- infrastructure ----------------------------------------------------
 
+    def _loop_key(self) -> int:
+        # Savers, compiled graphs, and asyncio locks are event-loop-bound.
+        # Production runs one loop; a second key only appears at the test-client
+        # boundary, where the HTTP portal loop and the test loop never drive the
+        # same thread concurrently.
+        return id(asyncio.get_running_loop())
+
     async def _ensure_saver(self):
-        if self._saver is None:
+        key = self._loop_key()
+        saver = self._savers.get(key)
+        if saver is None:
             import aiosqlite
             from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 
-            conn = await aiosqlite.connect(str(self.checkpoint_path))
-            self._saver = AsyncSqliteSaver(conn)
-            await self._saver.setup()
-        return self._saver
+            connector = aiosqlite.connect(str(self.checkpoint_path))
+            # The worker thread must not block interpreter shutdown (tests and
+            # scripts would otherwise hang at exit joining it).
+            connector.daemon = True
+            conn = await connector
+            saver = AsyncSqliteSaver(conn)
+            await saver.setup()
+            self._savers[key] = saver
+        return saver
 
     def _sync_saver(self):
         from langgraph.checkpoint.sqlite import SqliteSaver
@@ -117,7 +139,7 @@ class Engine:
         return self._build_override or self.bundle.build_id
 
     async def _graph(self, pathway: str, depth: str):
-        key = (pathway, depth)
+        key = (self._loop_key(), pathway, depth)
         if key not in self._graphs:
             from langgraph.graph import END, START, StateGraph
 
@@ -169,7 +191,7 @@ class Engine:
         graph = await self._graph(run["pathway"], run["depth"])
         # §10.3: single writer per thread, enforced on every drive entry point
         # (start, resume, wait, recovery, test hooks) — never assumed.
-        async with self._thread_locks.setdefault(run_id, asyncio.Lock()):
+        async with self._thread_locks.setdefault((self._loop_key(), run_id), asyncio.Lock()):
             if self.runs.get_run(run_id)["status"] in {"succeeded", "failed"}:
                 return None
             self._active_invocations += 1
@@ -277,13 +299,24 @@ class Engine:
             self.runs.node_running(run_id, module_id)
             spec = MODULES[module_id]
             mode = spec.mode_full if plan["depth"] == "full" else spec.mode_screen
-            if mode == "agent" and self.settings.agent_execution_enabled:
+            if run_id in self._scripted_runs and module_id in self._SCRIPTED_FIXTURES:
+                # Canonical modules take the golden fixtures; every other node
+                # (CP-3's universe binding included) runs its real
+                # deterministic path.
+                payload, markdown, qa_status = self._scripted_output(run_id, plan, module_id, fingerprint, upstream)
+            elif mode == "agent" and self.settings.agent_execution_enabled and run_id not in self._scripted_runs:
                 result = await self._execute_agent(run_id, plan, module_id, source_set, fingerprint, upstream)
                 payload, markdown, qa_status = result["payload"], result["markdown"], result["qa_status"]
             else:
+                universe = None
+                if module_id == "CP-3":
+                    # CP-3 consumes the case's pinned normalized loan universe
+                    # when one is active (identity triple bound in the artifact).
+                    universe = self.store.active_loan_universe(self.runs.get_run(run_id)["case_id"])
                 payload = build_deterministic_payload(
                     module_id, plan, input_fingerprint=fingerprint,
                     upstream_digests=[a["digest"] for a in upstream],
+                    loan_universe=universe,
                 )
                 markdown, qa_status = None, "Passed"
             run = self.runs.get_run(run_id)
@@ -318,7 +351,7 @@ class Engine:
 
         if self.provider is None:
             raise AgentError("AGENT_PROVIDER_UNAVAILABLE", "no provider is configured")
-        lock = self._agent_locks.setdefault(run_id, asyncio.Lock())
+        lock = self._agent_locks.setdefault((self._loop_key(), run_id), asyncio.Lock())
         async with lock:  # §10.2: agent execution serialises per run
             run = self.runs.get_run(run_id)
             agent_modules = [
@@ -510,7 +543,8 @@ class Engine:
         depth = Depth(depth).value
         if self.store.get_case(case_id) is None:
             raise EngineError("CASE_NOT_FOUND", case_id)
-        if self.runs.active_admission_count() + self._admission_offset >= MAX_ACTIVE_JOBS:
+        model_jobs = self._model_service.active_job_count() if self._model_service is not None else 0
+        if self.runs.active_admission_count() + self._admission_offset + model_jobs >= MAX_ACTIVE_JOBS:
             raise EngineError("ADMISSION_BUSY", "active job ceiling reached")
         for question in focus_questions or []:
             state_mod.validate_boundary_text(question)
@@ -643,8 +677,16 @@ class Engine:
         snapshot["id"] = new_id("snap")
         snapshot["digest"] = digest(preimage)
         self.runs.create_snapshot(snapshot)
-        self.store.update_case(run["case_id"], accepted_snapshot_id=snapshot["id"], visible_snapshot_id=snapshot["id"])
+        # Only an explicit switch moves the visible snapshot; acceptance
+        # advances the accepted pointer alone and divergence surfaces as
+        # switch_required (misc spec, snapshot lens contract).
+        self.store.update_case(run["case_id"], accepted_snapshot_id=snapshot["id"])
         self.store.audit_event("snapshot.accepted", actor, case_id=run["case_id"], snapshot_id=snapshot["id"], run_id=run_id)
+        if self._model_service is not None:
+            # Acceptance is durable first; a queue/dispatch failure never rolls
+            # it back (§10.6 hook — accepted FULL_CREDIT auto-queues a build).
+            with contextlib.suppress(Exception):
+                self._model_service.on_accepted(self.runs.get_run(run_id), actor)
         return self._snapshot_view(snapshot)
 
     def _snapshot_view(self, snapshot: dict[str, Any]) -> dict[str, Any]:
@@ -677,6 +719,48 @@ class Engine:
         }
 
     # -- test hooks --------------------------------------------------------
+
+    _SCRIPTED_FIXTURES = {
+        "CP-1": "cp1.md", "CP-1A": "cp1a.md", "CP-1B": "cp1b.md",
+        "CP-2": "cp2.md", "CP-2A": "cp2a.md", "CP-2G": "cp2g.md",
+    }
+
+    def _scripted_output(self, run_id: str, plan: dict[str, Any], module_id: str,
+                         fingerprint: str, upstream: list[dict[str, Any]]) -> tuple[dict[str, Any], str | None, str]:
+        """Scripted canonical outputs (spec hook): the six canonical modules
+        emit the golden CP-MODEL fixtures re-identified to this run."""
+        import hashlib
+
+        fixture = self._SCRIPTED_FIXTURES[module_id]
+        fixtures_dir = Path(__file__).resolve().parents[3] / "tests" / "fixtures" / "cp_model"
+        markdown = (fixtures_dir / fixture).read_text(encoding="utf-8").replace(
+            '"run-cp-model-fixture"', json.dumps(run_id),
+        )
+        payload = {
+            "schema_version": "caos.canonical.artifact.v1",
+            "module_id": module_id,
+            "canonical_output": {
+                "markdown": markdown,
+                "markdown_sha256": hashlib.sha256(markdown.encode("utf-8")).hexdigest(),
+            },
+            "methodology": {"build_id": plan["build_id"]},
+            "host_identity": {"run_id": run_id, "module_id": module_id},
+            "evidence_refs": [],
+            "lineage": {"input_fingerprint": fingerprint, "upstream_digests": [a["digest"] for a in upstream]},
+        }
+        return payload, markdown, "Passed"
+
+    async def run_scripted_for_tests(self, case_id: str, pathway: str = "FULL_CREDIT") -> dict[str, Any]:
+        run = await self.start_run(case_id=case_id, pathway=pathway, depth="full", actor="analyst")
+        self._scripted_runs.add(run["id"])
+        try:
+            await self.wait(run["id"])
+        finally:
+            self._scripted_runs.discard(run["id"])
+        record = self.get_run(run["id"])
+        if record["status"] != "succeeded":
+            raise EngineError((record.get("error") or {}).get("code", "RUN_NOT_READY"), "scripted run failed")
+        return record
 
     def store_for_tests_delete_source_set(self, source_set_id: str) -> None:
         with self.store.engine.begin() as conn:

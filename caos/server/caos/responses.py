@@ -1,0 +1,395 @@
+"""Strict wire response contracts: nothing undeclared is ever served.
+
+Shapes carry forward from LEGACY responses.py trimmed to the MVP surface.
+Optional-omitted fields (a queued build's payload, a run's generation state, a
+source's source_set) dump exactly as they validated — omission is preserved,
+never fabricated (model_dump defaults to exclude_unset).
+"""
+
+from __future__ import annotations
+
+from typing import Any
+
+from pydantic import BaseModel, ConfigDict
+
+
+class WireModel(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    def model_dump(self, **kwargs: Any) -> dict[str, Any]:  # noqa: D102 — omission-preserving dump
+        kwargs.setdefault("exclude_unset", True)
+        return super().model_dump(**kwargs)
+
+
+class OpenWireModel(WireModel):
+    """Named component for surfaces whose payload shape is service-owned."""
+
+    model_config = ConfigDict(extra="allow")
+
+
+class IdentityResponse(WireModel):
+    subject: str
+    email: str | None
+    role: str
+
+
+class HealthResponse(WireModel):
+    status: str
+
+
+class CaseResponse(WireModel):
+    id: str
+    name: str
+    issuer: str
+    sector: str
+    created_by: str
+    created_at: str
+    members: dict[str, str]
+    accepted_snapshot_id: str | None
+    visible_snapshot_id: str | None
+    current_execution_id: str | None
+
+
+class CaseDetailResponse(CaseResponse):
+    pass
+
+
+class SourceSetResponse(WireModel):
+    id: str
+    case_id: str
+    version: int
+    source_ids: list[str]
+    created_by: str
+    created_at: str
+
+
+class SourceBlockResponse(WireModel):
+    block_id: str
+    text: str
+    locator: Any
+    confidence: str | None
+    untrusted_data: bool
+    extractor_version: str | None
+
+
+class SourceResponse(WireModel):
+    id: str
+    case_id: str
+    filename: str
+    media_type: str
+    bytes: int
+    sha256: str
+    created_by: str
+    created_at: str
+    blocks: list[SourceBlockResponse]
+    withdrawn: bool
+    source_kind: str | None = None
+    source_set: SourceSetResponse | None = None
+
+
+class RunNodeResponse(WireModel):
+    id: str
+    run_id: str
+    case_id: str
+    module_id: str
+    stage: int
+    dependencies: list[str]
+    status: str
+    attempt: int
+    artifact_id: str | None
+    error: Any
+
+
+class RunEventResponse(WireModel):
+    id: int
+    event: str
+    at: str
+    data: Any
+
+
+class RunResponse(WireModel):
+    id: str
+    case_id: str
+    status: str
+    plan: Any
+    node_ids: list[str]
+    nodes: list[RunNodeResponse]
+    events: list[RunEventResponse]
+    current_node_id: str | None
+    accepted_snapshot_id: str | None
+    upgraded_from_run_id: str | None
+    created_by: str
+    created_at: str
+    error: Any
+
+
+class CanonicalGenerationResponse(WireModel):
+    phase: str
+    model: str
+    reporting_period: str
+    module_output_tokens: dict[str, int]
+    budget_limits: dict[str, Any]
+    budget_used: dict[str, Any]
+    inflight_request_digest: str | None
+    attempts: list[Any]
+    completed_modules: list[str] | None = None
+
+
+class CanonicalGenerationProgressResponse(CanonicalGenerationResponse):
+    pass
+
+
+class CanonicalRunResponse(RunResponse):
+    canonical_generation: CanonicalGenerationResponse | None = None
+
+
+class SnapshotArtifactRefResponse(WireModel):
+    id: str
+    module_id: str
+    digest: str
+
+
+class SnapshotResponse(WireModel):
+    id: str
+    case_id: str
+    run_id: str
+    source_set_id: str
+    source_set_version: int
+    artifacts: list[SnapshotArtifactRefResponse]
+    digest: str
+    previous_snapshot_id: str | None
+    accepted_at: str
+
+
+class SnapshotDiffEntryResponse(WireModel):
+    module_id: str
+    digest: str
+
+
+class SnapshotDiffResponse(WireModel):
+    changed: bool
+    added: list[SnapshotDiffEntryResponse]
+    removed: list[SnapshotDiffEntryResponse]
+    modified: list[SnapshotDiffEntryResponse]
+    source_set_changed: bool
+
+
+class ArtifactResponse(WireModel):
+    id: str
+    case_id: str
+    run_id: str
+    module_id: str
+    payload: Any
+    markdown: str | None
+    digest: str
+    input_fingerprint: str
+    created_by: str
+    created_at: str
+
+
+class CalculationRuntimeResponse(WireModel):
+    name: str
+    version: str
+    sha256: str
+    assumption_registry_version: str | None
+    assumption_registry_digest: str | None
+    calculation_contract_version: str | None
+
+
+class ModelExportStateResponse(WireModel):
+    status: str
+    error: Any
+
+
+class ModelBuildResponse(WireModel):
+    id: str
+    case_id: str
+    accepted_run_id: str | None
+    accepted_snapshot_id: str | None
+    source_set_id: str | None
+    input_fingerprint: str
+    status: str
+    queued_at: str
+    started_at: str | None
+    completed_at: str | None
+    error: Any
+    export: ModelExportStateResponse | None
+    worksheet_schema_version: str | None
+    calculation_runtime: CalculationRuntimeResponse | None
+    payload: Any = None
+    payload_digest: str | None = None
+    qa: Any = None
+
+
+class ModelReadinessRequirementResponse(WireModel):
+    module_id: str
+    status: str
+
+
+class ModelReadinessBlockerResponse(WireModel):
+    code: str
+    detail: str | None
+
+
+class ModelReadinessResponse(WireModel):
+    status: str
+    module_id: str
+    accepted_snapshot: Any
+    source_set: Any
+    requirements: list[ModelReadinessRequirementResponse]
+    calculation_runtime: Any
+    worksheet_schema_version: str | None
+    blockers: list[ModelReadinessBlockerResponse]
+    build: ModelBuildResponse | None
+
+
+class ModelListResponse(WireModel):
+    builds: list[ModelBuildResponse]
+
+
+class ModelQueueResponse(OpenWireModel):
+    id: str
+    created: bool
+
+
+class ModelAssumptionRegistryResponse(OpenWireModel):
+    pass
+
+
+class ModelPreviewResponse(OpenWireModel):
+    pass
+
+
+class ModelRevisionResponse(OpenWireModel):
+    pass
+
+
+class ModelRevisionListResponse(WireModel):
+    revisions: list[Any]
+
+
+class AuditEventResponse(WireModel):
+    id: str
+    actor: str
+    at: str
+    action: str
+    case_id: str | None = None
+    member: str | None = None
+    role: str | None = None
+    source_id: str | None = None
+    sha256: str | None = None
+    snapshot_id: str | None = None
+    run_id: str | None = None
+    note_id: str | None = None
+    assumption_id: str | None = None
+    build_id: str | None = None
+    model_id: str | None = None
+    report_id: str | None = None
+    plan_hash: str | None = None
+    code: str | None = None
+    version: int | None = None
+    revision_id: str | None = None
+    revision_number: int | None = None
+    assumptions_digest: str | None = None
+    deliverable_id: str | None = None
+    preview_digest: str | None = None
+    pathway: str | None = None
+    comment: str | None = None
+
+
+class ThesisResponse(WireModel):
+    id: str
+    case_id: str
+    thesis: str
+    updated_by: str
+    updated_at: str
+
+
+class VisualRecipeValidationResponse(WireModel):
+    kind: str
+    fields: list[str]
+    units: str
+    metric_ids: list[str]
+    polarity: str
+    accessible_table: bool
+
+
+class NoteResponse(WireModel):
+    id: str
+    case_id: str
+    body: str
+    created_by: str
+    created_at: str
+    promoted: bool
+    promoted_source_id: str | None
+
+
+class LoanUniverseFindingResponse(WireModel):
+    code: str
+    detail: str
+    sheet: str | None
+    row: int | None
+    column: str | None
+
+
+class LoanUniverseResponse(WireModel):
+    id: str
+    case_id: str
+    source_id: str
+    source_filename: str
+    source_sha256: str
+    workbook_date: str | None
+    template_version: str
+    importer_version: str
+    universe_digest: str | None
+    row_count: int
+    status: str
+    findings: list[LoanUniverseFindingResponse]
+    created_at: str
+    created_by: str
+    version: int | None
+    activated_at: str | None
+    superseded_at: str | None
+    withdrawn_at: str | None
+
+
+class LoanUniverseActiveResponse(WireModel):
+    status: str
+    universe: LoanUniverseResponse | None
+    rows: list[Any]
+
+
+class RVUniverseVersionResponse(WireModel):
+    id: str
+    case_id: str
+    version: int
+    rows: list[Any]
+    created_by: str
+    created_at: str
+
+
+class RVWorkspaceResponse(WireModel):
+    universe: RVUniverseVersionResponse | None
+
+
+class DeliverableRevisionResponse(WireModel):
+    draft_id: str
+    revision_id: str
+    version: int
+    digest: str
+    content: Any
+
+
+class DeliverableWorkspaceResponse(WireModel):
+    template: Any
+    draft: DeliverableRevisionResponse | None
+    frozen: list[Any]
+
+
+class FrozenDeliverableResponse(OpenWireModel):
+    deliverable_id: str
+    thread_id: str
+    status: str
+    preview_digest: str
+    input_fingerprint: str
+    build_id: str

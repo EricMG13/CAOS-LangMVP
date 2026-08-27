@@ -107,6 +107,40 @@ assumptions = sa.Table(
     sa.Column("stale", sa.Boolean, nullable=False, default=False),
 )
 
+loan_universes = sa.Table(
+    "loan_universes", metadata,
+    sa.Column("seq", sa.Integer, primary_key=True, autoincrement=True),
+    sa.Column("id", sa.String, nullable=False, unique=True),
+    sa.Column("case_id", sa.String, sa.ForeignKey("cases.id"), nullable=False),
+    sa.Column("source_id", sa.String, nullable=False),
+    sa.Column("source_filename", sa.String, nullable=False),
+    sa.Column("source_sha256", sa.String(64), nullable=False),
+    sa.Column("workbook_date", sa.String),
+    sa.Column("template_version", sa.String, nullable=False),
+    sa.Column("importer_version", sa.String, nullable=False),
+    sa.Column("universe_digest", sa.String),
+    sa.Column("row_count", sa.Integer, nullable=False),
+    sa.Column("status", sa.String, nullable=False),
+    sa.Column("findings", sa.JSON, nullable=False),
+    sa.Column("rows", sa.JSON, nullable=False),
+    sa.Column("version", sa.Integer),
+    sa.Column("created_by", sa.String, nullable=False),
+    sa.Column("created_at", sa.String, nullable=False),
+    sa.Column("activated_at", sa.String),
+    sa.Column("superseded_at", sa.String),
+    sa.Column("withdrawn_at", sa.String),
+)
+
+rv_universes = sa.Table(
+    "rv_universes", metadata,
+    sa.Column("id", sa.String, primary_key=True),
+    sa.Column("case_id", sa.String, sa.ForeignKey("cases.id"), nullable=False),
+    sa.Column("version", sa.Integer, nullable=False),
+    sa.Column("rows", sa.JSON, nullable=False),
+    sa.Column("created_by", sa.String, nullable=False),
+    sa.Column("created_at", sa.String, nullable=False),
+)
+
 audit_events = sa.Table(
     "audit_events", metadata,
     sa.Column("seq", sa.Integer, primary_key=True, autoincrement=True),
@@ -296,7 +330,14 @@ class DomainStore:
             for assumption in citing:
                 if source_id in (assumption["evidence_ids"] or []):
                     conn.execute(sa.update(assumptions).where(assumptions.c.id == assumption["id"]).values(stale=True, status="STALE"))
-            # ponytail: loan-universe deactivation on withdrawal lands with the RV store (phase 5).
+            # Derived artifacts cannot outlive their evidence: withdrawal
+            # deactivates every ACTIVE loan universe pinned to this source.
+            conn.execute(
+                sa.update(loan_universes)
+                .where(loan_universes.c.case_id == case_id, loan_universes.c.source_id == source_id,
+                       loan_universes.c.status == "ACTIVE")
+                .values(status="WITHDRAWN", withdrawn_at=withdrawn_at)
+            )
             self._audit(conn, "source.withdrawn", actor, case_id=case_id, source_id=source_id)
             result = dict(row)
             result.update(withdrawn=True)
@@ -400,6 +441,171 @@ class DomainStore:
             self._audit(conn, "note.promoted", actor, case_id=case_id, note_id=note_id, source_id=source_id)
             note.update(promoted=True, promoted_source_id=source_id)
             return note
+
+    # -- loan universes (CP-3 RV) ------------------------------------------
+
+    _LOAN_PUBLIC_KEYS = (
+        "id", "case_id", "source_id", "source_filename", "source_sha256", "workbook_date",
+        "template_version", "importer_version", "universe_digest", "row_count", "status",
+        "findings", "created_at", "created_by", "version", "activated_at", "superseded_at", "withdrawn_at",
+    )
+
+    def _public_loan_universe(self, row: dict[str, Any]) -> dict[str, Any]:
+        return {key: row.get(key) for key in self._LOAN_PUBLIC_KEYS}
+
+    def save_loan_universe(self, record: dict[str, Any], actor: str) -> dict[str, Any]:
+        """One transaction: supersede the prior ACTIVE, insert the candidate,
+        audit the versioning. The source's active flag is re-checked inside the
+        transaction so a racing withdrawal can never leave an active universe."""
+        now = now_iso()
+        row = {
+            "id": new_id("rvloan"),
+            **record,
+            "created_at": now,
+            "activated_at": now if record["status"] == "ACTIVE" else None,
+            "superseded_at": None,
+            "withdrawn_at": None,
+            "version": None,
+        }
+        with self.engine.begin() as conn:
+            if self._before_universe_write is not None:
+                interpose, self._before_universe_write = self._before_universe_write, None
+                interpose()
+            # Row-locked re-check: on Postgres a racing withdrawal must not
+            # slip between this read and the insert (no-op on SQLite, whose
+            # writer serialization already guarantees it).
+            active_source = conn.execute(
+                sa.select(sources.c.withdrawn).where(sources.c.id == record["source_id"]).with_for_update()
+            ).scalar()
+            if record["status"] == "ACTIVE" and active_source is not False:
+                raise ValueError("RV_SOURCE_NOT_ACTIVE: source was withdrawn during import")
+            if record["status"] == "ACTIVE":
+                version = (conn.execute(
+                    sa.select(sa.func.coalesce(sa.func.max(loan_universes.c.version), 0))
+                    .where(loan_universes.c.case_id == record["case_id"])
+                ).scalar_one()) + 1
+                row["version"] = version
+                conn.execute(
+                    sa.update(loan_universes)
+                    .where(loan_universes.c.case_id == record["case_id"], loan_universes.c.status == "ACTIVE")
+                    .values(status="SUPERSEDED", superseded_at=now)
+                )
+            conn.execute(loan_universes.insert().values(**row))
+            if record["status"] == "ACTIVE":
+                self._audit(conn, "rv.universe_versioned", actor, case_id=record["case_id"], version=row["version"])
+        return self._public_loan_universe(row)
+
+    _before_universe_write: Any = None
+
+    def interpose_before_universe_write_for_tests(self, callback: Any) -> None:
+        self._before_universe_write = callback
+
+    def find_loan_universe(self, case_id: str, source_sha256: str) -> dict[str, Any] | None:
+        with self.engine.connect() as conn:
+            row = conn.execute(
+                sa.select(loan_universes)
+                .where(loan_universes.c.case_id == case_id, loan_universes.c.source_sha256 == source_sha256,
+                       loan_universes.c.status.in_(("ACTIVE", "REJECTED")))
+                .order_by(loan_universes.c.seq.desc()).limit(1)
+            ).mappings().first()
+        return self._public_loan_universe(dict(row)) if row else None
+
+    def list_loan_universes(self, case_id: str) -> list[dict[str, Any]]:
+        with self.engine.connect() as conn:
+            rows = conn.execute(
+                sa.select(loan_universes).where(loan_universes.c.case_id == case_id).order_by(loan_universes.c.seq)
+            ).mappings().all()
+        return [self._public_loan_universe(dict(row)) for row in rows]
+
+    def active_loan_universe(self, case_id: str) -> dict[str, Any] | None:
+        """The full active record including its pinned normalized rows."""
+        with self.engine.connect() as conn:
+            row = conn.execute(
+                sa.select(loan_universes)
+                .where(loan_universes.c.case_id == case_id, loan_universes.c.status == "ACTIVE")
+                .order_by(loan_universes.c.seq.desc()).limit(1)
+            ).mappings().first()
+        if row is None:
+            return None
+        return {**self._public_loan_universe(dict(row)), "rows": row["rows"]}
+
+    def replace_vault_bytes_for_tests(self, source_id: str, content: bytes) -> None:
+        row = self.get_source_private(source_id)
+        Path(row["vault_path"]).write_bytes(content)
+
+    # -- rv quick universes -------------------------------------------------
+
+    def save_rv_universe(self, case_id: str, rows: list[dict[str, Any]], actor: str) -> dict[str, Any]:
+        with self.engine.begin() as conn:
+            version = (conn.execute(
+                sa.select(sa.func.coalesce(sa.func.max(rv_universes.c.version), 0))
+                .where(rv_universes.c.case_id == case_id)
+            ).scalar_one()) + 1
+            record = {"id": new_id("rvu"), "case_id": case_id, "version": version, "rows": rows,
+                      "created_by": actor, "created_at": now_iso()}
+            conn.execute(rv_universes.insert().values(**record))
+            self._audit(conn, "rv.universe_versioned", actor, case_id=case_id, version=version)
+        return record
+
+    def get_rv_universe(self, case_id: str) -> dict[str, Any] | None:
+        with self.engine.connect() as conn:
+            row = conn.execute(
+                sa.select(rv_universes).where(rv_universes.c.case_id == case_id)
+                .order_by(rv_universes.c.version.desc()).limit(1)
+            ).mappings().first()
+        return dict(row) if row else None
+
+    # -- model build seams (http-contract surface) --------------------------
+
+    def queue_model_build(self, spec: dict[str, Any], actor: str) -> tuple[dict[str, Any], bool]:
+        from .models import ModelStore
+
+        record, created = ModelStore(self.engine).queue_build({
+            "case_id": spec["case_id"],
+            "accepted_run_id": spec.get("accepted_run_id"),
+            "snapshot_id": spec.get("accepted_snapshot_id"),
+            "source_set_id": spec.get("source_set_id"),
+            "input_fingerprint": spec["input_fingerprint"],
+            "calculation_runtime": spec.get("calculation_runtime"),
+            "worksheet_schema_version": spec.get("worksheet_schema_version"),
+        }, actor)
+        return record, created
+
+    def fail_model_build_for_tests(self, build_id: str, error: dict[str, Any]) -> None:
+        from .models import ModelStore
+
+        ModelStore(self.engine).update_build(build_id, status="FAILED", error=error)
+
+    def complete_model_build_for_tests(self, build_id: str, result: dict[str, Any]) -> None:
+        from .models import ModelStore
+
+        ModelStore(self.engine).update_build(
+            build_id, status="READY", payload=result["payload"],
+            payload_digest=result["payload_digest"], qa=result["qa"], completed_at=now_iso(),
+        )
+
+    def list_audit(self, limit: int = 500) -> list[dict[str, Any]]:
+        return self.audit_trail(limit)
+
+    # -- model revision ledger seams (spec: append-only is store-enforced) --
+
+    def model_revision_order_for_tests(self, case_id: str) -> list[int]:
+        from .models import ModelStore
+
+        return ModelStore(self.engine).revision_order(case_id)
+
+    def mutate_model_revision_for_tests(self, revision_id: str, changes: dict[str, Any]) -> None:
+        """Enforcement witness: attempt a REAL update — the store's append-only
+        trigger aborts it. This must never succeed."""
+        from sqlalchemy.exc import DBAPIError
+
+        from .models import ModelStore
+
+        try:
+            ModelStore(self.engine).mutate_revision(revision_id, changes)
+        except DBAPIError as exc:
+            raise ValueError(f"APPEND_ONLY: model revision {revision_id} is immutable") from exc
+        raise AssertionError("append-only trigger failed to refuse a revision mutation")
 
     # -- assumptions (write surface lands in phase 5; staleness is live now) --
 
