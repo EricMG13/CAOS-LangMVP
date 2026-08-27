@@ -103,7 +103,7 @@ def test_single_time_authority_survives_a_day_boundary(engine, store):
             replay = await engine.rerun_module_for_tests(run["id"], "CP-0")
         assert replay["digest"] == first["CP-0"], "artifact content never reads the wall clock"
 
-    asyncio.get_event_loop().run_until_complete(scenario())
+    asyncio.run(scenario())
 
 
 def test_resume_ticket_makes_racing_resumes_single_effect(tmp_path, settings, store, provider):
@@ -127,7 +127,7 @@ def test_resume_ticket_makes_racing_resumes_single_effect(tmp_path, settings, st
         outcomes = {bool(first is True), bool(second is True)}
         assert outcomes == {True, False}, "exactly one racer consumes the ticket"
 
-    asyncio.get_event_loop().run_until_complete(scenario())
+    asyncio.run(scenario())
 
 
 def test_stale_or_late_resume_returns_typed_not_applied(client, engine, store):

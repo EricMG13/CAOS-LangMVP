@@ -248,3 +248,19 @@ Consolidation note: where §6 conflicts with §10/§11/§12 (output Σ vs Σ+max
    Builder owns and carry no signing claims, and the original vacuous
    `or`-form signing check is a plain ban. Red count drops to 12 — exactly the
    recorded environment defects; every contractual row is green.
+10. **(2026-08-27, user-approved spec amendment — phase-6 reconciliation)** The
+    eleven asyncio-blocked spec tests are repaired: the three
+    `asyncio.get_event_loop().run_until_complete` glue lines (the
+    `evidence_context` fixture plus two `test_state_spec` scenarios) become
+    `asyncio.run`; test bodies untouched. All eleven pass. The sole remaining
+    red is the surrogate-serialization test, whose httpx client cannot encode
+    its own request on this interpreter (contract verified server-side with a
+    raw-bytes 422).
+11. **(2026-08-27)** The D1/D2 deferrals land: `test_finalization_metering.py`
+    carries one test per re-hosted row plus the §12.14 wrapper-coverage test
+    enumerating the loop's step table. `_finalize_node` now meters the final
+    re-validation as a §12.14 bracket (charged even on throw) and fails the
+    run closed on an over-ceiling charge before `finalize_success` — a success
+    commit never lands past the budget ceiling (the 174+10 contract, expressed
+    as charge-then-commit rather than a literal deadline parameter). Suite:
+    380 passed, 1 red (§13.10).

@@ -155,3 +155,53 @@ vault digest recheck, case scoping, withdrawal deactivation, CP-3 binding).
 - **D3 — two-real-connections Postgres staging** (residual halves of 2 rows): the guarantees are spec'd
   via both sequential orders + injected interleaving; the two-connection Postgres variant runs in the
   both-dialects CI lane once the store has a Postgres test target (container available locally).
+
+## Invariant-to-test table + suite reconciliation (2026-08-27, phase 6)
+
+Suite state on this date: **380 passed, 1 red.** The 11 asyncio-blocked tests were repaired
+with user sign-off (the three `asyncio.get_event_loop().run_until_complete` glue lines became
+`asyncio.run`; test bodies untouched) and all pass. The one red is
+`test_focus_questions_reject_surrogates_at_the_api_contract`, which cannot serialize its own
+request on this interpreter (httpx `json.dumps` fails on the lone surrogate client-side); the
+contract was verified server-side with a raw-bytes request (422, input not echoed).
+
+The ten invariants are numbered here exactly as the repo already numbers them (spec-file
+docstrings, DECISIONS.md §§6/2/12, code comments); no other enumeration exists in-repo.
+
+| # | Invariant | Failing test on break | Status |
+|---|---|---|---|
+| 1 | Runs execute only against the pinned, immutable source set — supplied-only evidence, web discovery structurally banned, withdrawal checked live | `spec/test_runs_spec.py::test_withdrawing_pinned_source_mid_run_fails_the_run_closed` (pin placement: `…::test_gate_exit_pins_exact_current_source_set_and_later_uploads_do_not_move_it`) | green |
+| 2 | Every `read_evidence` is validated at the host boundary (case, pin, withdrawal, block identity) and fails closed with a typed refusal, no text returned | `spec/test_evidence_spec.py::test_read_outside_pinned_source_set_fails_closed` | green (fixture glue repaired with user sign-off 2026-08-27) |
+| 3 | The host owns identity: provider-claimed frontmatter never survives; checkpointed digests are expectations re-verified against the store, never authority | `spec/test_modules_spec.py::test_host_owns_identity_and_discards_provider_frontmatter` | green |
+| 4 | Methodology authority is the verified vendored bundle — integrity checked on the bytes at use; a run pinned to one build never executes under another | `spec/test_modules_spec.py::test_verify_at_use_rejects_bytes_that_mismatch_the_pinned_manifest` (build pin: `…::test_run_pins_build_id_and_refuses_execution_under_a_different_bundle`) | green |
+| 5 | Every gate where execution waits on a human is a digest-bound interrupt; approval binds the exact reviewed content | `spec/test_deliverables_spec.py::test_approval_binds_exact_preview_digest_and_fingerprint_mismatch_leaves_frozen_retryable` | green |
+| 6 | Execution is durable and exactly-once: resume from last checkpoint, never restart; a crash in the commit gap yields one artifact, one charge, one terminal | `spec/test_runs_spec.py::test_worker_killed_mid_run_resumes_from_last_checkpoint_not_restart` (crash gap: `…::test_crash_between_store_commit_and_checkpoint_write_yields_one_artifact_one_charge`) | green |
+| 7 | Model calculation is pure and finite — non-finite values and zero denominators refused, forecast values driver-sourced | `spec/test_model_builder_spec.py::test_finite_guards_reject_non_finite_and_zero_denominators` | green |
+| 8 | Budgets fail closed — every ceiling refuses before overspend; no provider call without a reservation; unresolved inflight fails the resumed run | `spec/test_budget_spec.py::test_each_ceiling_refuses_the_next_operation_before_overspend` | green |
+| 9 | Module output survives only as the strict canonical envelope — bounded schema, undeclared fields refused, citations only from delivered evidence | `spec/test_modules_spec.py::test_canonical_output_schema_is_strict_and_bounded` | green |
+| 10 | A run's route is static — node set and edges are a pure function of (pathway, depth); replay from the same pins is equivalent by the same path | `spec/test_runs_spec.py::test_node_set_and_edges_are_a_pure_function_of_pathway_and_depth` (replay: `…::test_replay_from_same_pinned_sources_and_build_is_equivalent_by_the_same_path`) | green |
+
+### CONTRACTUAL-row reconciliation (229 rows)
+
+229 = **223 mapped and green** + **6 excluded with recorded justification** (E1 ×5, E2 ×1).
+
+The D1/D2 deferrals — recorded above as "lands with phase 3" and found unlanded at the phase-6
+check — landed 2026-08-27 in `caos/tests/test_finalization_metering.py`, one test per re-hosted
+row plus the §12.14 wrapper-coverage test that enumerates the loop's step table (count, create,
+evidence read, final parse/validate, reuse-validation, completion write, final verification):
+
+- D1 (4 rows): slow render charged before completion; throwing host ops charge active time;
+  slow atomic completion crosses the ceiling and cannot succeed; final validation charged
+  before run success.
+- D2 (2 rows): a success commit that would breach the ceiling never lands (durable failed
+  state, no success event, acceptance refused); a within-budget commit lands succeeded with
+  exactly one event, re-read from a revived engine.
+
+The D2/D1-4 contract required one implementation change: `Engine._finalize_node` now meters
+the final re-validation as a §12.14 bracket (charged even on throw) and fails the run closed
+on an over-ceiling charge before `finalize_success` — success never commits past the budget
+ceiling. Verified: the pre-change runtime fails exactly the wrapper-coverage, final-validation,
+and never-lands tests.
+
+D3 (residual Postgres two-connection halves of 2 rows) remains deferred on its original reason —
+no Postgres test target exists in CI yet; flagged for the phase-6 gate since this is the last phase.
