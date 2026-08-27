@@ -38,6 +38,7 @@ def build_deterministic_payload(
     *,
     input_fingerprint: str = "unavailable",
     upstream_digests: list[str] | None = None,
+    source_ids: list[str] | None = None,
     loan_universe: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     summary = _SUMMARIES.get(module_id, f"{module_id} deterministic host analysis.")
@@ -54,6 +55,7 @@ def build_deterministic_payload(
             **build_deterministic_payload(
                 module_id, plan_context,
                 input_fingerprint=input_fingerprint, upstream_digests=upstream_digests,
+                source_ids=source_ids,
             ),
             "lineage": {
                 "input_fingerprint": input_fingerprint,
@@ -73,7 +75,9 @@ def build_deterministic_payload(
         "schema_version": "caos.system_analysis.v1",
         "status": "COMPLETE",
         "summary": summary,
-        "evidence_refs": [],
+        # Source-level references over the pinned source set: still a pure
+        # function of the pin, so replays keep identical digests.
+        "evidence_refs": list(source_ids or []),
         "lineage": {
             "input_fingerprint": input_fingerprint,
             "upstream_digests": list(upstream_digests or []),

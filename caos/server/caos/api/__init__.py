@@ -466,6 +466,21 @@ def create_app(*, settings: Settings, store: DomainStore, engine: Any) -> FastAP
             "source_set_changed": source_set_changed,
         }
 
+    @app.get("/api/cases/{case_id}/lens", response_model=wire.CaseLensResponse)
+    def case_lens(case_id: str, request: Request) -> dict[str, Any]:
+        """Case-scoped issuer lens: identity plus the visible snapshot's authority
+        identifiers (the visible lens follows the accepted pointer until pinned)."""
+        require_case(store, case_id, identity(request))
+        case = store.get_case(case_id)
+        visible_id = case.get("visible_snapshot_id") or case.get("accepted_snapshot_id")
+        snapshot = engine.runs.get_snapshot(visible_id) if visible_id else None
+        return {
+            "issuer": case["issuer"],
+            "sector": case["sector"],
+            "accepted_snapshot_id": snapshot["id"] if snapshot else None,
+            "source_set": {"version": snapshot["source_set_version"]} if snapshot else None,
+        }
+
     @app.get("/api/cases/{case_id}/snapshot", response_model=wire.SnapshotViewResponse)
     def case_snapshot_view(case_id: str, request: Request) -> dict[str, Any]:
         """The case's snapshot lens: `accepted` is what the analyst sees now,

@@ -52,6 +52,8 @@ services:
       CPDR_PILOT_CASE_IDS: ${CPDR_PILOT_CASE_IDS:-}
       CPDR_PILOT_SUBJECTS: ${CPDR_PILOT_SUBJECTS:-}
       ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-claude-sonnet-4-6}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      AGENT_EXECUTION_ENABLED: ${AGENT_EXECUTION_ENABLED:-false}
     volumes:
       - vault-data:/vault
     security_opt: ["no-new-privileges:true"]
@@ -89,6 +91,7 @@ services:
       CPDR_PILOT_SUBJECTS: ${CPDR_PILOT_SUBJECTS:-}
       ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-claude-sonnet-4-6}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      AGENT_EXECUTION_ENABLED: ${AGENT_EXECUTION_ENABLED:-false}
     volumes:
       - vault-data:/vault
     security_opt: ["no-new-privileges:true"]

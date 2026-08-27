@@ -57,6 +57,17 @@ class CaseDetailResponse(CaseResponse):
     pass
 
 
+class CaseLensSourceSetResponse(WireModel):
+    version: int
+
+
+class CaseLensResponse(WireModel):
+    issuer: str
+    sector: str
+    accepted_snapshot_id: str | None
+    source_set: CaseLensSourceSetResponse | None
+
+
 class SourceSetResponse(WireModel):
     id: str
     case_id: str

@@ -53,14 +53,27 @@ def test_unicode_boundary_rejects_unencodable_pinned_strings(bad):
 
 
 def test_focus_questions_reject_surrogates_at_the_api_contract(client, store):
+    import json
+
     from spec_helpers import seed_case_with_source
 
     case, _ = seed_case_with_source(store)
+    # Pre-encoded body: httpx cannot UTF-8-encode a raw lone surrogate, so the
+    # character rides the wire as the JSON escape \ud800 — valid ASCII JSON that
+    # the server decodes back into the lone surrogate before the boundary check,
+    # which is the contract under test. (Repaired 2026-08-27, user-approved; the
+    # original `json=` form failed client-side in httpx and never reached the API.)
+    body = json.dumps(
+        {"pathway": "FULL_CREDIT", "depth": "full", "focus_questions": ["what about \ud800?"]},
+        ensure_ascii=True,
+    ).encode("ascii")
     response = client.post(
-        f"/api/cases/{case['id']}/runs",
-        json={"pathway": "FULL_CREDIT", "depth": "full", "focus_questions": ["what about \ud800?"]},
+        f"/api/cases/{case['id']}/runs", content=body,
+        headers={"content-type": "application/json"},
     )
     assert response.status_code == 422
+    assert "\ud800" not in response.text and "\\ud800" not in response.text, \
+        "rejected input must not be echoed back through the response encoder"
 
 
 def test_checkpointed_digests_are_expectations_not_authority(engine, store):

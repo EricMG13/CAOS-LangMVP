@@ -1235,7 +1235,7 @@ try {
       return route.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify(frozen) });
     }
   });
-  await page.route((url) => url.pathname === `/api/cases/${caseRecord.id}/models/assumption-registry`, (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ version: registryVersion, digest: registryDigest, definitions: [{ assumption_id: "operating.consolidated_revenue_growth", label: "Revenue growth", periods: ["FY2025", "FY2026", "FY2027"] }] }) }));
+  await page.route((url) => url.pathname === `/api/cases/${caseRecord.id}/models/assumption-registry`, (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ version: registryVersion, digest: registryDigest, build_id: modelBuildId, definitions: [{ assumption_id: "operating.consolidated_revenue_growth", label: "Revenue growth", periods: ["FY2025", "FY2026", "FY2027"] }], defaults: [{ assumption_id: "operating.consolidated_revenue_growth", case: "BASE", period_id: "FY2027", status: "READY", value: 0.03, unit: "PERCENT" }] }) }));
   await page.route((url) => url.pathname === `/api/cases/${caseRecord.id}/models/scenarios`, async (route) => {
     const payload = route.request().postDataJSON();
     await waitForHeldReportLifecycle("scenario");

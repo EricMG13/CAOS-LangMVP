@@ -196,6 +196,24 @@ class ModelStore:
                 sa.select(sa.func.count()).where(model_builds.c.status.in_(("QUEUED", "BUILDING")))
             ).scalar_one()
 
+    def queued_work(self) -> dict[str, list[str]]:
+        """Worker poll: build ids QUEUED for calculation, then build/revision ids
+        whose export is QUEUED — each in server-assigned creation order. Claiming
+        stays with the executor's CAS (update_build expected_status)."""
+        with self.engine.connect() as conn:
+            builds = [row for (row,) in conn.execute(
+                sa.select(model_builds.c.id)
+                .where(model_builds.c.status == "QUEUED").order_by(model_builds.c.seq))]
+            build_exports = [row for (row,) in conn.execute(
+                sa.select(model_builds.c.id)
+                .where(model_builds.c.export["status"].as_string() == "QUEUED")
+                .order_by(model_builds.c.seq))]
+            revision_exports = [row for (row,) in conn.execute(
+                sa.select(model_revisions.c.id)
+                .where(model_revisions.c.export["status"].as_string() == "QUEUED")
+                .order_by(model_revisions.c.seq))]
+        return {"builds": builds, "exports": build_exports + revision_exports}
+
     # -- revisions (append-only) -------------------------------------------
 
     def sign_off_revision(
