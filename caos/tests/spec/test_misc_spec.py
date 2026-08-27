@@ -34,15 +34,21 @@ async def test_read_only_member_cannot_upgrade_a_run(client, engine, store):
 
 
 async def test_cp2g_emits_handoff_without_fabricated_workbook_values_or_signing_claims(engine, store, provider):
-    """From test_full_credit_model_dependent_node_hands_off_to_model_builder."""
-    from caos.engine.deterministic import build_deterministic_payload  # CP-2G handoff shape checked on the artifact
+    """From test_full_credit_model_dependent_node_hands_off_to_model_builder.
 
-    case, source, run = await start_full_credit_run(engine, store)
-    await engine.wait(run["id"])
+    Amended 2026-08-27 with user sign-off (DECISIONS §13.9): CP-2G is
+    agent-wired (registry union), so the artifact is the canonical envelope
+    produced through the scripted-canonical run seam, not a deterministic host
+    payload. The guarantee is unchanged: the stored handoff computes nothing
+    Model Builder owns and carries no signing claims (Sign-Off is the author's
+    store-CAS self-release, never module output). The original signing check
+    was also a vacuous `or`; it is now a plain ban."""
+    case, source = seed_case_with_source(store)
+    run = await engine.run_scripted_for_tests(case["id"])
     artifact = next(a for a in engine.artifacts_for_run(run["id"]) if a["module_id"] == "CP-2G")
-    assert artifact["payload"]["status"] == "COMPLETE"
-    serialized = str(artifact["payload"]) + artifact.get("markdown", "")
-    assert "signed" not in serialized.lower() or "signed-off" not in serialized.lower()
+    assert artifact["payload"]["schema_version"] == "caos.canonical.artifact.v1"
+    serialized = str(artifact["payload"]) + (artifact.get("markdown") or "")
+    assert "signed-off" not in serialized.lower() and "sign-off" not in serialized.lower()
     assert "workbook_value" not in serialized, "the handoff computes nothing Model Builder owns"
 
 

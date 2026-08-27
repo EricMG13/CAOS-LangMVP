@@ -240,3 +240,11 @@ Consolidation note: where §6 conflicts with §10/§11/§12 (output Σ vs Σ+max
    take fixtures only for the six canonical modules; every other node runs its
    real deterministic path, so the CP-3 binding is exercised by the same code
    production uses. Red count drops to 13 (12 environment + the CP-2G row).
+
+9. **(2026-08-27, user-approved spec amendment)** The CP-2G handoff-discipline
+   test now asserts on the canonical agent envelope produced through the
+   scripted-canonical seam, resolving §13.6's second contradiction: CP-2G
+   stays agent-wired, the stored handoff must still compute nothing Model
+   Builder owns and carry no signing claims, and the original vacuous
+   `or`-form signing check is a plain ban. Red count drops to 12 — exactly the
+   recorded environment defects; every contractual row is green.
