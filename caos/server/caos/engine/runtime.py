@@ -295,9 +295,15 @@ class Engine:
                 result = await self._execute_agent(run_id, plan, module_id, source_set, fingerprint, upstream)
                 payload, markdown, qa_status = result["payload"], result["markdown"], result["qa_status"]
             else:
+                universe = None
+                if module_id == "CP-3":
+                    # CP-3 consumes the case's pinned normalized loan universe
+                    # when one is active (identity triple bound in the artifact).
+                    universe = self.store.active_loan_universe(self.runs.get_run(run_id)["case_id"])
                 payload = build_deterministic_payload(
                     module_id, plan, input_fingerprint=fingerprint,
                     upstream_digests=[a["digest"] for a in upstream],
+                    loan_universe=universe,
                 )
                 markdown, qa_status = None, "Passed"
             run = self.runs.get_run(run_id)

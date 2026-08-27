@@ -50,7 +50,9 @@ def identity_from_request(request: Request, settings: Settings) -> Identity:
     if settings.environment == "production" and not subject:
         raise HTTPException(status_code=401, detail="OIDC identity required")
     if not subject:
-        subject, email = "local-analyst", "analyst@local"
+        # Dev default matches the seeded-case actor so headerless local calls
+        # act as the same analyst the fixtures created the case with.
+        subject, email = "analyst", "analyst@local"
     if role not in {"ANALYST", "APPROVER", "ADMIN", "READER"}:
         raise HTTPException(status_code=403, detail="unknown role")
     return Identity(subject=subject, email=email, role=role, groups=groups)
