@@ -37,6 +37,7 @@ GOLDEN_AUTHORITY_DIGESTS = {
     "CP-1": "71dd70efc79410edd80af7648572782cd694f05aa754d1abd03b6dcb93885cd6",
     "CP-1A": "9157ed912eb73e21cd51479abe8fc446f895949da673a3e366df8f7c76a9eede",
     "CP-1B": "1d2757874da74caa48ac88d2474d1d5b4ff48982414bb53ba785296f3e684bc1",
+    "CP-1C": "01f2787934b06e900125cd3119324621c8436e51683b7a5644db7b77dc75342c",
     "CP-2": "5fb286e7d673de8f621df805948409062da8dd469930bc8df83a92044e440e41",
     "CP-2A": "842663c8c017297102b9abd8569e782103f982d8b62cfafe52a2e9f8c3b390ef",
     "CP-2G": "86d9b25b264c1f1f94690fa61bdd9944acd0201264f287aa41049225bb84931c",
@@ -62,7 +63,9 @@ MODULES: dict[str, ModuleSpec] = {
         max_output_tokens=12_000,
     ),
     "CP-1C": ModuleSpec(
-        "CP-1C", "deterministic", skill_slug="cp-1c-peer-benchmark",
+        "CP-1C", "agent", skill_slug="cp-1c-peer-benchmark",
+        reference_files=("references/CP-1C_SCHEMA_REFERENCE.md", "references/REF_CP-1C_STEPS.md"),
+        max_output_tokens=12_000,
         source_mode="supplied_only",  # web discovery is structurally banned (invariant 1)
     ),
     "CP-1D": ModuleSpec("CP-1D", "deterministic", skill_slug="cp-1d-earnings-quality"),
