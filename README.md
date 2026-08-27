@@ -39,6 +39,11 @@ cd caos/server && python dev.py
 `AGENT_EXECUTION_ENABLED=true` and `ANTHROPIC_API_KEY` are set; deterministic
 screen routes work end to end without either.
 
+Production runs the same assembly through `caos/server/run.py` (the Docker
+`app` target) with `caos/server/worker.py` executing queued model builds and
+LibreOffice XLSX exports; `caos/deploy/` has the compose stack and
+`caos/.env.example` the environment to fill in.
+
 Frontend, hot-reloading against that server:
 
 ```bash

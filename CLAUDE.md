@@ -104,10 +104,15 @@ engine, the bundle, or the routes.
 
 ## Running and testing
 
-- Dev server: `python caos/server/dev.py` (SQLite under `.dev-data`, startup
-  recovery, serves `caos/frontend/out` when built). Deterministic screen routes
-  need no API key; agent execution requires `AGENT_EXECUTION_ENABLED=true` +
-  `ANTHROPIC_API_KEY`.
+- Dev server: `python caos/server/dev.py` (SQLite under `.dev-data`, loopback
+  bind, startup recovery, serves `caos/frontend/out` when built). Deterministic
+  screen routes need no API key; agent execution requires
+  `AGENT_EXECUTION_ENABLED=true` + `ANTHROPIC_API_KEY`.
+- Production entrypoints: `caos/server/run.py` (combined app — validated env,
+  auto-continue, recovery; the Docker `app` target's CMD) and
+  `caos/server/worker.py` (polls the store for QUEUED model builds/exports and
+  executes them; the only process with LibreOffice, so XLSX rendering lives
+  here and nowhere else). `worker.py --once` runs a single pass.
 - Suite: `python -m pytest caos/tests -q`. Spec tests (`caos/tests/spec/`) are
   the contractual surface — they pin invariants and wire shapes; phase-2 tests
   cover ingestion/store/bundle/config. One known red:
@@ -120,7 +125,7 @@ engine, the bundle, or the routes.
 - Lint: `ruff check --config ruff.toml caos/server caos/tests --exclude
   caos/server/caos/methodology/vendor`.
 
-## Known gaps (v0.1.0 — honest ledger)
+## Known gaps (honest ledger)
 
 - The ported frontend calls some routes this server does not yet serve; those
   surfaces degrade or stay hidden: Command Center lens (`/cases/{id}/lens`),
@@ -131,9 +136,10 @@ engine, the bundle, or the routes.
   resume control in the UI (`POST /api/runs/{id}/resume` exists server-side).
 - `npm run test:workbench` is red in the Report Studio scenario-exhibit step
   (mocked-flow scope switch); everything through workspace authority, Run
-  Console, palette, and deep research passes.
-- CI (`.github/workflows/ci.yml`) references entrypoints and manifests that do
-  not exist yet: `caos/server/run.py`, `worker.py`, `requirements*.txt`,
-  `caos/scripts/build_frontend.sh`, `run_sec_audit.py`, `caos/.env.example` —
-  the browser, image, deploy-assets, and security jobs cannot run as written.
-  `caos/server/dev.py` is the only entrypoint in-tree.
+  Console, palette, and deep research passes. Until it lands, CI's browser job
+  is red at that step.
+- Run checkpoints are SQLite on the data volume even under a Postgres domain
+  store (`run.py` notes this); the postgres checkpoint saver is pinned in
+  requirements but not wired in the engine. Single app instance only.
+- `caos/server/requirements.txt` mirrors `pyproject.toml` dependencies by
+  hand — change them together.

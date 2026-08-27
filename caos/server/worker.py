@@ -1,0 +1,76 @@
+"""Model build/export worker (Dockerfile `worker` target).
+
+The API image never renders XLSX (no LibreOffice there — enforced by
+verify_image_resources.py); builds and exports queue in the store and this
+process polls for QUEUED work and executes it. Claiming is the executor's own
+CAS on the build row, so a concurrent duplicate worker loses the race cleanly.
+
+`python worker.py --once` runs a single pass and exits (used by tests).
+"""
+
+from __future__ import annotations
+
+import os
+import sys
+import time
+import traceback
+from pathlib import Path
+
+from caos.config import Settings
+from caos.engine.runtime import Engine
+from caos.models.service import ModelService
+from caos.storage.store import DomainStore
+
+EXPORT_FAILED = {"status": "FAILED", "error": {"code": "MODEL_EXPORT_FAILED",
+                                               "detail": "The XLSX export did not complete."}}
+
+
+def run_pending(service: ModelService) -> int:
+    """One poll pass: execute every QUEUED build, then every QUEUED export.
+    A crash in one item finalizes that item FAILED and never kills the loop."""
+    work = service.builds.queued_work()
+    for build_id in work["builds"]:
+        try:
+            service.run_build(build_id)
+        except Exception:
+            traceback.print_exc()
+            service.builds.update_build(build_id, expected_status=("QUEUED", "BUILDING"),
+                                        status="FAILED",
+                                        error={"code": "MODEL_CALCULATION_FAILED",
+                                               "detail": "The model calculation did not complete."})
+    for target_id in work["exports"]:
+        try:
+            service.run_export(target_id)
+        except Exception:
+            traceback.print_exc()
+            if service.builds.get_build(target_id) is not None:
+                service.builds.update_build(target_id, export=EXPORT_FAILED)
+            else:
+                service.builds.update_revision_export(target_id, EXPORT_FAILED)
+    return len(work["builds"]) + len(work["exports"])
+
+
+def main() -> None:
+    settings = Settings.from_env()
+    settings.validate_runtime()
+    data = Path(os.getenv("CAOS_DATA_DIR", str(settings.storage_dir))).resolve()
+    data.mkdir(parents=True, exist_ok=True)
+    store = DomainStore.from_url(settings.database_url or f"sqlite:///{data / 'caos.db'}")
+    # The engine here only lends the model service its snapshot/artifact reads
+    # and admission accounting; this process never drives run graphs, so the
+    # checkpoint file is never opened.
+    engine = Engine.create(settings=settings, store=store, checkpoint_path=data / "checkpoints.db")
+    service = ModelService(store=store, vault_dir=settings.storage_dir, engine=engine)
+    poll_seconds = float(os.getenv("WORKER_POLL_SECONDS", "2"))
+    once = "--once" in sys.argv[1:]
+    while True:
+        processed = run_pending(service)
+        if once:
+            print({"processed": processed})
+            return
+        if not processed:
+            time.sleep(poll_seconds)
+
+
+if __name__ == "__main__":
+    main()

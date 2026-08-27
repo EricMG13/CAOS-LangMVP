@@ -878,6 +878,12 @@ class ModelService:
         self.builds.update_revision_export(target_id, export)
         return self.builds.get_revision(target_id)  # type: ignore[return-value]
 
+    # The worker's entry points. The `_for_tests` suffix on the underlying
+    # methods is historical — the spec suite pinned those names before
+    # worker.py existed; the execution path is the production one.
+    run_build = run_build_for_tests
+    run_export = run_export_for_tests
+
     def download(self, case_id: str, target_id: str) -> tuple[bytes, str]:
         record = self.builds.get_build(target_id) or self.builds.get_revision(target_id)
         is_revision = record is not None and "revision_number" in record
