@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { KeyboardEvent as ReactKeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { api as request, assumptionRegistryPath, type ModelInventory, type ModelReadiness, type WorksheetCell, type WorksheetResponse, type WorksheetTab } from "../../lib/api";
+import { api as request, assumptionRegistryPath, type ModelBuild, type ModelInventory, type ModelReadiness, type WorksheetCell, type WorksheetResponse, type WorksheetTab } from "../../lib/api";
 import { withQuery } from "../../lib/workbench";
 import {
   applicationBuildDelta,
@@ -250,7 +250,11 @@ function ApplicationModelBuild({ caseId, role }: { caseId: string; role: string 
     if (showLoading) setLoading(true);
     setLoadError("");
     try {
-      const next = await request<ModelInventory>(`/api/cases/${caseId}/models`, {}, signal);
+      const [readiness, models] = await Promise.all([
+        request<ModelReadiness>(`/api/cases/${caseId}/model`, {}, signal),
+        request<{ builds: ModelBuild[] }>(`/api/cases/${caseId}/models`, {}, signal),
+      ]);
+      const next: ModelInventory = { readiness, builds: models.builds };
       if (currentRequest !== requestId.current || expectedCaseId !== caseId) return;
       const build = next.readiness.build || next.builds[0] || null;
       let nextWorksheet: WorksheetResponse | null = null;
@@ -388,7 +392,11 @@ export default function ModelBuilder({
     if (showLoading) setLoading(true);
     setLoadError("");
     try {
-      const nextInventory = await request<ModelInventory>(`/api/cases/${expectedCaseId}/models`, {}, signal);
+      const [nextReadiness, nextModels] = await Promise.all([
+        request<ModelReadiness>(`/api/cases/${expectedCaseId}/model`, {}, signal),
+        request<{ builds: ModelBuild[] }>(`/api/cases/${expectedCaseId}/models`, {}, signal),
+      ]);
+      const nextInventory: ModelInventory = { readiness: nextReadiness, builds: nextModels.builds };
       if (generation !== requestGeneration.current) return;
       const nextBuild = nextInventory.readiness.build || nextInventory.builds[0] || null;
       let nextRegistry: AssumptionRegistry | null = null;
