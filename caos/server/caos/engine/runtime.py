@@ -86,9 +86,26 @@ class Engine:
         self._crash_before_create: set[str] = set()
         self._agent_locks: dict[tuple[int, str], asyncio.Lock] = {}
         self._thread_locks: dict[tuple[int, str], asyncio.Lock] = {}
+        self._auto_continue = False
+        self._continuations: set[asyncio.Task[Any]] = set()
         self._slots = ProviderSlots(PROVIDER_CONCURRENCY_SLOTS)
         self._model_service: Any = None
         self._scripted_runs: set[str] = set()
+
+    def enable_auto_continue(self) -> None:
+        """The serving entrypoint owns execution: start/resume stop at the plan
+        gate so the immutable plan returns immediately, and this schedules the
+        rest of the run on the serving loop. Tests never enable it — they keep
+        explicit wait()/resume() control, and a second loop driving the same
+        thread would break the one-loop-per-thread assumption (_loop_key)."""
+        self._auto_continue = True
+
+    def _schedule_continuation(self, run_id: str) -> None:
+        if not self._auto_continue or self.runs.get_run(run_id)["status"] != "running":
+            return
+        task = asyncio.get_running_loop().create_task(self.wait(run_id))
+        self._continuations.add(task)
+        task.add_done_callback(self._continuations.discard)
 
     def register_model_service(self, service: Any) -> None:
         """The Model Builder shares this engine's admission budget and receives
@@ -564,7 +581,11 @@ class Engine:
                                    focus_questions=focus_questions,
                                    upgraded_from_run_id=upgraded_from_run_id,
                                    schema_version=state_mod.SCHEMA_VERSION)
+        # The case's workspace attaches to its latest execution; success does not
+        # clear this — only a newer run moves it.
+        self.store.update_case(case_id, current_execution_id=run["id"])
         await self._drive(run["id"], self._initial_state(run), interrupt_after=["gate"])
+        self._schedule_continuation(run["id"])
         return self.get_run(run["id"])
 
     def _initial_state(self, run: dict[str, Any]) -> dict[str, Any]:
@@ -595,6 +616,7 @@ class Engine:
             if not self.runs.consume_ticket(run_id, ticket):
                 return self.get_run(run_id)
         await self._drive(run_id, Command(resume=True), interrupt_after=["gate"])
+        self._schedule_continuation(run_id)
         return self.get_run(run_id)
 
     async def wait(self, run_id: str) -> dict[str, Any]:

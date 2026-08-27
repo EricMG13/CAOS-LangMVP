@@ -64,6 +64,9 @@ KEY_SETS = {
         "accepted_snapshot_id": None,
         "visible_snapshot_id": None,
         "current_execution_id": None,
+        "source_count": None,
+        "deep_research_available": None,
+        "deep_research_unavailable_reason": None,
     },
     "source": {
         "id": None,
@@ -610,6 +613,48 @@ def test_openapi_loan_import_serves_the_strict_universe_schema_on_200_and_201(cl
         assert responses[status]["content"]["application/json"]["schema"] == {
             "$ref": "#/components/schemas/LoanUniverseResponse"
         }
+
+
+# --- run events SSE: the graph event log on the wire ------------------------------
+
+
+async def test_run_events_sse_tails_the_event_log_with_last_event_id_resume(client, engine):
+    case_id = client.post(
+        "/api/cases", json={"name": "SSE case", "issuer": "Issuer", "sector": "Services"}
+    ).json()["id"]
+    client.post(
+        f"/api/cases/{case_id}/sources",
+        files={"file": ("evidence.txt", b"Revenue 1,160\nEBITDA 222", "text/plain")},
+    )
+    started = client.post(
+        f"/api/cases/{case_id}/runs", json={"pathway": "EARNINGS_UPDATE", "depth": "screen"}
+    ).json()
+    await engine.wait(started["id"])
+
+    def read_frames(headers: dict | None = None) -> list[tuple[int, str]]:
+        with client.stream("GET", f"/api/runs/{started['id']}/events", headers=headers) as response:
+            assert response.status_code == 200
+            assert response.headers["content-type"].startswith("text/event-stream")
+            body = "".join(response.iter_text())
+        frames = []
+        for frame in body.split("\n\n"):
+            lines = dict(line.split(": ", 1) for line in frame.splitlines() if ": " in line)
+            if "event" in lines:
+                frames.append((int(lines["id"]), lines["event"]))
+        return frames
+
+    frames = read_frames()
+    ids = [seq for seq, _ in frames]
+    names = [name for _, name in frames]
+    assert names[0] == "run.created" and names[-1] == "run.succeeded"
+    assert "node.succeeded" in names
+    assert ids == sorted(ids) and len(set(ids)) == len(ids), "per-run monotonic sequence"
+    # A terminal, fully delivered tail closes the stream (read_frames returned at all).
+
+    resumed = read_frames({"Last-Event-ID": str(ids[-2])})
+    assert resumed == frames[-1:], "Last-Event-ID resumes after the cursor without replay"
+
+    assert client.get("/api/runs/rn_missing/events").status_code == 404
 
 
 # --- canonical generation progress state ------------------------------------------

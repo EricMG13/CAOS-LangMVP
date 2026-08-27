@@ -7,7 +7,7 @@ import shutil
 
 import pytest
 
-from spec_helpers import start_full_credit_run, text_message
+from spec_helpers import start_full_credit_run
 
 
 # --- registry (declarative seam; §7, §11.5, §11.7) --------------------------------

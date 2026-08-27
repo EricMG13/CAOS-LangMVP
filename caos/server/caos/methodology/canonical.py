@@ -15,7 +15,7 @@ import re
 from functools import lru_cache
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field
 
 from ..config import Settings
 

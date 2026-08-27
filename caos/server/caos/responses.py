@@ -48,6 +48,9 @@ class CaseResponse(WireModel):
     accepted_snapshot_id: str | None
     visible_snapshot_id: str | None
     current_execution_id: str | None
+    source_count: int
+    deep_research_available: bool
+    deep_research_unavailable_reason: str | None
 
 
 class CaseDetailResponse(CaseResponse):
@@ -172,6 +175,13 @@ class SnapshotDiffResponse(WireModel):
     removed: list[SnapshotDiffEntryResponse]
     modified: list[SnapshotDiffEntryResponse]
     source_set_changed: bool
+
+
+class SnapshotViewResponse(WireModel):
+    accepted: SnapshotResponse | None
+    latest_accepted: SnapshotResponse | None
+    switch_required: bool
+    diff: SnapshotDiffResponse | None
 
 
 class ArtifactResponse(WireModel):

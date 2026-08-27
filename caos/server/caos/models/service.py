@@ -29,7 +29,7 @@ from ..contracts import (
     OneWaySensitivityRequest,
     digest,
 )
-from ..storage.models import ModelRevisionConflict, ModelStore
+from ..storage.models import ModelStore
 from ..storage.store import DomainStore, now_iso
 from .engine import CpModelBundle, ModelInputError, json_value, project_cp2b
 

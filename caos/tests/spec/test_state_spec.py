@@ -32,7 +32,6 @@ def test_run_state_fields_are_json_native_and_round_trip_identically():
 
 
 def test_plan_blob_is_frozen_and_digest_reassertion_catches_mutation():
-    from caos.contracts import digest
     from caos.engine.state import assert_plan_integrity, pin_plan
 
     pinned = pin_plan({"build_id": "b", "nodes": [], "pathway": "FULL_CREDIT", "depth": "full",
@@ -135,7 +134,7 @@ def test_stale_or_late_resume_returns_typed_not_applied(client, engine, store):
     from spec_helpers import seed_case_with_source
 
     case, source = seed_case_with_source(store)
-    response = client.post(f"/api/runs/run-never-existed/resume", json={})
+    response = client.post("/api/runs/run-never-existed/resume", json={})
     assert response.status_code in {404, 409}
     if response.status_code == 409:
         assert response.json()["detail"]["code"] == "RESUME_NOT_APPLIED"

@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import pytest
 
-from spec_helpers import ScriptedProvider, text_message, tool_call_message, start_full_credit_run
+from spec_helpers import text_message, start_full_credit_run
 
 
 # --- literal constants (Appendix A: transcription is the only carrier) ------------

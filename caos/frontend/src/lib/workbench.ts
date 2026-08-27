@@ -83,7 +83,9 @@ export function withQuery(path: string, values: Record<string, string | undefine
 
 export function evidenceKind(value: string): "source" | "artifact" | null {
   const id = value.trim();
-  if (/^src_[a-zA-Z0-9]+$/.test(id)) return "source";
-  if (/^art_[a-zA-Z0-9]+$/.test(id)) return "artifact";
+  // This store issues hyphenated ids (src-…, art-…); the legacy underscore form
+  // stays accepted so pasted references from ported material still resolve.
+  if (/^src[-_][a-zA-Z0-9]+$/.test(id)) return "source";
+  if (/^art[-_][a-zA-Z0-9]+$/.test(id)) return "artifact";
   return null;
 }

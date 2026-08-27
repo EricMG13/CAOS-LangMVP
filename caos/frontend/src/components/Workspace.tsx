@@ -388,16 +388,22 @@ export default function Workspace({ destination, children }: { destination?: Des
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [caseIsAuthorized, runId]);
 
+  // Terminal runs emit nothing further; leaving no stream open also stops the
+  // EventSource reconnect loop once the server ends a fully delivered tail.
+  const runSettled = !run || run.status === "succeeded" || run.status === "failed";
+
   useEffect(() => {
-    if (!runId || !run || run.id !== runId || run.case_id !== caseId) return;
+    if (!runId || !run || run.id !== runId || run.case_id !== caseId || runSettled) return;
     const source = new EventSource(`/api/runs/${runId}/events`);
     const refresh = () => void refreshRun();
-    ["run.running", "node.running", "node.succeeded", "node.failed", "run.succeeded", "run.failed", "run.paused", "research.plan_ready", "research.plan_approved", "snapshot.accepted"].forEach((name) => source.addEventListener(name, refresh));
-    const timer = window.setInterval(refresh, 1200);
-    return () => { source.close(); window.clearInterval(timer); };
+    // Progress is driven by the persisted graph events: each named event triggers
+    // a RunRecord refetch, and `onopen` resyncs whatever a reconnect gap missed.
+    source.onopen = refresh;
+    ["run.created", "run.running", "node.running", "node.succeeded", "node.failed", "run.succeeded", "run.failed", "run.paused", "research.plan_ready", "research.plan_approved", "snapshot.accepted"].forEach((name) => source.addEventListener(name, refresh));
+    return () => source.close();
     // Event updates only begin after the run has passed its case authority check.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [caseId, run?.case_id, run?.id, runId]);
+  }, [caseId, run?.case_id, run?.id, runId, runSettled]);
 
   const createCase = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault(); setError("");

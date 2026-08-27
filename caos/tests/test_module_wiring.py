@@ -10,7 +10,6 @@ import json
 import sys
 from pathlib import Path
 
-import pytest
 
 SERVER = Path(__file__).resolve().parents[1] / "server"
 if str(SERVER) not in sys.path:

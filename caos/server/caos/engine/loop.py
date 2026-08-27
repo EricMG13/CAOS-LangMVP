@@ -14,7 +14,6 @@ import inspect
 import json
 from typing import Any, Callable
 
-from ..contracts import canonical_json
 from .budget import PROVIDER_TIMEOUT_SECONDS, REPAIR_TEXT_LIMIT
 from .provider import AgentError, ProviderMessage, ProviderRequest
 

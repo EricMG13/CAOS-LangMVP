@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import pytest
 
-from spec_helpers import ScriptedProvider, seed_case_with_source, start_full_credit_run
+from spec_helpers import seed_case_with_source, start_full_credit_run
 
 
 # --- source pinning at the entry gate (invariant 1; §10.4, §11.1) -----------------

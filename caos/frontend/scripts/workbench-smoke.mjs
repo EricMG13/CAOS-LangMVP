@@ -47,7 +47,7 @@ assert.equal(crossCaseUpload.status(), 201);
 const crossCaseRunResponse = await api.post(`/api/cases/${raceCase.id}/runs`, {
   data: { pathway: "EARNINGS_UPDATE", depth: "screen", focus_questions: [] },
 });
-assert.equal(crossCaseRunResponse.status(), 202);
+assert.equal(crossCaseRunResponse.status(), 201);
 const crossCaseRun = await crossCaseRunResponse.json();
 let crossCaseRunState;
 for (let attempt = 0; attempt < 60; attempt += 1) {
@@ -81,7 +81,7 @@ const source = await upload.json();
 const started = await api.post(`/api/cases/${caseRecord.id}/runs`, {
   data: { pathway: "EARNINGS_UPDATE", depth: "screen", focus_questions: [] },
 });
-assert.equal(started.status(), 202);
+assert.equal(started.status(), 201);
 const run = await started.json();
 let runState;
 for (let attempt = 0; attempt < 60; attempt += 1) {
@@ -577,7 +577,7 @@ try {
   await page.getByRole("combobox", { name: "Select case" }).selectOption(raceCase.id);
   releaseStartRun();
   const nextRunResponse = await nextRunResponsePromise;
-  assert.equal(nextRunResponse.status(), 202);
+  assert.equal(nextRunResponse.status(), 201);
   const nextRun = await nextRunResponse.json();
   await nextRunResponse.finished();
   await page.unroute(startRunPath, holdStartRun);

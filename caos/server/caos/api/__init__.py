@@ -7,9 +7,12 @@ model (caos.responses); nothing undeclared is ever served.
 
 from __future__ import annotations
 
-from typing import Any
+import asyncio
+import json
+from typing import Any, AsyncIterator
 
 from fastapi import Body, FastAPI, HTTPException, Request, Response
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from .. import responses as wire
@@ -46,13 +49,18 @@ _UNROUTED_SCHEMAS = (
     wire.ThesisResponse,
     wire.VisualRecipeValidationResponse,
     wire.CanonicalGenerationProgressResponse,
-    wire.SnapshotDiffResponse,
     wire.AuditEventResponse,
 )
 
 
 class QueueModelRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
+
+
+class SwitchSnapshotRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    snapshot_id: str = Field(min_length=1, max_length=64)
 
 
 class RVQuickRow(BaseModel):
@@ -106,19 +114,30 @@ def create_app(*, settings: Settings, store: DomainStore, engine: Any) -> FastAP
         who = identity(request)
         return {"subject": who.subject, "email": who.email, "role": who.role}
 
+    def _wire_case(case: dict[str, Any]) -> dict[str, Any]:
+        # ponytail: one current-set read per case (N+1 on the list route);
+        # denormalize a count onto the case row if the register ever gets slow.
+        current = store.current_source_set(case["id"])
+        return {
+            **case,
+            "source_count": len(current["source_ids"]) if current else 0,
+            "deep_research_available": False,
+            "deep_research_unavailable_reason": "Deep Research is disabled for this deployment.",
+        }
+
     @app.post("/api/cases", status_code=201, response_model=wire.CaseDetailResponse)
     def create_case(request: Request, body: CreateCaseRequest = Body(...)) -> dict[str, Any]:
         who = identity(request)
-        return store.create_case(body.name, body.issuer, body.sector, who.subject)
+        return _wire_case(store.create_case(body.name, body.issuer, body.sector, who.subject))
 
     @app.get("/api/cases", response_model=list[wire.CaseResponse])
     def list_cases(request: Request) -> list[dict[str, Any]]:
-        return store.list_cases(identity(request).subject)
+        return [_wire_case(case) for case in store.list_cases(identity(request).subject)]
 
     @app.get("/api/cases/{case_id}", response_model=wire.CaseDetailResponse)
     def get_case(case_id: str, request: Request) -> dict[str, Any]:
         who = identity(request)
-        return require_case(store, case_id, who)
+        return _wire_case(require_case(store, case_id, who))
 
     # -- sources ------------------------------------------------------------
 
@@ -364,6 +383,45 @@ def create_app(*, settings: Settings, store: DomainStore, engine: Any) -> FastAP
     def get_run(run_id: str, request: Request) -> dict[str, Any]:
         return _wire_run(visible_run(run_id, identity(request)))
 
+    @app.get("/api/runs/{run_id}/events")
+    async def run_events(run_id: str, request: Request) -> StreamingResponse:
+        """Thin SSE tail of the append-only run_events log (DECISIONS §5): legacy
+        event names verbatim, `id:` carries the per-run sequence so Last-Event-ID
+        reconnects resume without replay. The stream closes once a terminal run is
+        fully delivered; live runs hold it open with keepalive comments."""
+        visible_run(run_id, identity(request))
+        try:
+            cursor = int(request.headers.get("last-event-id", "0"))
+        except ValueError:
+            cursor = 0
+
+        # ponytail: per-connection 0.4s DB poll, not a wakeup bus — run_events is
+        # tiny and Run Console holds one stream; add a notify hook if fan-out grows.
+        poll_seconds, keepalive_seconds = 0.4, 15.0
+
+        async def tail(after: int) -> AsyncIterator[str]:
+            idle = 0.0
+            while not await request.is_disconnected():
+                events = engine.events_after(run_id, after)
+                for item in events:
+                    after = item["id"]
+                    yield f"id: {item['id']}\nevent: {item['event']}\ndata: {json.dumps(item['data'], separators=(',', ':'))}\n\n"
+                if events:
+                    idle = 0.0
+                # State and event commit in one transaction, so an empty tail on a
+                # terminal run means everything (the terminal event included) is out.
+                elif (engine.get_run(run_id) or {}).get("status") in ("succeeded", "failed"):
+                    return
+                else:
+                    idle += poll_seconds
+                    if idle >= keepalive_seconds:
+                        idle = 0.0
+                        yield ": keepalive\n\n"
+                await asyncio.sleep(poll_seconds)
+
+        return StreamingResponse(tail(cursor), media_type="text/event-stream",
+                                 headers={"Cache-Control": "no-store"})
+
     @app.post("/api/runs/{run_id}/resume", response_model=wire.CanonicalRunResponse, response_model_exclude_unset=True)
     async def resume_run(run_id: str, request: Request) -> dict[str, Any]:
         visible_run(run_id, identity(request), write=True)
@@ -391,6 +449,51 @@ def create_app(*, settings: Settings, store: DomainStore, engine: Any) -> FastAP
         except RuntimeError as exc:
             raise HTTPException(status_code=409, detail={"code": getattr(exc, "code", "RUN_NOT_READY")}) from exc
         return _wire_snapshot(snapshot)
+
+    def _snapshot_diff(visible: dict[str, Any] | None, latest: dict[str, Any] | None) -> dict[str, Any] | None:
+        if visible is None or latest is None or visible["id"] == latest["id"]:
+            return None
+        visible_digests = {ref["module_id"]: ref["digest"] for ref in visible["artifacts"]}
+        latest_digests = {ref["module_id"]: ref["digest"] for ref in latest["artifacts"]}
+        added = [{"module_id": m, "digest": d} for m, d in sorted(latest_digests.items()) if m not in visible_digests]
+        removed = [{"module_id": m, "digest": d} for m, d in sorted(visible_digests.items()) if m not in latest_digests]
+        modified = [{"module_id": m, "digest": d} for m, d in sorted(latest_digests.items())
+                    if m in visible_digests and visible_digests[m] != d]
+        source_set_changed = visible["source_set_id"] != latest["source_set_id"]
+        return {
+            "changed": bool(added or removed or modified or source_set_changed),
+            "added": added, "removed": removed, "modified": modified,
+            "source_set_changed": source_set_changed,
+        }
+
+    @app.get("/api/cases/{case_id}/snapshot", response_model=wire.SnapshotViewResponse)
+    def case_snapshot_view(case_id: str, request: Request) -> dict[str, Any]:
+        """The case's snapshot lens: `accepted` is what the analyst sees now,
+        `latest_accepted` the newest acceptance. Until an explicit switch pins a
+        snapshot, the visible lens follows the accepted pointer; once pinned,
+        only /snapshot/switch moves it and divergence surfaces as switch_required."""
+        require_case(store, case_id, identity(request))
+        case = store.get_case(case_id)
+        accepted_id = case.get("accepted_snapshot_id")
+        visible_id = case.get("visible_snapshot_id") or accepted_id
+        visible = _wire_snapshot(engine.runs.get_snapshot(visible_id)) if visible_id else None
+        latest = _wire_snapshot(engine.runs.get_snapshot(accepted_id)) if accepted_id else None
+        return {
+            "accepted": visible,
+            "latest_accepted": latest,
+            "switch_required": bool(accepted_id) and visible_id != accepted_id,
+            "diff": _snapshot_diff(visible, latest),
+        }
+
+    @app.post("/api/cases/{case_id}/snapshot/switch", response_model=wire.SnapshotResponse)
+    async def switch_snapshot(case_id: str, request: Request, body: SwitchSnapshotRequest = Body(...)) -> dict[str, Any]:
+        who = identity(request)
+        require_case(store, case_id, who, write=True)
+        try:
+            await engine.switch_visible(case_id, body.snapshot_id, actor=who.subject)
+        except RuntimeError as exc:
+            raise HTTPException(status_code=404, detail="snapshot not found") from exc
+        return _wire_snapshot(engine.runs.get_snapshot(body.snapshot_id))
 
     @app.get("/api/cases/{case_id}/artifacts/{artifact_id}", response_model=wire.ArtifactResponse)
     def get_artifact(case_id: str, artifact_id: str, request: Request) -> dict[str, Any]:
