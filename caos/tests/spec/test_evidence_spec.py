@@ -19,7 +19,7 @@ def evidence_context(engine, store):
     from caos.engine.evidence import EvidenceReader
 
     case, source = seed_case_with_source(store)
-    run = asyncio.get_event_loop().run_until_complete(
+    run = asyncio.run(
         engine.start_run(case_id=case["id"], pathway="FULL_CREDIT", depth="full", actor="analyst")
     )
     pinned = engine.get_run(run["id"])["plan"]

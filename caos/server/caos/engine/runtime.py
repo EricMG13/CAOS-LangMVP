@@ -512,7 +512,19 @@ class Engine:
         run_id = state["run_id"]
         plan = state["plan"]
         state_mod.assert_plan_integrity(plan, state["plan_digest"])
-        self._verify_run_artifacts(run_id, plan)
+        # §12.14: the final re-validation before success is a metered bracket,
+        # charged even when verification throws; an over-ceiling charge fails
+        # the run closed HERE, so a success commit never lands past the budget
+        # ceiling (the re-hosted 174+10 finalization-deadline contract).
+        started = self._clock()
+        try:
+            try:
+                self._verify_run_artifacts(run_id, plan)
+            finally:
+                self._charge_active_if_metered(run_id, self._clock() - started)
+        except (AgentError, StoreConflict) as exc:
+            self.runs.finalize_failure(run_id, exc.code, None)
+            raise ModuleFailure(exc.code, None) from exc
         self.runs.finalize_success(run_id)
         return {"error": None}
 
