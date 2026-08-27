@@ -56,3 +56,37 @@ Two structural notes that are *not* splits:
 **CP-PARSE alias carve-out:** CP-PARSE is simultaneously `superseded_module_ids["CP-PARSE"].absorbed_by = "CP-0"` and `preparation_stage {runnable: true, required_before: "CP-0"}`, and `compile()` emits it as its own stage-0 node that CP-0 depends on. The registry alias map therefore resolves CP-PARSE to **its own node**, never to CP-0 — the one alias of the 19 that does not resolve to its recorded parent. The other 18 resolve plainly, with one two-hop chain (CP-4D → CP-4B → CP-4).
 
 Counts verified against the manifest: 41 logical = 22 physical + 19 aliases.
+
+## Amendment (2026-08-27, MVP-extension session — full re-verification and the §7 demonstration)
+
+Every row above was re-verified this session directly against the shipped tree
+(no row changed):
+
+- `CREDIT_OS_V_MODULE_CATALOG_v2.json::superseded_module_ids` carries exactly 19
+  absorbed IDs and its `absorbed_by` mapping reproduces the "Live parent
+  (transitive)" column, including the CP-4D → CP-4B → CP-4 two-hop chain.
+- `Modular OS/` contains ancestor folders for exactly the nine rows marked
+  "yes" (CP-2B, CP-2C, CP-2D, CP-2F, CP-3B, CP-3C, CP-3D, CP-4D, CP-6A) and for
+  none of the ten marked "no" — where the table says no ancestor exists and no
+  contract is stated, that remains a statement of absence, not an inference.
+- Split count is still zero: no absorbed ID is a node in
+  `modules/registry.py::MODULES`; every alias resolves to its recorded parent;
+  CP-PARSE keeps the carve-out (resolves to its own stage-0 node, matching the
+  catalog's `preparation_stage {runnable: true, required_before: CP-0}`).
+- CP-2B remains CP-2A's registry-declared derived projection
+  (`derived_projections == ("CP-2B",)`); the Model Builder recomputes it
+  byte-identically from the pinned CP-2A artifact at resolve time (§12.7).
+- Manifest counts hold: 41 logical = 22 physical + 19 aliases. CP-5B and CP-6E
+  still exist in `Modular OS/` with contracts but appear nowhere in the
+  manifest; nothing in the runtime can address them.
+
+**The load-bearing demonstration (DECISIONS §7) is now performed, not merely
+promised.** Commits `a0ff900` (staging: the three modules returned to their
+pre-wiring deterministic state), then `9a50c5b` (CP-1C), `fa72153` (CP-1D),
+`ddb014b` (CP-5): each wiring diff touches `modules/registry.py` plus its test
+only, each test went red (deterministic SYSTEM_ANALYSIS payload) then green
+(canonical agent envelope from the module's exact assembled authority) through
+a real full-depth scripted run, and no orchestrator-core file changed. The
+registry ended byte-identical to its pre-demonstration state. Splitting a
+consolidated module was not used and would not have counted: the three are
+live catalog modules the legacy runtime could never reach.
