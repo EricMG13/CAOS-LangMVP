@@ -57,12 +57,12 @@ succeeded run to mint the case's analytical snapshot.
 ## Checks
 
 ```bash
-python -m pytest caos/tests -q            # full suite (381 green; 1 known red, see SPEC_RECONCILIATION.md)
+python -m pytest caos/tests -q            # full suite, green (384)
 ruff check --config ruff.toml caos/server caos/tests --exclude caos/server/caos/methodology/vendor
 cd caos/frontend
 npm run lint && npx tsc --noEmit && npm run test:unit && npm run build
 npm run a11y                              # WCAG sweep against the combined app on :8000
-npm run test:workbench                    # browser journey (known red in the Report Studio scenario step)
+npm run test:workbench                    # full browser journey against the combined app
 ```
 
 `CLAUDE.md` is the engineering contract — read it before changing the engine,

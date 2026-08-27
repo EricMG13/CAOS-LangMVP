@@ -165,6 +165,12 @@ with user sign-off (the three `asyncio.get_event_loop().run_until_complete` glue
 request on this interpreter (httpx `json.dumps` fails on the lone surrogate client-side); the
 contract was verified server-side with a raw-bytes request (422, input not echoed).
 
+Addendum (2026-08-27, later the same day, user-approved): the surrogate test was repaired to
+send exactly that raw-bytes form — the body is pre-serialized with `ensure_ascii` so the lone
+surrogate rides the wire as the JSON escape `\ud800`, which the server decodes back into the
+surrogate before the boundary check; the test now also asserts the rejected input is not
+echoed. Suite state after the repair: **384 passed, 0 red.**
+
 The ten invariants are numbered here exactly as the repo already numbers them (spec-file
 docstrings, DECISIONS.md §§6/2/12, code comments); no other enumeration exists in-repo.
 

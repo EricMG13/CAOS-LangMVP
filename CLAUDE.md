@@ -113,31 +113,26 @@ engine, the bundle, or the routes.
   `caos/server/worker.py` (polls the store for QUEUED model builds/exports and
   executes them; the only process with LibreOffice, so XLSX rendering lives
   here and nowhere else). `worker.py --once` runs a single pass.
-- Suite: `python -m pytest caos/tests -q`. Spec tests (`caos/tests/spec/`) are
-  the contractual surface — they pin invariants and wire shapes; phase-2 tests
-  cover ingestion/store/bundle/config. One known red:
-  `test_focus_questions_reject_surrogates_at_the_api_contract` (httpx cannot
-  serialize the surrogate client-side on Python 3.14; the server contract was
-  verified with a raw-bytes request — `SPEC_RECONCILIATION.md`).
+- Suite: `python -m pytest caos/tests -q` — fully green (384). Spec tests
+  (`caos/tests/spec/`) are the contractual surface — they pin invariants and
+  wire shapes; phase-2 tests cover ingestion/store/bundle/config. The surrogate
+  boundary test sends its lone surrogate as a pre-encoded `\ud800` JSON escape
+  (httpx cannot UTF-8-encode the raw character — `SPEC_RECONCILIATION.md`
+  addendum).
 - Frontend: `npm run lint`, `npx tsc --noEmit`, `npm run test:unit`,
   `npm run build`; browser checks against the combined app on `:8000`:
-  `npm run a11y` (green) and `npm run test:workbench`.
+  `npm run a11y` and `npm run test:workbench` (both green).
 - Lint: `ruff check --config ruff.toml caos/server caos/tests --exclude
   caos/server/caos/methodology/vendor`.
 
 ## Known gaps (honest ledger)
 
 - The ported frontend calls some routes this server does not yet serve; those
-  surfaces degrade or stay hidden: Command Center lens (`/cases/{id}/lens`),
-  Admin Studio (`/admin/audit`, `/admin/bundle`), Report Studio deliverables
-  workspace (`GET /cases/{id}/deliverables/{pathway}`), model scenarios /
-  one-way sensitivities / worksheet reads / rebase-preview / revision export
-  under the frontend's paths, deep-research plan approval. A paused run has no
-  resume control in the UI (`POST /api/runs/{id}/resume` exists server-side).
-- `npm run test:workbench` is red in the Report Studio scenario-exhibit step
-  (mocked-flow scope switch); everything through workspace authority, Run
-  Console, palette, and deep research passes. Until it lands, CI's browser job
-  is red at that step.
+  surfaces degrade or stay hidden: Admin Studio (`/admin/audit`,
+  `/admin/bundle`), model scenarios / one-way sensitivities / worksheet reads /
+  rebase-preview / revision export under the frontend's paths, deep-research
+  plan approval. A paused run has no resume control in the UI
+  (`POST /api/runs/{id}/resume` exists server-side).
 - Run checkpoints are SQLite on the data volume even under a Postgres domain
   store (`run.py` notes this); the postgres checkpoint saver is pinned in
   requirements but not wired in the engine. Single app instance only.
