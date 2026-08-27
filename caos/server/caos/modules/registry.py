@@ -38,6 +38,7 @@ GOLDEN_AUTHORITY_DIGESTS = {
     "CP-1A": "9157ed912eb73e21cd51479abe8fc446f895949da673a3e366df8f7c76a9eede",
     "CP-1B": "1d2757874da74caa48ac88d2474d1d5b4ff48982414bb53ba785296f3e684bc1",
     "CP-1C": "01f2787934b06e900125cd3119324621c8436e51683b7a5644db7b77dc75342c",
+    "CP-1D": "0d2841369e275c430434d0c5287ef223dd2ec3c0d404ac1660efc8f028697939",
     "CP-2": "5fb286e7d673de8f621df805948409062da8dd469930bc8df83a92044e440e41",
     "CP-2A": "842663c8c017297102b9abd8569e782103f982d8b62cfafe52a2e9f8c3b390ef",
     "CP-2G": "86d9b25b264c1f1f94690fa61bdd9944acd0201264f287aa41049225bb84931c",
@@ -68,7 +69,11 @@ MODULES: dict[str, ModuleSpec] = {
         max_output_tokens=12_000,
         source_mode="supplied_only",  # web discovery is structurally banned (invariant 1)
     ),
-    "CP-1D": ModuleSpec("CP-1D", "deterministic", skill_slug="cp-1d-earnings-quality"),
+    "CP-1D": ModuleSpec(
+        "CP-1D", "agent", skill_slug="cp-1d-earnings-quality",
+        reference_files=("references/CP-1D_SCHEMA_REFERENCE.md",),
+        max_output_tokens=12_000,
+    ),
     "CP-2": ModuleSpec(
         "CP-2", "agent", skill_slug="cp-2-fundamental-credit-synthesizer",
         reference_files=("references/CP-2_SCHEMA_REFERENCE.md", "references/REF_CP-2_STEPS.md"),

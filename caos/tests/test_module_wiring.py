@@ -124,3 +124,9 @@ async def test_cp1c_agent_wiring_is_registry_only(tmp_path):
     """CP-1C PeerBenchmark executes as an agent on RELATIVE_VALUE full depth."""
     artifacts, provider = await _run_pathway(tmp_path, "RELATIVE_VALUE")
     _assert_agent_executed(artifacts, provider, "CP-1C")
+
+
+async def test_cp1d_agent_wiring_is_registry_only(tmp_path):
+    """CP-1D EarningsQuality executes as an agent on FULL_CREDIT full depth."""
+    artifacts, provider = await _run_pathway(tmp_path, "FULL_CREDIT")
+    _assert_agent_executed(artifacts, provider, "CP-1D")
