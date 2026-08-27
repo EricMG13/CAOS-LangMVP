@@ -194,9 +194,43 @@ def render_frozen_xlsx(payload: dict[str, Any]) -> bytes:
     ):
         record.append([_safe_cell(value) for value in row])
 
+    # Renders are content-addressed: identical payloads must yield identical
+    # bytes, so nothing below the pin may read the clock (§12.4 spirit; the
+    # freeze-conflict discriminator depends on it).
+    from datetime import datetime
+
+    workbook.properties.created = datetime(2026, 1, 1)
+    workbook.properties.modified = datetime(2026, 1, 1)
     output = io.BytesIO()
     workbook.save(output)
     workbook.close()
+    return _deterministic_zip(output.getvalue())
+
+
+def _deterministic_zip(content: bytes) -> bytes:
+    """Re-pack an xlsx with sorted entries, fixed zip metadata, and pinned
+    document timestamps — openpyxl stamps entry mtimes AND rewrites
+    docProps/core.xml created/modified from the wall clock at save time."""
+    import re
+    import zipfile
+
+    source = zipfile.ZipFile(io.BytesIO(content))
+    output = io.BytesIO()
+    try:
+        with zipfile.ZipFile(output, "w", zipfile.ZIP_DEFLATED) as target:
+            for name in sorted(source.namelist()):
+                data = source.read(name)
+                if name == "docProps/core.xml":
+                    data = re.sub(
+                        rb"(<dcterms:(?:created|modified)[^>]*>)[^<]*(</dcterms:(?:created|modified)>)",
+                        rb"\g<1>2026-01-01T00:00:00Z\g<2>",
+                        data,
+                    )
+                info = zipfile.ZipInfo(name, date_time=(1980, 1, 1, 0, 0, 0))
+                info.compress_type = zipfile.ZIP_DEFLATED
+                target.writestr(info, data)
+    finally:
+        source.close()
     return output.getvalue()
 
 

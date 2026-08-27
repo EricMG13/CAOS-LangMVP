@@ -471,8 +471,11 @@ class DomainStore:
             if self._before_universe_write is not None:
                 interpose, self._before_universe_write = self._before_universe_write, None
                 interpose()
+            # Row-locked re-check: on Postgres a racing withdrawal must not
+            # slip between this read and the insert (no-op on SQLite, whose
+            # writer serialization already guarantees it).
             active_source = conn.execute(
-                sa.select(sources.c.withdrawn).where(sources.c.id == record["source_id"])
+                sa.select(sources.c.withdrawn).where(sources.c.id == record["source_id"]).with_for_update()
             ).scalar()
             if record["status"] == "ACTIVE" and active_source is not False:
                 raise ValueError("RV_SOURCE_NOT_ACTIVE: source was withdrawn during import")
@@ -592,9 +595,17 @@ class DomainStore:
         return ModelStore(self.engine).revision_order(case_id)
 
     def mutate_model_revision_for_tests(self, revision_id: str, changes: dict[str, Any]) -> None:
-        """No mutation path exists for a signed revision record — the ledger is
-        append-only by construction; this seam is the enforcement witness."""
-        raise ValueError(f"APPEND_ONLY: model revision {revision_id} is immutable; refused {sorted(changes)}")
+        """Enforcement witness: attempt a REAL update — the store's append-only
+        trigger aborts it. This must never succeed."""
+        from sqlalchemy.exc import DBAPIError
+
+        from .models import ModelStore
+
+        try:
+            ModelStore(self.engine).mutate_revision(revision_id, changes)
+        except DBAPIError as exc:
+            raise ValueError(f"APPEND_ONLY: model revision {revision_id} is immutable") from exc
+        raise AssertionError("append-only trigger failed to refuse a revision mutation")
 
     # -- assumptions (write surface lands in phase 5; staleness is live now) --
 

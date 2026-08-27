@@ -244,6 +244,18 @@ class ModelService:
                 self._defaults_cache.pop(active["id"], None)
             record, created = self.builds.get_build(active["id"]), False
         else:
+            # Model jobs and runs share one admission budget (Appendix A:
+            # MAX_ACTIVE_JOBS checked at run AND build start). Re-pointing an
+            # existing job never consumes a new slot.
+            from ..engine.budget import MAX_ACTIVE_JOBS
+
+            occupied = (
+                self.engine.runs.active_admission_count()
+                + getattr(self.engine, "_admission_offset", 0)
+                + self.builds.active_build_count()
+            )
+            if occupied >= MAX_ACTIVE_JOBS:
+                raise ValueError("ADMISSION_BUSY: active job ceiling reached")
             record, created = self.builds.queue_build({"case_id": case_id, **identity}, actor)
         self._dispatch(record["id"])
         return {**record, "created": created}

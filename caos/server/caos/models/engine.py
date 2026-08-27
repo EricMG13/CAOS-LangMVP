@@ -361,7 +361,10 @@ class CpModelBundle:
         self._growth_slot_preflight(paths.get("CP-2G"))
         try:
             model = self._domain.build_ir(bundle_paths, effective_assumptions=effective_assumptions)
-            calculations = self._calculations.calculate(model)
+            # Serialised with calculate_model: its lenient-check window must
+            # never be observable by a concurrent strict calculation.
+            with _LOAD_LOCK:
+                calculations = self._calculations.calculate(model)
         except self._domain.CpModelV3Error as exc:
             raise self._name_growth_slot(exc) from exc
         return model, _CalculationBookView(calculations, model)

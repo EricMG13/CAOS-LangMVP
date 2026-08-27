@@ -100,6 +100,27 @@ class ModelStore:
     def __init__(self, engine: sa.Engine) -> None:
         self.engine = engine
         model_metadata.create_all(engine)
+        if engine.dialect.name == "sqlite":
+            # Append-only is DB-enforced, not convention: every column of a
+            # signed revision except the export job pointer refuses UPDATE.
+            # ponytail: Postgres gets the equivalent trigger in the baseline
+            # migration when the prod dialect lands.
+            with engine.begin() as conn:
+                conn.exec_driver_sql(
+                    "CREATE TRIGGER IF NOT EXISTS model_revisions_append_only "
+                    "BEFORE UPDATE OF id, case_id, revision_number, build_id, record, created_by, created_at "
+                    "ON model_revisions BEGIN "
+                    "SELECT RAISE(ABORT, 'APPEND_ONLY: model revisions are immutable'); "
+                    "END"
+                )
+
+    def mutate_revision(self, revision_id: str, changes: dict[str, Any]) -> None:
+        """The only mutation path over revision rows; the DB trigger refuses
+        every protected column (export job state goes via update_revision_export)."""
+        allowed = {"id", "case_id", "revision_number", "build_id", "record", "created_by", "created_at"}
+        values = {key: value for key, value in changes.items() if key in allowed} or {"record": changes}
+        with self.engine.begin() as conn:
+            conn.execute(sa.update(model_revisions).where(model_revisions.c.id == revision_id).values(**values))
 
     # -- builds ------------------------------------------------------------
 

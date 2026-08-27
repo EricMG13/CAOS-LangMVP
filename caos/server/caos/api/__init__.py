@@ -146,7 +146,9 @@ def create_app(*, settings: Settings, store: DomainStore, engine: Any) -> FastAP
         who = identity(request)
         require_case(store, case_id, who, write=True)
         form = await request.form()
-        upload = form["file"]
+        upload = form.get("file")
+        if upload is None or isinstance(upload, str):
+            raise HTTPException(status_code=422, detail="multipart field 'file' is required")
         content = await upload.read()
         if len(content) > settings.max_upload_bytes:
             raise HTTPException(status_code=413, detail="upload exceeds the size limit")

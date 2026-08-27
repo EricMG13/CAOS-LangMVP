@@ -94,10 +94,15 @@ class DeliverableService:
     def templates(self) -> dict[str, dict[str, Any]]:
         return {pathway: _template(pathway) for pathway in PATHWAY_TEMPLATES}
 
+    def _template_for(self, pathway: str) -> dict[str, Any]:
+        if pathway not in PATHWAY_TEMPLATES:
+            raise ValueError(f"DELIVERABLE_PATHWAY_INVALID: no template for {pathway!r}")
+        return _template(pathway)
+
     # -- draft save ----------------------------------------------------------
 
     def save_draft(self, case_id: str, pathway: str, request: DeliverableDraftRequest, *, actor: str) -> dict[str, Any]:
-        template = self.templates()[pathway]
+        template = self._template_for(pathway)
         blocks = [block.model_dump(mode="json") for block in request.blocks]
         self._validate_layout(template, blocks)
         self._validate_citations(case_id, blocks)
@@ -118,10 +123,15 @@ class DeliverableService:
         required_order = [slot["slot_id"] for slot in template["slots"]]
         policy_by_stem = {entry["slot_stem"]: entry for entry in template["optional_blocks"]}
         seen_required: list[str] = []
+        seen_slots: set[str] = set()
         optional_orders: list[int] = []
+        stem_counts: dict[str, int] = {}
         past_required = False
         for block in blocks:
             slot_id = block["slot_id"]
+            if slot_id in seen_slots:
+                raise ValueError(f"DELIVERABLE_SLOT_INVALID: {slot_id} appears more than once")
+            seen_slots.add(slot_id)
             if slot_id in required:
                 if past_required:
                     raise ValueError("DELIVERABLE_TEMPLATE_ORDER_INVALID: required slots precede appendices")
@@ -132,10 +142,14 @@ class DeliverableService:
             past_required = True
             stem, _, index = slot_id.rpartition("-")
             policy = policy_by_stem.get(stem)
-            if policy is None or not index.isdigit() or not 1 <= int(index) <= policy["max"]:
+            # Canonical index only (no zero-padded aliases of the same slot).
+            if policy is None or not index.isdigit() or index != str(int(index)) or not 1 <= int(index) <= policy["max"]:
                 raise ValueError(f"DELIVERABLE_SLOT_INVALID: {slot_id} is not a declared optional slot")
             if block["kind"] != policy["kind"]:
                 raise ValueError(f"DELIVERABLE_SLOT_INVALID: {slot_id} carries {policy['kind']} blocks only")
+            stem_counts[stem] = stem_counts.get(stem, 0) + 1
+            if stem_counts[stem] > policy["max"]:
+                raise ValueError(f"DELIVERABLE_SLOT_INVALID: more than {policy['max']} {policy['kind']} blocks")
             optional_orders.append(policy["order"])
         if seen_required != required_order:
             raise ValueError("DELIVERABLE_TEMPLATE_ORDER_INVALID: required slots must appear once, in template order")
@@ -240,7 +254,7 @@ class DeliverableService:
 
     def workspace(self, case_id: str, pathway: str) -> dict[str, Any]:
         return {
-            "template": self.templates()[pathway],
+            "template": self._template_for(pathway),
             "draft": self.records.head_revision(case_id, pathway),
             "frozen": self.records.frozen_for_pathway(case_id, pathway),
         }
@@ -256,6 +270,9 @@ class DeliverableService:
     def freeze(self, case_id: str, request: FreezeDeliverableRequest, *, actor: str) -> dict[str, Any]:
         revision = self._revision_for_freeze(case_id, request)
         pathway = self._pathway_of(case_id, request.draft_id)
+        # Invariant 1 holds at the freeze boundary, not only at draft save: a
+        # source withdrawn since the revision was written refuses the freeze.
+        self._validate_citations(case_id, revision["content"]["blocks"])
         authority = self.records.authority(case_id)
         if authority is None:
             raise ValueError("DELIVERABLE_UPSTREAM_AUTHORITY_REQUIRED: no accepted upstream SNAPSHOT identity is pinned")
