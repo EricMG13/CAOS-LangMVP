@@ -1,0 +1,14 @@
+{
+  "$schema": "https://raw.githubusercontent.com/fallow-rs/fallow/main/schema.json",
+  "workspaces": { "patterns": ["caos/frontend"] },
+  "entry": [
+    "caos/frontend/scripts/*.mjs",
+    "caos/frontend/src/**/*.test.ts"
+  ],
+  "ignorePatterns": [
+    "caos/frontend/out/**",
+    "caos/frontend/.next/**",
+    "caos/server/**",
+    "Modular OS/**"
+  ]
+}
