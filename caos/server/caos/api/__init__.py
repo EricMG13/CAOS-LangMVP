@@ -13,10 +13,14 @@ from fastapi import Body, FastAPI, HTTPException, Request, Response
 from ..config import Settings
 from ..contracts import (
     CreateCaseRequest,
+    DeliverableDraftRequest,
+    FileDeliverableRequest,
+    FreezeDeliverableRequest,
     LoanUniverseImportRequest,
     ModelPreviewRequest,
     ModelSignOffRequest,
     NoteRequest,
+    RequestDeliverableChangesRequest,
     StartRunRequest,
 )
 from ..artifacts.loan_universe import (
@@ -372,5 +376,111 @@ def create_app(*, settings: Settings, store: DomainStore, engine: Any) -> FastAP
     def model_revisions(case_id: str, request: Request) -> dict[str, Any]:
         require_case(store, case_id, identity(request))
         return {"revisions": models().revisions(case_id)}
+
+    # -- deliverables --------------------------------------------------------
+
+    _deliverables: dict[str, Any] = {}
+
+    def deliverables() -> Any:
+        from ..deliverables.service import DeliverableService
+
+        if "service" not in _deliverables:
+            _deliverables["service"] = DeliverableService(store=store, vault_dir=settings.storage_dir, engine=engine)
+        return _deliverables["service"]
+
+    def require_case_approver(case_id: str, request: Request) -> Any:
+        """Filing is approver-gated by CASE standing (DECISIONS §2): global
+        roles never escalate, non-members never learn the case exists."""
+        who = identity(request)
+        if store.get_case(case_id) is None or not store.is_member(case_id, who.subject):
+            raise HTTPException(status_code=404, detail="case not found")
+        if not store.is_member(case_id, who.subject, roles={"APPROVER", "ADMIN"}):
+            raise HTTPException(status_code=403, detail="case approver authority required")
+        return who
+
+    def deliverable_error(exc: ValueError) -> HTTPException:
+        from ..deliverables.service import ResumeNotApplied
+        from ..storage.deliverables import DeliverableVersionConflict
+
+        if isinstance(exc, ResumeNotApplied):
+            return HTTPException(status_code=409, detail={
+                "code": "RESUME_NOT_APPLIED", "current_interrupt_id": exc.current_interrupt_id,
+            })
+        if isinstance(exc, DeliverableVersionConflict):
+            return HTTPException(status_code=409, detail={
+                "code": "DELIVERABLE_VERSION_CONFLICT", "current": exc.current,
+            })
+        code = str(exc).split(":", 1)[0]
+        status = 404 if "NOT_FOUND" in code else 409 if ("STALE" in code or "CONFLICT" in code or "CHANGED" in code or "INTEGRITY" in code) else 422
+        return HTTPException(status_code=status, detail={"code": code})
+
+    @app.get("/api/cases/{case_id}/deliverables/{pathway}/draft")
+    def get_deliverable_draft(case_id: str, pathway: str, request: Request) -> dict[str, Any]:
+        require_case(store, case_id, identity(request))
+        return deliverables().workspace(case_id, pathway)
+
+    @app.put("/api/cases/{case_id}/deliverables/{pathway}/draft", status_code=201)
+    def put_deliverable_draft(case_id: str, pathway: str, request: Request,
+                              body: DeliverableDraftRequest = Body(...)) -> dict[str, Any]:
+        who = identity(request)
+        require_case(store, case_id, who, write=True)
+        try:
+            return deliverables().save_draft(case_id, pathway, body, actor=who.subject)
+        except ValueError as exc:
+            raise deliverable_error(exc) from exc
+
+    @app.get("/api/cases/{case_id}/deliverables/revisions/{revision_id}")
+    def get_deliverable_revision(case_id: str, revision_id: str, request: Request) -> dict[str, Any]:
+        require_case(store, case_id, identity(request))
+        revision = deliverables().revision_by_id(case_id, revision_id)
+        if revision is None:
+            raise HTTPException(status_code=404, detail="revision not found")
+        return revision
+
+    @app.post("/api/cases/{case_id}/deliverables/{pathway}/freeze", status_code=201)
+    def freeze_deliverable(case_id: str, pathway: str, request: Request,
+                           body: FreezeDeliverableRequest = Body(...)) -> dict[str, Any]:
+        who = identity(request)
+        require_case(store, case_id, who, write=True)
+        try:
+            return deliverables().freeze(case_id, body, actor=who.subject)
+        except ValueError as exc:
+            raise deliverable_error(exc) from exc
+
+    @app.post("/api/cases/{case_id}/deliverables/by-id/{deliverable_id}/approve")
+    def approve_deliverable(case_id: str, deliverable_id: str, request: Request,
+                            body: FileDeliverableRequest = Body(...)) -> dict[str, Any]:
+        who = require_case_approver(case_id, request)
+        try:
+            return deliverables().approve_filing(case_id, deliverable_id, body, actor=who.subject)
+        except ValueError as exc:
+            raise deliverable_error(exc) from exc
+
+    @app.post("/api/cases/{case_id}/deliverables/by-id/{deliverable_id}/request-changes")
+    def request_deliverable_changes(case_id: str, deliverable_id: str, request: Request,
+                                    body: RequestDeliverableChangesRequest = Body(...)) -> dict[str, Any]:
+        who = require_case_approver(case_id, request)
+        try:
+            return deliverables().request_changes(case_id, deliverable_id, body, actor=who.subject)
+        except ValueError as exc:
+            raise deliverable_error(exc) from exc
+
+    @app.get("/api/cases/{case_id}/deliverables/by-id/{deliverable_id}/export/{format_name}")
+    def export_deliverable(case_id: str, deliverable_id: str, format_name: str, request: Request):
+        from fastapi.responses import Response as _Response
+
+        require_case(store, case_id, identity(request))
+        service = deliverables()
+        record = service.frozen_record(case_id, deliverable_id)
+        if record is None:
+            raise HTTPException(status_code=404, detail="deliverable not found")
+        if record["status"] != "FILED":
+            raise HTTPException(status_code=409, detail={"code": "DELIVERABLE_NOT_FILED"})
+        try:
+            content, sha256 = service.export(deliverable_id, format_name)
+        except ValueError as exc:
+            raise deliverable_error(exc) from exc
+        return _Response(content=content, media_type="application/octet-stream",
+                         headers={"cache-control": "no-store", "x-caos-sha256": sha256})
 
     return app
