@@ -4,7 +4,34 @@ export type ResearchWorkstream = { id: string; kind: string; question: string; a
 export type ResearchPlan = { methodology_build_id: string; brief_digest: string; source_set: { id: string; version: number }; upstream_artifacts: { module_id: string; artifact_id: string; digest: string }[]; scope: { type?: string | null; key?: string | null; source_mode?: string | null }; workstreams: ResearchWorkstream[] };
 export type RunRecord = { id: string; case_id: string; status: string; plan: { pathway: string; depth: string; profile_id: string; selection_id: string }; nodes: { id: string; module_id: string; status: string; artifact_id?: string | null }[]; error?: { code?: string; message?: string } | null; research?: { phase?: string; proposed_plan_hash?: string | null; approved_plan_hash?: string | null; proposed_plan?: ResearchPlan | null } | null };
 export type SourceRecord = { id: string; filename: string; sha256: string; blocks: { block_id: string; locator: Record<string, unknown>; text?: string }[] };
-export type ArtifactRecord = { id: string; module_id: string; digest: string; markdown?: string; created_at?: string; payload?: { summary?: string; evidence_refs?: string[]; narrative?: { takeaway?: string; basis?: string }; visual?: { freshness?: string; units?: string } } };
+// Envelope: GET /api/cases/{case_id}/artifacts/{artifact_id} (ArtifactResponse in
+// caos/server/caos/responses.py). `markdown` is null for deterministic payloads
+// (caos.system_analysis.v1) and holds the canonical six-section document for agent
+// payloads (caos.canonical.artifact.v1), whose evidence_refs are objects.
+export type ArtifactRecord = {
+  id: string;
+  case_id?: string;
+  run_id?: string;
+  module_id: string;
+  digest: string;
+  input_fingerprint?: string;
+  created_by?: string;
+  created_at?: string;
+  markdown?: string | null;
+  payload?: {
+    schema_version?: string;
+    status?: string;
+    summary?: string;
+    evidence_refs?: string[] | { source_id: string; block_id?: string | null }[];
+    lineage?: { input_fingerprint?: string; upstream_digests?: string[] };
+    narrative?: { takeaway?: string; basis?: string; exceptions?: string };
+    authority?: string;
+    confidence?: { band?: string; qa_status?: string };
+    provenance?: { executor?: string; profile_id?: string | null; selection_id?: string | null };
+    canonical_output?: { markdown?: string; markdown_sha256?: string };
+    inputs?: { loan_universe?: { identity?: Record<string, unknown>; rows?: Record<string, unknown>[] } };
+  } | null;
+};
 export type LoanLocator = { sheet: string; row: number };
 export type LoanRow = { instrument_key: string; company: string | null; borrower_name: string | null; business_description: string | null; sector: string; sub_sector: string | null; sub_group: string | null; public_private: string | null; bloomberg_loan_id: string | null; figi: string | null; loan_type: string | null; ranking: string | null; ratings: string | null; size_mn: number | null; margin_bps: number | null; maturity_date: string | null; bid_points: number | null; ask_points: number | null; change_1d_points: number | null; change_1w_points: number | null; change_1m_points: number | null; change_3m_points: number | null; change_6m_points: number | null; change_1yr_points: number | null; change_ytd_points: number | null; mid_ytm_pct: number | null; mid_3y_dm_bps: number | null; source_locators: LoanLocator[] };
 export type LoanUniverse = { id: string; source_id: string; source_filename: string; source_sha256: string; workbook_date: string | null; template_version: string; importer_version: string; universe_digest: string; row_count: number; version: number; status: string; activated_at: string };

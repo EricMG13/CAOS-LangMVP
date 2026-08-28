@@ -7,6 +7,7 @@ import EvidenceChip from "./EvidenceChip";
 import ModelBuilder from "./model/ModelBuilder";
 import ReportStudio from "./report/ReportStudio";
 import { api as request, type ArtifactRecord, type CaseRecord, type LoanFinding, type LoanRow, type LoanUniverseResponse, type ResearchPlan, type RunRecord, type SourceRecord } from "../lib/api";
+import { displayValue, flattenValue, markdownBlocks, normalizeEvidenceRefs, type NormalizedEvidenceRef } from "../lib/artifactReader";
 import { initialAuthorityState, matchesAuthority, requestContext, workspaceAuthorityReducer, type AuthorityEvent } from "../lib/workspaceAuthority";
 
 import WorkbenchShell, { type DrawerState } from "./WorkbenchShell";
@@ -640,7 +641,7 @@ function SourcesView({ selectedCase, artifactId, sourceId, upload, pendingAction
     if (artifactId) void request<ArtifactRecord>(`/api/cases/${selectedCase.id}/artifacts/${artifactId}`).then((next) => { if (!ignore) setArtifact(next); }).catch((caught) => { if (!ignore) setArtifactError(caught instanceof Error ? caught.message : "Unable to load evidence artifact"); });
     return () => { ignore = true; };
   }, [selectedCase, artifactId]);
-  const evidenceRefs = artifact?.payload?.evidence_refs || [];
+  const evidenceRefs = useMemo(() => normalizeEvidenceRefs(artifact?.payload?.evidence_refs), [artifact]);
   const sourceById = useMemo(() => new Map(sources.map((source) => [source.id, source])), [sources]);
   const activeEvidenceId = linkedEvidenceId || selectedEvidenceId;
   const openEvidence = (evidenceId: string) => {
@@ -670,9 +671,65 @@ function SourcesView({ selectedCase, artifactId, sourceId, upload, pendingAction
     onOpenEvidence(sourceId, source);
   }, [loading, onOpenEvidence, readySourceCaseId, selectedCase, sourceById, sourceId]);
   return <div className="grid">
-    {artifactId && <section className="panel span-12 evidence-focus"><div className="panel-header"><h2>Evidence focus</h2><span className="eyebrow">ARTIFACT {artifact?.module_id || artifactId}</span></div><div className="panel-body">{artifact ? <><p className="mono">{artifact.digest}</p><p>{artifact.payload?.summary || artifact.payload?.narrative?.takeaway || "No artifact summary available."}</p><p className="muted">{artifact.payload?.narrative?.basis || "Typed artifact lineage."}{artifact.payload?.visual?.freshness ? ` · ${artifact.payload.visual.freshness}` : ""}</p><div className="evidence-list" aria-label="Artifact evidence">{evidenceRefs.map((evidenceId) => <EvidenceChip evidenceId={evidenceId} key={evidenceId} linkedId={activeEvidenceId} onOpen={openEvidence} onPreview={setLinkedEvidenceId} onPreviewEnd={() => setLinkedEvidenceId("")} />)}</div></> : <LoadState loading={!artifactError && loading} error={artifactError} empty="No artifact details were returned." />}</div></section>}
-    <section className="panel span-8"><div className="panel-header"><h2>Source set</h2><span className="eyebrow">{loading ? "LOADING…" : `${sources.length} immutable objects`}</span></div><div className="panel-body table-wrap" tabIndex={0} role="region" aria-label="Scrollable table">{selectedEvidenceId && <div className="selection-strip" role="status"><span>Evidence {selectedEvidenceId}</span><button type="button" className="button small" onClick={() => setSelectedEvidenceId("")}>Clear</button></div>}{artifactError && !artifactId && <p className="error" role="alert">{artifactError}</p>}<table><thead><tr><th scope="col">File</th><th scope="col">SHA-256</th><th scope="col">Blocks</th></tr></thead><tbody>{sources.map((source) => <tr id={`source-${source.id}`} className={activeEvidenceId === source.id ? "evidence-match" : undefined} key={source.id}><td><div className="source-file"><details><summary>{source.filename}</summary><div className="source-blocks">{source.blocks.slice(0, 20).map((block) => <article className="source-block" id={`block-${source.id}-${block.block_id}`} key={block.block_id}><div className="eyebrow">{block.block_id} · {JSON.stringify(block.locator)}</div><p>{block.text || "No extracted text."}</p></article>)}{source.blocks.length > 20 && <p className="muted">Showing the first 20 blocks. Use the source object for the remaining {source.blocks.length - 20} blocks.</p>}</div></details>{evidenceRefs.includes(source.id) && <EvidenceChip evidenceId={source.id} linkedId={activeEvidenceId} onOpen={openEvidence} onPreview={setLinkedEvidenceId} onPreviewEnd={() => setLinkedEvidenceId("")} />}</div></td><td className="mono">{source.sha256.slice(0, 16)}…</td><td className="num">{source.blocks.length}</td></tr>)}</tbody></table>{!sources.length && <LoadState loading={loading} error={loadError} empty="No source objects in this case." />}{sources.length > 0 && loadError && <p className="error" role="alert">{loadError}</p>}</div></section>
+    {artifactId && <section className="panel span-12 evidence-focus"><div className="panel-header"><h2>Evidence focus</h2><span className="eyebrow">ARTIFACT {artifact?.module_id || artifactId}</span></div><div className="panel-body">{artifact ? <ArtifactReader artifact={artifact} evidenceRefs={evidenceRefs} activeEvidenceId={activeEvidenceId} onOpenEvidence={openEvidence} onPreview={setLinkedEvidenceId} onPreviewEnd={() => setLinkedEvidenceId("")} /> : <LoadState loading={!artifactError && loading} error={artifactError} empty="No artifact details were returned." />}</div></section>}
+    <section className="panel span-8"><div className="panel-header"><h2>Source set</h2><span className="eyebrow">{loading ? "LOADING…" : `${sources.length} immutable objects`}</span></div><div className="panel-body table-wrap" tabIndex={0} role="region" aria-label="Scrollable table">{selectedEvidenceId && <div className="selection-strip" role="status"><span>Evidence {selectedEvidenceId}</span><button type="button" className="button small" onClick={() => setSelectedEvidenceId("")}>Clear</button></div>}{artifactError && !artifactId && <p className="error" role="alert">{artifactError}</p>}<table><thead><tr><th scope="col">File</th><th scope="col">SHA-256</th><th scope="col">Blocks</th></tr></thead><tbody>{sources.map((source) => <tr id={`source-${source.id}`} className={activeEvidenceId === source.id ? "evidence-match" : undefined} key={source.id}><td><div className="source-file"><details><summary>{source.filename}</summary><div className="source-blocks">{source.blocks.slice(0, 20).map((block) => <article className="source-block" id={`block-${source.id}-${block.block_id}`} key={block.block_id}><div className="eyebrow">{block.block_id} · {JSON.stringify(block.locator)}</div><p>{block.text || "No extracted text."}</p></article>)}{source.blocks.length > 20 && <p className="muted">Showing the first 20 blocks. Use the source object for the remaining {source.blocks.length - 20} blocks.</p>}</div></details>{evidenceRefs.some((ref) => ref.sourceId === source.id) && <EvidenceChip evidenceId={source.id} linkedId={activeEvidenceId} onOpen={openEvidence} onPreview={setLinkedEvidenceId} onPreviewEnd={() => setLinkedEvidenceId("")} />}</div></td><td className="mono">{source.sha256.slice(0, 16)}…</td><td className="num">{source.blocks.length}</td></tr>)}</tbody></table>{!sources.length && <LoadState loading={loading} error={loadError} empty="No source objects in this case." />}{sources.length > 0 && loadError && <p className="error" role="alert">{loadError}</p>}</div></section>
     <section className="panel span-4"><div className="panel-header"><h2>Add source</h2><span className="eyebrow">BOUNDARY</span></div><div className="panel-body">{selectedCase ? <form onSubmit={upload}><div className="field"><label htmlFor="source-file">Source file</label><input id="source-file" name="file" type="file" accept=".pdf,.xlsx,.json,.txt,.md,.csv" required /></div><button className="button primary" type="submit" disabled={pendingAction === "upload"}>{pendingAction === "upload" ? "Uploading…" : "Ingest safely"}</button></form> : <div className="empty">Select a case.</div>}</div></section>
+  </div>;
+}
+
+// The artifact reader: the full module output — summary, narrative, provenance,
+// lineage, and evidence citations — readable before a snapshot is accepted.
+// Deterministic payloads (markdown null) render the typed narrative fields;
+// agent payloads render the canonical six-section markdown, host frontmatter
+// stripped, with no HTML injection surface.
+function ArtifactReader({ artifact, evidenceRefs, activeEvidenceId, onOpenEvidence, onPreview, onPreviewEnd }: { artifact: ArtifactRecord; evidenceRefs: NormalizedEvidenceRef[]; activeEvidenceId: string; onOpenEvidence: (evidenceId: string) => void; onPreview: (evidenceId: string) => void; onPreviewEnd: () => void }) {
+  const payload = artifact.payload || undefined;
+  const blocks = useMemo(() => (artifact.markdown ? markdownBlocks(artifact.markdown) : []), [artifact.markdown]);
+  const summary = payload?.summary;
+  const takeaway = payload?.narrative?.takeaway;
+  const exceptions = payload?.narrative?.exceptions;
+  const upstreamDigests = payload?.lineage?.upstream_digests || [];
+  const inputFingerprint = payload?.lineage?.input_fingerprint || artifact.input_fingerprint;
+  const loanUniverse = payload?.inputs?.loan_universe;
+  return <div className="flow artifact-reader">
+    <div className="artifact-provenance">
+      <span className="mono">{artifact.module_id}</span>
+      {payload?.status && <span className={`status ${payload.status === "COMPLETE" ? "success" : "warning"}`}>{payload.status}</span>}
+      {payload?.authority && <span className="eyebrow">{payload.authority}</span>}
+      {payload?.confidence?.band && <span className="eyebrow">Confidence {payload.confidence.band}</span>}
+      {payload?.confidence?.qa_status && <span className="eyebrow">QA {payload.confidence.qa_status}</span>}
+    </div>
+    {artifact.markdown ? <>
+      <h3>Module output</h3>
+      <div className="artifact-markdown">{blocks.map((block, index) => block.kind === "heading" ? <h4 key={`block:${index}`}>{block.text}</h4> : <p key={`block:${index}`}>{block.text}</p>)}</div>
+    </> : <>
+      <p>{summary || takeaway || "No artifact summary available."}</p>
+      {takeaway && takeaway !== summary && <p>{takeaway}</p>}
+      {payload?.narrative?.basis && <p className="muted">{payload.narrative.basis}</p>}
+      {exceptions && <div className="callout warning"><strong>Exceptions</strong><p>{exceptions}</p></div>}
+    </>}
+    <h3>Lineage</h3>
+    <dl className="state-facts">
+      <dt>Artifact digest</dt><dd className="mono">{artifact.digest}</dd>
+      {inputFingerprint && <><dt>Input fingerprint</dt><dd className="mono">{inputFingerprint}</dd></>}
+      <dt>Upstream digests</dt><dd>{upstreamDigests.length ? <ul className="artifact-digest-list">{upstreamDigests.map((digest, index) => <li className="mono" key={`upstream:${index}`}>{digest}</li>)}</ul> : <span className="muted">None</span>}</dd>
+      {payload?.provenance?.executor && <><dt>Executor</dt><dd className="mono">{payload.provenance.executor}</dd></>}
+      {payload?.provenance?.profile_id && <><dt>Profile</dt><dd className="mono">{payload.provenance.profile_id}</dd></>}
+      {payload?.provenance?.selection_id && <><dt>Selection</dt><dd className="mono">{payload.provenance.selection_id}</dd></>}
+    </dl>
+    {loanUniverse?.rows && <><h3>Loan universe</h3><ArtifactDataTable label="Pinned loan universe" value={loanUniverse} /></>}
+    <h3>Evidence</h3>
+    {evidenceRefs.length ? <div className="evidence-list" aria-label="Artifact evidence">{evidenceRefs.map((ref) => <span className="evidence-ref" key={ref.sourceId}><EvidenceChip evidenceId={ref.sourceId} linkedId={activeEvidenceId} onOpen={onOpenEvidence} onPreview={onPreview} onPreviewEnd={onPreviewEnd} />{ref.blockIds.length > 0 && <span className="mono muted">{ref.blockIds.join(" · ")}</span>}</span>)}</div> : <p className="muted">No evidence citations in this artifact.</p>}
+  </div>;
+}
+
+function ArtifactDataTable({ value, label, maxRows = 80 }: { value: unknown; label: string; maxRows?: number }) {
+  const flattened = flattenValue(value);
+  const rows = flattened.slice(0, maxRows);
+  if (!rows.length) return <p className="muted">No pinned values are available.</p>;
+  return <div className="table-wrap" tabIndex={0} role="region" aria-label={label}>
+    <table><thead><tr><th scope="col">Field</th><th scope="col">Value</th></tr></thead><tbody>{rows.map((row) => <tr key={row.label}><th scope="row">{row.label}</th><td className="num">{displayValue(row.value)}</td></tr>)}</tbody></table>
+    {flattened.length > rows.length && <p className="muted">Showing the first {rows.length} of {flattened.length} pinned values.</p>}
   </div>;
 }
 
@@ -692,10 +749,10 @@ function RunForm({ caseId, startRun, pendingAction }: { caseId: string; startRun
 // Shared by Run Console and the inline panels on Cases and Deep-Dive. `approvalSlot`
 // is how Run Console injects the full ResearchPlanView; inline surfaces route to it
 // instead, since plan approval is a Run Console responsibility.
-function RunStatus({ run, runLoading, runError, acceptRun, pendingAction, approvalSlot }: { run: RunRecord | null; runLoading: boolean; runError: string; acceptRun: () => void; pendingAction: string; approvalSlot: ReactNode }) {
+function RunStatus({ caseId, run, runLoading, runError, acceptRun, pendingAction, approvalSlot }: { caseId: string; run: RunRecord | null; runLoading: boolean; runError: string; acceptRun: () => void; pendingAction: string; approvalSlot: ReactNode }) {
   if (!run) return <LoadState loading={runLoading} error={runError} empty="No current execution. Select a purpose and depth to create an immutable plan." />;
   return <>
-    <div className="dag">{run.nodes.map((node, index) => <div className="dag-step" key={node.id}>{index > 0 && <span className="dag-edge" aria-hidden="true">→</span>}<div className={`dag-node ${node.status}`}><strong>{node.module_id}</strong><div className="muted">{node.status}</div></div></div>)}</div>
+    <div className="dag">{run.nodes.map((node, index) => <div className="dag-step" key={node.id}>{index > 0 && <span className="dag-edge" aria-hidden="true">→</span>}{node.artifact_id ? <Link className={`dag-node ${node.status}`} href={withQuery("/sources/", { case: caseId, artifact: node.artifact_id })}><strong>{node.module_id}</strong><div className="muted">{node.status}</div><span className="dag-node-open">Open output</span></Link> : <div className={`dag-node ${node.status}`}><strong>{node.module_id}</strong><div className="muted">{node.status}</div></div>}</div>)}</div>
     {run.status === "failed" && run.error && <p className="error" role="alert">{run.error.code ? `${run.error.code}: ` : ""}{run.error.message || "Run exception"}</p>}
     {run.status === "succeeded" && <button className="button primary" disabled={pendingAction === "accept-run"} onClick={acceptRun}>{pendingAction === "accept-run" ? "Accepting…" : "Accept analytical snapshot"}</button>}
     {run.status === "paused" && run.error?.code === "SOURCE_SET_EMPTY" && <div className="callout warning" role="status" aria-live="polite">Material exception: upload governed source material before execution.</div>}
@@ -710,7 +767,7 @@ function InlineRun({ caseId, run, runLoading, runError, startRun, acceptRun, pen
     <div className="panel-header inline-run-header"><h2>Inline execution</h2><div className="inline-run-actions"><RunStatusBadge run={run} /><Link className="button small" href={withQuery("/run-console", { case: caseId })}>Open Run Console</Link></div></div>
     <div className="panel-body inline-run-body">
       <div className="inline-run-form"><RunForm caseId={caseId} startRun={startRun} pendingAction={pendingAction} /></div>
-      <div className="inline-run-status"><RunStatus run={run} runLoading={runLoading} runError={runError} acceptRun={acceptRun} pendingAction={pendingAction} approvalSlot={<div className="callout warning" role="status" aria-live="polite"><strong>Plan approval required</strong><p>Approve the bounded research plan in Run Console before this route can continue.</p></div>} /></div>
+      <div className="inline-run-status"><RunStatus caseId={caseId} run={run} runLoading={runLoading} runError={runError} acceptRun={acceptRun} pendingAction={pendingAction} approvalSlot={<div className="callout warning" role="status" aria-live="polite"><strong>Plan approval required</strong><p>Approve the bounded research plan in Run Console before this route can continue.</p></div>} /></div>
     </div>
   </section>;
 }
@@ -755,7 +812,7 @@ function RunConsole({ caseId, selectedCase, run, runLoading, runError, startRun,
     </section>
     <section className="panel span-8">
       <div className="panel-header"><h2>Persisted DAG</h2><RunStatusBadge run={run} /></div>
-      <div className="panel-body flow"><RunStatus run={run} runLoading={runLoading} runError={runError} acceptRun={acceptRun} pendingAction={pendingAction} approvalSlot={approvalPlan && approvalHash ? <ResearchPlanView plan={approvalPlan} planHash={approvalHash} approving={pendingAction === "approve-research-plan"} onApprove={approveResearchPlan} /> : <div className="callout warning" role="status" aria-live="polite"><strong>PLAN_APPROVAL_REQUIRED</strong><p>The persisted approval plan is unavailable; approval remains blocked.</p></div>} /></div>
+      <div className="panel-body flow"><RunStatus caseId={caseId} run={run} runLoading={runLoading} runError={runError} acceptRun={acceptRun} pendingAction={pendingAction} approvalSlot={approvalPlan && approvalHash ? <ResearchPlanView plan={approvalPlan} planHash={approvalHash} approving={pendingAction === "approve-research-plan"} onApprove={approveResearchPlan} /> : <div className="callout warning" role="status" aria-live="polite"><strong>PLAN_APPROVAL_REQUIRED</strong><p>The persisted approval plan is unavailable; approval remains blocked.</p></div>} /></div>
     </section>
   </div>;
 }

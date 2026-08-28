@@ -152,6 +152,16 @@ dialog:not(.context-drawer) { width: min(680px, calc(100% - 32px)); max-width: 6
 .error-state { text-align: left; }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 .evidence-focus { border-color: var(--caos-accent); }
+.artifact-provenance { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-sm) var(--space-lg); }
+.artifact-markdown { display: grid; gap: var(--space-sm); }
+.artifact-markdown h4 { margin: var(--space-sm) 0 0; }
+.artifact-markdown p { margin: 0; white-space: pre-wrap; }
+.artifact-digest-list { margin: 0; padding-left: var(--space-lg); display: grid; gap: var(--space-xs); }
+.evidence-ref { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--space-xs); max-width: 100%; }
+a.dag-node { display: block; text-decoration: none; color: inherit; }
+a.dag-node:hover { background: var(--caos-elevated); }
+a.dag-node:hover strong, a.dag-node:focus-visible strong { text-decoration: underline; text-underline-offset: 2px; }
+.dag-node-open { display: block; margin-top: var(--space-xs); color: var(--caos-accent); font-size: 10px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
 .evidence-match { background: color-mix(in srgb, var(--caos-accent) 9%, transparent); }
 .source-blocks { display: grid; gap: var(--space-sm); margin-top: var(--space-md); }
 .source-block { border: 1px solid var(--caos-border); padding: var(--space-sm); background: var(--caos-bg); }
