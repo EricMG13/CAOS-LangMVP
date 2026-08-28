@@ -8,7 +8,7 @@ const sans = Inter({ subsets: ["latin"], display: "swap", variable: "--font-sans
 const mono = JetBrains_Mono({ subsets: ["latin"], display: "swap", variable: "--font-mono" });
 
 export const metadata: Metadata = {
-  title: "CAOS — Credit Operating System",
+  title: "CAOS — Credit Agent OS",
   description: "Evidence-forward institutional credit analysis",
 };
 

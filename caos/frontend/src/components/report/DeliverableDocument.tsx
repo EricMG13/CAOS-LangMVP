@@ -77,7 +77,7 @@ function FrozenEnvelope({ payload }: { payload: FrozenPayload }) {
   const modelIdentity = model ? Object.fromEntries(Object.entries(model).filter(([key]) => ![
     "outputs", "effective_assumptions", "assumption_gaps", "debt", "warnings", "application_build",
   ].includes(key))) : null;
-  return <div className="frozen-authority-envelope" aria-label="Exact Frozen authority envelope">
+  return <div className="frozen-authority-envelope" aria-label="Exact frozen authority record">
     <section className="deliverable-paper-section">
       <h3>Frozen authority</h3>
       <DataTable label="Frozen authority identities" maxRows={null} value={{ schema_version: payload.schema_version, case_id: payload.case_id, pathway: payload.pathway, accepted: payload.authority, draft: payload.draft, input_fingerprint: payload.input_fingerprint, preview_digest: payload.preview_digest }} />

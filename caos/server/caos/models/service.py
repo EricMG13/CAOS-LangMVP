@@ -613,6 +613,13 @@ class ModelService:
             return None
         return {**head, "state": self._revision_state(case_id, head)}
 
+    def default_outputs(self, case_id: str, build_id: str) -> dict[str, Any]:
+        """The current build's outputs under registry defaults (the fallback
+        model authority a Deliverable may pin when no revision is signed)."""
+        build = self._require_current(case_id, build_id)
+        _defaults_rows, outputs = self._defaults(build, self._new_deadline())
+        return outputs
+
     # -- transient calculations ---------------------------------------------
 
     def scenario(self, case_id: str, request: ModelScenarioRequest) -> dict[str, Any]:

@@ -17,8 +17,8 @@ from typing import Any
 FORMULA_PREFIXES = ("=", "+", "-", "@", "\t", "\r")
 
 
-def _block_title(block: dict[str, Any]) -> str:
-    return block.get("title") or block["kind"].replace("_", " ").title()
+def _block_title(block: dict[str, Any], titles: dict[str, str] | None = None) -> str:
+    return (titles or {}).get(block["block_id"]) or block.get("title") or block["kind"].replace("_", " ").title()
 
 
 def _citation_lines(block: dict[str, Any]) -> list[str]:
@@ -50,8 +50,9 @@ def _text_lines(payload: dict[str, Any]) -> list[str]:
         for key, value in _flatten(model.get("outputs") or {}):
             lines.append(f"- {key}: {value}")
         lines.append("")
+    titles = (payload.get("template") or {}).get("block_titles") or {}
     for block in payload["content"]["blocks"]:
-        lines.append(f"## {_block_title(block)}" if block["kind"] != "HEADING" else f"# {block['text']}")
+        lines.append(f"## {_block_title(block, titles)}" if block["kind"] != "HEADING" else f"# {block['text']}")
         if block["kind"] == "HEADING":
             lines.append(block["text"])
         elif block["kind"] in {"NARRATIVE", "LIMITATIONS"}:

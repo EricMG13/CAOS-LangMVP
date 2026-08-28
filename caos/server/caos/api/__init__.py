@@ -14,6 +14,7 @@ from typing import Any, AsyncIterator
 from fastapi import Body, FastAPI, HTTPException, Request, Response
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+from starlette.middleware.gzip import DEFAULT_EXCLUDED_CONTENT_TYPES, GZipMiddleware
 
 from .. import responses as wire
 from ..artifacts.loan_universe import (
@@ -29,6 +30,7 @@ from ..contracts import (
     FreezeDeliverableRequest,
     LoanUniverseImportRequest,
     ModelPreviewRequest,
+    ModelScenarioRequest,
     ModelSignOffRequest,
     NoteRequest,
     RequestDeliverableChangesRequest,
@@ -38,6 +40,7 @@ from ..identity import identity_from_request, require_case
 from ..storage.store import DomainStore
 
 WORKSHEET_SCHEMA_VERSION = "caos.model.worksheet.v1"
+XLSX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 RUNTIME_KEYS = (
     "name", "version", "sha256",
     "assumption_registry_version", "assumption_registry_digest", "calculation_contract_version",
@@ -91,6 +94,21 @@ def create_app(*, settings: Settings, store: DomainStore, engine: Any) -> FastAP
     from fastapi.responses import JSONResponse
 
     app = FastAPI(title="caos")
+    # The static export mounts on this app (run.py::build), so one middleware
+    # covers both the frontend bundle and JSON. Starlette's default exclusions
+    # already skip `text/event-stream` (the run-events tail must stream, not
+    # buffer) plus images/fonts/zip; XLSX is a zip container, so add it rather
+    # than spend CPU re-compressing an already-compressed download.
+    # Known gap: this only covers the model-build download, the one route that
+    # sets XLSX_MEDIA_TYPE. The deliverable export serves md/pdf/xlsx alike as
+    # `application/octet-stream`, so its already-compressed formats are still
+    # re-compressed. Closing that means serving a real media type per format on
+    # that route — a wire-visible change, not a middleware tweak.
+    app.add_middleware(
+        GZipMiddleware,
+        minimum_size=1024,
+        exclude_content_types=DEFAULT_EXCLUDED_CONTENT_TYPES + (XLSX_MEDIA_TYPE,),
+    )
 
     @app.exception_handler(RequestValidationError)
     async def validation_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
@@ -639,7 +657,7 @@ def create_app(*, settings: Settings, store: DomainStore, engine: Any) -> FastAP
             raise HTTPException(status_code=409, detail=code) from exc
         return _Response(
             content=content,
-            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            media_type=XLSX_MEDIA_TYPE,
             headers={"cache-control": "no-store", "x-caos-sha256": sha256},
         )
 
@@ -661,6 +679,14 @@ def create_app(*, settings: Settings, store: DomainStore, engine: Any) -> FastAP
         except ValueError as exc:
             raise model_error(exc) from exc
 
+    @app.post("/api/cases/{case_id}/models/scenarios", response_model=wire.ModelScenarioResponse)
+    def model_scenario(case_id: str, request: Request, body: ModelScenarioRequest = Body(...)) -> dict[str, Any]:
+        require_case(store, case_id, identity(request), write=True)
+        try:
+            return models().scenario(case_id, body)
+        except ValueError as exc:
+            raise model_error(exc) from exc
+
     @app.get("/api/cases/{case_id}/model-revisions", response_model=wire.ModelRevisionListResponse)
     def model_revisions(case_id: str, request: Request) -> dict[str, Any]:
         require_case(store, case_id, identity(request))
@@ -674,8 +700,57 @@ def create_app(*, settings: Settings, store: DomainStore, engine: Any) -> FastAP
         from ..deliverables.service import DeliverableService
 
         if "service" not in _deliverables:
-            _deliverables["service"] = DeliverableService(store=store, vault_dir=settings.storage_dir, engine=engine)
+            _deliverables["service"] = DeliverableService(
+                store=store, vault_dir=settings.storage_dir, engine=engine, models=models(),
+            )
         return _deliverables["service"]
+
+    def _wire_dl_revision(revision: dict[str, Any] | None, case_id: str, pathway: str) -> dict[str, Any] | None:
+        if revision is None:
+            return None
+        content = revision["content"]
+        return {
+            "id": revision["revision_id"],
+            "case_id": case_id,
+            "pathway": pathway,
+            "version": revision["version"],
+            "author": revision.get("created_by", ""),
+            "created_at": revision.get("created_at", ""),
+            "template_id": content.get("template_id", ""),
+            "template_version": content.get("template_version", ""),
+            "digest": revision["digest"],
+            "content": content,
+        }
+
+    def _wire_dl_frozen(record: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "id": record["deliverable_id"],
+            "case_id": record["case_id"],
+            "pathway": record["pathway"],
+            "draft_version": record["draft_version"],
+            "status": record["status"],
+            "frozen_by": record["created_by"],
+            "frozen_at": record["created_at"],
+            "approved_by": record["filed_by"],
+            "approved_at": record["filed_at"],
+            "superseded_by_id": record["superseded_by_id"],
+            "change_request": record.get("change_request"),
+            "digest": record["draft_digest"],
+            "preview_digest": record["preview_digest"],
+            "input_fingerprint": record["input_fingerprint"],
+            "payload": record["payload"],
+            "exports": {fmt: {"format": fmt, **meta} for fmt, meta in (record["exports"] or {}).items()},
+        }
+
+    def _dl_workspace(service: Any, case_id: str, pathway: str) -> dict[str, Any]:
+        workspace = service.workspace(case_id, pathway)
+        return {
+            "template": workspace["template"],
+            "current": _wire_dl_revision(workspace["draft"], case_id, pathway),
+            "history": [_wire_dl_revision(item, case_id, pathway) for item in service.revision_history(case_id, pathway)],
+            "frozen_history": [_wire_dl_frozen(item) for item in workspace["frozen"]],
+            "model_eligibility": service.model_eligibility(case_id),
+        }
 
     def require_case_approver(case_id: str, request: Request) -> Any:
         """Filing is approver-gated by CASE standing (DECISIONS §2): global
@@ -707,18 +782,31 @@ def create_app(*, settings: Settings, store: DomainStore, engine: Any) -> FastAP
              response_model=wire.DeliverableWorkspaceResponse)
     def get_deliverable_draft(case_id: str, pathway: str, request: Request) -> dict[str, Any]:
         require_case(store, case_id, identity(request))
-        return deliverables().workspace(case_id, pathway)
-
-    @app.put("/api/cases/{case_id}/deliverables/{pathway}/draft", status_code=201,
-             response_model=wire.DeliverableRevisionResponse)
-    def put_deliverable_draft(case_id: str, pathway: str, request: Request,
-                              body: DeliverableDraftRequest = Body(...)) -> dict[str, Any]:
-        who = identity(request)
-        require_case(store, case_id, who, write=True)
+        service = deliverables()
         try:
-            return deliverables().save_draft(case_id, pathway, body, actor=who.subject)
+            return _dl_workspace(service, case_id, pathway)
         except ValueError as exc:
             raise deliverable_error(exc) from exc
+
+    @app.put("/api/cases/{case_id}/deliverables/{pathway}/draft", status_code=201,
+             response_model=wire.DeliverableWorkspaceResponse)
+    def put_deliverable_draft(case_id: str, pathway: str, request: Request,
+                              body: DeliverableDraftRequest = Body(...)) -> dict[str, Any]:
+        from ..storage.deliverables import DeliverableVersionConflict
+
+        who = identity(request)
+        require_case(store, case_id, who, write=True)
+        service = deliverables()
+        try:
+            service.save_draft(case_id, pathway, body, actor=who.subject)
+        except DeliverableVersionConflict as exc:
+            raise HTTPException(status_code=409, detail={
+                "code": "DELIVERABLE_VERSION_CONFLICT",
+                "current": _wire_dl_revision(exc.current, case_id, pathway),
+            }) from exc
+        except ValueError as exc:
+            raise deliverable_error(exc) from exc
+        return _dl_workspace(service, case_id, pathway)
 
     @app.get("/api/cases/{case_id}/deliverables/revisions/{revision_id}",
              response_model=wire.DeliverableRevisionResponse)
@@ -727,7 +815,7 @@ def create_app(*, settings: Settings, store: DomainStore, engine: Any) -> FastAP
         revision = deliverables().revision_by_id(case_id, revision_id)
         if revision is None:
             raise HTTPException(status_code=404, detail="revision not found")
-        return revision
+        return _wire_dl_revision(revision, case_id, revision["pathway"])
 
     @app.post("/api/cases/{case_id}/deliverables/{pathway}/freeze", status_code=201,
               response_model=wire.FrozenDeliverableResponse)
@@ -736,7 +824,7 @@ def create_app(*, settings: Settings, store: DomainStore, engine: Any) -> FastAP
         who = identity(request)
         require_case(store, case_id, who, write=True)
         try:
-            return deliverables().freeze(case_id, body, actor=who.subject)
+            return _wire_dl_frozen(deliverables().freeze(case_id, body, actor=who.subject))
         except ValueError as exc:
             raise deliverable_error(exc) from exc
 
@@ -746,19 +834,25 @@ def create_app(*, settings: Settings, store: DomainStore, engine: Any) -> FastAP
                             body: FileDeliverableRequest = Body(...)) -> dict[str, Any]:
         who = require_case_approver(case_id, request)
         try:
-            return deliverables().approve_filing(case_id, deliverable_id, body, actor=who.subject)
+            return _wire_dl_frozen(deliverables().approve_filing(case_id, deliverable_id, body, actor=who.subject))
         except ValueError as exc:
             raise deliverable_error(exc) from exc
 
     @app.post("/api/cases/{case_id}/deliverables/by-id/{deliverable_id}/request-changes",
-              response_model=wire.FrozenDeliverableResponse)
+              response_model=wire.DeliverableChangeRequestResponse)
     def request_deliverable_changes(case_id: str, deliverable_id: str, request: Request,
                                     body: RequestDeliverableChangesRequest = Body(...)) -> dict[str, Any]:
         who = require_case_approver(case_id, request)
+        service = deliverables()
         try:
-            return deliverables().request_changes(case_id, deliverable_id, body, actor=who.subject)
+            outcome = service.request_changes(case_id, deliverable_id, body, actor=who.subject)
         except ValueError as exc:
             raise deliverable_error(exc) from exc
+        frozen = outcome["frozen"]
+        return {
+            "frozen": _wire_dl_frozen(frozen),
+            "draft": _wire_dl_revision(outcome["draft"], case_id, frozen["pathway"]),
+        }
 
     @app.get("/api/cases/{case_id}/deliverables/by-id/{deliverable_id}/export/{format_name}")
     def export_deliverable(case_id: str, deliverable_id: str, format_name: str, request: Request):

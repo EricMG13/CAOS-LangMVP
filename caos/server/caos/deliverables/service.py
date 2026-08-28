@@ -39,30 +39,57 @@ PATHWAY_TEMPLATES = (
     "DEEP_RESEARCH",
 )
 EXPORT_FORMATS = ("md", "pdf", "xlsx")
-REQUIRED_KINDS = {"HEADING", "NARRATIVE", "EVIDENCE_REGISTER", "LIMITATIONS"}
 MODEL_DEPENDENT_KINDS = {"GENERATED_METRIC", "GENERATED_TABLE", "GENERATED_CHART", "SCENARIO_EXHIBIT", "MODEL_APPENDIX"}
 GOVERNED_TABLES = {"debt_schedule": {"instrument", "amount", "maturity", "margin"}}
 
+# Deliverable templates are the workbench contract: titled required sections per
+# pathway, then the mandatory Evidence Register, then optional appendices.
+PATHWAY_TITLES = {
+    "FULL_CREDIT": "Investment Committee Credit Memo",
+    "EARNINGS_UPDATE": "Earnings Update",
+    "COVENANT_REFINANCING": "Covenant and Refinancing Brief",
+    "RELATIVE_VALUE": "Relative Value Note",
+    "DISTRESSED_RESTRUCTURING": "Scenario and Recovery Pack",
+    "DEEP_RESEARCH": "Evidence-Bound Research Memorandum",
+}
+PATHWAY_SECTIONS = {
+    "FULL_CREDIT": ("Credit Snapshot", "Recommendation", "Thesis and Variant View", "Business and Industry", "Capital Structure", "Base and Downside Model", "Liquidity and Covenants", "Risks, Catalysts, and Falsifiers", "Monitoring"),
+    "EARNINGS_UPDATE": ("Credit Snapshot", "What Changed", "Reported Versus Prior Bridge", "Model Impact", "Leverage and Liquidity", "Thesis and Recommendation Impact", "Risks, Catalysts, and Monitoring"),
+    "COVENANT_REFINANCING": ("Credit Snapshot", "Capital Structure and Maturity Wall", "Covenant Definitions and Headroom", "Liquidity", "Refinancing Options", "Base and Downside Breakpoints", "Actions and Monitoring"),
+    "RELATIVE_VALUE": ("Credit Snapshot", "Instrument Comparison", "Structure and Seniority", "Relative Compensation", "Catalysts and Risks", "Recommendation and Trade Gates", "Market Freshness"),
+    "DISTRESSED_RESTRUCTURING": ("Credit Snapshot", "Capital Structure and Priority", "Liquidity Runway", "Base, Downside, and Scenario Exhibits", "Recovery", "Covenant, Default, and Refinancing Milestones", "Catalysts and Process Risks", "Recommendation"),
+    "DEEP_RESEARCH": ("Research Question and Scope", "Executive Findings", "Evidence Synthesis", "Counterevidence and Gaps", "Implications for Thesis, Model, and Recommendation", "Unresolved Questions"),
+}
+MODEL_OPTIONAL_PATHWAYS = {"RELATIVE_VALUE", "DEEP_RESEARCH"}
+
 _OPTIONAL_POLICY = (
-    {"kind": "GENERATED_METRIC", "slot_stem": "metric", "max": 4, "order": 1, "model_dependent": True},
-    {"kind": "GENERATED_TABLE", "slot_stem": "table", "max": 4, "order": 2, "model_dependent": True},
-    {"kind": "GENERATED_CHART", "slot_stem": "chart", "max": 4, "order": 3, "model_dependent": True},
-    {"kind": "SCENARIO_EXHIBIT", "slot_stem": "scenario", "max": 4, "order": 4, "model_dependent": True},
-    {"kind": "MODEL_APPENDIX", "slot_stem": "model-appendix", "max": 1, "order": 5, "model_dependent": True},
-    {"kind": "LIMITATIONS", "slot_stem": "limitations-appendix", "max": 2, "order": 6, "model_dependent": False},
+    {"kind": "GENERATED_METRIC", "slot_stem": "appendix.generated-metric", "max_items": 4, "order": 1, "model_dependent": True},
+    {"kind": "GENERATED_TABLE", "slot_stem": "appendix.generated-table", "max_items": 4, "order": 2, "model_dependent": True},
+    {"kind": "GENERATED_CHART", "slot_stem": "appendix.generated-chart", "max_items": 4, "order": 3, "model_dependent": True},
+    {"kind": "SCENARIO_EXHIBIT", "slot_stem": "appendix.scenario", "max_items": 4, "order": 4, "model_dependent": True},
+    {"kind": "MODEL_APPENDIX", "slot_stem": "appendix.model-appendix", "max_items": 1, "order": 5, "model_dependent": True},
+    {"kind": "LIMITATIONS", "slot_stem": "appendix.limitations", "max_items": 2, "order": 6, "model_dependent": False},
 )
 
 
 def _template(pathway: str) -> dict[str, Any]:
+    prefix = pathway.lower()
+    blocks = [
+        {"block_id": f"{prefix}.section.{index:02d}", "slot_id": f"section.{index:02d}",
+         "kind": "NARRATIVE", "title": title, "required": True, "order": index}
+        for index, title in enumerate(PATHWAY_SECTIONS[pathway], start=1)
+    ]
+    blocks.append({
+        "block_id": f"{prefix}.evidence-register", "slot_id": "appendix.evidence-register",
+        "kind": "EVIDENCE_REGISTER", "title": "Evidence Register", "required": True, "order": len(blocks) + 1,
+    })
     return {
         "pathway": pathway,
-        "template_id": f"tmpl-{pathway.lower().replace('_', '-')}",
-        "template_version": "deliverable-template.v1",
-        "slots": [
-            {"slot_id": "headline", "kind": "HEADING"},
-            {"slot_id": "thesis", "kind": "NARRATIVE"},
-            {"slot_id": "evidence", "kind": "EVIDENCE_REGISTER"},
-        ],
+        "template_id": f"caos.{prefix.replace('_', '-')}.v1",
+        "template_version": "caos.deliverable-template.v1",
+        "title": PATHWAY_TITLES[pathway],
+        "model_requirement": "OPTIONAL" if pathway in MODEL_OPTIONAL_PATHWAYS else "REQUIRED",
+        "blocks": blocks,
         "optional_blocks": [dict(entry) for entry in _OPTIONAL_POLICY],
         "allowed_appendices": [entry["kind"] for entry in _OPTIONAL_POLICY],
     }
@@ -79,11 +106,13 @@ class DeliverableService:
         store: DomainStore,
         vault_dir: Path,
         engine: Any = None,
+        models: Any = None,
         renderer_for_tests: Callable[[dict[str, Any], str], bytes] | None = None,
     ) -> None:
         self.store = store
         self.vault_dir = Path(vault_dir)
         self.engine = engine
+        self.models = models
         self.records = DeliverableStore(store.engine)
         self._render = renderer_for_tests or render_frozen_export
         self._forbid_scenario_calculation = False
@@ -103,6 +132,8 @@ class DeliverableService:
 
     def save_draft(self, case_id: str, pathway: str, request: DeliverableDraftRequest, *, actor: str) -> dict[str, Any]:
         template = self._template_for(pathway)
+        if request.template_id != template["template_id"] or request.template_version != template["template_version"]:
+            raise ValueError("DELIVERABLE_TEMPLATE_STALE: the draft binds a different template identity")
         blocks = [block.model_dump(mode="json") for block in request.blocks]
         self._validate_layout(template, blocks)
         self._validate_citations(case_id, blocks)
@@ -112,47 +143,56 @@ class DeliverableService:
         needs_model = [block for block in blocks if block["kind"] in MODEL_DEPENDENT_KINDS]
         if needs_model and identity is None:
             raise ValueError("MODEL_REQUIRED: model-dependent blocks need a selected model")
-        stored = [self._enrich_block(block, model, identity, selection) for block in blocks]
-        content = {"blocks": stored, "model_identity": identity}
+        stored = [self._enrich_block(case_id, block, model, identity, selection) for block in blocks]
+        content = {
+            "template_id": template["template_id"],
+            "template_version": template["template_version"],
+            "model_selection": selection.model_dump(mode="json") if selection else None,
+            "model_identity": identity,
+            "blocks": stored,
+            "generated_blocks": self._generated_blocks(stored, model),
+        }
         return self.records.append_revision(
             case_id, pathway, request.expected_version, content, digest(content), actor, self.store._audit,
         )
 
-    def _validate_layout(self, template: dict[str, Any], blocks: list[dict[str, Any]]) -> None:
-        required = {slot["slot_id"]: slot["kind"] for slot in template["slots"]}
-        required_order = [slot["slot_id"] for slot in template["slots"]]
-        policy_by_stem = {entry["slot_stem"]: entry for entry in template["optional_blocks"]}
-        seen_required: list[str] = []
-        seen_slots: set[str] = set()
-        optional_orders: list[int] = []
-        stem_counts: dict[str, int] = {}
-        past_required = False
+    @staticmethod
+    def _generated_blocks(blocks: list[dict[str, Any]], model: dict[str, Any] | None) -> dict[str, Any]:
+        generated: dict[str, Any] = {}
         for block in blocks:
-            slot_id = block["slot_id"]
-            if slot_id in seen_slots:
-                raise ValueError(f"DELIVERABLE_SLOT_INVALID: {slot_id} appears more than once")
-            seen_slots.add(slot_id)
-            if slot_id in required:
-                if past_required:
-                    raise ValueError("DELIVERABLE_TEMPLATE_ORDER_INVALID: required slots precede appendices")
-                if block["kind"] != required[slot_id]:
-                    raise ValueError(f"DELIVERABLE_SLOT_INVALID: {slot_id} requires {required[slot_id]}")
-                seen_required.append(slot_id)
+            if block["kind"] not in MODEL_DEPENDENT_KINDS:
                 continue
-            past_required = True
-            stem, _, index = slot_id.rpartition("-")
+            if block["kind"] == "GENERATED_METRIC":
+                outputs = block.get("values") or {}
+            elif block["kind"] == "SCENARIO_EXHIBIT":
+                outputs = (block.get("scenario") or {}).get("outputs") or {}
+            else:
+                outputs = (model or {}).get("outputs") or {}
+            generated[block["block_id"]] = {"status": "READY", "outputs": outputs}
+        return generated
+
+    def _validate_layout(self, template: dict[str, Any], blocks: list[dict[str, Any]]) -> None:
+        slot_ids = [block["slot_id"] for block in blocks]
+        if len(set(slot_ids)) != len(slot_ids):
+            raise ValueError("DELIVERABLE_SLOT_INVALID: a slot appears more than once")
+        required = template["blocks"]
+        head, tail = blocks[: len(required)], blocks[len(required):]
+        expected = [(item["block_id"], item["slot_id"], item["kind"]) for item in required]
+        if [(block["block_id"], block["slot_id"], block["kind"]) for block in head] != expected:
+            raise ValueError("DELIVERABLE_TEMPLATE_ORDER_INVALID: required blocks must appear once, in template order")
+        policy_by_stem = {entry["slot_stem"]: entry for entry in template["optional_blocks"]}
+        optional_orders: list[int] = []
+        for block in tail:
+            slot_id = block["slot_id"]
+            stem, _, index = slot_id.rpartition(".")
             policy = policy_by_stem.get(stem)
-            # Canonical index only (no zero-padded aliases of the same slot).
-            if policy is None or not index.isdigit() or index != str(int(index)) or not 1 <= int(index) <= policy["max"]:
+            # Canonical two-digit index only (no aliases of the same slot); slot
+            # uniqueness plus the index cap bounds each stem to max_items blocks.
+            if policy is None or not index.isdigit() or index != f"{int(index):02d}" or not 1 <= int(index) <= policy["max_items"]:
                 raise ValueError(f"DELIVERABLE_SLOT_INVALID: {slot_id} is not a declared optional slot")
             if block["kind"] != policy["kind"]:
                 raise ValueError(f"DELIVERABLE_SLOT_INVALID: {slot_id} carries {policy['kind']} blocks only")
-            stem_counts[stem] = stem_counts.get(stem, 0) + 1
-            if stem_counts[stem] > policy["max"]:
-                raise ValueError(f"DELIVERABLE_SLOT_INVALID: more than {policy['max']} {policy['kind']} blocks")
             optional_orders.append(policy["order"])
-        if seen_required != required_order:
-            raise ValueError("DELIVERABLE_TEMPLATE_ORDER_INVALID: required slots must appear once, in template order")
         if optional_orders != sorted(optional_orders):
             raise ValueError("DELIVERABLE_TEMPLATE_ORDER_INVALID: optional blocks follow the template's declared order")
 
@@ -177,6 +217,8 @@ class DeliverableService:
         if selection.kind == "ANALYST_REVISION":
             record = self.records.model_by_revision(case_id, selection.revision_id)
             head = self.records.head_model_revision(case_id)
+            if record is None and head is None:
+                return self._live_revision(case_id, selection)
             if (
                 record is None
                 or record["build_id"] != selection.build_id
@@ -188,9 +230,91 @@ class DeliverableService:
         if self.records.head_model_revision(case_id) is not None:
             raise ValueError("MODEL_FALLBACK_INELIGIBLE: a signed REVISION exists — select it instead of the FALLBACK build")
         record = self.records.model_by_build(case_id, selection.build_id)
-        if record is None or record["kind"] != "APPLICATION_BUILD":
+        if record is None:
+            return self._live_build(case_id, selection)
+        if record["kind"] != "APPLICATION_BUILD":
             raise ValueError("MODEL_BUILD_STALE: fallback build does not resolve to a stored record")
         return record
+
+    # -- live model authority (Model Builder is the system of record) --------
+
+    def _live_revision(self, case_id: str, selection: Any) -> dict[str, Any]:
+        head = self.models.head_revision(case_id) if self.models is not None else None
+        if (
+            head is None
+            or head["id"] != selection.revision_id
+            or head["build_id"] != selection.build_id
+            or head.get("state") != "ACTIVE"
+        ):
+            raise ValueError("MODEL_REVISION_STALE: selection must pin the current signed revision")
+        return {
+            "kind": "ANALYST_REVISION",
+            "build_id": head["build_id"],
+            "revision_id": head["id"],
+            "outputs": head["outputs"],
+            "assumptions": head["effective_assumptions"],
+            "build_payload": {"build_payload_digest": head.get("build_payload_digest")},
+            "build_qa": {"status": "SIGNED"},
+            "calculation_runtime": {
+                "calculation_contract_version": head.get("calculation_contract_version"),
+                "assumption_registry_version": head.get("registry_version"),
+            },
+        }
+
+    def _live_build(self, case_id: str, selection: Any) -> dict[str, Any]:
+        head = self.models.head_revision(case_id) if self.models is not None else None
+        if head is not None and head.get("state") == "ACTIVE":
+            raise ValueError("MODEL_FALLBACK_INELIGIBLE: a signed REVISION exists — select it instead of the FALLBACK build")
+        build = (self.models.readiness(case_id) or {}).get("build") if self.models is not None else None
+        if build is None or build["id"] != selection.build_id or build.get("status") != "READY":
+            raise ValueError("MODEL_BUILD_STALE: fallback build does not resolve to a stored record")
+        return {
+            "kind": "APPLICATION_BUILD",
+            "build_id": build["id"],
+            "revision_id": None,
+            "outputs": self.models.default_outputs(case_id, build["id"]),
+            "assumptions": [],
+            "build_payload": {"payload_digest": build.get("payload_digest")},
+            "build_qa": dict(build.get("qa") or {}),
+            "calculation_runtime": dict(build.get("calculation_runtime") or {}),
+        }
+
+    def model_eligibility(self, case_id: str) -> dict[str, Any]:
+        active = None
+        application_build = None
+        if self.models is not None:
+            head = self.models.head_revision(case_id)
+            if head is not None and head.get("state") == "ACTIVE":
+                active = {
+                    "revision_id": head["id"], "build_id": head["build_id"],
+                    "revision_number": head["revision_number"],
+                    "signed_by": head.get("created_by", ""), "signed_at": head.get("created_at", ""),
+                }
+            build = (self.models.readiness(case_id) or {}).get("build")
+            if build is not None and build.get("status") == "READY":
+                application_build = {
+                    "build_id": build["id"], "accepted_snapshot_id": build.get("snapshot_id"),
+                    "input_fingerprint": build.get("input_fingerprint"),
+                    "payload_digest": build.get("payload_digest"), "status": "READY",
+                }
+        else:
+            seeded = self.records.head_model_revision(case_id)
+            if seeded is not None:
+                active = {
+                    "revision_id": seeded["revision_id"], "build_id": seeded["build_id"],
+                    "revision_number": 1, "signed_by": "analyst", "signed_at": "",
+                }
+        default = (
+            {"kind": "ANALYST_REVISION", "build_id": active["build_id"], "revision_id": active["revision_id"]}
+            if active else None
+        )
+        # Fallback is never auto-selected: acknowledging it is a human act.
+        return {
+            "active_revision": active,
+            "application_build": application_build,
+            "fallback_acknowledgement_required": active is None and application_build is not None,
+            "default_model_selection": default,
+        }
 
     @staticmethod
     def _model_identity(model: dict[str, Any], selection: Any) -> dict[str, Any]:
@@ -207,19 +331,45 @@ class DeliverableService:
             "calculation_runtime": dict(model["calculation_runtime"]),
         }
 
-    def _enrich_block(self, block: dict[str, Any], model: dict[str, Any] | None,
+    @staticmethod
+    def _governed_metric_ids(outputs: dict[str, Any]) -> set[str]:
+        """Metric ids at the top level (seeded flat records) plus the leaf level
+        of the CASE/period/metric shape the calculation engine emits."""
+        governed = set(outputs or {})
+        for case_values in (outputs or {}).values():
+            if isinstance(case_values, dict):
+                for period_values in case_values.values():
+                    if isinstance(period_values, dict):
+                        governed.update(period_values)
+        return governed
+
+    @staticmethod
+    def _metric_values(outputs: dict[str, Any], metric: str) -> Any:
+        if metric in outputs:
+            return outputs[metric]
+        return {
+            case: {
+                period: period_values.get(metric)
+                for period, period_values in case_values.items()
+                if isinstance(period_values, dict) and metric in period_values
+            }
+            for case, case_values in outputs.items()
+            if isinstance(case_values, dict)
+        }
+
+    def _enrich_block(self, case_id: str, block: dict[str, Any], model: dict[str, Any] | None,
                       identity: dict[str, Any] | None, selection: Any) -> dict[str, Any]:
         if block["kind"] not in MODEL_DEPENDENT_KINDS:
             return block
         assert model is not None and identity is not None
         stored = dict(block)
         stored["model_digest"] = digest(identity)
-        governed = set((model["outputs"] or {}).keys())
+        governed = self._governed_metric_ids(model["outputs"] or {})
         if block["kind"] == "GENERATED_METRIC":
             rogue = [metric for metric in block["metric_ids"] if metric not in governed]
             if rogue:
                 raise ValueError(f"GENERATED_FIELD_INVALID: ungoverned metric ids {rogue}")
-            stored["values"] = {metric: model["outputs"][metric] for metric in block["metric_ids"]}
+            stored["values"] = {metric: self._metric_values(model["outputs"], metric) for metric in block["metric_ids"]}
         elif block["kind"] == "GENERATED_TABLE":
             allowed = GOVERNED_TABLES.get(block["table_id"])
             if allowed is None or any(field not in allowed for field in block["field_ids"]):
@@ -229,16 +379,28 @@ class DeliverableService:
 
             validate_recipe(block["recipe"], available_fields=governed)
         elif block["kind"] == "SCENARIO_EXHIBIT":
-            self._validate_scenario_block(stored, model, selection)
+            self._validate_scenario_block(case_id, stored, model, selection)
         return stored
 
-    def _validate_scenario_block(self, block: dict[str, Any], model: dict[str, Any], selection: Any) -> None:
+    def _validate_scenario_block(self, case_id: str, block: dict[str, Any], model: dict[str, Any], selection: Any) -> None:
         scenario = block["scenario"]
         expected_base = model["revision_id"] if selection.kind == "ANALYST_REVISION" else None
         # Identity binds BEFORE any calculation runs (zero residue on mismatch).
         if scenario["build_id"] != model["build_id"] or scenario["base_revision_id"] != expected_base:
             raise ValueError("SCENARIO_EXHIBIT_IDENTITY_MISMATCH: scenario base does not bind the selected model")
-        recomputed = self._scenario_outputs(model["outputs"], block["shocks"])
+        if self.models is not None:
+            from ..contracts import ModelScenarioRequest
+
+            try:
+                recomputed = self.models.scenario(case_id, ModelScenarioRequest(
+                    build_id=scenario["build_id"], base_revision_id=scenario["base_revision_id"],
+                    registry_version=scenario["registry_version"], registry_digest=scenario["registry_digest"],
+                    shocks=block["shocks"], draft_generation=scenario["draft_generation"],
+                ))["scenario"]["outputs"]
+            except ValueError as exc:
+                raise ValueError(f"SCENARIO_EXHIBIT_IDENTITY_MISMATCH: {exc}") from exc
+        else:
+            recomputed = self._scenario_outputs(model["outputs"], block["shocks"])
         if scenario["outputs"] != recomputed:
             raise ValueError("SCENARIO_EXHIBIT_CALCULATION_MISMATCH: outputs do not match the server recomputation")
         if block["scenario_digest"] != digest(scenario):
@@ -267,13 +429,38 @@ class DeliverableService:
 
     # -- freeze --------------------------------------------------------------
 
+    def _authority_for(self, case_id: str) -> dict[str, Any] | None:
+        """Seeded authority when a test pinned one; otherwise the case's live
+        accepted snapshot with the current Application Model Build identity."""
+        seeded = self.records.authority(case_id)
+        if seeded is not None:
+            return seeded
+        case = self.store.get_case(case_id) or {}
+        snapshot_id = case.get("accepted_snapshot_id")
+        if snapshot_id is None:
+            return None
+        build = (self.models.readiness(case_id) or {}).get("build") if self.models is not None else None
+        return {"case_id": case_id, "snapshot_id": snapshot_id, "build_id": (build or {}).get("id") or "unbuilt"}
+
+    def _frozen_evidence(self, case_id: str, blocks: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        rows: dict[str, dict[str, Any]] = {}
+        for block in blocks:
+            for citation in block.get("citations") or []:
+                source = self.store.get_source(citation["source_id"]) or {}
+                row = rows.setdefault(citation["source_id"], {
+                    "source_id": citation["source_id"], "sha256": source.get("sha256"),
+                    "block_ids": [], "withdrawn": bool(source.get("withdrawn")),
+                })
+                row["block_ids"].extend(b for b in citation["block_ids"] if b not in row["block_ids"])
+        return [rows[key] for key in sorted(rows)]
+
     def freeze(self, case_id: str, request: FreezeDeliverableRequest, *, actor: str) -> dict[str, Any]:
         revision = self._revision_for_freeze(case_id, request)
         pathway = self._pathway_of(case_id, request.draft_id)
         # Invariant 1 holds at the freeze boundary, not only at draft save: a
         # source withdrawn since the revision was written refuses the freeze.
         self._validate_citations(case_id, revision["content"]["blocks"])
-        authority = self.records.authority(case_id)
+        authority = self._authority_for(case_id)
         if authority is None:
             raise ValueError("DELIVERABLE_UPSTREAM_AUTHORITY_REQUIRED: no accepted upstream SNAPSHOT identity is pinned")
         source_set = self.store.current_source_set(case_id) or {"id": None, "version": 0}
@@ -285,11 +472,19 @@ class DeliverableService:
                 if identity["kind"] == "ANALYST_REVISION"
                 else self.records.model_by_build(case_id, identity["build_id"])
             )
+            if record is None:
+                # Live Model Builder authority: rehydrate the stored selection
+                # and re-pin it, so freeze refuses a stale model like save does.
+                from ..contracts import AnalystRevisionSelection, ApplicationBuildSelection
+
+                stored_selection = revision["content"]["model_selection"]
+                selection_model = AnalystRevisionSelection if stored_selection["kind"] == "ANALYST_REVISION" else ApplicationBuildSelection
+                record = self._resolve_selection(case_id, selection_model.model_validate(stored_selection))
             model_payload = {
-                "identity": identity,
+                **identity,
                 "outputs": record["outputs"],
-                "assumptions": record["assumptions"],
-                "build": {"payload": record["build_payload"], "qa": record["build_qa"]},
+                "effective_assumptions": record["assumptions"],
+                "application_build": {"payload": record["build_payload"], "qa": record["build_qa"]},
             }
         build_id = identity["build_id"] if identity else authority["build_id"]
         frozen_authority = {
@@ -299,15 +494,26 @@ class DeliverableService:
             "build_id": build_id,
         }
         input_fingerprint = digest(frozen_authority)
+        template = _template(pathway)
         payload = {
+            "schema_version": "caos.frozen-deliverable.v1",
+            "case_id": case_id,
             "pathway": pathway,
-            "template": {"template_id": revision["content"].get("template_id") or _template(pathway)["template_id"],
-                         "template_version": _template(pathway)["template_version"]},
+            "template": {"title": template["title"], "template_id": template["template_id"],
+                         "template_version": template["template_version"],
+                         "block_titles": {item["block_id"]: item["title"] for item in template["blocks"]}},
             "draft": {"id": request.draft_id, "version": revision["version"], "digest": revision["digest"]},
             "content": revision["content"],
             "model": model_payload,
-            "authority": frozen_authority,
+            "authority": {
+                "accepted_snapshot_id": frozen_authority["snapshot_id"],
+                "source_set_id": frozen_authority["source_set_id"],
+                "source_set_version": frozen_authority["source_set_version"],
+                "build_id": build_id,
+            },
+            "evidence": self._frozen_evidence(case_id, revision["content"]["blocks"]),
             "methodology": {"build_id": build_id},
+            "renderer": {"version": "caos.deliverable-renderer.v1"},
             "input_fingerprint": input_fingerprint,
         }
         payload["preview_digest"] = digest({key: value for key, value in payload.items() if key != "preview_digest"})
@@ -392,7 +598,7 @@ class DeliverableService:
             raise ValueError("DELIVERABLE_STALE_PREVIEW: approval binds the exact frozen PREVIEW digest")
         if request.input_fingerprint != record["input_fingerprint"]:
             raise ValueError("DELIVERABLE_STALE_PREVIEW: approval FINGERPRINT does not match the frozen identity")
-        authority = self.records.authority(case_id)
+        authority = self._authority_for(case_id)
         if authority is None or authority["snapshot_id"] != record["authority"]["snapshot_id"]:
             raise ValueError("FROZEN_AUTHORITY_STALE: the accepted upstream authority moved after freeze")
         current_set = self.store.current_source_set(case_id) or {"id": None, "version": 0}
@@ -421,10 +627,10 @@ class DeliverableService:
             "requested_by": actor,
             "deliverable_id": deliverable_id,
         }
-        self.records.append_revision(
+        draft = self.records.append_revision(
             case_id, record["pathway"], head["version"], content, digest(content), actor, self.store._audit,
         )
-        return updated
+        return {"frozen": updated, "draft": draft}
 
     # -- exports -------------------------------------------------------------
 

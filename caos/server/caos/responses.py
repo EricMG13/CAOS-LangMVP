@@ -394,23 +394,49 @@ class RVWorkspaceResponse(WireModel):
 
 
 class DeliverableRevisionResponse(WireModel):
-    draft_id: str
-    revision_id: str
+    id: str
+    case_id: str
+    pathway: str
     version: int
+    author: str
+    created_at: str
+    template_id: str
+    template_version: str
     digest: str
     content: Any
 
 
+class ModelEligibilityResponse(WireModel):
+    active_revision: Any | None
+    application_build: Any | None
+    fallback_acknowledgement_required: bool
+    default_model_selection: Any | None
+
+
 class DeliverableWorkspaceResponse(WireModel):
     template: Any
-    draft: DeliverableRevisionResponse | None
-    frozen: list[Any]
+    current: DeliverableRevisionResponse | None
+    history: list[DeliverableRevisionResponse]
+    frozen_history: list[Any]
+    model_eligibility: ModelEligibilityResponse
 
 
 class FrozenDeliverableResponse(OpenWireModel):
-    deliverable_id: str
-    thread_id: str
+    id: str
+    case_id: str
+    pathway: str
     status: str
+    draft_version: int
     preview_digest: str
     input_fingerprint: str
-    build_id: str
+
+
+class DeliverableChangeRequestResponse(WireModel):
+    frozen: FrozenDeliverableResponse
+    draft: DeliverableRevisionResponse
+
+
+class ModelScenarioResponse(OpenWireModel):
+    draft_generation: int
+    scenario: Any
+    scenario_digest: str

@@ -4,23 +4,21 @@ type Props = {
   onOpen: (evidenceId: string) => void;
   onPreview: (evidenceId: string) => void;
   onPreviewEnd: () => void;
-  warning?: boolean;
 };
 
-export default function EvidenceChip({ evidenceId, linkedId, onOpen, onPreview, onPreviewEnd, warning = false }: Props) {
+export default function EvidenceChip({ evidenceId, linkedId, onOpen, onPreview, onPreviewEnd }: Props) {
   const linked = linkedId === evidenceId;
   return <button
     type="button"
-    className={`evidence-chip${warning ? " warning" : ""}${linked ? " is-linked" : ""}`}
+    className={`evidence-chip${linked ? " is-linked" : ""}`}
     data-evidence-id={evidenceId}
-    aria-label={`Open evidence ${evidenceId}${warning ? ", QA concern" : ""}`}
+    aria-label={`Open evidence ${evidenceId}`}
     onBlur={onPreviewEnd}
     onClick={() => onOpen(evidenceId)}
     onFocus={() => onPreview(evidenceId)}
     onMouseEnter={() => onPreview(evidenceId)}
     onMouseLeave={onPreviewEnd}
   >
-    {warning && <span aria-hidden="true">▲</span>}
     {evidenceId}
   </button>;
 }

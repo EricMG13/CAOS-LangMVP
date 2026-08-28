@@ -99,6 +99,25 @@ test("last successful preview remains visible but non-signable when stale or ret
   assert.doesNotMatch(modelBuilder, /const invalidatePreview[\s\S]{0,400}setPreview\(null\)/);
 });
 
+test("dead capability routes degrade to the observed-404 unavailable block", () => {
+  assert.match(modelBuilder, /isUnavailableRoute/);
+  assert.match(api, /export function isUnavailableRoute/);
+  for (const title of [
+    "One-way sensitivity",
+    "Rebase preview",
+    "Exact revision export",
+    "Exact revision download",
+    "Model XLSX export",
+    "Application Model Build worksheet",
+  ]) {
+    assert.ok(modelBuilder.includes(`<Unavailable title="${title}"`), `missing observed-404 gate for ${title}`);
+  }
+  // The exact revision XLSX is downloaded through fetch so a 404 is observed; the
+  // only remaining bare download anchor is the served build-level download route.
+  assert.doesNotMatch(modelBuilder, /model-revisions\/\$\{revision\.id\}\/download`\} download>/);
+  assert.match(modelBuilder, /models\/\$\{build\.id\}\/download`\} download>/);
+});
+
 test("dirty conflicts and navigation are recoverable rather than destructive", () => {
   assert.match(modelBuilder, /mergeRebasedAssumptions/);
   assert.match(modelBuilder, /Review and rebase local Draft/);

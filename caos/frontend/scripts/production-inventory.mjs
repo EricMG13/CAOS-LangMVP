@@ -177,14 +177,14 @@ async function inventoryLoadedRoute(context, role, slug, title) {
       await page.getByRole("button", { name: "Create case" }).waitFor();
       await page.getByRole("button", { name: "Upload and version source set" }).waitFor();
     } else if (slug === "sources") {
-      await page.getByRole("button", { name: "Ingest safely" }).waitFor();
+      await page.getByRole("button", { name: "Upload and version source set" }).waitFor();
       assert.ok(await page.locator("#main-content summary").count() >= 100);
     } else if (slug === "run-console") {
       await page.getByRole("button", { name: "Compile and run" }).waitFor();
       assert.deepEqual(await page.getByLabel("Purpose").locator("option").evaluateAll((options) => options.map((option) => option.value).sort()), expectedPathways);
       assert.deepEqual(await page.getByLabel("Depth").locator("option").evaluateAll((options) => options.map((option) => option.value).sort()), ["full", "screen"]);
     } else if (slug === "deep-dive") {
-      await page.getByRole("link", { name: "Open source rail" }).first().waitFor();
+      await page.getByRole("link", { name: "Open output" }).first().waitFor();
     } else if (slug === "rv-screener") {
       await page.getByRole("button", { name: "Upload CP-3 workbook" }).waitFor();
       await page.getByText("Upload the fixed CP-3 workbook to activate a leveraged-loan universe.", { exact: true }).waitFor();
@@ -322,7 +322,7 @@ try {
       buffer: Buffer.from("# Synthetic source\n\nLiquidity remains adequate under the synthetic downside case."),
     });
     const sourceUploadResponse = journeyPage.waitForResponse((response) => response.url() === exactURL(caseUploadPath) && response.request().method() === "POST");
-    await journeyPage.getByRole("button", { name: "Ingest safely" }).click();
+    await journeyPage.getByRole("button", { name: "Upload and version source set" }).click();
     assert.equal((await sourceUploadResponse).status(), 201);
     const summary = journeyPage.getByText(`source-workspace-${suffix}.md`, { exact: true });
     await summary.waitFor();
@@ -363,17 +363,22 @@ try {
     releaseLateRun();
     await lateRunFulfilled;
     assert.equal(lateRunIntercepts, 1, "late-response interceptor must handle exactly one request");
-    assert.equal(await journeyPage.getByText("CROSS_CASE_LATE_RESPONSE", { exact: false }).count(), 0);
+    assert.equal(await journeyPage.getByText(/CROSS[_ ]CASE[_ ]LATE[_ ]RESPONSE/).count(), 0);
     assert.equal(new URL(journeyPage.url()).searchParams.get("case"), denseCaseId);
     await journeyPage.unroute(runResponseRoute);
     await journeyPage.goto(`${baseURL}/run-console/?case=${journeyCase.id}&run=${firstRun.id}`, { waitUntil: "networkidle" });
     await journeyPage.getByRole("region", { name: "Accepted authority" }).getByText(`${issuer} / ${caseName}`, { exact: true }).waitFor();
     assert.equal((await waitForRun(analystApi, firstRun.id)).status, "succeeded");
-    const acceptButton = journeyPage.getByRole("button", { name: "Accept analytical snapshot" });
-    await acceptButton.waitFor();
-    journeyPage.once("dialog", (dialog) => void dialog.accept());
+    const acceptTrigger = journeyPage.getByRole("button", { name: "Accept analytical snapshot" });
+    await acceptTrigger.waitFor();
     const acceptResponse = journeyPage.waitForResponse((response) => response.url() === exactURL(`/api/runs/${firstRun.id}/accept`) && response.request().method() === "POST");
-    await acceptButton.click();
+    // The acceptance ceremony is a styled digest-bound dialog, not window.confirm: the
+    // trigger only opens it, and only the dialog's own primary button performs the POST.
+    await acceptTrigger.click();
+    const acceptDialog = journeyPage.getByRole("dialog", { name: "Accept analytical snapshot" });
+    await acceptDialog.getByText(firstRun.id, { exact: true }).waitFor();
+    await acceptDialog.getByRole("button", { name: "Accept analytical snapshot" }).click();
+    await acceptDialog.waitFor({ state: "hidden" });
     assert.equal((await acceptResponse).status(), 200);
 
     const nextStart = await analystApi.post(`/api/cases/${journeyCase.id}/runs`, { data: { pathway: "RELATIVE_VALUE", depth: "screen", focus_questions: [] } });

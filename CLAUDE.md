@@ -98,6 +98,18 @@ engine, the bundle, or the routes.
 - Static export (`output: "export"`, trailing slashes). Dev proxies `/api/*` to
   `:8000`; production serves the export from the server image. Route hrefs must
   keep the trailing slash (see the comment in `lib/workbench.ts#withQuery`).
+  The export and the JSON API are served gzipped — `create_app` installs
+  `GZipMiddleware` (`minimum_size=1024`), and its content-type exclusions are
+  load-bearing: `text/event-stream` keeps the run-events tail streaming and the
+  XLSX media type is excluded because a workbook is already a zip.
+- Next emits a `noModule` legacy polyfill bundle (112,594 B, byte-identical to
+  `next/dist/build/polyfills/polyfill-nomodule.js`) that every route's HTML
+  references. There is no config switch for it and no browser with ES-module
+  support fetches it — do not "optimize" it away by deleting build output.
+- The run console has exactly one home. Cases and Deep-Dive render `RunSummary`
+  (status, module progress, a link) and never the compile form or the accept
+  control — that is what keeps `/cases/` to one page-level primary action
+  (`DESIGN.md:348`).
 - Visual language is established: dark institutional terminal, semantic color
   only, motion only for live state. `DESIGN.md` and `.impeccable.md` govern;
   inherit, don't reinvent.
@@ -113,7 +125,7 @@ engine, the bundle, or the routes.
   `caos/server/worker.py` (polls the store for QUEUED model builds/exports and
   executes them; the only process with LibreOffice, so XLSX rendering lives
   here and nowhere else). `worker.py --once` runs a single pass.
-- Suite: `python -m pytest caos/tests -q` — fully green (384). Spec tests
+- Suite: `python -m pytest caos/tests -q` — fully green (385). Spec tests
   (`caos/tests/spec/`) are the contractual surface — they pin invariants and
   wire shapes; phase-2 tests cover ingestion/store/bundle/config. The surrogate
   boundary test sends its lone surrogate as a pre-encoded `\ud800` JSON escape
@@ -128,11 +140,24 @@ engine, the bundle, or the routes.
 ## Known gaps (honest ledger)
 
 - The ported frontend calls some routes this server does not yet serve; those
-  surfaces degrade or stay hidden: Admin Studio (`/admin/audit`,
-  `/admin/bundle`), model scenarios / one-way sensitivities / worksheet reads /
-  rebase-preview / revision export under the frontend's paths, deep-research
-  plan approval. A paused run has no resume control in the UI
-  (`POST /api/runs/{id}/resume` exists server-side).
+  surfaces degrade or stay hidden behind the capability gate: Admin Studio
+  (`/admin/audit`, `/admin/bundle`), one-way sensitivities
+  (`/models/sensitivities/one-way`), worksheet reads
+  (`/models/{build_id}/worksheet`), model build export
+  (`POST /models/{build_id}/export` — only `GET …/download` is served),
+  revision rebase-preview, revision export and revision download
+  (`/model-revisions/rebase-preview`, `/model-revisions/{id}/export`,
+  `GET /model-revisions/{id}/download` — the download is served for a model
+  build only, never for a revision), and deep-research plan approval
+  (`/runs/{id}/research-plan/approve`).
+  The Command Center lens, the Report Studio deliverables workspace, model
+  scenarios/previews, model sign-off and run resume are all served and wired —
+  do not re-add them to this list.
+- The gzip exclusion for XLSX only covers the model-build download, the sole
+  route setting that media type. The deliverable export serves md/pdf/xlsx
+  alike as `application/octet-stream`, so its already-compressed formats are
+  re-compressed (harmless, wasted CPU). Closing it means serving a real media
+  type per format there — a wire-visible change.
 - Run checkpoints are SQLite on the data volume even under a Postgres domain
   store (`run.py` notes this); the postgres checkpoint saver is pinned in
   requirements but not wired in the engine. Single app instance only.

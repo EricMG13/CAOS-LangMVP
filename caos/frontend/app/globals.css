@@ -65,12 +65,18 @@ a:not(.button, .nav-link, .wordmark):hover { color: var(--caos-accent); }
 .grid { display: grid; gap: var(--space-lg); grid-template-columns: repeat(12, minmax(0, 1fr)); }
 .span-12 { grid-column: span 12; } .span-8 { grid-column: span 8; } .span-6 { grid-column: span 6; } .span-4 { grid-column: span 4; }
 .panel { border: 1px solid var(--caos-border); background: var(--caos-panel); border-radius: 6px; min-width: 0; }
-.panel-header { min-height: 32px; border-bottom: 1px solid var(--caos-border); display: flex; align-items: center; justify-content: space-between; gap: var(--space-sm); padding: 0 var(--space-md); }
+/* The block inset is load-bearing, not decoration: a header that wraps (a long
+   title, a status pill, an action) grew past the 32px min-height and its last
+   line sat flush on the rule. `min-height` keeps the one-line rhythm identical. */
+.panel-header { min-height: 32px; border-bottom: 1px solid var(--caos-border); display: flex; align-items: center; justify-content: space-between; gap: var(--space-sm); padding: var(--space-xs) var(--space-md); }
 .panel-header h2, .panel-header h3 { margin: 0; font-size: 11px; letter-spacing: .13em; text-transform: uppercase; }
 .panel-meta { color: var(--caos-muted); font-size: 10px; font-weight: 600; letter-spacing: .06em; }
 .panel-body { padding: var(--space-md); }
 .flow { display: grid; align-content: start; gap: var(--space-md); }
 .flow > :where(h2, h3, p, ul, ol, dl) { margin-block: 0; }
+/* The section-heading idiom carries its own trailing space for non-flow parents;
+   inside a flow the grid gap already provides it. */
+.flow > .section-heading { margin-bottom: 0; }
 .readable { max-width: 75ch; }
 .muted { color: var(--caos-muted); }
 .mono, .num { overflow-wrap: anywhere; font-family: var(--font-mono), ui-monospace, monospace; }
@@ -91,14 +97,20 @@ table { width: 100%; border-collapse: collapse; }
 tbody > tr { content-visibility: auto; contain-intrinsic-block-size: 36px; }
 th, td { border-bottom: 1px solid var(--caos-border); padding: var(--space-sm); text-align: left; vertical-align: top; }
 th { color: var(--caos-muted); font-size: 10px; letter-spacing: .09em; text-transform: uppercase; }
+/* A caption is table metadata, so it takes the label role and the table's own
+   left edge. Left unstyled the UA centres it (`text-align: -webkit-center`),
+   which is the one centred text in an otherwise left-aligned workspace. */
+caption { color: var(--caos-muted); font-size: 10px; font-weight: 600; letter-spacing: .06em; text-align: left; padding-bottom: var(--space-xs); }
 .status { display: inline-flex; align-items: center; gap: 5px; font-weight: 700; }
 .status::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--caos-muted); }
 .status.success::before { background: var(--caos-success); } .status.warning::before { background: var(--caos-warning); } .status.critical::before { background: var(--caos-critical); }
 .status.success { color: var(--caos-success); } .status.warning { color: var(--caos-warning); } .status.critical { color: var(--caos-critical); }
 .callout { border: 1px solid var(--caos-accent); border-radius: 6px; padding: var(--space-md); background: var(--caos-elevated); }
 .callout.warning { border-color: var(--caos-warning); }
-.dag { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
-.dag-node { border: 1px solid var(--caos-border); border-radius: 6px; padding: var(--space-sm); min-width: 120px; background: var(--caos-bg); }
+/* Tiles stretch to a common height so a module whose registry carries no name —
+   its tile renders one line shorter — does not leave the row ragged. */
+.dag { display: flex; flex-wrap: wrap; gap: 8px; align-items: stretch; }
+.dag-node { border: 1px solid var(--caos-border); border-radius: 6px; padding: var(--space-sm); min-width: 120px; max-width: 200px; background: var(--caos-bg); }
 .dag-node.succeeded { border-color: var(--caos-success); } .dag-node.running { border-color: var(--caos-accent); } .dag-node.failed { border-color: var(--caos-critical); }
 .chart { min-height: 160px; display: grid; align-content: end; gap: 9px; }
 .chart-bars { height: 118px; display: flex; align-items: end; gap: 16px; border-bottom: 1px solid var(--caos-border); padding: 0 16px; }
@@ -108,7 +120,6 @@ th { color: var(--caos-muted); font-size: 10px; letter-spacing: .09em; text-tran
 .evidence-list { display: flex; flex-wrap: wrap; gap: 6px; }
 .evidence-chip { display: inline-flex; min-height: 22px; max-width: 100%; align-items: center; gap: 5px; border: 1px solid var(--caos-accent); border-radius: 2px; background: transparent; color: var(--caos-accent); padding: 3px 6px; overflow-wrap: anywhere; font: 10px/1.3 var(--font-mono), ui-monospace, monospace; cursor: pointer; }
 .evidence-chip:hover { background: color-mix(in srgb, var(--caos-accent) 8%, transparent); }
-.evidence-chip.warning { border-color: var(--caos-warning); color: var(--caos-warning); }
 .evidence-chip.is-linked { outline: 2px solid var(--caos-accent); outline-offset: 1px; background: color-mix(in srgb, var(--caos-accent) 14%, var(--caos-panel)); color: var(--caos-text); }
 .selection-strip { display: flex; align-items: center; justify-content: space-between; gap: var(--space-sm); margin-bottom: var(--space-sm); border-block: 1px solid var(--caos-border); padding: var(--space-sm) 0; font-family: var(--font-mono), ui-monospace, monospace; }
 .source-file { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; min-width: 240px; }
@@ -140,6 +151,9 @@ dialog::backdrop { background: rgb(0 0 0 / .64); }
 dialog:not(.context-drawer) { width: min(680px, calc(100% - 32px)); max-width: 680px; max-height: min(680px, calc(100dvh - 32px)); }
 .dialog-body { display: grid; gap: 12px; padding: 16px; }
 .dialog-body .panel-header { margin: -16px -16px 0; }
+.accept-modules { margin: 0; padding: 0; list-style: none; display: grid; gap: var(--space-xs); }
+.accept-modules li { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-sm); }
+.run-accepted { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-sm); }
 #command-results { max-height: min(420px, 55dvh); overflow-y: auto; }
 #command-results .nav-link { width: 100%; }
 .palette-group-label { position: sticky; top: 0; z-index: 1; padding: var(--space-sm); background: var(--caos-panel); color: var(--caos-muted); font-size: 10px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
@@ -152,6 +166,16 @@ dialog:not(.context-drawer) { width: min(680px, calc(100% - 32px)); max-width: 6
 .error-state { text-align: left; }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 .evidence-focus { border-color: var(--caos-accent); }
+.artifact-provenance { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-sm) var(--space-lg); }
+.artifact-markdown { display: grid; gap: var(--space-sm); }
+.artifact-markdown h4 { margin: var(--space-sm) 0 0; }
+.artifact-markdown p { margin: 0; white-space: pre-wrap; }
+.artifact-digest-list { margin: 0; padding-left: var(--space-lg); display: grid; gap: var(--space-xs); }
+.evidence-ref { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--space-xs); max-width: 100%; }
+a.dag-node { display: block; text-decoration: none; color: inherit; }
+a.dag-node:hover { background: var(--caos-elevated); }
+a.dag-node:hover strong, a.dag-node:focus-visible strong { text-decoration: underline; text-underline-offset: 2px; }
+.dag-node-open { display: block; margin-top: var(--space-xs); color: var(--caos-accent); font-size: 10px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
 .evidence-match { background: color-mix(in srgb, var(--caos-accent) 9%, transparent); }
 .source-blocks { display: grid; gap: var(--space-sm); margin-top: var(--space-md); }
 .source-block { border: 1px solid var(--caos-border); padding: var(--space-sm); background: var(--caos-bg); }
@@ -420,22 +444,14 @@ dialog:not(.context-drawer) { width: min(680px, calc(100% - 32px)); max-width: 6
 /* A duration of .01ms alone does not stop an infinite animation: it keeps
    cycling, just faster. Iteration count and play state must be pinned too. */
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; animation-play-state: paused !important; } }
-.filed-body { display: grid; gap: var(--space-md); }
-.filed-title { margin: 0; font: 650 21px/1.2 var(--font-sans), ui-sans-serif, system-ui, sans-serif; }
-.filed-section { margin: var(--space-sm) 0 0; font: 650 14px/1.3 var(--font-sans), ui-sans-serif, system-ui, sans-serif; }
-.filed-copy { margin: 0; font: 400 13px/1.6 var(--font-sans), ui-sans-serif, system-ui, sans-serif; }
-.filed-code { font: 500 12px/1.5 var(--font-mono), ui-monospace, monospace; overflow-wrap: anywhere; }
-.filed-table { width: 100%; border-collapse: collapse; font: 400 12px/1.45 var(--font-sans), ui-sans-serif, system-ui, sans-serif; }
-.filed-table th { border-bottom: 1px solid var(--caos-paper-rule-strong); padding: 6px 8px; text-align: left; font: 600 11px/1.3 var(--font-mono), ui-monospace, monospace; letter-spacing: .06em; text-transform: uppercase; color: var(--caos-paper-meta); }
-.filed-table td { border-bottom: 1px solid var(--caos-paper-rule); padding: 6px 8px; vertical-align: top; }
 .visually-hidden { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
 .evidence-rail-list { margin: 0; padding: 0; list-style: none; display: grid; gap: var(--space-sm); }
 .evidence-rail-list li { border-top: 1px solid var(--caos-border); padding-top: var(--space-sm); }
 .evidence-rail-list li:first-child { border-top: 0; padding-top: 0; }
 .worklist-toolbar { display: flex; flex-wrap: wrap; gap: var(--space-md); border-bottom: 1px solid var(--caos-border); padding: var(--space-sm) var(--space-md); }
 .worklist-toolbar .field { margin: 0; flex: 1 1 180px; }
-.dag-step { display: flex; align-items: center; gap: var(--space-sm); }
-.dag-edge { color: var(--caos-muted); font: 12px/1 var(--font-mono), ui-monospace, monospace; }
+.dag-step { display: flex; align-items: stretch; gap: var(--space-sm); }
+.dag-edge { align-self: center; color: var(--caos-muted); font: 12px/1 var(--font-mono), ui-monospace, monospace; }
 .research-brief { min-width: 0; margin: 0 0 var(--space-md); border: 1px solid var(--caos-border); border-radius: 6px; padding: var(--space-md); }
 .research-brief legend { color: var(--caos-muted); font-weight: 700; letter-spacing: .06em; }
 .research-plan { min-width: 0; display: grid; gap: var(--space-md); overflow-wrap: anywhere; }
@@ -448,7 +464,7 @@ dialog:not(.context-drawer) { width: min(680px, calc(100% - 32px)); max-width: 6
 .research-workstreams > li { min-width: 0; border-top: 1px solid var(--caos-border); padding-top: var(--space-md); }
 .research-workstreams h5 { margin: 0 0 var(--space-md); font-size: 12px; }
 @media (max-width: 520px) { .research-plan-facts { grid-template-columns: 1fr; gap: var(--space-xs); } .research-plan-facts dd + dt { margin-top: var(--space-sm); } }
-.inline-run-body { display: grid; gap: var(--space-lg); grid-template-columns: minmax(200px, 260px) minmax(0, 1fr); align-items: start; }
-@media (max-width: 900px) { .inline-run-body { grid-template-columns: 1fr; } }
-.inline-run-header { flex-wrap: wrap; gap: var(--space-sm); padding-block: var(--space-xs); }
-.inline-run-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-sm); min-width: 0; }
+.run-summary-header { flex-wrap: wrap; gap: var(--space-sm); }
+.run-summary-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-sm); min-width: 0; }
+.run-summary-modules { display: flex; flex-wrap: wrap; gap: var(--space-sm); margin: 0; padding: 0; list-style: none; }
+.run-summary-modules li { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-sm); border: 1px solid var(--caos-border); border-radius: 6px; background: var(--caos-bg); padding: var(--space-xs) var(--space-sm); font-size: 11px; }

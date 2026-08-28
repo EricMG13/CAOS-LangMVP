@@ -1,7 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { api as request, assumptionRegistryPath, type CaseRecord, type SourceRecord } from "../../lib/api";
+import { LoadState, StateBlock, StateNote } from "../states";
+import { formatDate } from "../../lib/workbench";
+import { api as request, assumptionRegistryPath, firstErrorMessage, type CaseRecord, type SourceRecord } from "../../lib/api";
 import DeliverableDocument, {
   type DeliverableBlock,
   type EvidenceCitation,
@@ -59,12 +61,6 @@ async function reportRequest<T>(path: string, options: RequestInit = {}, signal?
   return body as T;
 }
 
-function formatDate(value?: string | null) {
-  if (!value) return "—";
-  const date = new Date(value);
-  return Number.isNaN(date.valueOf()) ? value : new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(date);
-}
-
 function aggregateCitations(blocks: DeliverableBlock[]): EvidenceCitation[] {
   const seen = new Set<string>();
   return blocks.flatMap((block) => "citations" in block ? block.citations : []).filter((citation) => {
@@ -81,9 +77,30 @@ function initializeBlocks(template: DeliverableTemplate): DeliverableBlock[] {
     : { kind: "NARRATIVE", block_id: block.block_id, slot_id: block.slot_id, text: "", content_mode: "ANALYST_JUDGMENT", citations: [] }) as DeliverableBlock[];
 }
 
+const CONTRACT_KEYS: Record<DeliverableBlock["kind"], string[]> = {
+  NARRATIVE: ["text", "content_mode", "citations"],
+  EVIDENCE_REGISTER: ["citations"],
+  LIMITATIONS: ["text", "citations"],
+  GENERATED_METRIC: ["metric_ids"],
+  GENERATED_TABLE: ["table_id", "field_ids"],
+  GENERATED_CHART: ["recipe"],
+  SCENARIO_EXHIBIT: ["title", "shocks", "scenario", "scenario_digest"],
+  MODEL_APPENDIX: [],
+};
+
+function contractBlock(block: DeliverableBlock): DeliverableBlock {
+  const record = block as unknown as Record<string, unknown>;
+  return Object.fromEntries([
+    ["kind", block.kind], ["block_id", block.block_id], ["slot_id", block.slot_id],
+    ...CONTRACT_KEYS[block.kind].map((key) => [key, record[key]]),
+  ]) as unknown as DeliverableBlock;
+}
+
 function blocksForSave(blocks: DeliverableBlock[]): DeliverableBlock[] {
   const citations = aggregateCitations(blocks.filter((block) => block.kind !== "EVIDENCE_REGISTER"));
-  return blocks.map((block) => block.kind === "EVIDENCE_REGISTER" ? { ...block, citations } : block);
+  // Server-computed enrichments (generated values, model digests) never round-trip:
+  // the strict wire contract rejects client-supplied copies of them.
+  return blocks.map((block) => contractBlock(block.kind === "EVIDENCE_REGISTER" ? { ...block, citations } : block));
 }
 
 function draftIsValid(blocks: DeliverableBlock[], template: DeliverableTemplate): boolean {
@@ -193,7 +210,7 @@ export default function ReportStudio({ caseId, role, selectedCase, onDraftStateC
     try {
       const [next, sourceResult] = await Promise.all([
         reportRequest<WorkspaceResponse>(`/api/cases/${caseId}/deliverables/${pathway}/draft`, {}, signal),
-        request<SourceRecord[]>(`/api/cases/${caseId}/sources`, {}, signal).then((value) => ({ value, error: "" })).catch((caught) => ({ value: [], error: caught instanceof Error ? caught.message : "Evidence inventory unavailable" })),
+        request<SourceRecord[]>(`/api/cases/${caseId}/sources`, {}, signal).then((value) => ({ value, error: "" })).catch((caught) => ({ value: [], error: firstErrorMessage(caught, "Evidence inventory unavailable") })),
       ]);
       if (generation !== loadGeneration.current || currentScope.current !== scope) return;
       const nextBlocks = next.current?.content.blocks || initializeBlocks(next.template);
@@ -219,13 +236,13 @@ export default function ReportStudio({ caseId, role, selectedCase, onDraftStateC
         }).catch((caught) => {
           if (generation !== loadGeneration.current || currentScope.current !== scope) return;
           setRegistry(null);
-          setError(caught instanceof Error ? caught.message : "Scenario registry unavailable");
+          setError(firstErrorMessage(caught, "Scenario registry unavailable"));
         });
       } else setRegistry(null);
       onDraftStateChange(false);
     } catch (caught) {
       if (generation !== loadGeneration.current || caught instanceof DOMException && caught.name === "AbortError") return;
-      setLoadError(caught instanceof Error ? caught.message : "Unable to load Report Studio");
+      setLoadError(firstErrorMessage(caught, "Unable to load Report Studio"));
     } finally { if (generation === loadGeneration.current) setLoading(false); }
   }, [caseId, onDraftStateChange, pathway]);
 
@@ -258,7 +275,7 @@ export default function ReportStudio({ caseId, role, selectedCase, onDraftStateC
           const detail = caught.detail as { code?: string; current?: DraftRevision | null };
           if (detail.code === "DELIVERABLE_VERSION_CONFLICT") { setConflict(detail.current || null); setSaveState({ kind: "CONFLICT", detail: "A newer shared revision is available." }); return; }
         }
-        setSaveState({ kind: "ERROR", detail: caught instanceof Error ? caught.message : "Autosave failed" });
+        setSaveState({ kind: "ERROR", detail: firstErrorMessage(caught, "Autosave failed") });
       }
     });
   }, [canWrite, caseId, onDraftStateChange, pathway, workspace]);
@@ -337,7 +354,7 @@ export default function ReportStudio({ caseId, role, selectedCase, onDraftStateC
       const index = blocks.filter((block) => block.kind === "SCENARIO_EXHIBIT").length + 1;
       markChanged([...blocks, { kind: "SCENARIO_EXHIBIT", block_id: `${policy.slot_stem}.${index.toString().padStart(2, "0")}`, slot_id: `${policy.slot_stem}.${index.toString().padStart(2, "0")}`, title: `Scenario · ${scenarioForm.assumptionId}`, shocks, scenario: next.scenario, scenario_digest: next.scenario_digest }]);
       setMessage("Server-calculated Scenario Exhibit inserted into the Draft.");
-    } catch (caught) { if (lifecycleIsCurrent(token)) setError(caught instanceof Error ? caught.message : "Scenario calculation failed"); }
+    } catch (caught) { if (lifecycleIsCurrent(token)) setError(firstErrorMessage(caught, "Scenario calculation failed")); }
     finally { finishLifecycle(token); }
   };
 
@@ -346,10 +363,10 @@ export default function ReportStudio({ caseId, role, selectedCase, onDraftStateC
     const token = beginLifecycle("restore");
     if (!token) return;
     try {
-      const next = await reportRequest<WorkspaceResponse>(`/api/cases/${caseId}/deliverables/${pathway}/draft`, { method: "PUT", body: JSON.stringify({ expected_version: workspace.current?.version || 0, template_id: workspace.template.template_id, template_version: workspace.template.template_version, model_selection: revision.content.model_selection, blocks: revision.content.blocks }) });
+      const next = await reportRequest<WorkspaceResponse>(`/api/cases/${caseId}/deliverables/${pathway}/draft`, { method: "PUT", body: JSON.stringify({ expected_version: workspace.current?.version || 0, template_id: workspace.template.template_id, template_version: workspace.template.template_version, model_selection: revision.content.model_selection, blocks: revision.content.blocks.map(contractBlock) }) });
       if (!lifecycleIsCurrent(token)) return;
       savedVersion.current = next.current?.version || savedVersion.current; unsavedDraft.current = false; setDraftIsUnsaved(false); setPersistedVersion(savedVersion.current); setWorkspace(next); setBlocks(next.current?.content.blocks || revision.content.blocks); setModelSelection(next.current?.content.model_selection || null); setSelectedFrozen(null); setSaveState({ kind: "SAVED", version: savedVersion.current }); onDraftStateChange(false); setMessage(`Restored v${revision.version} as new revision v${savedVersion.current}.`); editorFocus.current?.focus();
-    } catch (caught) { if (lifecycleIsCurrent(token)) setError(caught instanceof Error ? caught.message : "Unable to restore revision"); }
+    } catch (caught) { if (lifecycleIsCurrent(token)) setError(firstErrorMessage(caught, "Unable to restore revision")); }
     finally { finishLifecycle(token); }
   };
 
@@ -363,7 +380,7 @@ export default function ReportStudio({ caseId, role, selectedCase, onDraftStateC
       if (!lifecycleIsCurrent(token)) return;
       setWorkspace((value) => value ? { ...value, frozen_history: [...value.frozen_history.filter((item) => item.id !== frozen.id), frozen] } : value);
       setSelectedFrozen(frozen); setMessage(`Frozen exact Draft v${current.version}.`);
-    } catch (caught) { if (lifecycleIsCurrent(token)) setError(caught instanceof Error ? caught.message : "Unable to freeze Deliverable"); }
+    } catch (caught) { if (lifecycleIsCurrent(token)) setError(firstErrorMessage(caught, "Unable to freeze Deliverable")); }
     finally { finishLifecycle(token); }
   };
 
@@ -375,7 +392,7 @@ export default function ReportStudio({ caseId, role, selectedCase, onDraftStateC
       const filed = await reportRequest<FrozenDeliverable>(`/api/cases/${caseId}/deliverables/by-id/${selectedFrozen.id}/approve`, { method: "POST", body: JSON.stringify({ preview_digest: selectedFrozen.preview_digest, input_fingerprint: selectedFrozen.input_fingerprint }) });
       if (!lifecycleIsCurrent(token)) return;
       setSelectedFrozen(filed); setWorkspace((current) => current ? { ...current, frozen_history: current.frozen_history.map((item) => item.id === filed.id ? filed : item.status === "FILED" ? { ...item, status: "SUPERSEDED", superseded_by_id: filed.id } : item) } : current); setMessage("Exact Frozen Deliverable filed.");
-    } catch (caught) { if (lifecycleIsCurrent(token)) setError(caught instanceof Error ? caught.message : "Unable to file Deliverable"); }
+    } catch (caught) { if (lifecycleIsCurrent(token)) setError(firstErrorMessage(caught, "Unable to file Deliverable")); }
     finally { finishLifecycle(token); }
   };
 
@@ -387,7 +404,7 @@ export default function ReportStudio({ caseId, role, selectedCase, onDraftStateC
       const next = await reportRequest<{ frozen: FrozenDeliverable; draft: DraftRevision }>(`/api/cases/${caseId}/deliverables/by-id/${selectedFrozen.id}/request-changes`, { method: "POST", body: JSON.stringify({ preview_digest: selectedFrozen.preview_digest, input_fingerprint: selectedFrozen.input_fingerprint, comment: changeComment.trim() }) });
       if (!lifecycleIsCurrent(token)) return;
       savedVersion.current = next.draft.version; unsavedDraft.current = false; setDraftIsUnsaved(false); setPersistedVersion(next.draft.version); setSelectedFrozen(null); setBlocks(next.draft.content.blocks); setModelSelection(next.draft.content.model_selection); setWorkspace((current) => current ? { ...current, current: next.draft, history: [...current.history, next.draft], frozen_history: current.frozen_history.map((item) => item.id === next.frozen.id ? next.frozen : item) } : current); setSaveState({ kind: "SAVED", version: next.draft.version }); setChangeComment(""); setMessage(`Changes requested; editable Draft v${next.draft.version} created.`); onDraftStateChange(false); window.setTimeout(() => { if (lifecycleIsCurrent(token)) editorFocus.current?.focus(); }, 0);
-    } catch (caught) { if (lifecycleIsCurrent(token)) setError(caught instanceof Error ? caught.message : "Unable to request changes"); }
+    } catch (caught) { if (lifecycleIsCurrent(token)) setError(firstErrorMessage(caught, "Unable to request changes")); }
     finally { finishLifecycle(token); }
   };
 
@@ -398,7 +415,7 @@ export default function ReportStudio({ caseId, role, selectedCase, onDraftStateC
     onDraftStateChange(false); setPathway(next);
   };
 
-  if (loading || loadError || !workspace) return <div className="panel"><div className="panel-body">{loading ? <div className="state-skeleton" role="status" aria-live="polite" aria-label="Loading"><span /><span /><span /></div> : <div className="empty error-state" role="alert"><strong>Unable to load Report Studio.</strong><p>{loadError}</p><button className="button small" type="button" onClick={() => void load()}>Retry</button></div>}</div></div>;
+  if (loading || loadError || !workspace) return <div className="panel"><div className="panel-body"><LoadState loading={loading} error={loadError} title="Unable to load Report Studio." onRetry={() => void load()} /></div></div>;
 
   const frozenBlocks = selectedFrozen?.payload.content.blocks || [];
   const previewBlocks = selectedFrozen ? frozenBlocks : blocksForSave(blocks);
@@ -427,13 +444,13 @@ export default function ReportStudio({ caseId, role, selectedCase, onDraftStateC
         {selectedFrozen ? <div className="flow"><p className="status warning">Immutable {selectedFrozen.status} review · Draft v{selectedFrozen.draft_version}</p><button className="button small" type="button" onClick={() => setSelectedFrozen(null)} disabled={lifecycleBusy}>Return to shared Draft</button>{selectedFrozen.status === "FROZEN" && canApprove ? <div className="approval-panel"><button className="button primary" type="button" onClick={() => void fileFrozen()} disabled={lifecycleBusy}>{pending === "file" ? "Filing…" : "File exact Frozen version"}</button><div className="field"><label htmlFor="change-request-comment">Required comment to request changes</label><textarea id="change-request-comment" value={changeComment} maxLength={2000} onChange={(event) => setChangeComment(event.target.value)} disabled={lifecycleBusy} /></div><button className="button" type="button" onClick={() => void requestChanges()} disabled={!changeComment.trim() || lifecycleBusy}>{pending === "changes" ? "Creating new Draft…" : "Request changes"}</button></div> : null}{["FILED", "SUPERSEDED"].includes(selectedFrozen.status) ? <div className="proof-actions">{(["md", "pdf", "xlsx"] as const).map((format) => <a className="button small" key={format} download href={`${apiBase}/api/cases/${caseId}/deliverables/by-id/${selectedFrozen.id}/export/${format}`}>{format.toUpperCase()}</a>)}</div> : <p className="muted">Downloads unlock only after independent filing.</p>}</div> : <>
           <div className="report-authority-strip"><div><span>Model authority</span><strong>{modelSelection?.kind === "ANALYST_REVISION" ? `Active Revision ${workspace.model_eligibility.active_revision?.revision_number || ""}` : modelSelection?.kind === "APPLICATION_BUILD" ? "Application Model Build · acknowledged fallback" : "No model selected"}</strong></div>{modelStale ? <span className="status critical">Stale model identity</span> : null}</div>
           <fieldset className="report-model-picker"><legend>Deliverable model</legend>{workspace.model_eligibility.active_revision ? <label><input type="radio" name="report-model" checked={modelSelection?.kind === "ANALYST_REVISION"} onChange={() => chooseModel("ACTIVE")} disabled={!canWrite || authoringLocked} />Active Analyst Model <code>{workspace.model_eligibility.active_revision.revision_id}</code></label> : null}{!workspace.model_eligibility.active_revision && workspace.model_eligibility.application_build ? <label><input type="checkbox" checked={modelSelection?.kind === "APPLICATION_BUILD"} onChange={(event) => chooseModel(event.target.checked ? "FALLBACK" : "NONE")} disabled={!canWrite || authoringLocked} />I acknowledge fallback to the Application Model Build <code>{workspace.model_eligibility.application_build.build_id}</code></label> : null}{workspace.template.model_requirement === "OPTIONAL" ? <button className="button small" type="button" onClick={() => chooseModel("NONE")} disabled={!canWrite || authoringLocked || modelSelection === null}>Omit model</button> : null}</fieldset>
-          {selectedNarrative ? <div className="flow"><div className="field"><label htmlFor={`narrative-${selectedNarrative.block_id}`}>{workspace.template.blocks.find((item) => item.block_id === selectedNarrative.block_id)?.title || "Narrative"}</label><textarea ref={editorFocus} id={`narrative-${selectedNarrative.block_id}`} value={selectedNarrative.text} maxLength={20000} rows={12} onChange={(event) => updateNarrative(selectedNarrative.block_id, { text: event.target.value })} disabled={!canWrite || authoringLocked} /><span className="field-meta">{selectedNarrative.text.length.toLocaleString()} / 20,000</span></div><fieldset><legend>Claim authority</legend><label><input type="radio" name={`mode-${selectedNarrative.block_id}`} checked={selectedNarrative.content_mode === "EVIDENCE"} onChange={() => updateNarrative(selectedNarrative.block_id, { content_mode: "EVIDENCE" })} disabled={!canWrite || authoringLocked} />Evidence-bound</label><label><input type="radio" name={`mode-${selectedNarrative.block_id}`} checked={selectedNarrative.content_mode === "ANALYST_JUDGMENT"} onChange={() => updateNarrative(selectedNarrative.block_id, { content_mode: "ANALYST_JUDGMENT" })} disabled={!canWrite || authoringLocked} />ANALYST_JUDGMENT</label></fieldset>{selectedNarrative.content_mode === "EVIDENCE" && !selectedNarrative.citations.length ? <p className="error" role="alert">Evidence-bound narrative requires at least one citation.</p> : null}</div> : selectedBlock ? <div className="generated-block-card"><span className="eyebrow">{selectedBlock.kind}</span><h3>Read-only structured block</h3><p>Calculated values and Scenario outputs are accepted only from the server response.</p>{!workspace.template.blocks.some((item) => item.block_id === selectedBlock.block_id) ? <button className="button small" type="button" onClick={() => removeOptional(selectedBlock.block_id)} disabled={!canWrite || authoringLocked}>Omit block</button> : null}</div> : null}
-          <section className="evidence-inspector" aria-labelledby="evidence-inspector-title"><div className="section-heading"><h3 id="evidence-inspector-title">Evidence inspector</h3><span>{sources.length} sources</span></div><div className="field"><label htmlFor="report-evidence-search">Find case evidence</label><input id="report-evidence-search" type="search" value={evidenceQuery} onChange={(event) => setEvidenceQuery(event.target.value)} /></div>{evidenceError ? <p className="error" role="alert">{evidenceError}</p> : null}<div className="evidence-source-list">{visibleSources.slice(0, 8).map((source) => <details key={source.id}><summary>{source.filename}<code>{source.id}</code></summary>{source.blocks.slice(0, 12).map((item) => <div className="evidence-source-block" key={item.block_id}><p>{item.text || item.block_id}</p>{selectedBlock && "citations" in selectedBlock && selectedBlock.citations.some((citation) => citation.source_id === source.id && citation.block_ids.includes(item.block_id)) ? <button className="button small" type="button" onClick={() => removeCitation(source.id, item.block_id)} disabled={!canWrite || authoringLocked}>Remove citation</button> : <button className="button small" type="button" onClick={() => cite(source, item.block_id)} disabled={!canWrite || authoringLocked || !selectedBlock || !("citations" in selectedBlock)}>Cite block</button>}</div>)}</details>)}</div></section>
+          {selectedNarrative ? <div className="flow"><div className="field"><label htmlFor={`narrative-${selectedNarrative.block_id}`}>{workspace.template.blocks.find((item) => item.block_id === selectedNarrative.block_id)?.title || "Narrative"}</label><textarea ref={editorFocus} id={`narrative-${selectedNarrative.block_id}`} value={selectedNarrative.text} maxLength={20000} rows={12} onChange={(event) => updateNarrative(selectedNarrative.block_id, { text: event.target.value })} disabled={!canWrite || authoringLocked} /><span className="field-meta">{selectedNarrative.text.length.toLocaleString()} / 20,000</span></div><fieldset><legend>Claim authority</legend><label><input type="radio" name={`mode-${selectedNarrative.block_id}`} checked={selectedNarrative.content_mode === "EVIDENCE"} onChange={() => updateNarrative(selectedNarrative.block_id, { content_mode: "EVIDENCE" })} disabled={!canWrite || authoringLocked} />Evidence-bound</label><label><input type="radio" name={`mode-${selectedNarrative.block_id}`} checked={selectedNarrative.content_mode === "ANALYST_JUDGMENT"} onChange={() => updateNarrative(selectedNarrative.block_id, { content_mode: "ANALYST_JUDGMENT" })} disabled={!canWrite || authoringLocked} />Analyst judgment</label></fieldset>{selectedNarrative.content_mode === "EVIDENCE" && !selectedNarrative.citations.length ? <StateNote tone="critical" live="alert">Evidence-bound narrative requires at least one citation.</StateNote> : null}</div> : selectedBlock ? <div className="generated-block-card"><span className="eyebrow">{selectedBlock.kind}</span><h3>Read-only structured block</h3><p>Calculated values and Scenario outputs are accepted only from the server response.</p>{!workspace.template.blocks.some((item) => item.block_id === selectedBlock.block_id) ? <button className="button small" type="button" onClick={() => removeOptional(selectedBlock.block_id)} disabled={!canWrite || authoringLocked}>Omit block</button> : null}</div> : null}
+          <section className="evidence-inspector" aria-labelledby="evidence-inspector-title"><div className="section-heading"><h3 id="evidence-inspector-title">Evidence inspector</h3><span>{sources.length} sources</span></div><div className="field"><label htmlFor="report-evidence-search">Find case evidence</label><input id="report-evidence-search" type="search" value={evidenceQuery} onChange={(event) => setEvidenceQuery(event.target.value)} /></div>{evidenceError ? <StateNote tone="critical" live="alert">{evidenceError}</StateNote> : null}<div className="evidence-source-list">{visibleSources.slice(0, 8).map((source) => <details key={source.id}><summary>{source.filename}<code>{source.id}</code></summary>{source.blocks.slice(0, 12).map((item) => <div className="evidence-source-block" key={item.block_id}><p>{item.text || item.block_id}</p>{selectedBlock && "citations" in selectedBlock && selectedBlock.citations.some((citation) => citation.source_id === source.id && citation.block_ids.includes(item.block_id)) ? <button className="button small" type="button" onClick={() => removeCitation(source.id, item.block_id)} disabled={!canWrite || authoringLocked}>Remove citation</button> : <button className="button small" type="button" onClick={() => cite(source, item.block_id)} disabled={!canWrite || authoringLocked || !selectedBlock || !("citations" in selectedBlock)}>Cite block</button>}</div>)}</details>)}</div></section>
           {modelSelection && registry ? <section className="scenario-insert" aria-labelledby="scenario-insert-title"><div className="section-heading"><h3 id="scenario-insert-title">Scenario Exhibit</h3><span>Temporary server calculation</span></div><div className="scenario-fields"><div className="field"><label htmlFor="scenario-assumption">Assumption</label><select id="scenario-assumption" value={scenarioForm.assumptionId} onChange={(event) => { const assumptionId = event.target.value; const available = registry.defaults.find((row) => row.assumption_id === assumptionId && row.case === scenarioForm.case && row.status === "READY") || registry.defaults.find((row) => row.assumption_id === assumptionId && row.status === "READY"); setScenarioForm((current) => ({ ...current, assumptionId, case: available?.case || current.case, periodId: available?.period_id || "" })); }} disabled={authoringLocked}>{registry.definitions.map((definition) => <option key={definition.assumption_id} value={definition.assumption_id}>{definition.label || definition.assumption_id}</option>)}</select></div><div className="field"><label htmlFor="scenario-case">Case</label><select id="scenario-case" value={scenarioForm.case} onChange={(event) => { const caseName = event.target.value as "BASE" | "DOWNSIDE"; const available = registry.defaults.find((row) => row.assumption_id === scenarioForm.assumptionId && row.case === caseName && row.status === "READY"); setScenarioForm((current) => ({ ...current, case: caseName, periodId: available?.period_id || "" })); }} disabled={authoringLocked}><option value="BASE">Base</option><option value="DOWNSIDE">Downside</option></select></div><div className="field"><label htmlFor="scenario-period">Period</label><select id="scenario-period" value={scenarioForm.periodId} onChange={(event) => setScenarioForm((current) => ({ ...current, periodId: event.target.value }))} disabled={authoringLocked}>{scenarioPeriods.map((periodId) => <option key={periodId} value={periodId}>{periodId}</option>)}</select></div><div className="field"><label htmlFor="scenario-value">Shock value</label><input id="scenario-value" inputMode="decimal" value={scenarioForm.value} onChange={(event) => setScenarioForm((current) => ({ ...current, value: event.target.value }))} disabled={authoringLocked} /></div></div><button className="button small" type="button" onClick={() => void insertScenario()} disabled={!canWrite || authoringLocked || !scenarioForm.periodId || !scenarioForm.value}>{pending === "scenario" ? "Calculating…" : "Calculate and insert exact exhibit"}</button></section> : null}
-          {conflict ? <div className="action-state warning" role="alert"><strong>Shared Draft conflict</strong><p>{conflict.author} saved v{conflict.version} at {formatDate(conflict.created_at)}. Your local content remains unchanged.</p><button className="button small" type="button" onClick={() => { savedVersion.current = conflict.version; setPersistedVersion(conflict.version); setWorkspace((current) => current ? { ...current, current: conflict, history: [...current.history.filter((item) => item.id !== conflict.id), conflict] } : current); setSaveState({ kind: "DIRTY" }); markChanged(blocks); }} disabled={authoringLocked}>Retry over current v{conflict.version}</button><button className="button small" type="button" onClick={() => { setBlocks(conflict.content.blocks); setModelSelection(conflict.content.model_selection); savedVersion.current = conflict.version; unsavedDraft.current = false; setDraftIsUnsaved(false); setPersistedVersion(conflict.version); setConflict(null); setSaveState({ kind: "SAVED", version: conflict.version }); onDraftStateChange(false); }} disabled={authoringLocked}>Use shared v{conflict.version}</button></div> : null}
+          {conflict ? <StateBlock shape="action" tone="warning" live="alert" title="Shared Draft conflict" body={<>{conflict.author} saved v{conflict.version} at {formatDate(conflict.created_at)}. Your local content remains unchanged.</>}><button className="button small" type="button" onClick={() => { savedVersion.current = conflict.version; setPersistedVersion(conflict.version); setWorkspace((current) => current ? { ...current, current: conflict, history: [...current.history.filter((item) => item.id !== conflict.id), conflict] } : current); setSaveState({ kind: "DIRTY" }); markChanged(blocks); }} disabled={authoringLocked}>Retry over current v{conflict.version}</button><button className="button small" type="button" onClick={() => { setBlocks(conflict.content.blocks); setModelSelection(conflict.content.model_selection); savedVersion.current = conflict.version; unsavedDraft.current = false; setDraftIsUnsaved(false); setPersistedVersion(conflict.version); setConflict(null); setSaveState({ kind: "SAVED", version: conflict.version }); onDraftStateChange(false); }} disabled={authoringLocked}>Use shared v{conflict.version}</button></StateBlock> : null}
           <div className="report-actions"><button className="button primary" data-primary-report-action type="button" onClick={() => void freeze()} disabled={!freezeReady || lifecycleBusy}>{pending === "freeze" ? "Freezing…" : `Freeze saved v${workspace.current?.version || "—"}`}</button><span>{requiredModelMissing ? "An eligible model is required." : modelStale ? "Refresh the stale model selection." : saveState.kind !== "SAVED" ? "Freeze requires an exact saved revision." : "Freeze revalidates all authority on the server."}</span></div>
         </>}
-        {message ? <p className="status success" role="status" aria-live="polite">{message}</p> : null}{error ? <p className="error" role="alert">{error}</p> : null}
+        {message ? <p className="status success" role="status" aria-live="polite">{message}</p> : null}{error ? <StateNote tone="critical" live="alert">{error}</StateNote> : null}
       </div>
     </section>
 

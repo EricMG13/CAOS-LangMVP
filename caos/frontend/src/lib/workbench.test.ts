@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { withQuery } from "./workbench.ts";
+import { acceptedAuthorityMatch, formatBlockLocator, humanizeCode, moduleLabel, withQuery } from "./workbench.ts";
 
 test("every route path keeps its trailing slash", () => {
   assert.equal(withQuery("/run-console", { case: "case_1" }), "/run-console/?case=case_1");
@@ -13,4 +13,50 @@ test("values set, replace, and clear query keys", () => {
   assert.equal(withQuery("/run-console?run=run_old", { run: "run_new" }), "/run-console/?run=run_new");
   assert.equal(withQuery("/run-console?run=run_old", { run: undefined }), "/run-console/");
   assert.equal(withQuery("/run-console?case=case_1", { run: "run_1" }), "/run-console/?case=case_1&run=run_1");
+});
+
+test("acceptance stays live until the run's snapshot is the case authority", () => {
+  assert.equal(acceptedAuthorityMatch(null, "", "snap_a"), "", "an unaccepted run offers the action");
+  assert.equal(acceptedAuthorityMatch(undefined, undefined, undefined), "", "no authority, no aftermath");
+  assert.equal(acceptedAuthorityMatch("snap_a", "", null), "", "authority not yet loaded keeps the action live");
+  assert.equal(acceptedAuthorityMatch("snap_a", "", "snap_b"), "", "a different accepted authority keeps the action live");
+});
+
+test("a positional block locator reads as English and every other shape keeps its JSON", () => {
+  assert.equal(formatBlockLocator({ line: 4 }), "line 4");
+  assert.equal(formatBlockLocator({ LINE: 4 }), "line 4");
+  assert.equal(formatBlockLocator({ page: 12 }), "page 12");
+  assert.equal(formatBlockLocator({ PAGE: "12" }), "page 12");
+  // Unknown shapes are shown exactly as they were before, never dropped.
+  assert.equal(formatBlockLocator({ sheet: "Summary", row: 4 }), '{"sheet":"Summary","row":4}');
+  assert.equal(formatBlockLocator({ offset: 4 }), '{"offset":4}');
+  assert.equal(formatBlockLocator({ line: null }), '{"line":null}');
+  assert.equal(formatBlockLocator({ line: "" }), '{"line":""}');
+  assert.equal(formatBlockLocator([{ line: 4 }]), '[{"line":4}]');
+  assert.equal(formatBlockLocator({}), "{}");
+  assert.equal(formatBlockLocator(undefined), "");
+});
+
+test("module ids carry their registry name, and an unknown id stays the id", () => {
+  assert.equal(moduleLabel("CP-1"), "Canonical Data Foundation");
+  assert.equal(moduleLabel("CP-2A"), "Downside Pathway");
+  assert.equal(moduleLabel("CP-L10"), "Financial Change Screen");
+  // No registry slug, or not a registry module: never a name this client invented.
+  assert.equal(moduleLabel("CP-PARSE"), "CP-PARSE");
+  assert.equal(moduleLabel("CP-MODEL"), "CP-MODEL");
+  assert.equal(moduleLabel("CP-DR"), "CP-DR");
+  // Superseded ids are not aliased onto their absorbers.
+  assert.equal(moduleLabel("CP-2B"), "CP-2B");
+});
+
+test("a server code is never presented as a raw identifier", () => {
+  assert.equal(humanizeCode("MODEL_EXPORT_FAILED"), "MODEL EXPORT FAILED");
+  assert.equal(humanizeCode("PAUSED"), "PAUSED");
+});
+
+test("acceptance aftermath binds to the matching snapshot id", () => {
+  assert.equal(acceptedAuthorityMatch("snap_a", "", "snap_a"), "snap_a", "the served run field matches the authority");
+  assert.equal(acceptedAuthorityMatch(null, "snap_a", "snap_a"), "snap_a", "the locally returned snapshot covers a server without the run field");
+  assert.equal(acceptedAuthorityMatch("snap_a", "snap_b", "snap_a"), "snap_a", "the served run field wins over local state");
+  assert.equal(acceptedAuthorityMatch("snap_a", "snap_b", "snap_b"), "", "local state never overrides a served mismatch");
 });
