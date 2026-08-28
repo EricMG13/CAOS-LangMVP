@@ -1,4 +1,4 @@
-# Development/CI on top of the runtime pins (mirror of pyproject [dev] extra + lint).
+# Development/CI on top of the runtime pins (mirror of pyproject [dev] extra).
 -r requirements.txt
 pytest>=8
 pytest-asyncio>=0.24

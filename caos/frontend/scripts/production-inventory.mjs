@@ -184,7 +184,7 @@ async function inventoryLoadedRoute(context, role, slug, title) {
       assert.deepEqual(await page.getByLabel("Purpose").locator("option").evaluateAll((options) => options.map((option) => option.value).sort()), expectedPathways);
       assert.deepEqual(await page.getByLabel("Depth").locator("option").evaluateAll((options) => options.map((option) => option.value).sort()), ["full", "screen"]);
     } else if (slug === "deep-dive") {
-      await page.getByRole("link", { name: "Open source rail" }).first().waitFor();
+      await page.getByRole("link", { name: "Open output" }).first().waitFor();
     } else if (slug === "rv-screener") {
       await page.getByRole("button", { name: "Upload CP-3 workbook" }).waitFor();
       await page.getByText("Upload the fixed CP-3 workbook to activate a leveraged-loan universe.", { exact: true }).waitFor();

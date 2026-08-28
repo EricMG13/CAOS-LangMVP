@@ -145,9 +145,11 @@ engine, the bundle, or the routes.
   (`/models/sensitivities/one-way`), worksheet reads
   (`/models/{build_id}/worksheet`), model build export
   (`POST /models/{build_id}/export` — only `GET …/download` is served),
-  revision rebase-preview and revision export
-  (`/model-revisions/rebase-preview`, `/model-revisions/{id}/export`), and
-  deep-research plan approval (`/runs/{id}/research-plan/approve`).
+  revision rebase-preview, revision export and revision download
+  (`/model-revisions/rebase-preview`, `/model-revisions/{id}/export`,
+  `GET /model-revisions/{id}/download` — the download is served for a model
+  build only, never for a revision), and deep-research plan approval
+  (`/runs/{id}/research-plan/approve`).
   The Command Center lens, the Report Studio deliverables workspace, model
   scenarios/previews, model sign-off and run resume are all served and wired —
   do not re-add them to this list.
