@@ -53,11 +53,48 @@ export function assumptionRegistryPath(caseId: string, buildId: string) {
   return `/api/cases/${caseId}/models/assumption-registry?build_id=${encodeURIComponent(buildId)}`;
 }
 
+// Failures from the shared request helper carry the HTTP status so a surface can
+// distinguish a route this deployment does not serve (observed 404) from a failure
+// worth retrying. The message stays the served `detail` string when there is one.
+export class ApiRequestError extends Error {
+  // Explicit field declarations: node --test runs this file with type-stripping
+  // only, which does not support constructor parameter properties.
+  readonly status: number;
+  readonly detail: unknown;
+  constructor(status: number, detail: unknown) {
+    super(typeof detail === "string" && detail ? detail : `Request failed (${status})`);
+    this.status = status;
+    this.detail = detail;
+  }
+}
+
+// Observed-404 capability gate — no hardcoded capability map. A capability call that
+// returns HTTP 404 means the route is absent on this deployment: the control renders
+// its "Not available in this deployment." block instead of a retryable error, and the
+// gate stays truthful automatically as routes land. Works for any request-helper
+// error that carries a numeric `status` (ApiRequestError, ModelRequestError,
+// ReportRequestError).
+//
+// Also treats 405 as route-absent. This server mounts `StaticFiles(html=True)` at
+// "/" as the catch-all for every path this build does not route: a GET to an absent
+// path falls through to that catch-all and gets a genuine 404, but Starlette's
+// StaticFiles app answers any non-GET method with 405 Method Not Allowed instead —
+// so a POST-only capability (one-way sensitivity, rebase-preview, revision export,
+// model XLSX export) hits 405, not 404, when its route isn't served here. All
+// registered routes this frontend calls are invoked with their correct HTTP method,
+// so a genuine method-mismatch 405 is not an expected path — observing one here
+// means the route itself is absent, exactly like a 404.
+export function isUnavailableRoute(caught: unknown): boolean {
+  if (!(caught instanceof Error) || !("status" in caught)) return false;
+  const status = (caught as { status?: unknown }).status;
+  return status === 404 || status === 405;
+}
+
 export async function api<T>(path: string, options: RequestInit = {}, signal?: AbortSignal): Promise<T> {
   const response = await fetch(path, { ...options, signal, headers: options.body instanceof FormData ? options.headers : { "Content-Type": "application/json", ...options.headers } });
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));
-    throw new Error(body.detail || `Request failed (${response.status})`);
+    throw new ApiRequestError(response.status, body.detail);
   }
   return response.json() as Promise<T>;
 }

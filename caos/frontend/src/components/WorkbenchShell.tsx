@@ -40,6 +40,7 @@ type Props = {
   onDrawerChange: (drawer: DrawerState | null) => void;
   role: string;
   runId: string;
+  runIsLive: boolean;
   selectedCase: CaseRecord | null;
   children: ReactNode;
 };
@@ -56,6 +57,7 @@ export default function WorkbenchShell({
   onDrawerChange,
   role,
   runId,
+  runIsLive,
   selectedCase,
   children,
 }: Props) {
@@ -229,7 +231,13 @@ export default function WorkbenchShell({
         <nav aria-label="Workflows" className="nav-group">
           <div className="nav-label">WORKFLOWS</div>
           {workflows.map((workflow) => {
-            const current = workflow.id === activeWorkflow.id;
+            // Exactly one rail entry per page carries aria-current="page" and the
+            // active fill: the most specific match for the destination — a tool link
+            // when one targets it, the Admin Studio utility link on that surface,
+            // otherwise the workflow link.
+            const current = workflow.id === activeWorkflow.id
+              && !activeWorkflow.tools?.some((tool) => tool.destination === active)
+              && active !== "Admin Studio";
             const href = workflow.id === "overview" ? overviewHref : workflow.href;
             return <Link
               aria-current={current ? "page" : undefined}
@@ -246,7 +254,7 @@ export default function WorkbenchShell({
             className={`nav-link ${active === tool.destination ? "active" : ""}`}
             href={workflowHref(tool.href, tool.destination)}
             key={tool.destination}
-          >{tool.label}{tool.destination === "Run Console" && <span className="shortcut">LIVE</span>}</Link>)}
+          >{tool.label}{tool.destination === "Run Console" && runIsLive && <span className="shortcut" aria-hidden="true">LIVE</span>}</Link>)}
         </nav> : null}
         {role === "ADMIN" && <div className="nav-group"><div className="nav-label">UTILITY</div><Link className={`nav-link ${active === "Admin Studio" ? "active" : ""}`} aria-current={active === "Admin Studio" ? "page" : undefined} href={workflowHref("/admin-studio")}>Admin Studio</Link></div>}
       </aside>
@@ -268,7 +276,7 @@ export default function WorkbenchShell({
               {cases.map((item) => <option key={item.id} value={item.id}>{item.issuer} — {item.name}</option>)}
             </select>
             <button className="button small" type="button" disabled={!selectedCase} aria-controls="context-drawer" aria-expanded={drawer?.kind === "sources"} onClick={() => onDrawerChange({ kind: "sources" })}>{!selectedCase ? "Sources" : authorityPending ? "Sources loading" : authorityStatus === "error" || selectedCase.source_count == null ? "Sources unavailable" : `${selectedCase.source_count} ${selectedCase.source_count === 1 ? "source" : "sources"}`}</button>
-            <button className="button small" type="button" disabled={!selectedCase} aria-label="QA unavailable — open QA status" aria-controls="context-drawer" aria-expanded={drawer?.kind === "qa"} onClick={() => onDrawerChange({ kind: "qa" })}>QA status</button>
+            <button className="button small" type="button" disabled={!selectedCase} aria-controls="context-drawer" aria-expanded={drawer?.kind === "qa"} onClick={() => onDrawerChange({ kind: "qa" })}>QA status</button>
             <button ref={triggerRef} className="button small" type="button" aria-label="Open command palette" onClick={openPalette}>Command <span className="shortcut">⌘K</span></button>
           </div>
         </div>

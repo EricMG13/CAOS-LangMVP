@@ -351,17 +351,20 @@ try {
   for (const label of workflows) {
     await page.getByRole("navigation", { name: "Workflows" }).getByRole("link", { name: label, exact: true }).waitFor();
   }
-  for (const [route, workflow] of [
-    ["/cases/", "Overview"],
-    ["/run-console/", "Analyse"],
-    ["/report-studio/", "Publish"],
+  // Exactly one rail entry per page carries aria-current="page": the most specific
+  // match — a tool link when one targets the destination, else the workflow link.
+  for (const [route, navName, linkLabel] of [
+    ["/cases/", "Overview tools", "Case register"],
+    ["/run-console/", "Analyse tools", "Run"],
+    ["/report-studio/", "Workflows", "Publish"],
   ]) {
     await page.goto(`${baseURL}${route}?case=${caseRecord.id}`, { waitUntil: "networkidle" });
-    await page.getByRole("navigation", { name: "Workflows" })
-      .getByRole("link", { name: workflow, exact: true })
+    await page.getByRole("navigation", { name: navName })
+      .getByRole("link", { name: linkLabel, exact: true })
       .evaluate((element) => {
-        if (element.getAttribute("aria-current") !== "page") throw new Error("workflow is not active");
+        if (element.getAttribute("aria-current") !== "page") throw new Error("the most specific nav link is not current");
       });
+    assert.equal(await page.locator('[aria-current="page"]').count(), 1, `${route} rendered more than one aria-current="page" entry`);
   }
   expectedNotFoundURL = `${baseURL}/missing-${fixtureSuffix}`;
   await page.goto(expectedNotFoundURL, { waitUntil: "networkidle" });
@@ -419,7 +422,7 @@ try {
   assert.ok(authorityRequests <= 12, `same-client navigation caused an authority refresh loop (${authorityRequests} requests)`);
   await page.getByRole("region", { name: "Accepted authority" }).getByText(primaryLabel).waitFor();
   await page.getByRole("region", { name: "Accepted authority" }).getByText(/Source set v1/).waitFor();
-  await page.getByRole("button", { name: /QA unavailable/ }).waitFor();
+  await page.getByRole("button", { name: "QA status", exact: true }).waitFor();
 
   const paletteTrigger = page.getByRole("button", { name: /Open command palette/ });
   await paletteTrigger.focus();
@@ -675,7 +678,7 @@ try {
   await page.getByText("Accepted — visible authority", { exact: true }).waitFor();
   assert.equal(await page.getByRole("button", { name: "Accept analytical snapshot" }).count(), 0, "an accepted run still offers a live acceptance action");
 
-  const qaTrigger = page.getByRole("button", { name: /QA unavailable/ });
+  const qaTrigger = page.getByRole("button", { name: "QA status", exact: true });
   await qaTrigger.click();
   await page.getByRole("dialog", { name: "QA details" }).getByText(/No governed snapshot-level QA summary/).waitFor();
   await page.keyboard.press("Escape");
