@@ -140,6 +140,9 @@ dialog::backdrop { background: rgb(0 0 0 / .64); }
 dialog:not(.context-drawer) { width: min(680px, calc(100% - 32px)); max-width: 680px; max-height: min(680px, calc(100dvh - 32px)); }
 .dialog-body { display: grid; gap: 12px; padding: 16px; }
 .dialog-body .panel-header { margin: -16px -16px 0; }
+.accept-modules { margin: 0; padding: 0; list-style: none; display: grid; gap: var(--space-xs); }
+.accept-modules li { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-sm); }
+.run-accepted { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-sm); }
 #command-results { max-height: min(420px, 55dvh); overflow-y: auto; }
 #command-results .nav-link { width: 100%; }
 .palette-group-label { position: sticky; top: 0; z-index: 1; padding: var(--space-sm); background: var(--caos-panel); color: var(--caos-muted); font-size: 10px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }

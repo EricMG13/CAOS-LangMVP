@@ -631,8 +631,21 @@ try {
     }
   };
   page.on("request", trackAuthorityRequest);
-  page.once("dialog", (dialog) => void dialog.accept());
+  // The acceptance ceremony is a styled digest-bound dialog, not window.confirm:
+  // it must state the run being made authoritative, cancel cleanly on Escape with
+  // focus restored, and only its own primary button performs the POST.
   await acceptTrigger.click();
+  const acceptDialog = page.getByRole("dialog", { name: "Accept analytical snapshot" });
+  await acceptDialog.getByText(nextRun.id, { exact: true }).waitFor();
+  await page.keyboard.press("Escape");
+  await acceptDialog.waitFor({ state: "hidden" });
+  await assert.doesNotReject(() => acceptTrigger.evaluate((element) => {
+    if (document.activeElement !== element) throw new Error("focus did not return to the accept trigger");
+  }));
+  await acceptTrigger.click();
+  await acceptDialog.getByText(nextRun.id, { exact: true }).waitFor();
+  await acceptDialog.getByRole("button", { name: "Accept analytical snapshot" }).click();
+  await acceptDialog.waitFor({ state: "hidden" });
   await acceptanceIntercepted;
   await page.getByRole("combobox", { name: "Select case" }).selectOption(raceCase.id);
   switchedToRaceCase = true;
@@ -654,6 +667,13 @@ try {
     "accepted Case A mutation refreshed authority after switching to Case B",
   );
   page.off("request", trackAuthorityRequest);
+
+  // The aftermath: back on the accepted run, acceptance is no longer a live action —
+  // the DAG panel renders the accepted state, keyed on run.accepted_snapshot_id
+  // matching the case authority, and the accept button must not render.
+  await page.goto(`${baseURL}/run-console/?case=${caseRecord.id}&run=${nextRun.id}`, { waitUntil: "networkidle" });
+  await page.getByText("Accepted — visible authority", { exact: true }).waitFor();
+  assert.equal(await page.getByRole("button", { name: "Accept analytical snapshot" }).count(), 0, "an accepted run still offers a live acceptance action");
 
   const qaTrigger = page.getByRole("button", { name: /QA unavailable/ });
   await qaTrigger.click();

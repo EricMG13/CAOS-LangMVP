@@ -81,6 +81,19 @@ export function withQuery(path: string, values: Record<string, string | undefine
   return `${pathname}${query.size ? `?${query}` : ""}`;
 }
 
+// Acceptance aftermath: a run's snapshot reads as the case's standing authority only
+// when the id the run carries (or, on a server that does not serve it, the id its
+// acceptance just returned locally) matches the authority strip's accepted snapshot.
+// Returns the matched snapshot id, or "" while the accept action must stay live.
+export function acceptedAuthorityMatch(
+  runSnapshotId: string | null | undefined,
+  localSnapshotId: string | null | undefined,
+  authoritySnapshotId: string | null | undefined,
+): string {
+  const candidate = runSnapshotId || localSnapshotId || "";
+  return candidate && candidate === authoritySnapshotId ? candidate : "";
+}
+
 export function evidenceKind(value: string): "source" | "artifact" | null {
   const id = value.trim();
   // This store issues hyphenated ids (src-…, art-…); the legacy underscore form

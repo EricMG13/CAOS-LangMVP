@@ -2,7 +2,10 @@ export type { CaseRecord, Snapshot, Snapshot as SnapshotRecord, SnapshotView } f
 
 export type ResearchWorkstream = { id: string; kind: string; question: string; assigned_questions?: string[]; perspective: string; hypothesis: string; evidence_needs: string[]; source_classes: string[]; disconfirming_test: string; completion_test: string; effort_cap: string };
 export type ResearchPlan = { methodology_build_id: string; brief_digest: string; source_set: { id: string; version: number }; upstream_artifacts: { module_id: string; artifact_id: string; digest: string }[]; scope: { type?: string | null; key?: string | null; source_mode?: string | null }; workstreams: ResearchWorkstream[] };
-export type RunRecord = { id: string; case_id: string; status: string; plan: { pathway: string; depth: string; profile_id: string; selection_id: string }; nodes: { id: string; module_id: string; status: string; artifact_id?: string | null }[]; error?: { code?: string; message?: string } | null; research?: { phase?: string; proposed_plan_hash?: string | null; approved_plan_hash?: string | null; proposed_plan?: ResearchPlan | null } | null };
+// `accepted_snapshot_id` is already on the wire (RunResponse in caos/server/caos/responses.py,
+// projected by `_wire_run` and pinned in caos/tests/spec/test_http_contracts_spec.py) — this
+// declaration only surfaces it to the client.
+export type RunRecord = { id: string; case_id: string; status: string; plan: { pathway: string; depth: string; profile_id: string; selection_id: string }; nodes: { id: string; module_id: string; status: string; artifact_id?: string | null }[]; accepted_snapshot_id?: string | null; error?: { code?: string; message?: string } | null; research?: { phase?: string; proposed_plan_hash?: string | null; approved_plan_hash?: string | null; proposed_plan?: ResearchPlan | null } | null };
 export type SourceRecord = { id: string; filename: string; sha256: string; blocks: { block_id: string; locator: Record<string, unknown>; text?: string }[] };
 // Envelope: GET /api/cases/{case_id}/artifacts/{artifact_id} (ArtifactResponse in
 // caos/server/caos/responses.py). `markdown` is null for deterministic payloads

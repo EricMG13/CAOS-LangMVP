@@ -11,7 +11,7 @@ import { displayValue, flattenValue, markdownBlocks, normalizeEvidenceRefs, type
 import { initialAuthorityState, matchesAuthority, requestContext, workspaceAuthorityReducer, type AuthorityEvent } from "../lib/workspaceAuthority";
 
 import WorkbenchShell, { type DrawerState } from "./WorkbenchShell";
-import { type Destination, type Snapshot, type SnapshotView, destinationFromSlug, routeDestinations, withQuery } from "../lib/workbench";
+import { type Destination, type Snapshot, type SnapshotView, acceptedAuthorityMatch, destinationFromSlug, routeDestinations, withQuery } from "../lib/workbench";
 
 const pathways = [
   ["FULL_CREDIT", "Full Credit"],
@@ -66,6 +66,10 @@ export default function Workspace({ destination, children }: { destination?: Des
   const [role, setRole] = useState("ANALYST");
   const [authority, setAuthority] = useState<SnapshotView | null>(null);
   const [drawer, setDrawer] = useState<DrawerState | null>(null);
+  const [acceptPrompt, setAcceptPrompt] = useState(false);
+  // Fallback aftermath state for a server that does not serve run.accepted_snapshot_id:
+  // the snapshot the accept POST just returned, bound to the run it was accepted for.
+  const [localAccepted, setLocalAccepted] = useState<{ runId: string; snapshotId: string } | null>(null);
   const casesRequest = useRef(0);
   const caseRefresh = useRef(0);
   const runRefresh = useRef(0);
@@ -150,6 +154,8 @@ export default function Workspace({ destination, children }: { destination?: Des
     setRunLoading(false);
     setPendingAction("");
     setDrawer(null);
+    setAcceptPrompt(false);
+    setLocalAccepted(null);
     setAuthority(null);
     setRun(null);
     setRunError("");
@@ -497,18 +503,29 @@ export default function Workspace({ destination, children }: { destination?: Des
     }
   };
 
-  const acceptRun = async () => {
+  // The acceptance ceremony is two steps: `acceptRun` opens the digest-bound
+  // dialog, `confirmAccept` performs the governed POST it reviewed.
+  const acceptRun = () => {
     if (!runId || !run || run.id !== runId || run.case_id !== caseId) {
       setRunError("Only a run bound to the selected case can be accepted.");
       return;
     }
-    if (!window.confirm("Accept this analytical snapshot as the visible authority for the case?")) return;
+    setAcceptPrompt(true);
+  };
+
+  const confirmAccept = async () => {
+    setAcceptPrompt(false);
+    if (!runId || !run || run.id !== runId || run.case_id !== caseId) {
+      setRunError("Only a run bound to the selected case can be accepted.");
+      return;
+    }
     const context = requestContext(authorityRef.current);
     setPendingAction("accept-run");
     try {
       const accepted = await request<Snapshot>(`/api/runs/${runId}/accept`, { method: "POST" });
       if (!matchesAuthority(authorityRef.current, context)) return;
       dispatchAuthority({ type: "snapshotAccepted", context, snapshotId: accepted.id });
+      setLocalAccepted({ runId, snapshotId: accepted.id });
       await refreshCase(caseId); await refreshRun(runId);
     } catch (caught) {
       if (!matchesAuthority(authorityRef.current, context)) return;
@@ -556,13 +573,17 @@ export default function Workspace({ destination, children }: { destination?: Des
     }
   };
 
+  // The run's snapshot reads as the standing authority only while it matches the
+  // same state that feeds the shell's authority strip.
+  const acceptedRunSnapshotId = run ? acceptedAuthorityMatch(run.accepted_snapshot_id, localAccepted && localAccepted.runId === run.id ? localAccepted.snapshotId : "", authority?.accepted?.id) : "";
+
   const renderDestination = () => {
     if (!selectedCase && active !== "Cases" && active !== "Admin Studio") return <EmptyState text="Create or select a case before entering an analytical workspace." action="Open Cases" href="/cases/" />;
     switch (active) {
-      case "Cases": return <CasesView cases={cases} casesLoading={casesLoading} selectedCase={selectedCase} caseId={caseId} onCaseChange={selectCase} createCase={createCase} upload={upload} pendingAction={pendingAction} run={run} runLoading={runLoading} runError={runError} startRun={startRun} acceptRun={acceptRun} />;
+      case "Cases": return <CasesView cases={cases} casesLoading={casesLoading} selectedCase={selectedCase} caseId={caseId} onCaseChange={selectCase} createCase={createCase} upload={upload} pendingAction={pendingAction} run={run} runLoading={runLoading} runError={runError} startRun={startRun} acceptRun={acceptRun} acceptedSnapshotId={acceptedRunSnapshotId} />;
       case "Sources": return <SourcesView selectedCase={selectedCase} artifactId={routeArtifactId} sourceId={routeSourceId} upload={upload} pendingAction={pendingAction} onOpenEvidence={(evidenceId, source) => setDrawer({ kind: "evidence", evidenceId, source })} />;
-      case "Run Console": return <RunConsole caseId={caseId} selectedCase={selectedCase} run={run} runLoading={runLoading} runError={runError} startRun={startRun} acceptRun={acceptRun} approveResearchPlan={approveResearchPlan} pendingAction={pendingAction} />;
-      case "Deep-Dive": return <DeepDive selectedCase={selectedCase} question={routeQuestion} caseId={caseId} pendingAction={pendingAction} run={run} runLoading={runLoading} runError={runError} startRun={startRun} acceptRun={acceptRun} onSwitchSnapshot={switchSnapshot} />;
+      case "Run Console": return <RunConsole caseId={caseId} selectedCase={selectedCase} run={run} runLoading={runLoading} runError={runError} startRun={startRun} acceptRun={acceptRun} acceptedSnapshotId={acceptedRunSnapshotId} approveResearchPlan={approveResearchPlan} pendingAction={pendingAction} />;
+      case "Deep-Dive": return <DeepDive selectedCase={selectedCase} question={routeQuestion} caseId={caseId} pendingAction={pendingAction} run={run} runLoading={runLoading} runError={runError} startRun={startRun} acceptRun={acceptRun} acceptedSnapshotId={acceptedRunSnapshotId} onSwitchSnapshot={switchSnapshot} />;
       case "RV Screener": return <RVView key={caseId} caseId={caseId} />;
       case "Command Center": return <CommandView caseId={caseId} question={routeQuestion} />;
       case "Model Builder": return <ModelBuilder caseId={caseId} role={role} onDraftStateChange={onModelDraftStateChange} />;
@@ -571,7 +592,8 @@ export default function Workspace({ destination, children }: { destination?: Des
     }
   };
 
-  return <WorkbenchShell
+  return <>
+    <WorkbenchShell
       active={active}
       authority={authority}
       authorityStatus={authorityStatus}
@@ -586,7 +608,9 @@ export default function Workspace({ destination, children }: { destination?: Des
       selectedCase={selectedCase}
     >
       <div key={`${active}:${caseId}`}>{routeIsKnown ? <>{renderDestination()}{children}</> : children}</div>
-    </WorkbenchShell>;
+    </WorkbenchShell>
+    <AcceptDialog open={acceptPrompt} run={run} replaces={authority?.accepted ?? null} pending={pendingAction === "accept-run"} onConfirm={confirmAccept} onClose={() => setAcceptPrompt(false)} />
+  </>;
 }
 
 function EmptyState({ text, action, href }: { text: string; action?: string; href?: string }) {
@@ -603,7 +627,7 @@ function ActionState({ title, detail, action, href, warning = false }: { title: 
   return <div className={`action-state${warning ? " warning" : ""}`}><strong>{title}</strong><p>{detail}</p><Link className="button small" href={href}>{action}</Link></div>;
 }
 
-function CasesView({ cases, casesLoading, selectedCase, caseId, onCaseChange, createCase, upload, pendingAction, run, runLoading, runError, startRun, acceptRun }: { cases: CaseRecord[]; casesLoading: boolean; selectedCase: CaseRecord | null; caseId: string; onCaseChange: (id: string) => void; createCase: (event: FormEvent<HTMLFormElement>) => void; upload: (event: FormEvent<HTMLFormElement>) => void; pendingAction: string; run: RunRecord | null; runLoading: boolean; runError: string; startRun: (event: FormEvent<HTMLFormElement>) => void; acceptRun: () => void }) {
+function CasesView({ cases, casesLoading, selectedCase, caseId, onCaseChange, createCase, upload, pendingAction, run, runLoading, runError, startRun, acceptRun, acceptedSnapshotId }: { cases: CaseRecord[]; casesLoading: boolean; selectedCase: CaseRecord | null; caseId: string; onCaseChange: (id: string) => void; createCase: (event: FormEvent<HTMLFormElement>) => void; upload: (event: FormEvent<HTMLFormElement>) => void; pendingAction: string; run: RunRecord | null; runLoading: boolean; runError: string; startRun: (event: FormEvent<HTMLFormElement>) => void; acceptRun: () => void; acceptedSnapshotId: string }) {
   const [search, setSearch] = useState("");
   const [snapshotFilter, setSnapshotFilter] = useState<"all" | "accepted" | "unaccepted">("all");
   const visibleCases = useMemo(() => cases.filter((item) => {
@@ -617,7 +641,7 @@ function CasesView({ cases, casesLoading, selectedCase, caseId, onCaseChange, cr
     <section className="panel cases-create"><div className="panel-header"><h2>Create case</h2></div><div className="panel-body"><form onSubmit={createCase}><div className="field"><label htmlFor="case-name">Case name</label><input id="case-name" name="name" autoComplete="off" required placeholder="Q3 credit review…" /></div><div className="field"><label htmlFor="issuer">Issuer</label><input id="issuer" name="issuer" autoComplete="organization" required placeholder="Issuer legal name…" /></div><div className="field"><label htmlFor="sector">Sector</label><input id="sector" name="sector" autoComplete="off" placeholder="Business services…" /></div><button className={`button ${selectedCase ? "" : "primary"}`} type="submit" disabled={pendingAction === "create-case"}>{pendingAction === "create-case" ? "Creating…" : "Create case"}</button></form></div></section>
     <section className="panel cases-fit"><div className="panel-header"><h2>Pathway fit</h2></div><div className="panel-body">{selectedCase ? <><span className={`status ${selectedCase.pathway_fit?.fit === "READY" ? "success" : "warning"}`}>{selectedCase.pathway_fit?.fit || "NEEDS_SOURCE"}</span><p>{selectedCase.pathway_fit?.message || "Upload a source to see fit."}</p></> : <div className="empty">Select a case to inspect pathway fit.</div>}</div></section>
     <section className="panel cases-intake"><div className="panel-header"><h2>Source intake</h2><span className="panel-meta">Immutable · versioned</span></div><div className="panel-body">{selectedCase ? <><p className="muted">{selectedCase.issuer} / {selectedCase.name}</p><form onSubmit={upload}><div className="field"><label htmlFor="case-source">Source file</label><input id="case-source" name="file" type="file" accept=".pdf,.xlsx,.json,.txt,.md,.csv" required /></div><button className="button primary" type="submit" disabled={pendingAction === "upload"}>{pendingAction === "upload" ? "Uploading…" : "Upload and version source set"}</button></form></> : <div className="empty">Select a case before adding governed source material.</div>}</div></section>
-    <InlineRun caseId={caseId} run={run} runLoading={runLoading} runError={runError} startRun={startRun} acceptRun={acceptRun} pendingAction={pendingAction} />
+    <InlineRun caseId={caseId} run={run} runLoading={runLoading} runError={runError} startRun={startRun} acceptRun={acceptRun} acceptedSnapshotId={acceptedSnapshotId} pendingAction={pendingAction} />
   </div>;
 }
 
@@ -746,15 +770,65 @@ function RunForm({ caseId, startRun, pendingAction }: { caseId: string; startRun
   </form>;
 }
 
+// The acceptance ceremony: a digest-bound <dialog> stating exactly what becomes the
+// case's visible authority and what it replaces. Open/close follows the WorkbenchShell
+// drawer pattern — capture the trigger before showModal(), rAF-focus the heading,
+// restore focus on close. The primary button keeps the DAG trigger's accessible name.
+function AcceptDialog({ open, run, replaces, pending, onConfirm, onClose }: { open: boolean; run: RunRecord | null; replaces: Snapshot | null; pending: boolean; onConfirm: () => void; onClose: () => void }) {
+  const dialogRef = useRef<HTMLDialogElement>(null);
+  const headingRef = useRef<HTMLHeadingElement>(null);
+  const triggerRef = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    if (!dialog) return;
+    if (!open) {
+      if (dialog.open) dialog.close();
+      return;
+    }
+    if (!dialog.open) {
+      triggerRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+      dialog.showModal();
+    }
+    const frame = window.requestAnimationFrame(() => headingRef.current?.focus());
+    return () => window.cancelAnimationFrame(frame);
+  }, [open]);
+  const close = () => {
+    onClose();
+    const trigger = triggerRef.current;
+    window.requestAnimationFrame(() => trigger?.focus());
+  };
+  const pathwayLabel = run ? pathways.find(([value]) => value === run.plan.pathway)?.[1] || run.plan.pathway : "";
+  return <dialog ref={dialogRef} aria-labelledby="accept-dialog-title" onClose={close}>
+    <div className="dialog-body">
+      <div className="panel-header"><h2 id="accept-dialog-title" ref={headingRef} tabIndex={-1}>Accept analytical snapshot</h2></div>
+      {run && <>
+        <dl className="state-facts">
+          <dt>Run</dt><dd className="mono">{run.id}</dd>
+          <dt>Pathway</dt><dd>{pathwayLabel} · {run.plan.depth}</dd>
+          <dt>Modules</dt><dd><ul className="accept-modules">{run.nodes.map((node) => <li key={node.id}><span className="mono">{node.module_id}</span>{node.artifact_id && <span className="mono muted">{node.artifact_id}</span>}</li>)}</ul></dd>
+          <dt>Replaces</dt><dd>{replaces ? <><span className="mono">{replaces.digest}</span><div className="muted">Source set v{replaces.source_set_version ?? "—"}</div></> : <span className="muted">No accepted snapshot</span>}</dd>
+        </dl>
+        <p>Accepting makes this run&apos;s snapshot the visible authority for the case.</p>
+        <div className="top-actions">
+          <button className="button primary" type="button" disabled={pending} onClick={onConfirm}>Accept analytical snapshot</button>
+          <button className="button small" type="button" onClick={() => dialogRef.current?.close()}>Cancel</button>
+        </div>
+      </>}
+    </div>
+  </dialog>;
+}
+
 // Shared by Run Console and the inline panels on Cases and Deep-Dive. `approvalSlot`
 // is how Run Console injects the full ResearchPlanView; inline surfaces route to it
 // instead, since plan approval is a Run Console responsibility.
-function RunStatus({ caseId, run, runLoading, runError, acceptRun, pendingAction, approvalSlot }: { caseId: string; run: RunRecord | null; runLoading: boolean; runError: string; acceptRun: () => void; pendingAction: string; approvalSlot: ReactNode }) {
+function RunStatus({ caseId, run, runLoading, runError, acceptRun, acceptedSnapshotId, pendingAction, approvalSlot }: { caseId: string; run: RunRecord | null; runLoading: boolean; runError: string; acceptRun: () => void; acceptedSnapshotId: string; pendingAction: string; approvalSlot: ReactNode }) {
   if (!run) return <LoadState loading={runLoading} error={runError} empty="No current execution. Select a purpose and depth to create an immutable plan." />;
   return <>
     <div className="dag">{run.nodes.map((node, index) => <div className="dag-step" key={node.id}>{index > 0 && <span className="dag-edge" aria-hidden="true">→</span>}{node.artifact_id ? <Link className={`dag-node ${node.status}`} href={withQuery("/sources/", { case: caseId, artifact: node.artifact_id })}><strong>{node.module_id}</strong><div className="muted">{node.status}</div><span className="dag-node-open">Open output</span></Link> : <div className={`dag-node ${node.status}`}><strong>{node.module_id}</strong><div className="muted">{node.status}</div></div>}</div>)}</div>
     {run.status === "failed" && run.error && <p className="error" role="alert">{run.error.code ? `${run.error.code}: ` : ""}{run.error.message || "Run exception"}</p>}
-    {run.status === "succeeded" && <button className="button primary" disabled={pendingAction === "accept-run"} onClick={acceptRun}>{pendingAction === "accept-run" ? "Accepting…" : "Accept analytical snapshot"}</button>}
+    {run.status === "succeeded" && (acceptedSnapshotId
+      ? <div className="run-accepted" role="status"><span className="status success">Accepted — visible authority</span><span className="mono muted">{acceptedSnapshotId}</span></div>
+      : <button className="button primary" disabled={pendingAction === "accept-run"} onClick={acceptRun}>{pendingAction === "accept-run" ? "Accepting…" : "Accept analytical snapshot"}</button>)}
     {run.status === "paused" && run.error?.code === "SOURCE_SET_EMPTY" && <div className="callout warning" role="status" aria-live="polite">Material exception: upload governed source material before execution.</div>}
     {run.status === "paused" && run.error?.code === "PLAN_APPROVAL_REQUIRED" && approvalSlot}
     {run.status === "paused" && !["SOURCE_SET_EMPTY", "PLAN_APPROVAL_REQUIRED"].includes(run.error?.code || "") && <div className="callout warning" role="status" aria-live="polite"><strong>{run.error?.code || "RUN_PAUSED"}</strong><p>{run.error?.message || "Run paused."}</p></div>}
@@ -762,17 +836,17 @@ function RunStatus({ caseId, run, runLoading, runError, acceptRun, pendingAction
 }
 
 // Compile, watch and accept a route without leaving the analytical surface.
-function InlineRun({ caseId, run, runLoading, runError, startRun, acceptRun, pendingAction }: { caseId: string; run: RunRecord | null; runLoading: boolean; runError: string; startRun: (event: FormEvent<HTMLFormElement>) => void; acceptRun: () => void; pendingAction: string }) {
+function InlineRun({ caseId, run, runLoading, runError, startRun, acceptRun, acceptedSnapshotId, pendingAction }: { caseId: string; run: RunRecord | null; runLoading: boolean; runError: string; startRun: (event: FormEvent<HTMLFormElement>) => void; acceptRun: () => void; acceptedSnapshotId: string; pendingAction: string }) {
   return <section className="panel span-12 inline-run" aria-label="Inline execution">
     <div className="panel-header inline-run-header"><h2>Inline execution</h2><div className="inline-run-actions"><RunStatusBadge run={run} /><Link className="button small" href={withQuery("/run-console", { case: caseId })}>Open Run Console</Link></div></div>
     <div className="panel-body inline-run-body">
       <div className="inline-run-form"><RunForm caseId={caseId} startRun={startRun} pendingAction={pendingAction} /></div>
-      <div className="inline-run-status"><RunStatus caseId={caseId} run={run} runLoading={runLoading} runError={runError} acceptRun={acceptRun} pendingAction={pendingAction} approvalSlot={<div className="callout warning" role="status" aria-live="polite"><strong>Plan approval required</strong><p>Approve the bounded research plan in Run Console before this route can continue.</p></div>} /></div>
+      <div className="inline-run-status"><RunStatus caseId={caseId} run={run} runLoading={runLoading} runError={runError} acceptRun={acceptRun} acceptedSnapshotId={acceptedSnapshotId} pendingAction={pendingAction} approvalSlot={<div className="callout warning" role="status" aria-live="polite"><strong>Plan approval required</strong><p>Approve the bounded research plan in Run Console before this route can continue.</p></div>} /></div>
     </div>
   </section>;
 }
 
-function RunConsole({ caseId, selectedCase, run, runLoading, runError, startRun, acceptRun, approveResearchPlan, pendingAction }: { caseId: string; selectedCase: CaseRecord | null; run: RunRecord | null; runLoading: boolean; runError: string; startRun: (event: FormEvent<HTMLFormElement>) => void; acceptRun: () => void; approveResearchPlan: (planHash: string) => void; pendingAction: string }) {
+function RunConsole({ caseId, selectedCase, run, runLoading, runError, startRun, acceptRun, acceptedSnapshotId, approveResearchPlan, pendingAction }: { caseId: string; selectedCase: CaseRecord | null; run: RunRecord | null; runLoading: boolean; runError: string; startRun: (event: FormEvent<HTMLFormElement>) => void; acceptRun: () => void; acceptedSnapshotId: string; approveResearchPlan: (planHash: string) => void; pendingAction: string }) {
   const [pathway, setPathway] = useState("EARNINGS_UPDATE");
   const [depth, setDepth] = useState("screen");
   const deepResearchAvailable = selectedCase?.deep_research_available === true;
@@ -812,7 +886,7 @@ function RunConsole({ caseId, selectedCase, run, runLoading, runError, startRun,
     </section>
     <section className="panel span-8">
       <div className="panel-header"><h2>Persisted DAG</h2><RunStatusBadge run={run} /></div>
-      <div className="panel-body flow"><RunStatus caseId={caseId} run={run} runLoading={runLoading} runError={runError} acceptRun={acceptRun} pendingAction={pendingAction} approvalSlot={approvalPlan && approvalHash ? <ResearchPlanView plan={approvalPlan} planHash={approvalHash} approving={pendingAction === "approve-research-plan"} onApprove={approveResearchPlan} /> : <div className="callout warning" role="status" aria-live="polite"><strong>PLAN_APPROVAL_REQUIRED</strong><p>The persisted approval plan is unavailable; approval remains blocked.</p></div>} /></div>
+      <div className="panel-body flow"><RunStatus caseId={caseId} run={run} runLoading={runLoading} runError={runError} acceptRun={acceptRun} acceptedSnapshotId={acceptedSnapshotId} pendingAction={pendingAction} approvalSlot={approvalPlan && approvalHash ? <ResearchPlanView plan={approvalPlan} planHash={approvalHash} approving={pendingAction === "approve-research-plan"} onApprove={approveResearchPlan} /> : <div className="callout warning" role="status" aria-live="polite"><strong>PLAN_APPROVAL_REQUIRED</strong><p>The persisted approval plan is unavailable; approval remains blocked.</p></div>} /></div>
     </section>
   </div>;
 }
@@ -851,7 +925,7 @@ function ResearchPlanView({ plan, planHash, approving, onApprove }: { plan: Rese
   </section>;
 }
 
-function DeepDive({ selectedCase, question, caseId, pendingAction, run, runLoading, runError, startRun, acceptRun, onSwitchSnapshot }: { selectedCase: CaseRecord | null; question: string; caseId: string; pendingAction: string; run: RunRecord | null; runLoading: boolean; runError: string; startRun: (event: FormEvent<HTMLFormElement>) => void; acceptRun: () => void; onSwitchSnapshot: (snapshotId: string) => Promise<SnapshotView | null> }) {
+function DeepDive({ selectedCase, question, caseId, pendingAction, run, runLoading, runError, startRun, acceptRun, acceptedSnapshotId, onSwitchSnapshot }: { selectedCase: CaseRecord | null; question: string; caseId: string; pendingAction: string; run: RunRecord | null; runLoading: boolean; runError: string; startRun: (event: FormEvent<HTMLFormElement>) => void; acceptRun: () => void; acceptedSnapshotId: string; onSwitchSnapshot: (snapshotId: string) => Promise<SnapshotView | null> }) {
   const [view, setView] = useState<{ accepted: Snapshot | null; latest_accepted: Snapshot | null; switch_required: boolean } | null>(null);
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(true);
@@ -875,7 +949,7 @@ function DeepDive({ selectedCase, question, caseId, pendingAction, run, runLoadi
     } catch (caught) { setMessage(caught instanceof Error ? caught.message : "Unable to switch snapshot"); }
   };
   const snapshot = view?.accepted;
-  return <div className="grid deep-dive-layout">{question && <section className="context-strip span-12"><strong>Evidence request</strong><p>{question}</p></section>}<section className="panel span-8"><div className="panel-header"><h2>Accepted analysis</h2><span className="panel-meta">Visible authority</span></div><div className="panel-body flow">{snapshot ? <><div className="callout"><strong>Visible accepted snapshot</strong><br /><span className="mono">{snapshot.digest}</span><br /><span className="muted">Source set v{snapshot.source_set_version ?? "—"} · accepted {formatDate(snapshot.accepted_at)}</span></div><h3>Artifact register</h3><div className="table-wrap" tabIndex={0} role="region" aria-label="Scrollable table"><table><caption className="muted">Typed artifacts bound to this snapshot</caption><thead><tr><th scope="col">Module</th><th scope="col">Artifact digest</th><th scope="col">Evidence</th></tr></thead><tbody>{snapshot.artifacts.map((artifact) => <tr key={artifact.id}><td className="mono">{artifact.module_id}</td><td className="mono">{artifact.digest.slice(0, 16)}…</td><td><Link href={withQuery("/sources/", { case: selectedCase?.id, artifact: artifact.id })}>Open source rail</Link></td></tr>)}</tbody></table></div>{view?.switch_required && <div className="callout warning">A newer accepted execution exists. This view remains on the selected snapshot until you switch it explicitly.<div className="top-actions"><button className="button small" type="button" onClick={switchSnapshot}>Switch visible snapshot</button></div></div>}{message && <p className="muted" role="status">{message}</p>}</> : loading || loadError ? <LoadState loading={loading} error={loadError} /> : <ActionState title="Analysis unavailable" detail="No accepted snapshot. Run the selected route, inspect exceptions, then accept it explicitly." action="Open Run Console" href={withQuery("/run-console", { case: selectedCase?.id })} />}</div></section><section className="panel span-4 evidence-rail"><div className="panel-header"><h2>Evidence rail</h2></div><div className="panel-body flow">{snapshot ? <><p className="muted">Pinned to source set v{snapshot.source_set_version ?? "—"}, accepted {formatDate(snapshot.accepted_at)}.</p><ul className="evidence-rail-list">{snapshot.artifacts.map((artifact) => <li key={artifact.id}><Link href={withQuery("/sources/", { case: selectedCase?.id, artifact: artifact.id })}><span className="mono">{artifact.module_id}</span></Link><div className="muted mono">{artifact.digest.slice(0, 16)}…</div></li>)}</ul></> : <p className="muted">No accepted snapshot, so no evidence is bound yet.</p>}</div></section><InlineRun caseId={caseId} run={run} runLoading={runLoading} runError={runError} startRun={startRun} acceptRun={acceptRun} pendingAction={pendingAction} /></div>;
+  return <div className="grid deep-dive-layout">{question && <section className="context-strip span-12"><strong>Evidence request</strong><p>{question}</p></section>}<section className="panel span-8"><div className="panel-header"><h2>Accepted analysis</h2><span className="panel-meta">Visible authority</span></div><div className="panel-body flow">{snapshot ? <><div className="callout"><strong>Visible accepted snapshot</strong><br /><span className="mono">{snapshot.digest}</span><br /><span className="muted">Source set v{snapshot.source_set_version ?? "—"} · accepted {formatDate(snapshot.accepted_at)}</span></div><h3>Artifact register</h3><div className="table-wrap" tabIndex={0} role="region" aria-label="Scrollable table"><table><caption className="muted">Typed artifacts bound to this snapshot</caption><thead><tr><th scope="col">Module</th><th scope="col">Artifact digest</th><th scope="col">Evidence</th></tr></thead><tbody>{snapshot.artifacts.map((artifact) => <tr key={artifact.id}><td className="mono">{artifact.module_id}</td><td className="mono">{artifact.digest.slice(0, 16)}…</td><td><Link href={withQuery("/sources/", { case: selectedCase?.id, artifact: artifact.id })}>Open source rail</Link></td></tr>)}</tbody></table></div>{view?.switch_required && <div className="callout warning">A newer accepted execution exists. This view remains on the selected snapshot until you switch it explicitly.<div className="top-actions"><button className="button small" type="button" onClick={switchSnapshot}>Switch visible snapshot</button></div></div>}{message && <p className="muted" role="status">{message}</p>}</> : loading || loadError ? <LoadState loading={loading} error={loadError} /> : <ActionState title="Analysis unavailable" detail="No accepted snapshot. Run the selected route, inspect exceptions, then accept it explicitly." action="Open Run Console" href={withQuery("/run-console", { case: selectedCase?.id })} />}</div></section><section className="panel span-4 evidence-rail"><div className="panel-header"><h2>Evidence rail</h2></div><div className="panel-body flow">{snapshot ? <><p className="muted">Pinned to source set v{snapshot.source_set_version ?? "—"}, accepted {formatDate(snapshot.accepted_at)}.</p><ul className="evidence-rail-list">{snapshot.artifacts.map((artifact) => <li key={artifact.id}><Link href={withQuery("/sources/", { case: selectedCase?.id, artifact: artifact.id })}><span className="mono">{artifact.module_id}</span></Link><div className="muted mono">{artifact.digest.slice(0, 16)}…</div></li>)}</ul></> : <p className="muted">No accepted snapshot, so no evidence is bound yet.</p>}</div></section><InlineRun caseId={caseId} run={run} runLoading={runLoading} runError={runError} startRun={startRun} acceptRun={acceptRun} acceptedSnapshotId={acceptedSnapshotId} pendingAction={pendingAction} /></div>;
 }
 
 const loanColumns: { key: keyof LoanRow; label: string; numeric?: boolean; signed?: boolean }[] = [
