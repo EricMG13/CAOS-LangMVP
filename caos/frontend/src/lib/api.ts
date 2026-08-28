@@ -53,16 +53,50 @@ export function assumptionRegistryPath(caseId: string, buildId: string) {
   return `/api/cases/${caseId}/models/assumption-registry?build_id=${encodeURIComponent(buildId)}`;
 }
 
+// A served `detail` reaches the analyst as a sentence, never as "[object Object]".
+// FastAPI serves three shapes: a bare string, an object (`{detail}` for a plain
+// refusal, `{code}` for a typed one), and a 422 validation array of `{msg, loc}`.
+// Returns "" when the payload carries nothing readable, so callers can fall back.
+function detailMessage(detail: unknown): string {
+  if (typeof detail === "string") return detail;
+  if (Array.isArray(detail)) {
+    return detail
+      .map((item) => typeof item === "string" ? item : item && typeof item === "object" && typeof (item as { msg?: unknown }).msg === "string" ? (item as { msg: string }).msg : "")
+      .filter(Boolean)
+      .join("; ");
+  }
+  if (detail && typeof detail === "object") {
+    const record = detail as { detail?: unknown; code?: unknown };
+    const nested = "detail" in record ? detailMessage(record.detail) : "";
+    if (nested) return nested;
+    if (typeof record.code === "string" && record.code) return record.code;
+  }
+  return "";
+}
+
+// The single unwrapper for everything a `catch` can hold. Every surface uses it so
+// a raw exception — an object detail, a validation array, a bare rejection — is
+// never rendered at the analyst. The fallback is the caller's own sentence.
+export function firstErrorMessage(caught: unknown, fallback: string): string {
+  if (caught instanceof Error && "detail" in caught) {
+    const message = detailMessage((caught as { detail: unknown }).detail);
+    if (message) return message;
+  }
+  if (caught instanceof Error && caught.message) return caught.message;
+  return fallback;
+}
+
 // Failures from the shared request helper carry the HTTP status so a surface can
 // distinguish a route this deployment does not serve (observed 404) from a failure
-// worth retrying. The message stays the served `detail` string when there is one.
+// worth retrying. `message` is always human text — the served `detail` unwrapped
+// through the same rule every surface uses — while `detail` keeps the raw value.
 export class ApiRequestError extends Error {
   // Explicit field declarations: node --test runs this file with type-stripping
   // only, which does not support constructor parameter properties.
   readonly status: number;
   readonly detail: unknown;
   constructor(status: number, detail: unknown) {
-    super(typeof detail === "string" && detail ? detail : `Request failed (${status})`);
+    super(detailMessage(detail) || `Request failed (${status})`);
     this.status = status;
     this.detail = detail;
   }

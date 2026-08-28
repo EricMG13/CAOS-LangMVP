@@ -1077,7 +1077,7 @@ try {
   await page.getByRole("button", { name: "Application Model Build" }).click();
   await page.getByText("MODEL_EXPORT_FAILED", { exact: true }).waitFor();
   await page.getByRole("tab", { name: "Credit Snapshot" }).waitFor();
-  for (const [state, text] of [["FAILED", "MODEL_CALCULATION_FAILED"], ["NOT_READY", "ACCEPTED FULL CREDIT REQUIRED"]]) {
+  for (const [state, text] of [["FAILED", "MODEL CALCULATION FAILED"], ["NOT_READY", "ACCEPTED FULL CREDIT REQUIRED"]]) {
     modelState = state; modelExportState = "NOT_REQUESTED";
     await page.goto(`${baseURL}/model-builder/?case=${caseRecord.id}&state=${state}`, { waitUntil: "networkidle" });
     await page.getByText(text, { exact: true }).waitFor();

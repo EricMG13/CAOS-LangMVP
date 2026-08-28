@@ -363,7 +363,7 @@ try {
     releaseLateRun();
     await lateRunFulfilled;
     assert.equal(lateRunIntercepts, 1, "late-response interceptor must handle exactly one request");
-    assert.equal(await journeyPage.getByText("CROSS_CASE_LATE_RESPONSE", { exact: false }).count(), 0);
+    assert.equal(await journeyPage.getByText(/CROSS[_ ]CASE[_ ]LATE[_ ]RESPONSE/).count(), 0);
     assert.equal(new URL(journeyPage.url()).searchParams.get("case"), denseCaseId);
     await journeyPage.unroute(runResponseRoute);
     await journeyPage.goto(`${baseURL}/run-console/?case=${journeyCase.id}&run=${firstRun.id}`, { waitUntil: "networkidle" });
