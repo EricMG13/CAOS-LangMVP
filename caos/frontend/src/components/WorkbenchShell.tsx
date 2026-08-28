@@ -7,6 +7,7 @@ import {
   Destination,
   SnapshotView,
   evidenceKind,
+  formatDate,
   withQuery,
   workflowFor,
   workflows,
@@ -177,7 +178,7 @@ export default function WorkbenchShell({
   if (drawer?.kind === "qa") {
     drawerBody = <div className="state-block unavailable">
       <strong>No governed snapshot-level QA summary is available.</strong>
-      <p>Run and artifact status are not substituted for QA. Review module exceptions in Analyse.</p>
+      <p>Run and artifact status are not substituted for QA. Review module exceptions in Deep-Dive.</p>
       <Link className="button small" href={withQuery("/run-console", { case: caseId })} onNavigate={closeDrawer}>Open Run Console</Link>
     </div>;
   } else if (drawer?.kind === "sources") {
@@ -266,7 +267,7 @@ export default function WorkbenchShell({
             {selectedCase && authorityPending && <span className="muted">Loading authority…</span>}
             {selectedCase && authorityStatus === "error" && <span className="status warning">Authority unavailable</span>}
             {selectedCase && authorityStatus === "ready" && !accepted && <span className="status warning">No accepted snapshot</span>}
-            {authorityStatus === "ready" && accepted && <><span className="status success">Accepted <span className="optional">{new Date(accepted.accepted_at).toLocaleString()}</span></span><span className="mono">Source set v{accepted.source_set_version ?? "—"}</span></>}
+            {authorityStatus === "ready" && accepted && <><span className="status success">Accepted <span className="optional">{formatDate(accepted.accepted_at)}</span></span><span className="mono">Source set v{accepted.source_set_version ?? "—"}</span></>}
             {(authority?.switch_required || authority?.diff?.changed) && <span className="status warning">New analysis available</span>}
           </div>
           <div className="top-actions">

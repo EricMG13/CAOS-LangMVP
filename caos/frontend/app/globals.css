@@ -97,8 +97,10 @@ th { color: var(--caos-muted); font-size: 10px; letter-spacing: .09em; text-tran
 .status.success { color: var(--caos-success); } .status.warning { color: var(--caos-warning); } .status.critical { color: var(--caos-critical); }
 .callout { border: 1px solid var(--caos-accent); border-radius: 6px; padding: var(--space-md); background: var(--caos-elevated); }
 .callout.warning { border-color: var(--caos-warning); }
-.dag { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
-.dag-node { border: 1px solid var(--caos-border); border-radius: 6px; padding: var(--space-sm); min-width: 120px; background: var(--caos-bg); }
+/* Tiles stretch to a common height so a module whose registry carries no name —
+   its tile renders one line shorter — does not leave the row ragged. */
+.dag { display: flex; flex-wrap: wrap; gap: 8px; align-items: stretch; }
+.dag-node { border: 1px solid var(--caos-border); border-radius: 6px; padding: var(--space-sm); min-width: 120px; max-width: 200px; background: var(--caos-bg); }
 .dag-node.succeeded { border-color: var(--caos-success); } .dag-node.running { border-color: var(--caos-accent); } .dag-node.failed { border-color: var(--caos-critical); }
 .chart { min-height: 160px; display: grid; align-content: end; gap: 9px; }
 .chart-bars { height: 118px; display: flex; align-items: end; gap: 16px; border-bottom: 1px solid var(--caos-border); padding: 0 16px; }
@@ -447,8 +449,8 @@ a.dag-node:hover strong, a.dag-node:focus-visible strong { text-decoration: unde
 .evidence-rail-list li:first-child { border-top: 0; padding-top: 0; }
 .worklist-toolbar { display: flex; flex-wrap: wrap; gap: var(--space-md); border-bottom: 1px solid var(--caos-border); padding: var(--space-sm) var(--space-md); }
 .worklist-toolbar .field { margin: 0; flex: 1 1 180px; }
-.dag-step { display: flex; align-items: center; gap: var(--space-sm); }
-.dag-edge { color: var(--caos-muted); font: 12px/1 var(--font-mono), ui-monospace, monospace; }
+.dag-step { display: flex; align-items: stretch; gap: var(--space-sm); }
+.dag-edge { align-self: center; color: var(--caos-muted); font: 12px/1 var(--font-mono), ui-monospace, monospace; }
 .research-brief { min-width: 0; margin: 0 0 var(--space-md); border: 1px solid var(--caos-border); border-radius: 6px; padding: var(--space-md); }
 .research-brief legend { color: var(--caos-muted); font-weight: 700; letter-spacing: .06em; }
 .research-plan { min-width: 0; display: grid; gap: var(--space-md); overflow-wrap: anywhere; }

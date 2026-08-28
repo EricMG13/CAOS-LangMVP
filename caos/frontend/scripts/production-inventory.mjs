@@ -177,7 +177,7 @@ async function inventoryLoadedRoute(context, role, slug, title) {
       await page.getByRole("button", { name: "Create case" }).waitFor();
       await page.getByRole("button", { name: "Upload and version source set" }).waitFor();
     } else if (slug === "sources") {
-      await page.getByRole("button", { name: "Ingest safely" }).waitFor();
+      await page.getByRole("button", { name: "Upload and version source set" }).waitFor();
       assert.ok(await page.locator("#main-content summary").count() >= 100);
     } else if (slug === "run-console") {
       await page.getByRole("button", { name: "Compile and run" }).waitFor();
@@ -322,7 +322,7 @@ try {
       buffer: Buffer.from("# Synthetic source\n\nLiquidity remains adequate under the synthetic downside case."),
     });
     const sourceUploadResponse = journeyPage.waitForResponse((response) => response.url() === exactURL(caseUploadPath) && response.request().method() === "POST");
-    await journeyPage.getByRole("button", { name: "Ingest safely" }).click();
+    await journeyPage.getByRole("button", { name: "Upload and version source set" }).click();
     assert.equal((await sourceUploadResponse).status(), 201);
     const summary = journeyPage.getByText(`source-workspace-${suffix}.md`, { exact: true });
     await summary.waitFor();

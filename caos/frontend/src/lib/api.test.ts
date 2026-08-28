@@ -45,7 +45,8 @@ test("api never serves a raw object or validation detail as its message", async 
 
   const caught = await api("/api/cases/case_1/deliverables/FULL_CREDIT/draft").then(() => null, (rejection: unknown) => rejection);
   assert.ok(caught instanceof ApiRequestError, "api did not reject with the typed request error");
-  assert.equal(caught.message, "DELIVERABLE_VERSION_CONFLICT");
+  // A bare code is the whole sentence the analyst reads, so it arrives humanized.
+  assert.equal(caught.message, "DELIVERABLE VERSION CONFLICT");
   assert.notEqual(caught.message, "[object Object]");
   // The raw served value stays on the error so a caller can still branch on it.
   assert.deepEqual(caught.detail, { code: "DELIVERABLE_VERSION_CONFLICT", current: null });
@@ -54,8 +55,8 @@ test("api never serves a raw object or validation detail as its message", async 
 test("firstErrorMessage unwraps every served detail shape before the fallback", () => {
   // Object detail: the refusal sentence wins over the code.
   assert.equal(firstErrorMessage(new ApiRequestError(422, { detail: "Focus questions must be NFC-normalized." }), "fallback"), "Focus questions must be NFC-normalized.");
-  // Object detail carrying only a typed code.
-  assert.equal(firstErrorMessage(new ApiRequestError(409, { code: "MODEL_REVISION_CONFLICT" }), "fallback"), "MODEL_REVISION_CONFLICT");
+  // Object detail carrying only a typed code — humanized, because it is the sentence.
+  assert.equal(firstErrorMessage(new ApiRequestError(409, { code: "MODEL_REVISION_CONFLICT" }), "fallback"), "MODEL REVISION CONFLICT");
   // 422 validation array: the served messages, joined, never "[object Object]".
   assert.equal(firstErrorMessage(new ApiRequestError(422, [{ loc: ["body", "depth"], msg: "Input should be 'screen' or 'full'" }]), "fallback"), "Input should be 'screen' or 'full'");
   assert.equal(firstErrorMessage(new ApiRequestError(422, [{ msg: "field required" }, { msg: "value is not a valid integer" }]), "fallback"), "field required; value is not a valid integer");

@@ -1,4 +1,8 @@
 export type { CaseRecord, Snapshot, Snapshot as SnapshotRecord, SnapshotView } from "./workbench";
+// Explicit extension: api.ts is executed directly by `node --test` (api.test.ts),
+// whose ESM resolver does not add one. The type-only re-export above is erased, so
+// this is the first import here that has to resolve at runtime.
+import { humanizeCode } from "./workbench.ts";
 
 export type ResearchWorkstream = { id: string; kind: string; question: string; assigned_questions?: string[]; perspective: string; hypothesis: string; evidence_needs: string[]; source_classes: string[]; disconfirming_test: string; completion_test: string; effort_cap: string };
 export type ResearchPlan = { methodology_build_id: string; brief_digest: string; source_set: { id: string; version: number }; upstream_artifacts: { module_id: string; artifact_id: string; digest: string }[]; scope: { type?: string | null; key?: string | null; source_mode?: string | null }; workstreams: ResearchWorkstream[] };
@@ -57,6 +61,8 @@ export function assumptionRegistryPath(caseId: string, buildId: string) {
 // FastAPI serves three shapes: a bare string, an object (`{detail}` for a plain
 // refusal, `{code}` for a typed one), and a 422 validation array of `{msg, loc}`.
 // Returns "" when the payload carries nothing readable, so callers can fall back.
+// A bare `code` becomes the whole sentence the analyst reads, so it is humanized
+// here — the raw identifier stays available on `ApiRequestError.detail`.
 function detailMessage(detail: unknown): string {
   if (typeof detail === "string") return detail;
   if (Array.isArray(detail)) {
@@ -69,7 +75,7 @@ function detailMessage(detail: unknown): string {
     const record = detail as { detail?: unknown; code?: unknown };
     const nested = "detail" in record ? detailMessage(record.detail) : "";
     if (nested) return nested;
-    if (typeof record.code === "string" && record.code) return record.code;
+    if (typeof record.code === "string" && record.code) return humanizeCode(record.code);
   }
   return "";
 }

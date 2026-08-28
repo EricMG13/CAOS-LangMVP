@@ -347,16 +347,16 @@ try {
   assert.equal(crossCaseAcceptRequests, 0, "cross-case run was accepted from the selected case");
   page.off("request", countCrossCaseAccept);
 
-  const workflows = ["Overview", "Sources", "Analyse", "Compare", "Model", "Publish"];
+  const workflows = ["Command Center", "Sources", "Deep-Dive", "RV Screener", "Model Builder", "Report Studio"];
   for (const label of workflows) {
     await page.getByRole("navigation", { name: "Workflows" }).getByRole("link", { name: label, exact: true }).waitFor();
   }
   // Exactly one rail entry per page carries aria-current="page": the most specific
   // match — a tool link when one targets the destination, else the workflow link.
   for (const [route, navName, linkLabel] of [
-    ["/cases/", "Overview tools", "Case register"],
-    ["/run-console/", "Analyse tools", "Run"],
-    ["/report-studio/", "Workflows", "Publish"],
+    ["/cases/", "Command Center tools", "Cases"],
+    ["/run-console/", "Deep-Dive tools", "Run Console"],
+    ["/report-studio/", "Workflows", "Report Studio"],
   ]) {
     await page.goto(`${baseURL}${route}?case=${caseRecord.id}`, { waitUntil: "networkidle" });
     await page.getByRole("navigation", { name: navName })
@@ -414,7 +414,7 @@ try {
   await page.waitForURL((url) => url.pathname === "/command-center/" && url.searchParams.get("q") === commandQuestion);
   await page.getByText(commandQuestion, { exact: true }).waitFor();
 
-  for (const label of ["Overview", "Sources", "Analyse"]) {
+  for (const label of ["Command Center", "Sources", "Deep-Dive"]) {
     await page.getByRole("navigation", { name: "Workflows" }).getByRole("link", { name: label, exact: true }).click();
     await page.waitForLoadState("networkidle");
   }
@@ -591,8 +591,8 @@ try {
   await page.getByRole("region", { name: "Accepted authority" }).getByText(raceLabel).waitFor();
   assert.equal(new URL(page.url()).searchParams.get("run"), crossCaseRun.id, "late Case A run creation replaced Case B execution authority");
   await page.goto(`${baseURL}/run-console/?case=${caseRecord.id}&run=${nextRun.id}`, { waitUntil: "networkidle" });
-  await page.waitForFunction((expectedRunId) => Array.from(document.querySelectorAll('nav[aria-label="Analyse tools"] a'))
-    .some((element) => element.textContent?.includes("Run")
+  await page.waitForFunction((expectedRunId) => Array.from(document.querySelectorAll('nav[aria-label="Deep-Dive tools"] a'))
+    .some((element) => element.textContent?.includes("Run Console")
       && new URL(element.href).searchParams.get("run") === expectedRunId), nextRun.id);
 
   let nextRunState;
@@ -1075,7 +1075,7 @@ try {
   modelState = "READY"; modelExportState = "FAILED";
   await page.goto(`${baseURL}/model-builder/?case=${caseRecord.id}&state=export-failed`, { waitUntil: "networkidle" });
   await page.getByRole("button", { name: "Application Model Build" }).click();
-  await page.getByText("MODEL_EXPORT_FAILED", { exact: true }).waitFor();
+  await page.getByText("MODEL EXPORT FAILED", { exact: true }).waitFor();
   await page.getByRole("tab", { name: "Credit Snapshot" }).waitFor();
   for (const [state, text] of [["FAILED", "MODEL CALCULATION FAILED"], ["NOT_READY", "ACCEPTED FULL CREDIT REQUIRED"]]) {
     modelState = state; modelExportState = "NOT_REQUESTED";
@@ -1588,12 +1588,12 @@ try {
   });
   await narrowPage.getByRole("button", { name: "Open command palette" }).click();
   const narrowPalette = narrowPage.getByRole("dialog", { name: "Command palette" });
-  await narrowPalette.getByRole("combobox", { name: "Search commands" }).fill("Case register");
-  await narrowPalette.getByRole("option", { name: "Open Case register" }).click();
+  await narrowPalette.getByRole("combobox", { name: "Search commands" }).fill("Cases");
+  await narrowPalette.getByRole("option", { name: "Open Cases" }).click();
   await narrowPage.waitForURL((url) => url.pathname.replace(/\/$/, "") === "/cases" && url.searchParams.get("case") === caseRecord.id);
   await narrowPage.getByRole("button", { name: "Open command palette" }).click();
   await narrowPalette.getByRole("combobox", { name: "Search commands" }).fill("Run");
-  await narrowPalette.getByRole("option", { name: "Open Run", exact: true }).click();
+  await narrowPalette.getByRole("option", { name: "Open Run Console", exact: true }).click();
   await narrowPage.waitForURL((url) => url.pathname.replace(/\/$/, "") === "/run-console"
     && url.searchParams.get("case") === caseRecord.id
     && url.searchParams.get("run") === nextRun.id);

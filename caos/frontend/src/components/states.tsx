@@ -1,5 +1,6 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
+import { humanizeCode } from "../lib/workbench";
 
 // One home for every "nothing here / still loading / this failed / this route is
 // absent" surface in the workbench. Three surfaces used to own near-duplicate
@@ -21,9 +22,10 @@ export type StateLive = "alert" | "status";
 // callback. Callers keep their own retry semantics — reload, load(), refresh().
 export type StateAction = { label: string; href: string } | { label: string; onAct: () => void };
 
-export function humanizeCode(code: string) {
-  return code.replaceAll("_", " ");
-}
+// Re-exported so a surface already importing the state idiom gets the code
+// humanizer from the same place; the single definition lives in lib/workbench.ts
+// because the request helper needs it too and must stay free of React.
+export { humanizeCode };
 
 function liveProps(live?: StateLive) {
   if (live === "alert") return { role: "alert" as const };
