@@ -773,6 +773,7 @@ try {
   let signOffPosts = 0;
   let signOffConflicts = false;
   let modelRole = "ANALYST";
+  const modelPath = (url) => url.pathname === `/api/cases/${caseRecord.id}/model`;
   const modelsPath = (url) => url.pathname === `/api/cases/${caseRecord.id}/models`;
   const worksheetPath = (url) => url.pathname === `/api/cases/${caseRecord.id}/models/${modelBuildId}/worksheet`;
   const exportPath = (url) => url.pathname === `/api/cases/${caseRecord.id}/models/${modelBuildId}/export`;
@@ -785,6 +786,7 @@ try {
   const scenarioPath = (url) => url.pathname === `/api/cases/${caseRecord.id}/models/scenarios`;
   const identityPath = (url) => url.pathname === "/api/me";
   await page.route(identityPath, (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ role: modelRole }) }));
+  await page.route(modelPath, (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(modelInventory().readiness) }));
   await page.route(modelsPath, async (route) => {
     if (route.request().method() === "POST") {
       modelPosts += 1; modelState = "QUEUED";
@@ -800,7 +802,7 @@ try {
       await route.fulfill({ status: 200, contentType: "application/json", body: "not-json" });
       return;
     }
-    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(modelInventory()) });
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ builds: modelInventory().builds }) });
   });
   await page.route(worksheetPath, (route) => {
     worksheetGets += 1;
@@ -1061,6 +1063,7 @@ try {
   await page.goto(`${baseURL}/model-builder/?case=${caseRecord.id}&state=load-error`, { waitUntil: "networkidle" });
   await page.getByText("Unavailable", { exact: true }).waitFor();
   modelLoadFails = false;
+  await page.unroute(modelPath);
   await page.unroute(modelsPath);
   await page.unroute(worksheetPath);
   await page.unroute(exportPath);
