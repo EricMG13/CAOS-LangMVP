@@ -12,6 +12,8 @@ import {
   workflowFor,
   workflows,
 } from "../lib/workbench";
+// The authority lifecycle has one declaration, in the reducer that owns it.
+import type { AuthorityStatus } from "../lib/workspaceAuthority";
 
 export type DrawerState =
   | { kind: "qa" }
@@ -27,8 +29,6 @@ export type DrawerState =
       };
     };
 
-export type AuthorityStatus = "idle" | "loading" | "ready" | "error";
-
 type Props = {
   active: Destination;
   authority: SnapshotView | null;
@@ -43,6 +43,9 @@ type Props = {
   runId: string;
   runIsLive: boolean;
   selectedCase: CaseRecord | null;
+  // An unrecognised path still gets the shell, but it must not claim to be a
+  // destination: `active` falls back to Cases for the rail, the title does not.
+  unknownRoute?: boolean;
   children: ReactNode;
 };
 
@@ -60,6 +63,7 @@ export default function WorkbenchShell({
   runId,
   runIsLive,
   selectedCase,
+  unknownRoute = false,
   children,
 }: Props) {
   const activeWorkflow = workflowFor(active);
@@ -282,7 +286,7 @@ export default function WorkbenchShell({
           </div>
         </div>
         <main className={`content${active === "Report Studio" ? " report-content" : ""}`} id="main-content">
-          <div className="page-title"><h1>{active}</h1>{error && <div className="error" role="alert" aria-live="assertive">{error}</div>}</div>
+          <div className="page-title"><h1>{unknownRoute ? "Page not found" : active}</h1>{error && <div className="error" role="alert" aria-live="assertive">{error}</div>}</div>
           {children}
         </main>
       </section>

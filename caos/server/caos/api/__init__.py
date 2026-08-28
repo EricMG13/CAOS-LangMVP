@@ -14,6 +14,7 @@ from typing import Any, AsyncIterator
 from fastapi import Body, FastAPI, HTTPException, Request, Response
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+from starlette.middleware.gzip import DEFAULT_EXCLUDED_CONTENT_TYPES, GZipMiddleware
 
 from .. import responses as wire
 from ..artifacts.loan_universe import (
@@ -39,6 +40,7 @@ from ..identity import identity_from_request, require_case
 from ..storage.store import DomainStore
 
 WORKSHEET_SCHEMA_VERSION = "caos.model.worksheet.v1"
+XLSX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 RUNTIME_KEYS = (
     "name", "version", "sha256",
     "assumption_registry_version", "assumption_registry_digest", "calculation_contract_version",
@@ -92,6 +94,21 @@ def create_app(*, settings: Settings, store: DomainStore, engine: Any) -> FastAP
     from fastapi.responses import JSONResponse
 
     app = FastAPI(title="caos")
+    # The static export mounts on this app (run.py::build), so one middleware
+    # covers both the frontend bundle and JSON. Starlette's default exclusions
+    # already skip `text/event-stream` (the run-events tail must stream, not
+    # buffer) plus images/fonts/zip; XLSX is a zip container, so add it rather
+    # than spend CPU re-compressing an already-compressed download.
+    # Known gap: this only covers the model-build download, the one route that
+    # sets XLSX_MEDIA_TYPE. The deliverable export serves md/pdf/xlsx alike as
+    # `application/octet-stream`, so its already-compressed formats are still
+    # re-compressed. Closing that means serving a real media type per format on
+    # that route — a wire-visible change, not a middleware tweak.
+    app.add_middleware(
+        GZipMiddleware,
+        minimum_size=1024,
+        exclude_content_types=DEFAULT_EXCLUDED_CONTENT_TYPES + (XLSX_MEDIA_TYPE,),
+    )
 
     @app.exception_handler(RequestValidationError)
     async def validation_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
@@ -640,7 +657,7 @@ def create_app(*, settings: Settings, store: DomainStore, engine: Any) -> FastAP
             raise HTTPException(status_code=409, detail=code) from exc
         return _Response(
             content=content,
-            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            media_type=XLSX_MEDIA_TYPE,
             headers={"cache-control": "no-store", "x-caos-sha256": sha256},
         )
 

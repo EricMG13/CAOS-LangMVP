@@ -369,11 +369,16 @@ try {
     await journeyPage.goto(`${baseURL}/run-console/?case=${journeyCase.id}&run=${firstRun.id}`, { waitUntil: "networkidle" });
     await journeyPage.getByRole("region", { name: "Accepted authority" }).getByText(`${issuer} / ${caseName}`, { exact: true }).waitFor();
     assert.equal((await waitForRun(analystApi, firstRun.id)).status, "succeeded");
-    const acceptButton = journeyPage.getByRole("button", { name: "Accept analytical snapshot" });
-    await acceptButton.waitFor();
-    journeyPage.once("dialog", (dialog) => void dialog.accept());
+    const acceptTrigger = journeyPage.getByRole("button", { name: "Accept analytical snapshot" });
+    await acceptTrigger.waitFor();
     const acceptResponse = journeyPage.waitForResponse((response) => response.url() === exactURL(`/api/runs/${firstRun.id}/accept`) && response.request().method() === "POST");
-    await acceptButton.click();
+    // The acceptance ceremony is a styled digest-bound dialog, not window.confirm: the
+    // trigger only opens it, and only the dialog's own primary button performs the POST.
+    await acceptTrigger.click();
+    const acceptDialog = journeyPage.getByRole("dialog", { name: "Accept analytical snapshot" });
+    await acceptDialog.getByText(firstRun.id, { exact: true }).waitFor();
+    await acceptDialog.getByRole("button", { name: "Accept analytical snapshot" }).click();
+    await acceptDialog.waitFor({ state: "hidden" });
     assert.equal((await acceptResponse).status(), 200);
 
     const nextStart = await analystApi.post(`/api/cases/${journeyCase.id}/runs`, { data: { pathway: "RELATIVE_VALUE", depth: "screen", focus_questions: [] } });

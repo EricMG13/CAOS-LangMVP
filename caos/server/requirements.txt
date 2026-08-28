@@ -5,6 +5,7 @@ langgraph-checkpoint-sqlite==3.1.1
 langgraph-checkpoint-postgres==3.1.2
 langchain-anthropic==1.6.1
 fastapi==0.139.*
+starlette>=1.6
 uvicorn>=0.30
 pydantic>=2.7
 sqlalchemy>=2.0
