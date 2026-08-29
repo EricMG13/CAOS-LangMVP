@@ -101,6 +101,200 @@ All nine SKILL/STEPS corpora audited against the "no inferred human answers" rul
 - Envelope liveness under scaling (item 38): accepted, monitored at phase-6 smoke.
 - All other objections: fixed in design (docs/DECISIONS.md §12), to be verified by the named tests during phases 3–6.
 
+## 2026-08-27 — Adversarial Review: CI entrypoints merge (`91fea8f`)
+
+Reviewer: three-persona adversarial pass (Saboteur, New Hire, Security Auditor), followed by live DAP inspection of the two critical execution paths.
+
+Scope: `HEAD~1..HEAD` — 28 files, 478 additions, 79 deletions. The worktree was clean, so the no-argument review used the latest commit fallback. Verdict: **BLOCK**.
+
+### Critical findings
+
+1. **[CRITICAL] Deterministic runs use and cite withdrawn evidence.** Flagged independently by the Saboteur and Security Auditor, then promoted from WARNING to CRITICAL. `Engine._run_module` verifies the immutable source-set record at `caos/server/caos/engine/runtime.py:300`, but the live `withdrawn` flag is checked only later inside the agent path. Artifact reuse and deterministic execution bypass that check; the deterministic branch passes every pinned source id into `evidence_refs` at `runtime.py:336`.
+
+   Reproduction: start a Full Credit screen run, withdraw its pinned source after gate exit, then continue the run. The run finishes `succeeded`, creates nine artifacts, and cites the withdrawn source. Live debugger confirmation stopped at `runtime.py:333` for `CP-PARSE`: `mode == "deterministic"`, while evaluating the pinned sources returned `[('src-…', True)]` for `(source_id, withdrawn)`. Execution was immediately about to call `build_deterministic_payload(..., source_ids=source_set["source_ids"])`.
+
+   Required fix: perform one shared live-source validation immediately after source-set expectation verification and before reuse or mode dispatch. A missing, foreign, or withdrawn pinned source must raise the typed authority failure on every path.
+
+2. **[CRITICAL] The production worker can publish an old calculation under a new input fingerprint.** Flagged independently by the Saboteur and New Hire, then promoted from WARNING to CRITICAL. `ModelService.queue_build` permits an active `BUILDING` row to be re-pointed at `caos/server/caos/models/service.py:242`. `run_build_for_tests` captures the row before its claim, ignores the claim CAS result at `service.py:364`, and computes from that captured record. `_complete` checks only `status in (QUEUED, BUILDING)` at `service.py:407`; it does not bind completion to the captured fingerprint. The new aliases at `service.py:884-885` make those historical test helpers the production worker entrypoints.
+
+   Reproduction: start computation with fingerprint `old-input`, re-point the `BUILDING` row to `new-input`, and allow completion. Live debugger confirmation at `service.py:407` showed the persisted fingerprint as `new-input` while `result["payload"]["computed_from"] == "old-input"`. Stepping over the CAS produced `changed == True`; the final inspected tuple was `('READY', 'new-input', 'old-input')`. A separate synchronized two-worker probe showed one claim winner and one loser, but both entered computation because the losing CAS result is ignored.
+
+   Required fix: make the claim result authoritative, never compute after a lost claim, and bind completion to an immutable job identity or captured input fingerprint. Do not mutate the authority identity of an executing row.
+
+### Warnings
+
+1. **[WARNING] The route-security audit treats request-shape rejection as authentication.** The Security Auditor found that `run_sec_audit.py:62-64` accepts either `401` or `422` from an empty request. A body-required endpoint with no authentication therefore passes the audit because the empty probe returns `422`, even though the same endpoint returns `200` without credentials when sent a valid body. This was reproduced against the assembled FastAPI app by adding a body-required unauthenticated probe route: `empty_probe_status=422`, `audit_accepts_status=True`, `valid_body_status_without_auth=200`.
+
+   Required fix: enforce authentication before body validation (preferably at a shared middleware/dependency boundary) and require `401` for every non-public unauthenticated probe. Do not whitelist `422` as security evidence.
+
+2. **[WARNING] Documented production placeholders are accepted as real secrets.** The Security Auditor found predictable database, edge, session, OAuth client, and cookie values in `caos/.env.example:10-20`. Compose checks only that required values are present, and `Settings.validate_runtime` rejects only the old development literals. A production configuration using `change-me-edge-secret` and `change-me-session-secret` passed validation unchanged.
+
+   Required fix: reject known placeholder values in production and add deployment preflight validation for secrets consumed outside `Settings`. Prefer empty required example values where Compose can fail closed.
+
+### Test and review gaps
+
+- `caos/tests/test_worker.py` exercises one worker and no re-pointing, despite claiming CAS behavior; it cannot detect either worker race above.
+- The withdrawal contract test covers the full/agent path but not a screen/deterministic path, leaving invariant 1 only partially enforced.
+- The current route audit reported 41 routes and zero failures despite the demonstrated `422` false-negative class.
+
+### Verification record
+
+- Backend suite: **384 passed**, one unrelated Starlette/httpx deprecation warning.
+- Frontend unit suite: **53 passed**. Local lint could not run because the existing `node_modules` did not contain `eslint`.
+- `run_sec_audit.py`: **41 audited routes, zero reported failures**; the synthetic unauthenticated body route proved the gate unsound.
+- DAP/debugpy live inspection confirmed both critical state transitions at their production call sites; the worker confirmation scenario exited zero after the debugger-only timeout was widened.
+
+Merge/deploy guidance: do not ship until both critical authority failures are fixed and guarded by regression tests. The two warnings should also be resolved before this script is treated as a security gate or the example environment is used operationally.
+
+## 2026-08-27 — Security Threat Model and OWASP Review
+
+Reviewer: `securecoder:determine-threat-model` followed by `owasp-security`. Scope: the FastAPI and static-frontend application, OIDC edge, source ingestion and parsers, run/LLM boundary, model worker, persistent storage, backup/restore scripts, container build, and CI workflows. The vendored methodology corpus was treated as integrity-pinned data rather than independently security-reviewed source code.
+
+Verdict: **BLOCK**. This pass adds one confirmed critical authorization defect. The two critical integrity failures in the immediately preceding review (withdrawn evidence on deterministic runs and stale worker calculations published under a new fingerprint) remain part of the release block and are not duplicated below.
+
+### Security threat model
+
+#### Component and data-flow overview
+
+| Component / boundary | Trust level | Data and authority crossing it |
+|---|---|---|
+| Browser → Caddy (`:443`) | Untrusted network | OIDC session cookie, JSON bodies, multipart source uploads, SSE connections, filed/model downloads |
+| Caddy → oauth2-proxy → FastAPI | Trusted deployment edge | Caddy strips caller-owned forwarded identity headers, adds `X-Edge-Authorization`; oauth2-proxy supplies OIDC subject/email/groups |
+| FastAPI → domain store | Privileged internal | Cases, membership, extracted source text, notes, runs, immutable artifacts, model revisions, deliverable state, audit events |
+| FastAPI / worker → vault volume | Privileged internal | Original source bytes, generated model workbooks, frozen deliverable exports |
+| Run engine → Anthropic | External processor | Verified methodology, case/source metadata, selected evidence blocks, validated upstream artifacts; API credential stays in the SDK configuration |
+| Anthropic → run engine | Untrusted model output | Tool calls and canonical JSON/Markdown, admitted only after host validation and authority checks |
+| PostgreSQL job rows → model worker | Privileged execution boundary | Build/export jobs and model inputs; worker can write model/export state and vault artifacts |
+| Database + vault → backup directory | Operator-controlled boundary | Complete database dump and complete vault archive, including confidential credit material |
+| Pull-request diff → AI security-review action | Untrusted or semi-trusted CI input | Repository content is processed by an AI action with a Claude API key and PR-comment permission |
+
+#### Entry points
+
+- Public HTTP: Caddy ports 80/443, OIDC callback, `/api/health`, all authenticated `/api/*` routes, FastAPI OpenAPI/docs routes, and static Next.js assets.
+- High-cost HTTP: multipart source upload, run start/resume/upgrade, model queue/preview/sign-off/download, deliverable render/freeze/file/export, and long-lived SSE event streams.
+- Background execution: `caos/server/worker.py` polls database queues and produces model/XLSX artifacts.
+- Operator/CI: Docker Compose environment variables, image builds, GitHub Actions, `backup.sh`, and `restore_drill.sh`.
+- Local-only development: `dev.py` binds loopback and trusts development identity headers; this is not a production trust boundary.
+
+#### Sensitive assets
+
+- Original credit documents, extracted evidence blocks, analyst notes, model assumptions/outputs, frozen and filed deliverables.
+- User subject, email, OIDC groups, case membership, approval identities, and append-only audit history.
+- PostgreSQL, OIDC, edge-proxy, cookie, session, and Anthropic credentials.
+- Methodology authority files, source-set pins, artifact digests, model fingerprints, approval digests, and backup contents.
+
+#### Privileged actions
+
+- Create and administer case state; add or change case membership (store/operator surface).
+- Upload/withdraw evidence, promote notes, start/resume/accept/upgrade runs, and switch visible snapshots.
+- Queue builds, compute previews, sign model revisions, and publish/download generated workbooks.
+- Freeze deliverables, request changes, file an approved deliverable, and serve filed exports.
+- Change methodology/dependency pins, build and publish containers, run privileged CI integrations, and restore backups.
+
+#### Primary attacker models
+
+1. An authenticated `READER` or compromised low-privilege OIDC account trying to mutate governed state or exhaust shared capacity.
+2. A case member attempting cross-case IDOR, stale-authority reuse, or approval bypass.
+3. A malicious uploaded document trying parser exploitation, archive bombs, formula injection, prompt injection, or stored XSS.
+4. A compromised provider response trying unauthorized tool use, authority expansion, data exfiltration, or unbounded spend.
+5. A malicious or compromised pull-request author targeting CI credentials and write-capable integrations.
+6. An attacker with read/write access to backup storage, container registries, dependency distribution, or deployment secrets.
+
+### Confirmed findings
+
+#### 1. [CRITICAL] A downgraded global `READER` retains deliverable filing authority
+
+Mapping: OWASP A01 Broken Access Control; ASVS 5.0 access-control and privilege-revocation controls; Agentic AI identity/privilege abuse.
+
+Production identity derives the current global role from OIDC groups (`caos/server/caos/identity.py:45-48`). Ordinary writes correctly require both a current global writer role and a stored case writer role (`identity.py:61-72`). The separate filing helper does not: `require_case_approver` checks only stored case standing and never checks `who.role` (`caos/server/caos/api/__init__.py:680-688`). Both `/approve` and `/request-changes` rely on that helper (`api/__init__.py:743-759`).
+
+Impact: a user formerly granted case `APPROVER` or `ADMIN` standing can still file a governed deliverable or request changes after the IdP downgrades the account to `caos-reader`. The current OIDC revocation signal is ignored at the highest-integrity human gate.
+
+Adversarial proof: a production-mode request with `x-forwarded-groups: caos-reader` from a subject stored as case `APPROVER` reached the deliverable domain and returned `404` for a deliberately missing deliverable, rather than being stopped with `403`. That proves the approval authorization gate was passed.
+
+Required fix: apply the same two-dimensional check as other writes before the case-approver check—current global role must be one of `ANALYST`, `APPROVER`, or `ADMIN`, while stored case role must be `APPROVER` or `ADMIN`. Add the omitted `global READER × case APPROVER/ADMIN` denial cases to both filing endpoints' authorization matrix.
+
+#### 2. [WARNING] Global `READER` accounts can create cases and are stored as case `ANALYST`
+
+Mapping: OWASP A01 Broken Access Control and A10 Mishandling of Exceptional Conditions; ASVS 5.0 least privilege.
+
+`POST /api/cases` calls `identity()` but performs no role check (`caos/server/caos/api/__init__.py:128-131`). `DomainStore.create_case` then inserts the creator with stored role `ANALYST` (`caos/server/caos/storage/store.py:191-199`).
+
+Impact: every authenticated reader can create an unbounded number of case and membership rows. The stored `ANALYST` assignment does not permit writes while the current global role remains `READER`, but it creates latent case authority that becomes active if the IdP later promotes that account to any writer role.
+
+Adversarial proof: a production-mode `caos-reader` request returned `201`; the returned case stored that reader as `ANALYST`.
+
+Required fix: require a current global writer role before case creation, or explicitly document reader-created cases as policy and add quotas plus a non-writer stored role. Do not silently assign authority above the current identity role.
+
+#### 3. [WARNING] The live upload route bypasses its hardened helper and enables cheap resource exhaustion
+
+Mapping: OWASP A10 Mishandling of Exceptional Conditions; OWASP LLM10 Unbounded Consumption; ASVS 5.0 file-handling and availability controls.
+
+The public route buffers the complete upload with `await upload.read()` and checks size only afterward (`caos/server/caos/api/__init__.py:158-178`). It reimplements ingestion instead of calling `sources.domain.ingest_upload`, which already canonicalizes the filename, enforces the suffix allowlist, reads at most `max_bytes + 1`, and rejects empty files (`caos/server/caos/sources/domain.py:286-307`). The edge allows 250 MiB per request (`caos/deploy/Caddyfile:3-5`) and defines no request-rate or per-user concurrency limit. Other amplifiers are unbounded item length for each run `focus_question` (`caos/server/caos/contracts.py:131-140`) and one database poll every 0.4 seconds per SSE connection (`caos/server/caos/api/__init__.py:386-423`). Synchronous model previews are also outside the queued-job admission ceiling.
+
+Impact: an authenticated account can consume application memory, parser/ClamAV CPU, database polling capacity, worker CPU, vault storage, and potentially provider budget. The global 250 MiB edge limit is a ceiling, not a safe per-route resource policy.
+
+Adversarial proof: the live endpoint returned `201` for both an unsupported `unsupported.exe` source and a zero-byte `empty.bin`; the hardened helper would return `415` and `422`, respectively.
+
+Required fix: delegate the route to the existing `ingest_upload` helper; use a substantially smaller route-specific cap where business inputs permit; bound each focus question; and add per-subject/IP rate limits, model-preview concurrency limits, and SSE connection limits at the edge/application boundary.
+
+#### 4. [WARNING] The public edge omits browser hardening headers and leaves framework docs enabled
+
+Mapping: OWASP A02 Security Misconfiguration; ASVS 5.0 HTTP security-header and production-surface controls.
+
+The Caddy policy configures compression, a body cap, identity-header scrubbing, and proxying, but no explicit HSTS, CSP/`frame-ancestors`, `X-Content-Type-Options`, `Referrer-Policy`, or `Permissions-Policy` (`caos/deploy/Caddyfile:1-13`). `FastAPI(title="caos")` keeps `/docs`, `/redoc`, and `/openapi.json` enabled by default. OIDC protects these through the deployment edge, but every admitted domain user receives a larger browser and API-discovery surface than necessary.
+
+Required fix: add tested response headers at Caddy, with a CSP compatible with the static Next.js output, and disable framework documentation endpoints in production unless they are an explicit operator feature.
+
+#### 5. [WARNING] Backups have permissions but no confidentiality or authenticity protection
+
+Mapping: OWASP A04 Cryptographic Failures and A08 Software or Data Integrity Failures; ASVS 5.0 data-protection and backup controls.
+
+`backup.sh` correctly uses `umask 077`, but writes a plaintext PostgreSQL dump and gzip-compressed full vault archive (`caos/deploy/backup.sh:20-40`). Its manifest uses unkeyed POSIX `cksum`; `restore_drill.sh` trusts a matching manifest stored beside the data (`caos/deploy/restore_drill.sh:71-82`). An attacker able to alter the backup pair can replace both data and checksum, while read access exposes the complete confidential corpus.
+
+Required fix: require authenticated encryption before a backup leaves the host (for example, an operator-managed KMS/envelope or age/GPG workflow), keep the verification key separate from the backup, and document retention, rotation, access logging, and restore authorization. SHA-256 alone would detect accidents but would still not authenticate an attacker-writable backup.
+
+#### 6. [WARNING] Runtime and CI supply-chain inputs are only partially immutable
+
+Mapping: OWASP A03 Software Supply Chain Failures; OWASP LLM03 Supply Chain; ASVS 5.0 dependency and build integrity controls.
+
+Positive controls exist: application base images and oauth2-proxy are digest-pinned, the frontend uses `npm ci`, and CI runs pip-audit, npm audit, Bandit, Trivy, and Gitleaks. Remaining mutable inputs include `postgres:17-alpine`, `clamav/clamav:1.4`, `caddy:2.10-alpine`, helper `alpine:3.20` images (`caos/deploy/docker-compose.yml:3,19,121`; `backup.sh:31`), non-exact Python runtime requirements (`caos/server/requirements.txt:7-14`), unversioned apt packages including LibreOffice (`caos/deploy/Dockerfile:11-15,28-30`), tag-based GitHub Actions, and a Trivy installer fetched from a mutable `main` URL and piped into a shell (`.github/workflows/ci.yml:138-145`).
+
+Required fix: digest-pin deployed images and privileged Actions, generate a hash-locked Python dependency set, verify downloaded tooling by digest/signature, and make package-update provenance an explicit reviewed change. Keep the existing vulnerability gates; they address known CVEs, not source authenticity.
+
+#### 7. [WARNING] The AI pull-request reviewer processes attacker-controlled diffs with a repository secret
+
+Mapping: OWASP LLM01 Prompt Injection, LLM06 Excessive Agency, and LLM02 Sensitive Information Disclosure; Agentic AI prompt/tool misuse.
+
+The workflow itself states that the action is not hardened against prompt injection and should run only on trusted diffs (`.github/workflows/security-review.yml:1-8`). Nevertheless it triggers on every pull request, checks out the PR head, exposes `CLAUDE_API_KEY`, and grants `pull-requests: write` (`security-review.yml:15-38`). GitHub withholds secrets from ordinary fork PRs, but same-repository branches, compromised contributors, and changes admitted through misconfigured approval policy remain in scope; the trust decision is not enforced by the workflow.
+
+Required fix: gate the secret-bearing job behind an explicit protected-environment approval or trusted label set by a separate secretless workflow; minimize token permissions; and ensure the review action cannot execute repository content or emit secrets. Keep the action SHA pin.
+
+### Needs manual review
+
+1. **External LLM data governance.** When agent execution is enabled, selected evidence text and upstream artifacts are sent to Anthropic (`caos/server/caos/engine/anthropic.py:38-78`; `engine/evidence.py:100-116`). Confirm contractual retention, training exclusion, regional processing, legal basis, client confidentiality, incident notification, and deletion requirements. This cannot be established from source code.
+2. **Encryption and monitoring outside the repository.** Confirm disk/volume/database encryption, key rotation, secret-manager use, network policy, backup destination ACLs, centralized audit-log export, alerting for repeated authorization failures/resource spikes, and tested incident response. Compose's internal bridge and container restrictions are useful but do not prove host/cloud controls.
+
+### Controls validated / false-positive dispositions
+
+- **Forwarded-header spoofing — controlled in the documented production topology.** Caddy removes caller-supplied identity and edge-secret headers, oauth2-proxy supplies OIDC identity, and FastAPI rejects requests without the shared edge secret. Development header trust is loopback-only by `dev.py` and is not a production finding.
+- **Cross-case IDOR — no confirmed route found.** Case membership is checked before reads/writes, child records are re-bound to `case_id`, and unknown versus unauthorized run IDs return a uniform 404.
+- **SQL injection — no confirmed sink found.** User values flow through SQLAlchemy expressions; reviewed raw SQL is static schema/restore logic, not request-derived query text.
+- **Stored XSS / unsafe Markdown — controlled.** The frontend uses a closed Markdown grammar and React text nodes (`caos/frontend/src/lib/filedMarkdown.ts`; `components/FiledProof.tsx`) with no `dangerouslySetInnerHTML`/`innerHTML` sink.
+- **Archive traversal and malware handling — controlled after admission.** Production ClamAV fails closed; ZIP entry count, expanded size, compression ratio, and traversal are bounded (`caos/server/caos/sources/domain.py:61-125`). Finding 3 concerns the route bypass around type/empty/bounded-read admission, not these checks.
+- **Prompt-injection authority expansion — materially constrained.** Source data is labeled untrusted, methodology files are hash-verified at use, the only model tool is strict `read_evidence`, live case/pin/withdrawal authority is rechecked per read, budgets/timeouts are host-owned, and output is strict-schema validated with exact citation reconciliation (`engine/authority.py:22-100`; `engine/evidence.py:62-136`). Residual analytical misinformation remains a human-review risk, not a demonstrated tool-escape path.
+- **Formula injection — covered.** Deliverable XLSX tests assert `=`-prefixed analyst text remains a literal string while governed numeric cells remain typed.
+- **Secret scanning — clean in this pass.** Local `gitleaks detect --no-git` exited successfully with no findings.
+
+### Verification and release order
+
+- Targeted production-mode authorization probe: global `READER` + stored case `APPROVER` passed the filing helper and reached domain lookup (`404`, not authorization `403`).
+- Targeted ingestion probe: unsupported suffix and empty upload both returned `201` through the live API route.
+- Static review covered all registered API handlers, identity and membership checks, ingestion/parsing, vault paths, model/deliverable publication, LLM authority/tool/budget boundaries, deployment, backup/restore, and CI security gates.
+- Not exercised: a live production reverse proxy/IdP, live Anthropic request, cloud encryption/monitoring, or a fresh online dependency advisory scan.
+
+Release order: fix the three open criticals first (the two preceding integrity failures plus finding 1), then close the upload/resource and backup risks before internet-facing production. The remaining warnings are defense-in-depth or operational controls but should not be treated as silently accepted risk.
+
 ## 2026-08-28 — Remediation of the three open criticals (verification pass)
 
 > The two 2026-08-27 sections this responds to — "Adversarial Review: CI
@@ -333,3 +527,16 @@ the middleware directly — `TestClient` cannot hold an endless SSE body open).
 - Middleware order verified empirically rather than by reasoning about
   `add_middleware` prepend semantics: unauthenticated → `401` from the gate
   (not `422`, not `429`), and both the `401` and the `429` carry the CSP.
+
+## 2026-08-29 — Provenance note on the two 2026-08-27 sections
+
+The two 2026-08-27 sections above were written into the main checkout's working
+copy of this file and never committed. The 2026-08-28 and 2026-08-29 remediation
+passes were carried out against them from a worktree, which is why the
+2026-08-28 entry opens by saying they "are not in this branch's history" — true
+when written, and left unedited here because this log does not rewrite entries.
+
+They are committed now, inserted in date order rather than appended, so the
+record reads chronologically and the remediation entries sit after the findings
+they answer. Nothing in either section was altered: the inserted text is
+byte-identical to the 194 lines that were sitting uncommitted at `ed4796e`.
