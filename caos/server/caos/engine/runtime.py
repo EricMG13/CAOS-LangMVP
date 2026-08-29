@@ -276,6 +276,20 @@ class Engine:
             "source_set_digest": plan["source_set_digest"],
         })
 
+    def _live_sources(self, case_id: str, source_set: dict[str, Any]) -> list[dict[str, Any]]:
+        """Invariant 1, on EVERY path: the pinned set's digest cannot see a
+        withdrawal — `store.withdraw` mints a NEW set version and leaves the
+        pinned record byte-identical, so `verify_source_set_expectation` passes.
+        The live rows are the only authority, and reuse-relink and deterministic
+        execution need this check exactly as much as the agent path does."""
+        live = []
+        for source_id in source_set["source_ids"]:
+            source = self.store.get_source(source_id)
+            if not source or source.get("case_id") != case_id or source.get("withdrawn"):
+                raise AgentError("AGENT_AUTHORITY_MISMATCH", "pinned source is unavailable")
+            live.append(source)
+        return live
+
     def _upstream_digests(self, run_id: str, plan: dict[str, Any], module_id: str) -> list[dict[str, Any]]:
         """Upstream artifact refs in the pinned plan's dependency order (§12.5)."""
         nodes = {node["module_id"]: node for node in self.runs.get_run(run_id)["nodes"]}
@@ -298,6 +312,7 @@ class Engine:
             if plan["build_id"] != self._current_build_id():
                 raise AgentError("AGENT_AUTHORITY_MISMATCH", "pinned methodology build is not the active bundle")
             source_set = state_mod.verify_source_set_expectation(self.store, plan["source_set_id"], plan["source_set_digest"])
+            live_sources = self._live_sources(self.runs.get_run(run_id)["case_id"], source_set)
             upstream = self._upstream_digests(run_id, plan, module_id)
             fingerprint = self._input_fingerprint(plan, plan_digest, module_id, [a["digest"] for a in upstream])
 
@@ -322,7 +337,7 @@ class Engine:
                 # deterministic path.
                 payload, markdown, qa_status = self._scripted_output(run_id, plan, module_id, fingerprint, upstream)
             elif mode == "agent" and self.settings.agent_execution_enabled and run_id not in self._scripted_runs:
-                result = await self._execute_agent(run_id, plan, module_id, source_set, fingerprint, upstream)
+                result = await self._execute_agent(run_id, plan, module_id, source_set, live_sources, fingerprint, upstream)
                 payload, markdown, qa_status = result["payload"], result["markdown"], result["qa_status"]
             else:
                 universe = None
@@ -362,6 +377,7 @@ class Engine:
         plan: dict[str, Any],
         module_id: str,
         source_set: dict[str, Any],
+        live_sources: list[dict[str, Any]],
         fingerprint: str,
         upstream: list[dict[str, Any]],
     ) -> dict[str, Any]:
@@ -384,14 +400,11 @@ class Engine:
                 raise AgentError("AGENT_BUDGET_EXCEEDED", "unresolved provider request from a prior execution")
 
             manifest = []
-            for source_id in source_set["source_ids"]:
-                source = self.store.get_source(source_id)
-                if not source or source.get("case_id") != run["case_id"] or source.get("withdrawn"):
-                    raise AgentError("AGENT_AUTHORITY_MISMATCH", "pinned source is unavailable")
+            for source in live_sources:  # validated live in _run_module, before reuse or mode dispatch
                 manifest.append({
-                    "source_id": source_id,
+                    "source_id": source["id"],
                     "sha256": source["sha256"],
-                    "filename": source.get("filename", source_id),
+                    "filename": source.get("filename", source["id"]),
                     "media_type": source.get("media_type", "application/octet-stream"),
                     "blocks": [
                         {"block_id": block.get("block_id"), "locator": block.get("locator"),

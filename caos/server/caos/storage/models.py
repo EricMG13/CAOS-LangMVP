@@ -183,11 +183,15 @@ class ModelStore:
             ).mappings().first()
         return public_build(dict(row)) if row else None
 
-    def update_build(self, build_id: str, *, expected_status: tuple[str, ...] | None = None, **values: Any) -> bool:
+    def update_build(self, build_id: str, *, expected_status: tuple[str, ...] | None = None,
+                     expected_input_fingerprint: str | None = None, **values: Any) -> bool:
         with self.engine.begin() as conn:
             where = [model_builds.c.id == build_id]
             if expected_status is not None:
                 where.append(model_builds.c.status.in_(expected_status))
+            if expected_input_fingerprint is not None:
+                # An executor may only publish under the identity it computed from.
+                where.append(model_builds.c.input_fingerprint == expected_input_fingerprint)
             return bool(conn.execute(sa.update(model_builds).where(*where).values(**values)).rowcount)
 
     def active_build_count(self) -> int:

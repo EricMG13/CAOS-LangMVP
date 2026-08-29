@@ -686,6 +686,28 @@ def test_case_reader_reads_workspace_but_cannot_write_draft(client, settings, st
     assert svc.workspace(case["id"], "FULL_CREDIT")["draft"] is None
 
 
+def test_downgraded_global_reader_loses_filing_authority_despite_case_standing(client, settings, store):
+    """Filing is two-dimensional. Stored case standing is not a second, staler
+    identity: once the IdP downgrades the account to READER, the highest-integrity
+    human gate must close even though the case row still says APPROVER."""
+    svc, case, source, template = http_seed(settings, store)
+    revision = svc.save_draft(case["id"], "FULL_CREDIT", draft_request(template, source), actor="analyst")
+    frozen = svc.freeze(case["id"], freeze_request(revision), actor="analyst")
+    store.add_member(case["id"], "analyst", "approver-user", "APPROVER", actor_role="ADMIN")
+    downgraded = {"x-caos-role": "READER", "x-forwarded-user": "approver-user"}
+    body = {"preview_digest": frozen["preview_digest"], "input_fingerprint": frozen["input_fingerprint"]}
+    base = f"/api/cases/{case['id']}/deliverables/by-id/{frozen['deliverable_id']}"
+
+    assert client.post(f"{base}/approve", json=body, headers=downgraded).status_code == 403
+    assert client.post(f"{base}/request-changes", json={**body, "comment": "No."},
+                       headers=downgraded).status_code == 403
+    assert svc.frozen_record(case["id"], frozen["deliverable_id"])["status"] == "FROZEN", "nothing was filed"
+    # The other direction is unchanged: a global APPROVER without case standing
+    # still never files — case standing never escalates and never substitutes.
+    assert client.post(f"{base}/approve", json=body,
+                       headers={"x-caos-role": "APPROVER", "x-forwarded-user": "stranger"}).status_code == 404
+
+
 # --- freeze and rendered exports --------------------------------------------------
 
 

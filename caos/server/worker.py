@@ -30,11 +30,15 @@ def run_pending(service: ModelService) -> int:
     A crash in one item finalizes that item FAILED and never kills the loop."""
     work = service.builds.queued_work()
     for build_id in work["builds"]:
+        # The identity this pass is dispatching. A re-point can requeue the row
+        # under a new one mid-flight; this pass may only fail the row it took.
+        dispatched = (service.build(build_id) or {}).get("input_fingerprint")
         try:
             service.run_build(build_id)
         except Exception:
             traceback.print_exc()
             service.builds.update_build(build_id, expected_status=("QUEUED", "BUILDING"),
+                                        expected_input_fingerprint=dispatched,
                                         status="FAILED",
                                         error={"code": "MODEL_CALCULATION_FAILED",
                                                "detail": "The model calculation did not complete."})

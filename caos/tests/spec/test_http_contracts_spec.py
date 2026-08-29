@@ -503,6 +503,24 @@ def test_withdrawn_source_detail_remains_retrievable_with_strict_public_shape(cl
     assert _round_trips(SourceResponse, detail.json())
 
 
+def test_upload_route_enforces_the_same_admission_as_the_ingestion_helper(client):
+    """The hardening in sources.domain.ingest_upload is only real if the live
+    route goes through it — an inline second copy is how the route drifted past
+    its own tests once already."""
+    case = client.post(
+        "/api/cases", json={"name": "Admission", "issuer": "Issuer", "sector": "Services"}
+    ).json()
+    url = f"/api/cases/{case['id']}/sources"
+    assert client.post(url, files={"file": ("payload.exe", b"MZ\x00", "application/octet-stream")}
+                       ).status_code == 415, "suffix allowlist"
+    assert client.post(url, files={"file": ("empty.txt", b"", "text/plain")}
+                       ).status_code == 422, "empty source refused"
+    assert client.post(url, files={"file": ("../../escape.txt", b"Debt 100", "text/plain")}
+                       ).json()["filename"] == "escape.txt", "filename canonicalized"
+    assert client.get(url.replace("/sources", "")).status_code == 200
+    assert len(client.get(f"/api/cases/{case['id']}/sources").json()) == 1, "only the admitted source landed"
+
+
 def test_distinct_duplicate_note_promotion_is_a_structured_source_conflict(client):
     case = client.post(
         "/api/cases", json={"name": "Note conflict", "issuer": "Issuer", "sector": "Services"}

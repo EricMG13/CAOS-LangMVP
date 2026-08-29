@@ -100,3 +100,119 @@ All nine SKILL/STEPS corpora audited against the "no inferred human answers" rul
 - SQLite-dev vs Postgres-prod dialect divergence beyond the both-savers CI net: accepted for dev-only paths; owner: lead engineer; the contractual suites run against both savers.
 - Envelope liveness under scaling (item 38): accepted, monitored at phase-6 smoke.
 - All other objections: fixed in design (docs/DECISIONS.md §12), to be verified by the named tests during phases 3–6.
+
+## 2026-08-28 — Remediation of the three open criticals (verification pass)
+
+> The two 2026-08-27 sections this responds to — "Adversarial Review: CI
+> entrypoints merge (`91fea8f`)" and "Security Threat Model and OWASP Review" —
+> were uncommitted in the main checkout's copy of this file when this pass ran,
+> so they are not in this branch's history. Their findings are restated below
+> where the remediation depends on them.
+
+Reviewer: verification-first re-read of the two 2026-08-27 sections against the
+tree at `ed4796e`, then remediation. Every finding below was re-reproduced
+before it was touched; every fix was proven by disarming it and watching its own
+test go red.
+
+### Re-verification of the prior sections
+
+All three criticals and every warning were still open at `ed4796e`. Fresh
+reproductions:
+
+- **Withdrawn evidence (CI-entrypoints §1).** A screen-depth `FULL_CREDIT` run
+  whose pinned source is withdrawn after gate exit finished `succeeded` with
+  nine artifacts, every one citing the withdrawn source id. The root cause is
+  structural and was not stated in the original finding: `store.withdraw` mints
+  a *new* source-set version and leaves the pinned record byte-identical
+  (`storage/store.py:326`), so `verify_source_set_expectation` can never see a
+  withdrawal — the live check is the only guard, and both the artifact-reuse
+  relink and the deterministic branch returned before reaching it. The bypass
+  therefore covered agent runs too, via reuse on resume, not only deterministic
+  ones. Blast radius was bounded on one side: `deliverables.service.
+  _validate_citations` still refuses to freeze a withdrawn citation, so the
+  breach reached run artifacts, accepted snapshots and model builds, never a
+  filed deliverable.
+- **Stale worker calculation (CI-entrypoints §2).** Reproduced exactly:
+  `claim_b_lost_cas=False` yet computation proceeded; an executing `BUILDING`
+  row accepted a new `input_fingerprint`; completion published `READY` under
+  `new-input-fingerprint` carrying a payload computed from the old one.
+- **Downgraded `READER` files (OWASP §1).** A production-mode request with
+  `x-forwarded-groups: caos-reader` from a subject stored as case `APPROVER`
+  reached the deliverable domain and returned `DELIVERABLE_NOT_FOUND` — a
+  domain-level miss, where a non-member gets the uniform case-level 404. That
+  body difference is the proof the authorization gate was passed.
+
+One calibration against the original text: the `422` route-audit warning is real
+as a **CI-gate defect**, not as a live authentication bypass. Probed against the
+assembled app, a body-required endpoint returns `422` to an unauthenticated
+empty probe but `401` to an unauthenticated *valid* body — no currently-served
+route is exposed by it. The defect is that the gate cannot detect a regression,
+and it runs in both `ci.yml` and `nightly.yml`.
+
+### Fixed
+
+1. **One shared live-source validation.** `Engine._live_sources` runs
+   immediately after the source-set expectation check and **before** the reuse
+   lookup and the mode dispatch, so reuse-relink, deterministic and agent paths
+   all fail closed on a missing, foreign or withdrawn pinned source.
+   `_execute_agent` now builds its provider manifest from those validated rows
+   instead of re-reading them.
+2. **The worker claim is authoritative and completion is identity-bound.**
+   A lost claim CAS returns the current row and never computes; the claimed row
+   (not the pre-claim read) is the computation's authority; `update_build` gained
+   `expected_input_fingerprint` so `_complete` and `_fail` can only write under
+   the identity the payload was computed from. Re-pointing a `BUILDING` row now
+   sets it back to `QUEUED`, so the abandoned executor's completion no-ops and a
+   worker recomputes under the new identity.
+3. **Filing honours the current global role.** `require_case_approver` now
+   requires a current global writer role *and* stored case `APPROVER`/`ADMIN`
+   standing, matching `require_case(write=True)`. An IdP downgrade revokes
+   filing authority immediately; case standing still never escalates.
+4. **The upload route delegates to its hardened helper.** `POST
+   /api/cases/{id}/sources` calls `sources.domain.ingest_upload` instead of
+   reimplementing ingestion, restoring the suffix allowlist, the empty-source
+   refusal, the bounded read and filename canonicalization. Before this,
+   `ingest_upload` had no production caller at all — its three hardening tests
+   were passing against a function no request reached.
+
+Found and fixed during the confidence pass on the above, same defect class:
+`worker.run_pending`'s own failure fallback wrote `FAILED` with no identity
+binding, so a calculation that died after a re-point would drag the requeued
+build down with it. It now binds to the fingerprint the pass dispatched.
+
+### Test gaps closed
+
+Seven tests, each proven red with its fix disarmed:
+`test_withdrawing_pinned_source_fails_a_screen_run_on_the_deterministic_path`,
+`test_reuse_relink_on_resume_revalidates_live_sources` (crash-in-commit-gap then
+withdraw, then recover onto the committed artifact),
+`test_a_lost_claim_never_computes_and_never_touches_the_winner`,
+`test_a_repointed_build_never_publishes_the_abandoned_calculation`,
+`test_a_crashing_pass_never_fails_a_row_that_was_repointed_under_it`,
+`test_downgraded_global_reader_loses_filing_authority_despite_case_standing`
+(which also pins the unchanged direction: a global `APPROVER` without case
+standing still gets 404), and
+`test_upload_route_enforces_the_same_admission_as_the_ingestion_helper`.
+
+### Still open (unchanged from the 2026-08-27 sections)
+
+`run_sec_audit.py`'s `422` acceptance; `READER` case creation stored as case
+`ANALYST`; missing per-subject rate, SSE-connection and preview-concurrency
+limits and a route-specific upload cap; Caddy browser-hardening headers and the
+enabled `/docs`; production placeholder secrets passing `validate_runtime`;
+backup confidentiality and authenticity; mutable image/dependency/Action/tooling
+inputs; the AI PR reviewer's secret exposure; and both "needs manual review"
+items. The export half of `worker.run_pending` still writes `EXPORT_FAILED`
+with no CAS.
+
+### Verification record
+
+- Backend suite: **392 passed** (385 before, plus the seven above), one
+  unrelated Starlette/httpx deprecation warning.
+- `ruff check --config ruff.toml caos/server caos/tests --exclude
+  caos/server/caos/methodology/vendor`: **All checks passed**.
+- Each of the seven tests was run with its own fix disarmed and observed to
+  fail on the assertion it exists to make, then re-armed.
+- Not exercised: a live reverse proxy/IdP, a live Anthropic request, a real
+  two-process worker race (the claim and re-point are driven through the same
+  store CAS the two processes share), or the frontend suites.

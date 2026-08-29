@@ -1,5 +1,7 @@
 """Worker loop: polling finds QUEUED work, claims it by CAS, and a broken item
-finalizes FAILED without killing the pass."""
+finalizes FAILED without killing the pass — plus the two authority properties a
+single-worker test cannot see: a lost claim never computes, and a calculation
+never publishes under an identity it was not computed from."""
 
 from __future__ import annotations
 
@@ -14,6 +16,11 @@ import worker  # noqa: E402
 
 from caos.engine.runtime import Engine  # noqa: E402
 from caos.models.service import ModelService  # noqa: E402
+
+import pytest  # noqa: E402
+
+sys.path.insert(0, str(Path(__file__).resolve().parent / "spec"))
+from spec_helpers import seed_case_with_source  # noqa: E402
 
 
 def _service(tmp_path, settings, store) -> ModelService:
@@ -39,3 +46,78 @@ def test_single_pass_claims_a_queued_build_and_finalizes_failed_on_broken_refs(t
     assert build["status"] == "FAILED", "a build with unresolvable inputs must finalize FAILED"
     assert build["error"]["code"] in {"MODEL_INPUT_INVALID", "MODEL_CALCULATION_FAILED"}
     assert worker.run_pending(service) == 0, "a finalized build must not be re-claimed"
+
+
+async def _queued_build(models, engine, store):
+    case, _source = seed_case_with_source(store)
+    run = await engine.run_scripted_for_tests(case["id"])
+    await engine.accept(run["id"], actor="analyst")
+    return models.queue_build(case["id"], "analyst")
+
+
+def _service_on(engine, settings, store) -> ModelService:
+    return ModelService(store=store, vault_dir=settings.storage_dir, engine=engine)
+
+
+async def test_a_lost_claim_never_computes_and_never_touches_the_winner(tmp_path, settings, store):
+    from caos.engine.runtime import Engine
+
+    engine = Engine.create(settings=settings, store=store, checkpoint_path=tmp_path / "ck.db")
+    models = _service_on(engine, settings, store)
+    queued = await _queued_build(models, engine, store)
+
+    assert models.builds.update_build(queued["id"], expected_status=("QUEUED", "FAILED"),
+                                      status="BUILDING"), "worker A wins the claim"
+    # Worker B polls the same row. Losing the CAS is not a failure and not a
+    # licence to compute: the row is left exactly as the winner holds it.
+    loser = models.run_build(queued["id"])
+    assert loser["status"] == "BUILDING", "the loser leaves the winner's row untouched"
+    assert loser.get("payload") is None, "the loser published nothing"
+
+
+async def test_a_repointed_build_never_publishes_the_abandoned_calculation(tmp_path, settings, store):
+    from caos.engine.runtime import Engine
+
+    engine = Engine.create(settings=settings, store=store, checkpoint_path=tmp_path / "ck.db")
+    models = _service_on(engine, settings, store)
+    queued = await _queued_build(models, engine, store)
+    build_id = queued["id"]
+
+    claimed = models.builds.get_build(build_id)
+    models.builds.update_build(build_id, expected_status=("QUEUED", "FAILED"), status="BUILDING")
+    result, identity = models._compute_build_result(claimed)   # worker A is mid-calculation
+
+    # A newer accepted snapshot re-points the standing job under it.
+    repointed = models.builds.update_build(build_id, expected_status=("QUEUED", "BUILDING"),
+                                           status="QUEUED", input_fingerprint="e" * 64)
+    assert repointed, "a re-point requeues the row rather than mutating an executing identity"
+
+    with pytest.raises(ValueError, match="MODEL_RESULT_INVALID"):
+        models._complete(build_id, result, identity,
+                         expected_fingerprint=claimed["input_fingerprint"])
+    after = models.builds.get_build(build_id)
+    assert after["status"] == "QUEUED", "the requeued row survives the abandoned executor"
+    assert after["payload"] is None and after["input_fingerprint"] == "e" * 64
+
+
+async def test_a_crashing_pass_never_fails_a_row_that_was_repointed_under_it(tmp_path, settings, store):
+    """The loop's own fallback is an identity-bound write too: a calculation that
+    dies after a re-point must not drag the requeued build down with it."""
+    from caos.engine.runtime import Engine
+
+    engine = Engine.create(settings=settings, store=store, checkpoint_path=tmp_path / "ck.db")
+    models = _service_on(engine, settings, store)
+    queued = await _queued_build(models, engine, store)
+    build_id = queued["id"]
+
+    def explode_after_repoint(_build_id: str) -> None:
+        models.builds.update_build(build_id, expected_status=("QUEUED", "BUILDING"),
+                                   status="QUEUED", input_fingerprint="e" * 64)
+        raise RuntimeError("the calculation died")
+
+    models.run_build = explode_after_repoint  # type: ignore[method-assign]
+    assert worker.run_pending(models) == 1
+
+    after = models.builds.get_build(build_id)
+    assert after["status"] == "QUEUED", "the requeued build survives the dead pass"
+    assert after["error"] is None and after["input_fingerprint"] == "e" * 64
