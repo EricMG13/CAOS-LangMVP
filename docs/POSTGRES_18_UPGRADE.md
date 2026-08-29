@@ -19,18 +19,25 @@ existing volume.
 
 | Lives in PostgreSQL | Lives elsewhere |
 |---|---|
-| The 25 domain tables: cases, membership, sources, source sets, runs, run nodes/artifacts/events/snapshots/budgets, model builds and revisions, deliverables, audit events | **Run checkpoints** — SQLite at `checkpoints.db` on the data volume (`run.py`) |
-| | **Vault bytes** — original sources, workbooks, frozen exports, on the separate `vault-data` volume |
+| The 25 domain tables: cases, membership, sources, source sets, runs, run nodes/artifacts/events/snapshots/budgets, model builds and revisions, deliverables, audit events | **Vault bytes** — original sources, workbooks, frozen exports |
+| | **Run checkpoints** — SQLite `checkpoints.db`, which sits on the SAME `vault-data` volume: `CAOS_DATA_DIR` defaults to `storage_dir`, and Compose sets `CAOS_STORAGE_DIR=/vault` |
 
-Two consequences:
+Verified on a real deployment — the vault volume holds `sources/…` alongside
+`checkpoints.db`, `-wal` and `-shm`.
 
-- The vault is untouched by this upgrade. Do not back it out or restore it.
-- Domain state and checkpoint state are **separate stores with no shared
-  transaction**. A run parked at an interrupt has rows in PostgreSQL and a
-  checkpoint in SQLite. Restoring PostgreSQL to a moment the checkpoints have
-  already moved past leaves a run whose checkpoint says "past the gate" while
-  its domain rows say otherwise. **The app must be stopped for the whole
-  window**, and you must never restore an older dump onto newer checkpoints.
+Three consequences:
+
+- The vault volume is untouched by this upgrade. Do not restore it.
+- Because checkpoints ride the vault volume, `backup.sh` captures **both**
+  stores, and a dump/vault pair taken at one moment is internally consistent.
+- Domain state and checkpoint state still have **no shared transaction**. A run
+  parked at an interrupt has rows in PostgreSQL and a checkpoint in SQLite.
+  Restoring PostgreSQL to a moment the checkpoints have already moved past
+  leaves a run whose checkpoint says "past the gate" while its domain rows say
+  otherwise. This upgrade restores only the dump and leaves the live vault in
+  place, so what keeps the two consistent is that **nothing advances the
+  checkpoints in between** — which is exactly why the app stays stopped for the
+  whole window. Never restore an older dump onto newer checkpoints.
 
 ## Step 0 — the restore path must actually work (blocking)
 
