@@ -156,6 +156,60 @@ jobs:
         run: docker run --rm --entrypoint python caos-app:ci verify_image_resources.py --runtime app
       - name: Verify worker resources and export runtime
         run: docker run --rm --entrypoint python caos-worker:ci verify_image_resources.py --runtime worker
+      - name: App boots against PostgreSQL
+        run: |
+          # The 401-test suite runs on SQLite and verify_image_resources checks
+          # resources, not connectivity — so nothing here ever proved the image
+          # can reach PostgreSQL. It could not: psycopg arrived transitively with
+          # no pq implementation and the app died on import. This is the cheapest
+          # check that fails when that returns.
+          set -eu
+          NET=caos-ci-net
+          PG=postgres:17-alpine@sha256:18cfe3ef5e6815560c98237d6216d1e5119702fb0f3894c8785dd58b8bbe5d73
+          docker network create "$NET"
+          docker run -d --name caos-ci-db --network "$NET" \
+            -e POSTGRES_USER=caos -e POSTGRES_PASSWORD=ci-not-a-placeholder \
+            -e POSTGRES_DB=caos "$PG"
+          for _ in $(seq 1 30); do
+            docker exec caos-ci-db pg_isready -U caos -d caos >/dev/null 2>&1 && break
+            sleep 2
+          done
+          # ENVIRONMENT=production so validate_runtime runs for real: a
+          # PostgreSQL URL and non-placeholder secrets of adequate length.
+          docker run -d --name caos-ci-app --network "$NET" \
+            -e ENVIRONMENT=production \
+            -e DATABASE_URL="postgresql+psycopg://caos:ci-not-a-placeholder@caos-ci-db:5432/caos" \
+            -e EDGE_PROXY_SECRET=ci-edge-secret-that-is-long-enough-000000 \
+            -e SESSION_SECRET=ci-session-secret-that-is-long-enough-000 \
+            -e CAOS_STORAGE_DIR=/vault caos-app:ci
+          ok=""
+          for _ in $(seq 1 30); do
+            if docker exec caos-ci-app python -c \
+              "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8000/api/health')" >/dev/null 2>&1; then
+              ok=1; break
+            fi
+            sleep 2
+          done
+          if [ -z "$ok" ]; then
+            echo "::error::the app never served /api/health against PostgreSQL"
+            docker logs --tail 40 caos-ci-app
+            exit 1
+          fi
+          # Serving health is not enough — prove it actually wrote to PostgreSQL.
+          # Only the store and run metadata are created at startup; model and
+          # deliverable tables arrive lazily on first use of those surfaces.
+          missing=$(docker exec caos-ci-db psql -Atq -U caos -d caos -c \
+            "SELECT t FROM unnest(ARRAY['cases','sources','source_sets','audit_events','runs','run_nodes','run_artifacts','run_events']) t WHERE to_regclass('public.'||t) IS NULL")
+          if [ -n "$missing" ]; then
+            echo "::error::the app did not create its schema in PostgreSQL; missing: $missing"
+            exit 1
+          fi
+          echo "app booted against PostgreSQL, served /api/health, and created its schema"
+      - name: Tear down the boot check
+        if: always()
+        run: |
+          docker rm -f caos-ci-app caos-ci-db >/dev/null 2>&1 || true
+          docker network rm caos-ci-net >/dev/null 2>&1 || true
       - name: Trivy scan — fixable HIGH/CRITICAL gate
         run: |
           # Fetched from the release TAG, never `main`, and verified before it
