@@ -118,7 +118,28 @@ jobs:
       - name: Compose schema and example environment
         run: |
           docker compose -f caos/deploy/docker-compose.yml config -q --no-interpolate
-          docker compose --env-file caos/.env.example -f caos/deploy/docker-compose.yml config -q
+          # .env.example ships every required secret EMPTY so a real operator who
+          # copies without filling gets Compose's `${VAR:?}` refusal instead of a
+          # production booting on a documented placeholder. That is the point of
+          # the file, so it cannot be fed to `config` as-is. Fill the blanks here
+          # and validate that: a variable MISSING from the example still fails
+          # (`:?` fires on an absent name), which is what this step exists to
+          # catch — while an intentionally empty value does not.
+          sed 's/^\([A-Z_][A-Z0-9_]*\)=$/\1=ci-placeholder-value-not-a-secret/' \
+            caos/.env.example > "$RUNNER_TEMP/.env.filled"
+          docker compose --env-file "$RUNNER_TEMP/.env.filled" -f caos/deploy/docker-compose.yml config -q
+      - name: Required secrets ship empty in the example
+        run: |
+          # The fail-closed posture is itself a contract: if someone restores a
+          # placeholder here, Compose stops refusing and validate_runtime becomes
+          # the only thing standing between a copied .env and production.
+          for name in POSTGRES_PASSWORD EDGE_PROXY_SECRET SESSION_SECRET \
+                      OAUTH2_PROXY_CLIENT_SECRET OAUTH2_PROXY_COOKIE_SECRET; do
+            grep -qx "$name=" caos/.env.example || {
+              echo "$name must ship EMPTY in caos/.env.example so Compose fails closed" >&2
+              exit 1
+            }
+          done
       - name: Corpus taxonomy consistency
         run: python "Modular OS/tools/check_module_consistency.py"
 
