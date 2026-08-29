@@ -23,6 +23,13 @@ dependencies = [
     "python-multipart>=0.0.9",
     # Direct import in engine/runtime.py (also a transitive checkpoint-sqlite dep).
     "aiosqlite>=0.20",
+    # engine/openrouter.py: the OpenRouter binding talks HTTP directly (no SDK)
+    # and estimates tokens locally, because OpenRouter has no pre-call counting
+    # endpoint and the budget reserves before it calls. httpx was previously a
+    # dev-only pin for the test client; the OpenRouter path makes it a runtime
+    # import.
+    "httpx>=0.27",
+    "tiktoken>=0.7",
 ]
 
 [project.optional-dependencies]
