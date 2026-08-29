@@ -4,6 +4,8 @@ duplicate-key model output."""
 
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from spec_helpers import seed_case_with_source, start_full_credit_run
@@ -120,3 +122,142 @@ def test_final_model_output_rejects_duplicate_json_keys():
 
     with pytest.raises(Exception, match="AGENT_OUTPUT_INVALID|duplicate"):
         parse_final_output('{"markdown": "a", "markdown": "b"}')
+
+
+# --- production edge posture (2026-08-27 OWASP review) ----------------------------
+
+
+def _prod_app(tmp_path, store, engine):
+    from caos.api import create_app
+    from caos.config import Settings
+
+    settings = Settings(storage_dir=tmp_path / "vault", environment="production",
+                        edge_proxy_secret="e" * 40, session_secret="s" * 40)
+    return create_app(settings=settings, store=store, engine=engine)
+
+
+def test_unauthenticated_requests_are_refused_before_request_shape_validation(tmp_path, store, engine):
+    """A body-required route must not answer 422 to a caller it never
+    authenticated — that reading is indistinguishable, to a route audit, from a
+    route that checks nothing."""
+    from fastapi.testclient import TestClient
+
+    client = TestClient(_prod_app(tmp_path, store, engine), raise_server_exceptions=False)
+    url = "/api/cases/case-x/deliverables/by-id/dl-x/approve"
+    assert client.post(url, json={}).status_code == 401, "no body"
+    assert client.post(url, json={"preview_digest": "a" * 64,
+                                  "input_fingerprint": "b" * 64}).status_code == 401, "valid body"
+    assert client.get("/api/health").status_code == 200, "the public health check stays public"
+
+
+def test_production_serves_no_framework_documentation_surface(tmp_path, store, engine):
+    from fastapi.testclient import TestClient
+
+    app = _prod_app(tmp_path, store, engine)
+    client = TestClient(app, raise_server_exceptions=False)
+    for path in ("/docs", "/redoc", "/openapi.json"):
+        assert client.get(path).status_code == 404, path
+    assert app.openapi()["paths"], "the in-process schema the contract tests read still exists"
+    assert "strict-transport-security" in client.get("/api/health").headers
+
+
+def test_production_refuses_documented_placeholder_secrets():
+    from caos.config import Settings
+
+    real = {"environment": "production", "database_url": "postgresql://caos:s3cret-and-long@db/caos",
+            "edge_proxy_secret": "e" * 40, "session_secret": "s" * 40}
+    Settings(**real).validate_runtime()  # the good case must stay startable
+
+    for field, value, expected in (
+        ("edge_proxy_secret", "change-me-edge-secret", "EDGE_PROXY_SECRET"),
+        ("session_secret", "change-me-session-secret", "SESSION_SECRET"),
+        ("edge_proxy_secret", "dev-edge-secret", "EDGE_PROXY_SECRET"),
+        ("session_secret", "", "SESSION_SECRET"),
+        ("edge_proxy_secret", "short-but-random", "EDGE_PROXY_SECRET"),
+    ):
+        with pytest.raises(RuntimeError, match=expected):
+            Settings(**{**real, field: value}).validate_runtime()
+
+    with pytest.raises(RuntimeError, match="POSTGRES_PASSWORD"):
+        Settings(**{**real, "database_url": "postgresql://caos:change-me-postgres@db/caos"}).validate_runtime()
+
+
+def test_global_reader_cannot_create_a_case(tmp_path, store, engine):
+    """create_case stores its creator as case ANALYST, so a reader creating
+    cases mints latent authority that activates on the next IdP promotion."""
+    from fastapi.testclient import TestClient
+
+    client = TestClient(_prod_app(tmp_path, store, engine), raise_server_exceptions=False)
+    headers = {"x-edge-authorization": "e" * 40, "x-forwarded-user": "reader",
+               "x-forwarded-email": "r@example.com", "x-forwarded-groups": "caos-reader"}
+    body = {"name": "Reader case", "issuer": "Issuer", "sector": "Services"}
+    assert client.post("/api/cases", json=body, headers=headers).status_code == 403
+    assert store.list_cases("reader") == []
+    assert client.post("/api/cases", json=body,
+                       headers={**headers, "x-forwarded-groups": "caos-analyst"}).status_code == 201
+
+
+def test_per_subject_rate_ceiling_refuses_and_is_not_shared_between_subjects(tmp_path, store, engine):
+    from fastapi.testclient import TestClient
+
+    from caos.api import create_app
+    from caos.config import Settings
+
+    settings = Settings(storage_dir=tmp_path / "vault", rate_limit_per_minute=3)
+    client = TestClient(create_app(settings=settings, store=store, engine=engine),
+                        raise_server_exceptions=False)
+    a = {"x-caos-role": "ANALYST", "x-forwarded-user": "analyst-a"}
+    b = {"x-caos-role": "ANALYST", "x-forwarded-user": "analyst-b"}
+
+    codes = [client.get("/api/cases", headers=a).status_code for _ in range(5)]
+    assert codes[:3] == [200, 200, 200] and codes[3:] == [429, 429], codes
+    refusal = client.get("/api/cases", headers=a)
+    assert refusal.headers["retry-after"] == "60"
+    assert refusal.json() == {"detail": "request rate ceiling reached"}
+    assert client.get("/api/cases", headers=b).status_code == 200, "buckets are per subject"
+    assert client.get("/api/health").status_code == 200, "the health check is never throttled"
+
+
+async def test_concurrent_stream_slots_are_capped_and_always_returned(tmp_path):
+    """The run-events tail holds a worker for its whole lifetime, so it costs far
+    more than the one token the rate bucket charges it. Driven against the
+    middleware directly: TestClient cannot hold an endless SSE body open."""
+    import asyncio
+
+    from caos.api import RequestCeilings
+    from caos.config import Settings
+
+    released = asyncio.Event()
+    started = asyncio.Semaphore(0)
+
+    async def stub_app(scope, receive, send):
+        started.release()
+        await released.wait()
+        await send({"type": "http.response.start", "status": 200, "headers": []})
+        await send({"type": "http.response.body", "body": b""})
+
+    settings = Settings(storage_dir=tmp_path / "vault", max_concurrent_streams=1)
+    ceilings = RequestCeilings(stub_app, settings=settings)
+    scope = {"type": "http", "method": "GET", "path": "/api/runs/run-1/events", "headers": []}
+    sent: list[dict] = []
+
+    async def call(sink):
+        await ceilings(dict(scope), None, lambda message: _collect(sink, message))
+
+    async def _collect(sink, message):
+        sink.append(message)
+
+    held = asyncio.create_task(call(sent))
+    await started.acquire()                       # the first request owns the only slot
+
+    refused: list[dict] = []
+    await call(refused)
+    assert refused[0]["status"] == 429
+    assert json.loads(bytes(refused[1]["body"]))["detail"] == "too many open run-event streams"
+
+    released.set()
+    await held
+    # The slot is returned when the stream finishes, never leaked.
+    reopened: list[dict] = []
+    await call(reopened)
+    assert reopened[0]["status"] == 200

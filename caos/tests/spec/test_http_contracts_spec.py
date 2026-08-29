@@ -521,6 +521,38 @@ def test_upload_route_enforces_the_same_admission_as_the_ingestion_helper(client
     assert len(client.get(f"/api/cases/{case['id']}/sources").json()) == 1, "only the admitted source landed"
 
 
+def test_every_response_carries_the_browser_hardening_headers(client):
+    """The app is the origin for the static export and the JSON API alike, so
+    the headers ride here rather than only at the reverse proxy."""
+    for response in (client.get("/api/health"),
+                     client.post("/api/cases", json={"name": "Headers", "issuer": "I", "sector": "Services"})):
+        csp = response.headers["content-security-policy"]
+        assert "default-src 'self'" in csp and "frame-ancestors 'none'" in csp
+        assert "object-src 'none'" in csp and "base-uri 'self'" in csp
+        assert response.headers["x-content-type-options"] == "nosniff"
+        assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+        assert "camera=()" in response.headers["permissions-policy"]
+    # HSTS is production-only: pinning HTTPS for localhost wedges a dev browser.
+    assert "strict-transport-security" not in client.get("/api/health").headers
+
+
+def test_focus_questions_and_thesis_items_are_bounded_per_item(client):
+    """A `max_length` on a wire list bounds the count only. Without a per-item
+    cap, five focus questions can carry an unbounded number of bytes into pinned
+    state, run events, and every compiled prompt."""
+    case = client.post(
+        "/api/cases", json={"name": "Bounds", "issuer": "Issuer", "sector": "Services"}
+    ).json()
+    client.post(f"/api/cases/{case['id']}/sources",
+                files={"file": ("evidence.txt", b"Debt 100", "text/plain")})
+    over = client.post(f"/api/cases/{case['id']}/runs", json={
+        "pathway": "FULL_CREDIT", "depth": "screen", "focus_questions": ["q" * 401]})
+    assert over.status_code == 422
+    under = client.post(f"/api/cases/{case['id']}/runs", json={
+        "pathway": "FULL_CREDIT", "depth": "screen", "focus_questions": ["q" * 400]})
+    assert under.status_code in {200, 201}
+
+
 def test_distinct_duplicate_note_promotion_is_a_structured_source_conflict(client):
     case = client.post(
         "/api/cases", json={"name": "Note conflict", "issuer": "Issuer", "sector": "Services"}

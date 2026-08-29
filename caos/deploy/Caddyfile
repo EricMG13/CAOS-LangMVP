@@ -1,7 +1,12 @@
+# Browser hardening headers (CSP, nosniff, Referrer-Policy, Permissions-Policy,
+# HSTS) are NOT set here on purpose: the app is the origin for the static export
+# and the JSON API alike, so `SecurityHeaders` in caos/server/caos/api sets them
+# in one place where they are unit-tested. Caddy owns TLS, the body cap, and
+# identity-header scrubbing.
 {$CAOS_DOMAIN} {
     encode gzip
     request_body {
-        max_size {$MAX_UPLOAD_MB:250}MiB
+        max_size {$MAX_UPLOAD_MB:32}MiB
     }
     request_header -X-Forwarded-User
     request_header -X-Forwarded-Email

@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 
 from fastapi import HTTPException, Request
+from fastapi.responses import JSONResponse
 
 from .config import Settings
 from .storage.store import DomainStore
@@ -76,3 +78,35 @@ def require_case(
 def require_role(identity: Identity, *roles: str) -> None:
     if identity.role not in set(roles):
         raise HTTPException(status_code=403, detail="insufficient role")
+
+
+class EdgeIdentityGate:
+    """Authentication precedes request-shape validation.
+
+    FastAPI validates the body before the handler runs, so a body-required
+    route would answer an unauthenticated caller with 422 — which a route audit
+    cannot tell apart from a route that checks nothing at all. This gate refuses
+    at the ASGI edge instead, so every non-public `/api` route answers 401 and
+    "422 is acceptable evidence" stops being a hole the audit has to whitelist.
+
+    Pure ASGI on purpose: it reads headers only and never touches the receive
+    channel, so the run-events tail keeps streaming. In development
+    `identity_from_request` cannot fail, which makes this a no-op there.
+    """
+
+    PUBLIC_PATHS = frozenset({"/api/health"})
+
+    def __init__(self, app: Any, settings: Settings) -> None:
+        self.app = app
+        self.settings = settings
+
+    async def __call__(self, scope: Any, receive: Any, send: Any) -> None:
+        path = scope.get("path", "") if scope["type"] == "http" else ""
+        if path.startswith("/api/") and path not in self.PUBLIC_PATHS:
+            try:
+                identity_from_request(Request(scope), self.settings)
+            except HTTPException as exc:
+                response = JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
+                await response(scope, receive, send)
+                return
+        await self.app(scope, receive, send)

@@ -109,6 +109,11 @@ class ConfirmDraftRequest(StrictModel):
 
 
 ResearchBriefItem = Annotated[str, Field(min_length=1, max_length=200)]
+# Item-level caps for the other wire string lists. A `max_length` on the list
+# bounds the count only; without these each element is unbounded.
+FocusQuestion = Annotated[str, Field(min_length=1, max_length=400)]
+ThesisItem = Annotated[str, Field(min_length=1, max_length=400)]
+IdentifierItem = Annotated[str, Field(min_length=1, max_length=120)]
 
 
 class ResearchBrief(StrictModel):
@@ -131,12 +136,12 @@ class ResearchBrief(StrictModel):
 class StartRunRequest(StrictModel):
     pathway: str
     depth: Depth
-    focus_questions: list[str] = Field(default_factory=list, max_length=5)
+    focus_questions: list[FocusQuestion] = Field(default_factory=list, max_length=5)
     research_brief: ResearchBrief | None = None
 
     @field_validator("focus_questions")
     @classmethod
-    def boundary_clean_questions(cls, value: list[str]) -> list[str]:
+    def boundary_clean_questions(cls, value: list[FocusQuestion]) -> list[FocusQuestion]:
         return [validate_boundary_text(question) for question in value]
 
     @field_validator("pathway")
@@ -165,11 +170,11 @@ class ApproveResearchPlanRequest(StrictModel):
 class ThesisRequest(StrictModel):
     expected_version: int = Field(ge=0)
     core_thesis: str = Field(min_length=1, max_length=4000)
-    drivers: list[str] = Field(default_factory=list, max_length=12)
-    risks: list[str] = Field(default_factory=list, max_length=12)
-    catalysts: list[str] = Field(default_factory=list, max_length=12)
-    unresolved_questions: list[str] = Field(default_factory=list, max_length=12)
-    evidence_ids: list[str] = Field(default_factory=list, max_length=50)
+    drivers: list[ThesisItem] = Field(default_factory=list, max_length=12)
+    risks: list[ThesisItem] = Field(default_factory=list, max_length=12)
+    catalysts: list[ThesisItem] = Field(default_factory=list, max_length=12)
+    unresolved_questions: list[ThesisItem] = Field(default_factory=list, max_length=12)
+    evidence_ids: list[IdentifierItem] = Field(default_factory=list, max_length=50)
 
 
 class RecommendationRow(StrictModel):
@@ -184,7 +189,7 @@ class RecommendationMatrixRequest(StrictModel):
     expected_version: int = Field(ge=0)
     market_snapshot_id: str = Field(min_length=1, max_length=120)
     rows: list[RecommendationRow] = Field(min_length=1, max_length=50)
-    analytical_dependency_ids: list[str] = Field(default_factory=list, max_length=50)
+    analytical_dependency_ids: list[IdentifierItem] = Field(default_factory=list, max_length=50)
 
     @field_validator("rows")
     @classmethod
@@ -210,8 +215,8 @@ class AssumptionRequest(StrictModel):
     statement: str = Field(min_length=1, max_length=2000)
     supporting_claim: str = Field(default="", max_length=2000)
     conflicting_claim: str = Field(default="", max_length=2000)
-    evidence_ids: list[str] = Field(default_factory=list, max_length=50)
-    affected_module_ids: list[str] = Field(default_factory=list, max_length=30)
+    evidence_ids: list[IdentifierItem] = Field(default_factory=list, max_length=50)
+    affected_module_ids: list[IdentifierItem] = Field(default_factory=list, max_length=30)
 
 
 class ModelAssumptionSourceRef(StrictModel):
@@ -321,7 +326,7 @@ class OneWaySensitivityRequest(StrictModel):
 
 class EvidenceCitation(StrictModel):
     source_id: str = Field(min_length=1, max_length=120)
-    block_ids: list[str] = Field(min_length=1, max_length=50)
+    block_ids: list[IdentifierItem] = Field(min_length=1, max_length=50)
     claim: str = Field(min_length=1, max_length=1000)
 
 
@@ -370,13 +375,13 @@ class NarrativeBlock(DeliverableBlock):
 
 class GeneratedMetricBlock(DeliverableBlock):
     kind: Literal["GENERATED_METRIC"]
-    metric_ids: list[str] = Field(min_length=1, max_length=40)
+    metric_ids: list[IdentifierItem] = Field(min_length=1, max_length=40)
 
 
 class GeneratedTableBlock(DeliverableBlock):
     kind: Literal["GENERATED_TABLE"]
     table_id: str = Field(min_length=1, max_length=120)
-    field_ids: list[str] = Field(min_length=1, max_length=80)
+    field_ids: list[IdentifierItem] = Field(min_length=1, max_length=80)
 
 
 class GeneratedChartBlock(DeliverableBlock):

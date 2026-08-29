@@ -3,9 +3,11 @@
 Boots the app in production identity mode and asserts, for every registered
 /api route except the public health check:
 
-- an unauthenticated request (no trusted-edge header) never succeeds: 401 from
-  the identity boundary, or 422 where FastAPI refuses the request shape before
-  the handler runs (required body/query params) — either way no data is served;
+- an unauthenticated request (no trusted-edge header) is refused with 401. A
+  pre-handler 422 is NOT accepted: FastAPI validates the body before the
+  handler, so "422" from a body-required route says nothing about whether that
+  route authenticates anyone. EdgeIdentityGate refuses at the ASGI edge so
+  every non-public route can be held to 401;
 - a client-supplied x-caos-role never escalates the OIDC-group-derived role.
 
 Exit code is non-zero on any violation, with one line per offending route.
@@ -60,8 +62,13 @@ def main() -> int:
                     continue
                 audited += 1
                 status = client.request(method, probe).status_code
-                if status not in {401, 422}:
-                    failures.append(f"{method} {path}: unauthenticated -> {status} (expected 401 or pre-handler 422)")
+                if status != 401:
+                    failures.append(f"{method} {path}: unauthenticated -> {status} (expected 401)")
+                # A valid body must not buy a way past the gate either — this is
+                # the probe that a 422-accepting audit could never make.
+                with_body = client.request(method, probe, json={"probe": "audit"}).status_code
+                if with_body != 401:
+                    failures.append(f"{method} {path}: unauthenticated with a body -> {with_body} (expected 401)")
 
         me = client.get("/api/me", headers={
             "x-edge-authorization": EDGE_SECRET,

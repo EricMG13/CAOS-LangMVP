@@ -47,10 +47,13 @@ def run_pending(service: ModelService) -> int:
             service.run_export(target_id)
         except Exception:
             traceback.print_exc()
+            # Exports go QUEUED -> READY|FAILED with no intermediate state, so
+            # binding to QUEUED means a dead pass can only fail the job it took:
+            # never a published export, never one requeued under it.
             if service.builds.get_build(target_id) is not None:
-                service.builds.update_build(target_id, export=EXPORT_FAILED)
+                service.builds.update_build(target_id, expected_export_status="QUEUED", export=EXPORT_FAILED)
             else:
-                service.builds.update_revision_export(target_id, EXPORT_FAILED)
+                service.builds.update_revision_export(target_id, EXPORT_FAILED, expected_export_status="QUEUED")
     return len(work["builds"]) + len(work["exports"])
 
 

@@ -1,6 +1,6 @@
 services:
   db:
-    image: postgres:17-alpine
+    image: postgres:17-alpine@sha256:18cfe3ef5e6815560c98237d6216d1e5119702fb0f3894c8785dd58b8bbe5d73
     restart: unless-stopped
     environment:
       POSTGRES_DB: caos
@@ -16,7 +16,7 @@ services:
     networks: [internal]
 
   clamav:
-    image: clamav/clamav:1.4
+    image: clamav/clamav:1.4@sha256:761f6c99b8d9134b39431f8c200189cda749b17310091561bfa8b732f32bfada
     platform: linux/amd64
     restart: unless-stopped
     volumes:
@@ -46,6 +46,10 @@ services:
       SESSION_SECRET: ${SESSION_SECRET:?set SESSION_SECRET}
       CLAMAV_HOST: clamav
       CLAMAV_PORT: "3310"
+      # Kept in step with Caddy's request_body cap; the app refuses a source
+      # above MAX_SOURCE_MB well before the transport ceiling.
+      MAX_UPLOAD_MB: ${MAX_UPLOAD_MB:-32}
+      MAX_SOURCE_MB: ${MAX_SOURCE_MB:-25}
       PORT: "8000"
       CPDR_AGENT_ENABLED: ${CPDR_AGENT_ENABLED:-false}
       CANONICAL_AGENT_ENABLED: ${CANONICAL_AGENT_ENABLED:-false}
@@ -118,7 +122,7 @@ services:
     networks: [internal]
 
   caddy:
-    image: caddy:2.10-alpine
+    image: caddy:2.10-alpine@sha256:4c6e91c6ed0e2fa03efd5b44747b625fec79bc9cd06ac5235a779726618e530d
     restart: unless-stopped
     depends_on:
       oauth2-proxy: { condition: service_started }
@@ -126,7 +130,7 @@ services:
     environment:
       CAOS_DOMAIN: ${CAOS_DOMAIN:?set CAOS_DOMAIN}
       EDGE_PROXY_SECRET: ${EDGE_PROXY_SECRET:?set EDGE_PROXY_SECRET}
-      MAX_UPLOAD_MB: ${MAX_UPLOAD_MB:-250}
+      MAX_UPLOAD_MB: ${MAX_UPLOAD_MB:-32}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy-data:/data

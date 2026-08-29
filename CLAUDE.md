@@ -125,7 +125,7 @@ engine, the bundle, or the routes.
   `caos/server/worker.py` (polls the store for QUEUED model builds/exports and
   executes them; the only process with LibreOffice, so XLSX rendering lives
   here and nowhere else). `worker.py --once` runs a single pass.
-- Suite: `python -m pytest caos/tests -q` — fully green (392). Spec tests
+- Suite: `python -m pytest caos/tests -q` — fully green (401). Spec tests
   (`caos/tests/spec/`) are the contractual surface — they pin invariants and
   wire shapes; phase-2 tests cover ingestion/store/bundle/config. The surrogate
   boundary test sends its lone surrogate as a pre-encoded `\ud800` JSON escape
@@ -153,18 +153,21 @@ engine, the bundle, or the routes.
   The Command Center lens, the Report Studio deliverables workspace, model
   scenarios/previews, model sign-off and run resume are all served and wired —
   do not re-add them to this list.
-- The 2026-08-27 security review's remaining findings are open and recorded in
-  `.agent-reviews/redteam.md` (2026-08-28 section): `run_sec_audit.py` accepts a
-  pre-handler `422` as authentication evidence, so it cannot detect an
-  unauthenticated route; a global `READER` may create cases and is stored as
-  case `ANALYST`; the edge serves no HSTS/CSP/nosniff and leaves `/docs` on; no
-  per-subject rate, SSE-connection, or preview-concurrency limit exists; backups
-  are plaintext with an unkeyed `cksum` manifest; several deployed images, apt
-  packages, Actions, and the Trivy installer are tag- or branch-mutable; and the
-  AI PR reviewer holds an API key on `pull_request` from any branch.
-- The export half of `worker.run_pending` still writes `EXPORT_FAILED` with no
-  CAS at all — the build half is now bound to the identity it dispatched, the
-  export half is not.
+- Backup encryption is **untested here**: `caos/deploy/backup.sh` and
+  `restore_drill.sh` now encrypt with `age`, but neither `age` nor a running
+  Compose stack exists in the dev worktree, so only their syntax is checked.
+  Drill a real backup/restore pair before relying on either.
+- The Dockerfile still installs `libreoffice-calc` and its apt dependencies
+  unversioned. The base images are digest-pinned, so the build is reproducible
+  to the layer boundary but not through apt.
+- `caos/server/requirements.txt` pins versions, not hashes. pip-audit gates
+  known CVEs; nothing gates a compromised release of a pinned version.
+- Exports have no claim at all — two workers would both render the same export.
+  Only the failure fallback is CAS-bound. Harmless today (single worker,
+  content-addressed output), wrong under a second worker.
+- `RequestCeilings` counts in-process, so its ceilings are per app instance.
+  That matches the single-instance deployment the SQLite checkpoints already
+  force; scaling out means moving them to a shared store first.
 - The gzip exclusion for XLSX only covers the model-build download, the sole
   route setting that media type. The deliverable export serves md/pdf/xlsx
   alike as `application/octet-stream`, so its already-compressed formats are

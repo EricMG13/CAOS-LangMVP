@@ -121,3 +121,27 @@ async def test_a_crashing_pass_never_fails_a_row_that_was_repointed_under_it(tmp
     after = models.builds.get_build(build_id)
     assert after["status"] == "QUEUED", "the requeued build survives the dead pass"
     assert after["error"] is None and after["input_fingerprint"] == "e" * 64
+
+
+async def test_a_crashing_export_pass_never_clobbers_an_export_published_under_it(tmp_path, settings, store):
+    """Same rule on the export half: the fallback writes the whole export blob,
+    so without a CAS a dead pass overwrites a READY export with FAILED."""
+    from caos.engine.runtime import Engine
+
+    engine = Engine.create(settings=settings, store=store, checkpoint_path=tmp_path / "ck.db")
+    models = _service_on(engine, settings, store)
+    queued = await _queued_build(models, engine, store)
+    build_id = queued["id"]
+    models.run_build(build_id)  # only the export is outstanding
+    models.builds.update_build(build_id, export={"status": "QUEUED"})
+
+    def explode_after_publish(_target_id: str) -> None:
+        models.builds.update_build(build_id, export={"status": "READY", "sha256": "a" * 64})
+        raise RuntimeError("the export died")
+
+    models.run_export = explode_after_publish  # type: ignore[method-assign]
+    assert worker.run_pending(models) == 1
+
+    export = models.builds.get_build(build_id)["export"]
+    assert export["status"] == "READY", "a published export survives the dead pass"
+    assert export.get("error") is None
