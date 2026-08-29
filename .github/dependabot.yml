@@ -20,6 +20,24 @@ updates:
       npm-minor-patch:
         patterns: ["*"]
         update-types: [minor, patch]
+    # Blocked upstream, not by us. eslint-config-next bundles the plugins that
+    # break, and 16.3.3 — the version pinned here — is the latest stable, so
+    # there is nothing to bump to:
+    #   eslint 10  -> eslint-plugin-react calls contextOrFilename.getFilename,
+    #                 removed in ESLint 10
+    #   typescript 7 -> typescript-eslint refuses outright: "does not support TS 7.0"
+    # Both majors were opened, rebased onto current main, and failed the frontend
+    # lint job on exactly these errors. Ignoring the MAJOR only: minor and patch
+    # updates for both still arrive through the group above, so security fixes on
+    # the 9.x / 5.x lines are unaffected.
+    # LIFT THIS once eslint-config-next ships support — check its bundled
+    # typescript-eslint and eslint-plugin-react, not its peerDependencies, which
+    # are permissive enough to look compatible when they are not.
+    ignore:
+      - dependency-name: eslint
+        update-types: [version-update:semver-major]
+      - dependency-name: typescript
+        update-types: [version-update:semver-major]
 
   - package-ecosystem: pip
     directory: /caos/server
