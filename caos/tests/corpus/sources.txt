@@ -1,0 +1,40 @@
+# Real issuer documents, pinned by URL. One line per file: <local-name> <url>.
+#
+# Everything here is served by the issuer or by the SEC exactly as filed — the
+# fetcher downloads bytes and changes nothing. Names carry the issuer, form and
+# date so a failing test names a document a credit analyst would recognise.
+#
+# EDGAR ".txt" URLs are the complete submission text file: the real, unmodified
+# filing package the SEC serves under a suffix the ingestion boundary admits.
+# Sizes span the boundary deliberately — documents up to the extraction ceiling
+# must ingest and run, whole submission packages beyond it must be refused with
+# a typed status, and the suite asserts both.
+
+# --- PDF: annual reports and shareholder letters -------------------------
+BRK_shareholder_letter_2023.pdf   https://www.berkshirehathaway.com/letters/2023ltr.pdf
+BRK_annual_report_2023.pdf        https://www.berkshirehathaway.com/2023ar/2023ar.pdf
+JPM_annual_report_2023.pdf        https://www.jpmorganchase.com/content/dam/jpmc/jpmorgan-chase-and-co/investor-relations/documents/annualreport-2023.pdf
+
+# --- EDGAR complete submissions, including two Ford filings whose inline
+# --- XBRL puts a whole document on one line (split into blocks, not refused)
+THC_8-K_2016-03-09.txt   https://www.sec.gov/Archives/edgar/data/70318/000119312516497632/0001193125-16-497632.txt
+KHC_8-K_2015-06-18.txt   https://www.sec.gov/Archives/edgar/data/1637459/000095015715000581/0000950157-15-000581.txt
+CCL_8-K_2016-04-13.txt   https://www.sec.gov/Archives/edgar/data/815097/000119312516540080/0001193125-16-540080.txt
+F_8-K_2019-06-06.txt     https://www.sec.gov/Archives/edgar/data/37996/000003799619000049/0000037996-19-000049.txt
+CHTR_8-K_2018-08-21.txt  https://www.sec.gov/Archives/edgar/data/1091667/000119312518254056/0001193125-18-254056.txt
+F_8-K_2019-05-28.txt     https://www.sec.gov/Archives/edgar/data/37996/000003799619000037/0000037996-19-000037.txt
+KHC_8-K_2026-08-26.txt   https://www.sec.gov/Archives/edgar/data/1637459/000163745926000057/0001637459-26-000057.txt
+F_8-K_2026-07-28.txt     https://www.sec.gov/Archives/edgar/data/37996/000003799626000155/0000037996-26-000155.txt
+
+# --- XBRL company facts: real reported figures, JSON straight from the SEC
+CHTR_us-gaap_Assets.json  https://data.sec.gov/api/xbrl/companyconcept/CIK0001091667/us-gaap/Assets.json
+KHC_us-gaap_Assets.json   https://data.sec.gov/api/xbrl/companyconcept/CIK0001637459/us-gaap/Assets.json
+THC_us-gaap_Assets.json   https://data.sec.gov/api/xbrl/companyconcept/CIK0000070318/us-gaap/Assets.json
+CCL_us-gaap_LongTermDebt.json  https://data.sec.gov/api/xbrl/companyconcept/CIK0000815097/us-gaap/LongTermDebtNoncurrent.json
+
+# --- Whole submission packages that must be refused, not degraded --------
+# These are bundles of uuencoded exhibits rather than documents: 21 MB and
+# 41 MB. One is past the extraction ceiling, the other past the 25 MB route
+# ceiling. Both must decline typed and pin nothing.
+THC_10-K_2026-02-17.txt  https://www.sec.gov/Archives/edgar/data/70318/000007031826000012/0000070318-26-000012.txt
+CHTR_8-K_2026-08-26.txt  https://www.sec.gov/Archives/edgar/data/1091667/000110465926100972/0001104659-26-100972.txt

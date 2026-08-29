@@ -55,6 +55,41 @@ jobs:
           --exclude caos/server/caos/methodology/vendor
       - name: Route security audit
         run: python run_sec_audit.py
+      # One matrix leg only: the corpus is not interpreter-sensitive, and two
+      # legs racing would double a 78 MB download and collide on the cache key.
+      - name: Restore the real-issuer corpus
+        id: corpus
+        if: matrix.python-version == '3.14'
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: caos/tests/corpus/documents
+          key: corpus-${{ hashFiles('caos/tests/corpus/sources.txt') }}
+          restore-keys: corpus-
+      - name: Fetch the real-issuer corpus
+        id: fetch
+        if: matrix.python-version == '3.14'
+        # Best effort: the documents come from the SEC and from issuer sites, so
+        # a fetch failure leaves the corpus tests skipping with a reason rather
+        # than turning an unrelated change red. fetch.sh re-downloads only what a
+        # restored cache is missing.
+        continue-on-error: true
+        env:
+          SEC_USER_AGENT: ${{ vars.SEC_USER_AGENT }}
+        run: |
+          if [ -z "${SEC_USER_AGENT}" ]; then
+            echo "::warning::SEC_USER_AGENT repo variable is unset, so the real-issuer corpus tests will skip. Set it to a contact EDGAR accepts, e.g. 'Jane Analyst jane@example.com' — EDGAR answers 403 to a user agent without an email-shaped contact."
+            exit 1
+          fi
+          caos/tests/corpus/fetch.sh
+      - name: Save the real-issuer corpus
+        # Only a complete fetch is cached. A partial one stored under the
+        # sources.txt key would be restored forever and never retried, silently
+        # disabling the corpus tests for the documents it is missing.
+        if: matrix.python-version == '3.14' && steps.fetch.outcome == 'success' && steps.corpus.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: caos/tests/corpus/documents
+          key: corpus-${{ hashFiles('caos/tests/corpus/sources.txt') }}
       - name: Backend regression suite
         env:
           ANTHROPIC_API_KEY: ""

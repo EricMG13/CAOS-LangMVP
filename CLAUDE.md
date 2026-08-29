@@ -125,7 +125,8 @@ engine, the bundle, or the routes.
   `caos/server/worker.py` (polls the store for QUEUED model builds/exports and
   executes them; the only process with LibreOffice, so XLSX rendering lives
   here and nowhere else). `worker.py --once` runs a single pass.
-- Suite: `python -m pytest caos/tests -q` — fully green (401). Spec tests
+- Suite: `python -m pytest caos/tests -q` — fully green (401, or 424 with the
+  real-issuer corpus downloaded). Spec tests
   (`caos/tests/spec/`) are the contractual surface — they pin invariants and
   wire shapes; phase-2 tests cover ingestion/store/bundle/config. The surrogate
   boundary test sends its lone surrogate as a pre-encoded `\ud800` JSON escape
@@ -134,6 +135,19 @@ engine, the bundle, or the routes.
 - Frontend: `npm run lint`, `npx tsc --noEmit`, `npm run test:unit`,
   `npm run build`; browser checks against the combined app on `:8000`:
   `npm run a11y` and `npm run test:workbench` (both green).
+- Real-issuer corpus (`caos/tests/test_corpus_pathways.py`, marker
+  `corpus_run`): real annual reports, EDGAR complete submissions and XBRL
+  company facts, pinned by URL in `caos/tests/corpus/sources.txt` and fetched
+  by `caos/tests/corpus/fetch.sh` (needs `SEC_USER_AGENT`; `documents/` is
+  gitignored). Without the corpus the tests skip. Default is a smoke subset;
+  `CORPUS_FULL=1` classifies every document and runs every live route. Add a
+  document by appending a `<name> <url>` line — nothing else changes. CI fetches
+  it on one matrix leg and the nightly runs it with `CORPUS_FULL=1`, both
+  cached on the hash of `sources.txt` and both best-effort: a download failure
+  skips the corpus tests instead of failing the build, and only a complete fetch
+  is cached. Both need the `SEC_USER_AGENT` repo variable set to a contact with
+  an email in it — EDGAR answers 403 to a user agent carrying only a name or a
+  URL — and warn in the run log when it is unset.
 - Lint: `ruff check --config ruff.toml caos/server caos/tests --exclude
   caos/server/caos/methodology/vendor`.
 
@@ -178,3 +192,20 @@ engine, the bundle, or the routes.
   requirements but not wired in the engine. Single app instance only.
 - `caos/server/requirements.txt` mirrors `pyproject.toml` dependencies by
   hand — change them together.
+- Large documents are packed, not indexed line by line. The run's source
+  manifest carries one row per block into *every* module prompt, so block count
+  must not track document size: `pack_blocks` in `sources/domain.py` emits one
+  block per line while a document is small (byte-identical to the old
+  extractor, `builtin-v1`, `{"line": n}` locators) and bounded line groups once
+  it is not (`builtin-v2`, `{"lines": [first, last]}`), splitting any line wider
+  than `MAX_BLOCK_CHARS` instead of refusing it. A 300-page annual report is
+  ~145 blocks rather than 7,119, and three 12 MB credit agreements still pin one
+  run inside `MAX_MANIFEST_BLOCKS`. What is still refused: extracted text over
+  `MAX_SOURCE_TEXT` (12 MB) and uploads over `max_source_bytes` (25 MB) — an
+  EDGAR *complete submission package* hits both, which is correct; the unit CAOS
+  ingests is a document, not a filing bundle.
+- Blocks live in one JSON column on the source row, so `read_evidence` parses
+  every block of a source on each call. Measured at the ceiling: a 10 MB source
+  costs 17 ms per read, so a run's ~80 reads cost about 1.4 s. Fine at current
+  volumes, wrong if evidence reads become hot — the fix is a blocks table keyed
+  by (source_id, block_id), not a smaller ceiling.
