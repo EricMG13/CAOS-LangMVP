@@ -8,6 +8,8 @@ dependencies = [
     "langgraph==1.2.11",
     "langgraph-checkpoint-sqlite==3.1.1",
     "langgraph-checkpoint-postgres==3.1.2",
+    # See requirements.txt: the pq implementation is not transitive.
+    "psycopg[binary]==3.3.4",
     "langchain-anthropic==1.6.1",
     "fastapi==0.139.*",
     # Direct import in api/__init__.py (also a transitive fastapi dep, but that

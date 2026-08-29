@@ -3,6 +3,13 @@
 langgraph==1.2.11
 langgraph-checkpoint-sqlite==3.1.1
 langgraph-checkpoint-postgres==3.1.2
+# psycopg's pure-Python wrapper arrives transitively via
+# langgraph-checkpoint-postgres, but WITHOUT an implementation: no psycopg_binary,
+# no psycopg_c, and the slim base has no libpq. `postgresql+psycopg://` then dies
+# on import with "no pq wrapper available" — the production app could not reach
+# PostgreSQL at all. Pinned explicitly so the driver is a declared dependency
+# rather than a transitive accident.
+psycopg[binary]==3.3.4
 langchain-anthropic==1.6.1
 fastapi==0.139.*
 starlette>=1.6
