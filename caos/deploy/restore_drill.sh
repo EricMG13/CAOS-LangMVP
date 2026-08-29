@@ -122,8 +122,12 @@ docker run --rm -v "$drill_volume:/vault:ro" alpine:3.20@sha256:d9e853e87e55526f
 compose exec -T db createdb -U caos "$drill_db"
 db_created=1
 age -d -i "$identity" "$dump_path" | compose exec -T db pg_restore --exit-on-error --no-owner --no-acl -U caos -d "$drill_db"
-compose exec -T db psql -v ON_ERROR_STOP=1 -U caos -d "$drill_db" -c "DO \$\$ BEGIN IF to_regclass('public.caos_state') IS NULL OR to_regclass('public.model_builds') IS NULL OR to_regclass('public.model_build_jobs') IS NULL THEN RAISE EXCEPTION 'required restored tables are missing'; END IF; IF EXISTS (SELECT 1 FROM model_builds WHERE record->>'id' IS DISTINCT FROM id OR record->>'status' IS DISTINCT FROM status OR status = 'READY' AND (jsonb_typeof(record->'payload') IS DISTINCT FROM 'object' OR record->>'payload_digest' IS NULL OR record->>'payload_digest' !~ '^[0-9a-f]{64}$') OR record #>> '{export,status}' = 'READY' AND (record #>> '{export,vault_key}' IS NULL OR record #>> '{export,vault_key}' !~ '^models/[A-Za-z0-9_-]+/[A-Za-z0-9_-]+/[0-9a-f]{64}\\.xlsx$' OR record #>> '{export,sha256}' IS NULL OR record #>> '{export,sha256}' !~ '^[0-9a-f]{64}$' OR record #>> '{export,size}' IS NULL OR record #>> '{export,size}' !~ '^[0-9]+$')) THEN RAISE EXCEPTION 'restored model metadata is invalid'; END IF; END \$\$;"
-model_payloads=$(compose exec -T db psql -Atq -F '|' -v ON_ERROR_STOP=1 -U caos -d "$drill_db" -c "SELECT record->>'payload_digest', record->'payload' FROM model_builds WHERE status='READY' ORDER BY id;")
+# Schema note: these assertions verify the CURRENT store (cases/runs/model_*/
+# deliverable_*). They previously named caos_state and model_build_jobs, which
+# belong to the PREDECESSOR schema — the drill was never updated when the store
+# migrated, so it could not pass against a backup of this system.
+compose exec -T db psql -v ON_ERROR_STOP=1 -U caos -d "$drill_db" -c "DO \$\$ BEGIN IF to_regclass('public.cases') IS NULL OR to_regclass('public.sources') IS NULL OR to_regclass('public.source_sets') IS NULL OR to_regclass('public.audit_events') IS NULL OR to_regclass('public.runs') IS NULL OR to_regclass('public.run_artifacts') IS NULL OR to_regclass('public.run_events') IS NULL OR to_regclass('public.model_builds') IS NULL OR to_regclass('public.model_revisions') IS NULL OR to_regclass('public.deliverable_frozen') IS NULL THEN RAISE EXCEPTION 'required restored tables are missing'; END IF; IF EXISTS (SELECT 1 FROM model_builds WHERE status = 'READY' AND (json_typeof(payload) IS DISTINCT FROM 'object' OR payload_digest IS NULL OR payload_digest !~ '^[0-9a-f]{64}\$')) THEN RAISE EXCEPTION 'restored model build metadata is invalid'; END IF; IF EXISTS (SELECT 1 FROM model_builds WHERE export #>> '{status}' = 'READY' AND (export #>> '{vault_key}' IS NULL OR export #>> '{vault_key}' !~ '^models/[A-Za-z0-9_-]+/[A-Za-z0-9_-]+/[0-9a-f]{64}\\.xlsx\$' OR export #>> '{sha256}' !~ '^[0-9a-f]{64}\$' OR export #>> '{size}' !~ '^[0-9]+\$')) THEN RAISE EXCEPTION 'restored model export metadata is invalid'; END IF; IF EXISTS (SELECT 1 FROM run_artifacts WHERE digest !~ '^[0-9a-f]{64}\$') THEN RAISE EXCEPTION 'restored run artifact digests are malformed'; END IF; END \$\$;"
+model_payloads=$(compose exec -T db psql -Atq -F '|' -v ON_ERROR_STOP=1 -U caos -d "$drill_db" -c "SELECT payload_digest, payload FROM model_builds WHERE status='READY' ORDER BY id;")
 printf '%s\n' "$model_payloads" | compose exec -T app python -c '
 import hashlib, json, sys
 for line in sys.stdin:
@@ -134,7 +138,7 @@ for line in sys.stdin:
     if hashlib.sha256(canonical.encode("utf-8")).hexdigest() != expected:
         raise SystemExit("restored model payload digest mismatch")
 '
-model_exports=$(compose exec -T db psql -Atq -F '|' -v ON_ERROR_STOP=1 -U caos -d "$drill_db" -c "SELECT id, record #>> '{export,vault_key}', record #>> '{export,sha256}', record #>> '{export,size}' FROM model_builds WHERE record #>> '{export,status}' = 'READY' ORDER BY id;")
+model_exports=$(compose exec -T db psql -Atq -F '|' -v ON_ERROR_STOP=1 -U caos -d "$drill_db" -c "SELECT id, export #>> '{vault_key}', export #>> '{sha256}', export #>> '{size}' FROM model_builds WHERE export #>> '{status}' = 'READY' ORDER BY id;")
 printf '%s\n' "$model_exports" | docker run --rm -i -v "$drill_volume:/vault:ro" alpine:3.20@sha256:d9e853e87e55526f6b2917df91a2115c36dd7c696a35be12163d44e6e2a4b6bc sh -c '
 set -eu
 while IFS="|" read -r build_id vault_key expected_sha expected_size; do
