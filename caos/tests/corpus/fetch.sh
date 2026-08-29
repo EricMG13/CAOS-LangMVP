@@ -3,7 +3,9 @@
 #
 #   SEC_USER_AGENT="Your Name you@example.com" caos/tests/corpus/fetch.sh
 #
-# EDGAR refuses undeclared clients and asks for under 10 requests/second.
+# EDGAR refuses undeclared clients and asks for under 10 requests/second. The
+# user agent must carry an email-shaped contact: EDGAR answers 403 to a bare
+# name or URL.
 set -euo pipefail
 cd "$(dirname "$0")"
 : "${SEC_USER_AGENT:?set SEC_USER_AGENT=\"Your Name you@example.com\" — EDGAR refuses undeclared clients}"

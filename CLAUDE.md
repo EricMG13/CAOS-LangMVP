@@ -141,7 +141,13 @@ engine, the bundle, or the routes.
   by `caos/tests/corpus/fetch.sh` (needs `SEC_USER_AGENT`; `documents/` is
   gitignored). Without the corpus the tests skip. Default is a smoke subset;
   `CORPUS_FULL=1` classifies every document and runs every live route. Add a
-  document by appending a `<name> <url>` line — nothing else changes.
+  document by appending a `<name> <url>` line — nothing else changes. CI fetches
+  it on one matrix leg and the nightly runs it with `CORPUS_FULL=1`, both
+  cached on the hash of `sources.txt` and both best-effort: a download failure
+  skips the corpus tests instead of failing the build, and only a complete fetch
+  is cached. Both need the `SEC_USER_AGENT` repo variable set to a contact with
+  an email in it — EDGAR answers 403 to a user agent carrying only a name or a
+  URL — and warn in the run log when it is unset.
 - Lint: `ruff check --config ruff.toml caos/server caos/tests --exclude
   caos/server/caos/methodology/vendor`.
 
