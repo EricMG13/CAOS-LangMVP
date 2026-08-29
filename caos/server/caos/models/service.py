@@ -55,6 +55,11 @@ class ModelBuildStale(ValueError):
         super().__init__("MODEL_BUILD_STALE")
 
 
+class BuildIdentityChanged(ValueError):
+    """The build row no longer carries the identity this result was computed
+    from — a re-point requeued it, or another executor already published."""
+
+
 class ModelCalculationTimeout(ValueError):
     def __init__(self) -> None:
         super().__init__("MODEL_CALCULATION_TIMEOUT")
@@ -239,7 +244,12 @@ class ModelService:
         active = next((b for b in self.builds.list_builds(case_id) if b["status"] in ("QUEUED", "BUILDING")), None)
         if active is not None:
             if active["input_fingerprint"] != resolved["input_fingerprint"]:
-                self.builds.update_build(active["id"], expected_status=("QUEUED", "BUILDING"), **identity)
+                # Re-pointing a BUILDING row abandons that computation: it goes
+                # back to QUEUED so a worker recomputes under the new identity,
+                # and the abandoned executor's fingerprint-bound completion
+                # no-ops instead of publishing a stale calculation.
+                self.builds.update_build(active["id"], expected_status=("QUEUED", "BUILDING"),
+                                         status="QUEUED", **identity)
                 self._resolved_cache.pop(active["id"], None)
                 self._defaults_cache.pop(active["id"], None)
             record, created = self.builds.get_build(active["id"]), False
@@ -361,18 +371,27 @@ class ModelService:
             raise ValueError("MODEL_BUILD_NOT_FOUND")
         if build["status"] == "READY":
             return build
-        self.builds.update_build(build_id, expected_status=("QUEUED", "FAILED"), status="BUILDING")
+        if not self.builds.update_build(build_id, expected_status=("QUEUED", "FAILED"), status="BUILDING"):
+            # Lost the claim: another executor owns this row. Losing is not a
+            # failure — never compute, never touch the winner's state.
+            return self.builds.get_build(build_id)  # type: ignore[return-value]
+        # The CLAIMED row is the authority; the pre-claim read may already be stale.
+        build = self.builds.get_build(build_id)
+        fingerprint = build["input_fingerprint"]  # type: ignore[index]
         try:
             result, identity = self._compute_build_result(build)
-            self._complete(build_id, result, identity)
+            self._complete(build_id, result, identity, expected_fingerprint=fingerprint)
+        except BuildIdentityChanged:
+            # Re-pointed mid-flight: the requeued row wins, this calculation dies.
+            pass
         except ModelInputError:
-            self._fail(build_id, "MODEL_INPUT_INVALID", "The accepted model inputs are invalid.")
+            self._fail(build_id, "MODEL_INPUT_INVALID", "The accepted model inputs are invalid.", fingerprint)
         except ModelCalculationTimeout:
             raise
         except ValueError:
             raise
         except Exception:
-            self._fail(build_id, "MODEL_CALCULATION_FAILED", "The model calculation did not complete.")
+            self._fail(build_id, "MODEL_CALCULATION_FAILED", "The model calculation did not complete.", fingerprint)
         return self.builds.get_build(build_id)  # type: ignore[return-value]
 
     def _compute_build_result(self, build: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
@@ -402,15 +421,17 @@ class ModelService:
         self._complete(build_id, copy.deepcopy(result), {})
         return self.builds.get_build(build_id)  # type: ignore[return-value]
 
-    def _complete(self, build_id: str, result: dict[str, Any], identity: dict[str, Any]) -> None:
+    def _complete(self, build_id: str, result: dict[str, Any], identity: dict[str, Any],
+                  *, expected_fingerprint: str | None = None) -> None:
         self._validate_result(result)
         changed = self.builds.update_build(
             build_id, expected_status=("QUEUED", "BUILDING"),
+            expected_input_fingerprint=expected_fingerprint,
             status="READY", payload=result["payload"], payload_digest=result["payload_digest"],
             qa=result["qa"], error=None, completed_at=now_iso(), **identity,
         )
         if not changed:
-            raise ValueError("MODEL_RESULT_INVALID: build is not completable")
+            raise BuildIdentityChanged("MODEL_RESULT_INVALID: build is not completable")
 
     @staticmethod
     def _validate_result(result: dict[str, Any]) -> None:
@@ -436,9 +457,10 @@ class ModelService:
         if result["payload_digest"] != digest(payload):
             raise invalid("payload digest mismatch")
 
-    def _fail(self, build_id: str, code: str, detail: str) -> None:
+    def _fail(self, build_id: str, code: str, detail: str, expected_fingerprint: str | None = None) -> None:
         self._validate_error(code, detail)
         self.builds.update_build(build_id, expected_status=("QUEUED", "BUILDING"),
+                                 expected_input_fingerprint=expected_fingerprint,
                                  status="FAILED", error={"code": code, "detail": detail})
 
     @staticmethod

@@ -176,9 +176,10 @@ def create_app(*, settings: Settings, store: DomainStore, engine: Any) -> FastAP
     @app.post("/api/cases/{case_id}/sources", status_code=201,
               response_model=wire.SourceResponse, response_model_exclude_unset=True)
     async def upload_source(case_id: str, request: Request) -> dict[str, Any]:
-        import hashlib as _hashlib
-
-        from ..sources.domain import Vault, extract_blocks, scan_content, validate_archive
+        # Admission (suffix allowlist, empty refusal, bounded read) belongs to
+        # ingest_upload and nowhere else — a second inline copy here is how the
+        # route drifted past its own hardening tests once already.
+        from ..sources.domain import Vault, ingest_upload
 
         who = identity(request)
         require_case(store, case_id, who, write=True)
@@ -186,27 +187,8 @@ def create_app(*, settings: Settings, store: DomainStore, engine: Any) -> FastAP
         upload = form.get("file")
         if upload is None or isinstance(upload, str):
             raise HTTPException(status_code=422, detail="multipart field 'file' is required")
-        content = await upload.read()
-        if len(content) > settings.max_upload_bytes:
-            raise HTTPException(status_code=413, detail="upload exceeds the size limit")
-        scan_content(content, settings)
-        validate_archive(content)
-        sha256 = _hashlib.sha256(content).hexdigest()
-        vault_path = Vault(settings).put(content, sha256)
-        blocks = extract_blocks(upload.filename, content)
-        try:
-            saved = store.ingest({
-                "case_id": case_id,
-                "filename": upload.filename,
-                "media_type": upload.content_type or "application/octet-stream",
-                "bytes": len(content),
-                "sha256": sha256,
-                "vault_path": vault_path,
-                "blocks": blocks,
-                "withdrawn": False,
-            }, who.subject)
-        except ValueError as exc:
-            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        saved = await ingest_upload(store, Vault(settings), case_id, who.subject,
+                                    upload, max_bytes=settings.max_upload_bytes)
         return _wire_source(saved, source_set=saved["source_set"])
 
     def visible_source(case_id: str, source_id: str, request: Request) -> dict[str, Any]:
@@ -753,12 +735,17 @@ def create_app(*, settings: Settings, store: DomainStore, engine: Any) -> FastAP
         }
 
     def require_case_approver(case_id: str, request: Request) -> Any:
-        """Filing is approver-gated by CASE standing (DECISIONS §2): global
-        roles never escalate, non-members never learn the case exists."""
+        """Filing is two-dimensional, like every other governed write
+        (`require_case(write=True)`): a CURRENT global writer role AND stored
+        case APPROVER/ADMIN standing. Case standing alone never escalates a
+        global READER, and an IdP downgrade revokes filing authority the moment
+        it lands — stored standing is not a second, staler identity.
+        Non-members never learn the case exists."""
         who = identity(request)
         if store.get_case(case_id) is None or not store.is_member(case_id, who.subject):
             raise HTTPException(status_code=404, detail="case not found")
-        if not store.is_member(case_id, who.subject, roles={"APPROVER", "ADMIN"}):
+        if (who.role not in {"ANALYST", "APPROVER", "ADMIN"}
+                or not store.is_member(case_id, who.subject, roles={"APPROVER", "ADMIN"})):
             raise HTTPException(status_code=403, detail="case approver authority required")
         return who
 

@@ -78,6 +78,39 @@ async def test_withdrawing_pinned_source_mid_run_fails_the_run_closed(engine, st
     assert record["error"]["code"] in {"AGENT_AUTHORITY_MISMATCH", "SOURCE_SET_CHANGED"}
 
 
+async def test_withdrawing_pinned_source_fails_a_screen_run_on_the_deterministic_path(engine, store):
+    """Invariant 1 on the path with no provider call: withdrawal is invisible to the
+    pinned source-set digest (a new set version is minted, the pinned record is
+    untouched), so the deterministic branch needs the live check as much as the
+    agent branch. Without it a screen run succeeds and every artifact cites the
+    withdrawn source."""
+    case, source, run = await start_full_credit_run(engine, store, depth="screen")
+    store.withdraw(case["id"], source["id"], "analyst")
+    await engine.wait(run["id"])
+    record = engine.get_run(run["id"])
+    assert record["status"] == "failed"
+    assert record["error"]["code"] in {"AGENT_AUTHORITY_MISMATCH", "SOURCE_SET_CHANGED"}
+    assert not [node for node in record["nodes"] if node["artifact_id"]], \
+        "no artifact may be minted from withdrawn evidence"
+
+
+async def test_reuse_relink_on_resume_revalidates_live_sources(tmp_path, settings, store, provider):
+    """The reuse-first relink (§10.1) returns before mode dispatch, so it is the
+    other way withdrawn evidence can re-enter a run: crash in the commit gap,
+    withdraw, then recover onto the committed artifact."""
+    from caos.engine.runtime import Engine
+
+    engine = Engine.create(settings=settings, store=store, checkpoint_path=tmp_path / "ck.db", provider=provider)
+    case, source, run = await start_full_credit_run(engine, store, depth="screen")
+    await engine.crash_in_commit_gap_for_tests(run["id"], module_id="CP-0")
+    store.withdraw(case["id"], source["id"], "analyst")
+
+    revived = Engine.create(settings=settings, store=store, checkpoint_path=tmp_path / "ck.db", provider=provider)
+    await revived.recover()
+    await revived.wait(run["id"])
+    assert revived.get_run(run["id"])["status"] == "failed", "reuse never relinks past a withdrawal"
+
+
 # --- determinism and replay (invariant 10) ----------------------------------------
 
 
