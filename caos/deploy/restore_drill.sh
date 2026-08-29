@@ -1,12 +1,27 @@
-#!/usr/bin/env sh
-set -eu
+#!/usr/bin/env bash
+# Restores an age-encrypted backup pair into a throwaway database and volume.
+# The identity (private key) is supplied by the operator at drill time and must
+# not live on the backup host — see backup.sh for the key-handling policy.
+# Ciphertext is decrypted straight into pg_restore and tar, so the plaintext
+# corpus never lands on this disk.
+# bash, not sh: these scripts now pipe through age, and POSIX sh has no
+# pipefail. Without it `pg_dump | age` reports age's status — a failed dump
+# would still yield a VALID encryption of zero bytes that `test -s` accepts,
+# i.e. a "successful" backup of nothing. Same hazard on the restore side.
+set -euo pipefail
 dump_path="${1:?dump path required}"
+identity="${CAOS_BACKUP_IDENTITY:?CAOS_BACKUP_IDENTITY (age identity file) required to decrypt the backup}"
 test -s "$dump_path"
+test -s "$identity"
+command -v age >/dev/null 2>&1 || {
+    echo "age is required to decrypt the backup: https://github.com/FiloSottile/age" >&2
+    exit 69
+}
 dump_dir=$(CDPATH= cd -- "$(dirname -- "$dump_path")" && pwd)
-vault_archive=${2:-$dump_dir/vault.tgz}
+vault_archive=${2:-$dump_dir/vault.tgz.age}
 test -s "$vault_archive"
 standard_pair=0
-if [ "$(basename -- "$dump_path")" = "caos.dump" ] && [ "$(basename -- "$vault_archive")" = "vault.tgz" ] && [ "$(CDPATH= cd -- "$(dirname -- "$vault_archive")" && pwd)" = "$dump_dir" ]; then
+if [ "$(basename -- "$dump_path")" = "caos.dump.age" ] && [ "$(basename -- "$vault_archive")" = "vault.tgz.age" ] && [ "$(CDPATH= cd -- "$(dirname -- "$vault_archive")" && pwd)" = "$dump_dir" ]; then
     standard_pair=1
 fi
 
@@ -74,9 +89,13 @@ if [ "$standard_pair" -eq 1 ]; then
         echo "standard backup pair requires caos.backup.manifest" >&2
         exit 2
     fi
-    expected_dump=$(sed -n 's/^caos\.dump //p' "$manifest")
-    expected_vault=$(sed -n 's/^vault\.tgz //p' "$manifest")
-    if [ "$expected_dump" != "$(cksum < "$dump_path")" ] || [ "$expected_vault" != "$(cksum < "$vault_archive")" ]; then
+    expected_dump=$(sed -n 's/^caos\.dump\.age //p' "$manifest")
+    expected_vault=$(sed -n 's/^vault\.tgz\.age //p' "$manifest")
+    # A corruption pre-check only. Authenticity comes from age itself: a tampered
+    # archive fails to decrypt, which is the check an attacker who can rewrite
+    # the manifest beside the data cannot forge.
+    if [ "$expected_dump" != "$(sha256sum < "$dump_path" | cut -d ' ' -f 1)" ] \
+        || [ "$expected_vault" != "$(sha256sum < "$vault_archive" | cut -d ' ' -f 1)" ]; then
         echo "backup manifest does not match dump and vault pair" >&2
         exit 2
     fi
@@ -96,13 +115,13 @@ cleanup() {
 trap cleanup EXIT
 
 docker volume create "$drill_volume" >/dev/null
-docker run --rm -v "$drill_volume:/vault" alpine:3.20 sh -c 'set -C; printf "%s\\n" "$1" > /vault/.caos-restore-drill-owner' sh "$drill_token"
+docker run --rm -v "$drill_volume:/vault" alpine:3.20@sha256:d9e853e87e55526f6b2917df91a2115c36dd7c696a35be12163d44e6e2a4b6bc sh -c 'set -C; printf "%s\\n" "$1" > /vault/.caos-restore-drill-owner' sh "$drill_token"
 volume_created=1
-docker run --rm -i -v "$drill_volume:/vault" alpine:3.20 tar -xzf - -C /vault < "$vault_archive"
-docker run --rm -v "$drill_volume:/vault:ro" alpine:3.20 sh -c 'test -n "$(find /vault -mindepth 1 -maxdepth 1 -print -quit)"'
+age -d -i "$identity" "$vault_archive" | docker run --rm -i -v "$drill_volume:/vault" alpine:3.20@sha256:d9e853e87e55526f6b2917df91a2115c36dd7c696a35be12163d44e6e2a4b6bc tar -xzf - -C /vault
+docker run --rm -v "$drill_volume:/vault:ro" alpine:3.20@sha256:d9e853e87e55526f6b2917df91a2115c36dd7c696a35be12163d44e6e2a4b6bc sh -c 'test -n "$(find /vault -mindepth 1 -maxdepth 1 -print -quit)"'
 compose exec -T db createdb -U caos "$drill_db"
 db_created=1
-compose exec -T db pg_restore --exit-on-error --no-owner --no-acl -U caos -d "$drill_db" < "$dump_path"
+age -d -i "$identity" "$dump_path" | compose exec -T db pg_restore --exit-on-error --no-owner --no-acl -U caos -d "$drill_db"
 compose exec -T db psql -v ON_ERROR_STOP=1 -U caos -d "$drill_db" -c "DO \$\$ BEGIN IF to_regclass('public.caos_state') IS NULL OR to_regclass('public.model_builds') IS NULL OR to_regclass('public.model_build_jobs') IS NULL THEN RAISE EXCEPTION 'required restored tables are missing'; END IF; IF EXISTS (SELECT 1 FROM model_builds WHERE record->>'id' IS DISTINCT FROM id OR record->>'status' IS DISTINCT FROM status OR status = 'READY' AND (jsonb_typeof(record->'payload') IS DISTINCT FROM 'object' OR record->>'payload_digest' IS NULL OR record->>'payload_digest' !~ '^[0-9a-f]{64}$') OR record #>> '{export,status}' = 'READY' AND (record #>> '{export,vault_key}' IS NULL OR record #>> '{export,vault_key}' !~ '^models/[A-Za-z0-9_-]+/[A-Za-z0-9_-]+/[0-9a-f]{64}\\.xlsx$' OR record #>> '{export,sha256}' IS NULL OR record #>> '{export,sha256}' !~ '^[0-9a-f]{64}$' OR record #>> '{export,size}' IS NULL OR record #>> '{export,size}' !~ '^[0-9]+$')) THEN RAISE EXCEPTION 'restored model metadata is invalid'; END IF; END \$\$;"
 model_payloads=$(compose exec -T db psql -Atq -F '|' -v ON_ERROR_STOP=1 -U caos -d "$drill_db" -c "SELECT record->>'payload_digest', record->'payload' FROM model_builds WHERE status='READY' ORDER BY id;")
 printf '%s\n' "$model_payloads" | compose exec -T app python -c '
@@ -116,7 +135,7 @@ for line in sys.stdin:
         raise SystemExit("restored model payload digest mismatch")
 '
 model_exports=$(compose exec -T db psql -Atq -F '|' -v ON_ERROR_STOP=1 -U caos -d "$drill_db" -c "SELECT id, record #>> '{export,vault_key}', record #>> '{export,sha256}', record #>> '{export,size}' FROM model_builds WHERE record #>> '{export,status}' = 'READY' ORDER BY id;")
-printf '%s\n' "$model_exports" | docker run --rm -i -v "$drill_volume:/vault:ro" alpine:3.20 sh -c '
+printf '%s\n' "$model_exports" | docker run --rm -i -v "$drill_volume:/vault:ro" alpine:3.20@sha256:d9e853e87e55526f6b2917df91a2115c36dd7c696a35be12163d44e6e2a4b6bc sh -c '
 set -eu
 while IFS="|" read -r build_id vault_key expected_sha expected_size; do
     [ -n "$build_id" ] || continue

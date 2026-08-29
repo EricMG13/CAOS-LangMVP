@@ -21,8 +21,8 @@ jobs:
       run:
         working-directory: caos/frontend
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 24
           cache: npm
@@ -42,8 +42,8 @@ jobs:
         # Lower bound matches caos/server/pyproject.toml requires-python.
         python-version: ["3.12", "3.14"]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: ${{ matrix.python-version }}
           cache: pip
@@ -67,13 +67,13 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 24
           cache: npm
           cache-dependency-path: caos/frontend/package-lock.json
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.12"
           cache: pip
@@ -102,7 +102,7 @@ jobs:
         run: npm run a11y
       - name: Upload server log on failure
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: browser-server-log
           path: server.log
@@ -112,7 +112,7 @@ jobs:
     name: Deploy — scripts, compose, authority
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Shell syntax
         run: bash -n caos/deploy/*.sh caos/scripts/*.sh
       - name: Compose schema and example environment
@@ -126,7 +126,7 @@ jobs:
     name: Image — build and resource verification
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Build app image
         run: docker build --target app --tag caos-app:ci --file caos/deploy/Dockerfile .
       - name: Build worker image
@@ -137,8 +137,16 @@ jobs:
         run: docker run --rm --entrypoint python caos-worker:ci verify_image_resources.py --runtime worker
       - name: Trivy scan — fixable HIGH/CRITICAL gate
         run: |
-          curl -sSfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh \
-            | sh -s -- -b "$RUNNER_TEMP/trivy-bin" v0.72.0
+          # Fetched from the release TAG, never `main`, and verified before it
+          # runs: a curl|sh from a mutable branch executes whatever that branch
+          # holds at the moment CI happens to run. Bump the version and the
+          # digest together.
+          installer="$RUNNER_TEMP/trivy-install.sh"
+          expected=e00df553be558995b994758bc8995956554a16937f456dc6615b0cc411bfec7a
+          curl -sSfL -o "$installer" \
+            https://raw.githubusercontent.com/aquasecurity/trivy/v0.72.0/contrib/install.sh
+          echo "$expected  $installer" | sha256sum -c -
+          sh "$installer" -b "$RUNNER_TEMP/trivy-bin" v0.72.0
           "$RUNNER_TEMP/trivy-bin/trivy" image --scanners vuln \
             --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 caos-app:ci
           "$RUNNER_TEMP/trivy-bin/trivy" image --scanners vuln \
@@ -148,11 +156,11 @@ jobs:
     name: Security — dependency and SAST gates
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.12"
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 24
           cache: npm

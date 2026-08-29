@@ -5,6 +5,13 @@
 #      using an Anthropic API key enabled for Claude Code usage.
 #   2. Settings → Actions → General → "Require approval for all external contributors"
 #      — the action is NOT hardened against prompt injection; only run on trusted diffs.
+#   3. RECOMMENDED, not enforceable from this file: put CLAUDE_API_KEY behind a
+#      protected Environment with required reviewers (Settings → Environments),
+#      then add `environment: security-review` to the job below. The same-repo
+#      condition on the review step stops fork PRs from reaching the secret, but
+#      nothing here stops a compromised contributor or a branch admitted through
+#      a misconfigured approval policy — the diff being reviewed is attacker-
+#      controlled text handed to an agent holding an API key and write access.
 # Until the secret exists, the review step self-skips (no failing checks on PRs).
 #
 # Pinned to a commit SHA (no upstream tags exist) so a silent main change can't alter
@@ -25,13 +32,16 @@ jobs:
     env:
       CLAUDE_API_KEY: ${{ secrets.CLAUDE_API_KEY }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           fetch-depth: 2
 
       - name: Claude security review
-        if: ${{ env.CLAUDE_API_KEY != '' }}   # skip cleanly when the secret is unset
+        # Same-repo branches only. GitHub already withholds secrets from fork
+        # PRs; stating it here makes the trust boundary a condition rather than
+        # a comment, and fails closed if that default ever changes.
+        if: ${{ env.CLAUDE_API_KEY != '' && github.event.pull_request.head.repo.full_name == github.repository }}
         uses: anthropics/claude-code-security-review@0c6a49f1fa56a1d472575da86a94dbc1edb78eda
         with:
           comment-pr: true

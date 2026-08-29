@@ -9,11 +9,13 @@ from __future__ import annotations
 
 import asyncio
 import json
+from time import monotonic
 from typing import Any, AsyncIterator
 
 from fastapi import Body, FastAPI, HTTPException, Request, Response
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+from starlette.datastructures import MutableHeaders
 from starlette.middleware.gzip import DEFAULT_EXCLUDED_CONTENT_TYPES, GZipMiddleware
 
 from .. import responses as wire
@@ -36,7 +38,7 @@ from ..contracts import (
     RequestDeliverableChangesRequest,
     StartRunRequest,
 )
-from ..identity import identity_from_request, require_case
+from ..identity import EdgeIdentityGate, identity_from_request, require_case, require_role
 from ..storage.store import DomainStore
 
 WORKSHEET_SCHEMA_VERSION = "caos.model.worksheet.v1"
@@ -89,11 +91,168 @@ class RVSaveRequest(BaseModel):
     rows: list[RVQuickRow] = Field(min_length=1, max_length=500)
 
 
+class RequestCeilings:
+    """Per-subject admission ceilings.
+
+    Everything reaching this point is authenticated (EdgeIdentityGate runs
+    first), so the subject is the key — an IP would punish a whole office behind
+    one NAT and would not slow a single account with a token. A token bucket
+    bounds sustained request rate. Two concurrency counters bound the shapes the
+    bucket cannot see, because they cost one request but hold a worker for their
+    whole lifetime: the long-lived run-events tail and the synchronous model
+    preview, which is the one expensive computation outside the queued-job
+    admission ceiling.
+
+    ponytail: in-process counters, single app instance — which is what this
+    deployment already is (run checkpoints are SQLite on the data volume, see
+    CLAUDE.md). If it ever scales out, these move to a shared store before they
+    mean anything; the ceilings are a per-instance guard, not a global quota.
+    """
+
+    _EVICT_ABOVE = 4096  # bounded bookkeeping: the buckets dict is not a leak
+
+    def __init__(self, app: Any, *, settings: Settings) -> None:
+        self.app = app
+        self.settings = settings
+        self.capacity = float(settings.rate_limit_per_minute)
+        self._buckets: dict[str, tuple[float, float]] = {}
+        self._streams: dict[str, int] = {}
+        self._previews: dict[str, int] = {}
+
+    def _subject(self, scope: Any) -> str | None:
+        try:
+            return identity_from_request(Request(scope), self.settings).subject
+        except HTTPException:
+            return None
+
+    def _take_token(self, subject: str) -> bool:
+        now = monotonic()
+        tokens, last = self._buckets.get(subject, (self.capacity, now))
+        tokens = min(self.capacity, tokens + (now - last) * self.capacity / 60.0)
+        if tokens < 1.0:
+            self._buckets[subject] = (tokens, now)
+            return False
+        if len(self._buckets) > self._EVICT_ABOVE:
+            self._buckets = {key: value for key, value in self._buckets.items() if now - value[1] < 60.0}
+        self._buckets[subject] = (tokens - 1.0, now)
+        return True
+
+    @staticmethod
+    def _refused(detail: str) -> JSONResponse:
+        return JSONResponse(status_code=429, content={"detail": detail}, headers={"retry-after": "60"})
+
+    def _slot(self, scope: Any) -> tuple[dict[str, int], int, str] | None:
+        path = scope["path"]
+        if path.startswith("/api/runs/") and path.endswith("/events"):
+            return self._streams, self.settings.max_concurrent_streams, "too many open run-event streams"
+        if path.endswith("/models/previews"):
+            return self._previews, self.settings.max_concurrent_previews, "too many model previews in flight"
+        return None
+
+    async def __call__(self, scope: Any, receive: Any, send: Any) -> None:
+        path = scope.get("path", "") if scope["type"] == "http" else ""
+        if not path.startswith("/api/") or path in EdgeIdentityGate.PUBLIC_PATHS:
+            await self.app(scope, receive, send)
+            return
+        subject = self._subject(scope)
+        if subject is None:  # the gate refuses it a moment from now
+            await self.app(scope, receive, send)
+            return
+        if not self._take_token(subject):
+            await self._refused("request rate ceiling reached")(scope, receive, send)
+            return
+        slot = self._slot(scope)
+        if slot is None:
+            await self.app(scope, receive, send)
+            return
+        counters, ceiling, detail = slot
+        if counters.get(subject, 0) >= ceiling:
+            await self._refused(detail)(scope, receive, send)
+            return
+        counters[subject] = counters.get(subject, 0) + 1
+        try:
+            await self.app(scope, receive, send)
+        finally:
+            remaining = counters.get(subject, 1) - 1
+            if remaining > 0:
+                counters[subject] = remaining
+            else:
+                counters.pop(subject, None)
+
+
+class SecurityHeaders:
+    """Browser hardening on every response.
+
+    The app is the real origin in production — `run.py::build` mounts the static
+    export onto this same app — so one place covers the HTML, its chunks, and
+    the JSON API. `script-src` needs `'unsafe-inline'`: a static export ships
+    two inline bootstrap scripts carrying the flight payload, which changes each
+    build, so neither a nonce (no server render) nor a hash is available. Every
+    other directive is closed, and no external host is referenced by the export.
+    HSTS is production-only — pinning HTTPS for localhost would wedge a
+    developer's browser.
+    """
+
+    POLICY = "; ".join((
+        "default-src 'self'",
+        "script-src 'self' 'unsafe-inline'",
+        "style-src 'self'",
+        "img-src 'self' data: blob:",
+        "font-src 'self'",
+        "connect-src 'self' blob:",
+        "object-src 'none'",
+        "base-uri 'self'",
+        "form-action 'self'",
+        "frame-ancestors 'none'",
+    ))
+    PERMISSIONS = ", ".join(f"{feature}=()" for feature in (
+        "accelerometer", "camera", "geolocation", "gyroscope",
+        "magnetometer", "microphone", "payment", "usb",
+    ))
+
+    def __init__(self, app: Any, *, production: bool) -> None:
+        self.app = app
+        self.headers = [
+            ("content-security-policy", self.POLICY),
+            ("x-content-type-options", "nosniff"),
+            ("referrer-policy", "strict-origin-when-cross-origin"),
+            ("permissions-policy", self.PERMISSIONS),
+            ("cross-origin-opener-policy", "same-origin"),
+        ]
+        if production:
+            self.headers.append(
+                ("strict-transport-security", "max-age=31536000; includeSubDomains")
+            )
+
+    async def __call__(self, scope: Any, receive: Any, send: Any) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        async def send_with_headers(message: Any) -> None:
+            if message["type"] == "http.response.start":
+                headers = MutableHeaders(scope=message)
+                for name, value in self.headers:
+                    headers.setdefault(name, value)
+            await send(message)
+
+        await self.app(scope, receive, send_with_headers)
+
+
 def create_app(*, settings: Settings, store: DomainStore, engine: Any) -> FastAPI:
     from fastapi.exceptions import RequestValidationError
-    from fastapi.responses import JSONResponse
 
-    app = FastAPI(title="caos")
+    production = settings.environment == "production"
+    # Framework docs are a development affordance. In production they widen the
+    # API-discovery surface for every admitted user and serve no operator need
+    # (`app.openapi()` still works in-process, which is what the contract tests
+    # read).
+    app = FastAPI(
+        title="caos",
+        docs_url=None if production else "/docs",
+        redoc_url=None if production else "/redoc",
+        openapi_url=None if production else "/openapi.json",
+    )
     # The static export mounts on this app (run.py::build), so one middleware
     # covers both the frontend bundle and JSON. Starlette's default exclusions
     # already skip `text/event-stream` (the run-events tail must stream, not
@@ -109,6 +268,16 @@ def create_app(*, settings: Settings, store: DomainStore, engine: Any) -> FastAP
         minimum_size=1024,
         exclude_content_types=DEFAULT_EXCLUDED_CONTENT_TYPES + (XLSX_MEDIA_TYPE,),
     )
+    # add_middleware PREPENDS, so the last added is the outermost. Execution
+    # order is therefore SecurityHeaders -> EdgeIdentityGate -> RequestCeilings
+    # -> GZip -> routes, which is what these three need: headers ride on every
+    # response including the refusals; an unauthenticated caller is refused
+    # before FastAPI validates the request shape (so no /api route can answer
+    # 422 to a caller it never authenticated); and the ceilings therefore always
+    # know a real subject to charge.
+    app.add_middleware(RequestCeilings, settings=settings)
+    app.add_middleware(EdgeIdentityGate, settings=settings)
+    app.add_middleware(SecurityHeaders, production=production)
 
     @app.exception_handler(RequestValidationError)
     async def validation_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
@@ -145,7 +314,11 @@ def create_app(*, settings: Settings, store: DomainStore, engine: Any) -> FastAP
 
     @app.post("/api/cases", status_code=201, response_model=wire.CaseDetailResponse)
     def create_case(request: Request, body: CreateCaseRequest = Body(...)) -> dict[str, Any]:
+        # create_case stores its creator as case ANALYST, so a reader creating
+        # cases would mint latent case authority that activates the moment the
+        # IdP promotes the account. Writers only.
         who = identity(request)
+        require_role(who, "ANALYST", "APPROVER", "ADMIN")
         return _wire_case(store.create_case(body.name, body.issuer, body.sector, who.subject))
 
     @app.get("/api/cases", response_model=list[wire.CaseResponse])
@@ -188,7 +361,7 @@ def create_app(*, settings: Settings, store: DomainStore, engine: Any) -> FastAP
         if upload is None or isinstance(upload, str):
             raise HTTPException(status_code=422, detail="multipart field 'file' is required")
         saved = await ingest_upload(store, Vault(settings), case_id, who.subject,
-                                    upload, max_bytes=settings.max_upload_bytes)
+                                    upload, max_bytes=settings.max_source_bytes)
         return _wire_source(saved, source_set=saved["source_set"])
 
     def visible_source(case_id: str, source_id: str, request: Request) -> dict[str, Any]:

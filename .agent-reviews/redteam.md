@@ -216,3 +216,120 @@ with no CAS.
 - Not exercised: a live reverse proxy/IdP, a live Anthropic request, a real
   two-process worker race (the claim and re-point are driven through the same
   store CAS the two processes share), or the frontend suites.
+
+## 2026-08-29 — Remediation of the remaining warnings
+
+Reviewer: continuation of the 2026-08-28 pass, closing the warnings left open
+there. Every code fix is proven by disarming it and watching its own test go red;
+the deployment fixes are marked honestly where they could not be executed here.
+
+### Fixed in the application
+
+1. **The route audit is sound, because the app made it so.** The real defect was
+   never a specific unauthenticated route — probing confirmed a body-required
+   endpoint returns `401` to a valid unauthenticated body — it was that FastAPI
+   validates the body before the handler, so `422` and "no auth at all" are
+   indistinguishable to `run_sec_audit.py`. `EdgeIdentityGate` (pure ASGI, so
+   the run-events tail keeps streaming) now refuses unauthenticated `/api`
+   callers before routing, and the audit requires `401` with no `422`
+   whitelist and additionally probes each route with a body. Soundness was
+   demonstrated both ways: an injected unauthenticated body-required route that
+   previously served `200` to a valid anonymous body now returns `401`, and
+   removing the gate turns the audit red with 30 failures.
+2. **Production refuses documented placeholder secrets.** `validate_runtime`
+   rejects the dev literals, any `change-me`/`replace-me`/`example`-prefixed
+   value, anything under 32 characters, and a placeholder `POSTGRES_PASSWORD`
+   read out of `DATABASE_URL` (the only place the app can see it).
+   `.env.example` now ships every required secret EMPTY, so Compose's
+   `${VAR:?}` fails closed on a half-filled file rather than booting on a
+   predictable value. This is a deliberate upgrade gate: a deployment running a
+   short secret will refuse to start until it is regenerated.
+3. **Case creation requires a writer role.** A global `READER` could create
+   cases and was stored as case `ANALYST` — latent authority that would activate
+   on the next IdP promotion.
+4. **Browser hardening on every response.** `SecurityHeaders` sets CSP, nosniff,
+   `Referrer-Policy`, `Permissions-Policy` and `Cross-Origin-Opener-Policy`, with
+   HSTS in production only (pinning HTTPS for localhost would wedge a developer's
+   browser). It lives in the app, not Caddy, because the app is the origin for
+   the static export and the JSON API alike — one place, unit-tested. `script-src`
+   keeps `'unsafe-inline'`: the static export ships two inline bootstrap scripts
+   whose payload changes each build, so neither a nonce nor a hash is available.
+   `/docs`, `/redoc` and `/openapi.json` are off in production; `app.openapi()`
+   still serves the contract tests in-process.
+5. **Per-subject admission ceilings.** `RequestCeilings` charges a token bucket
+   per authenticated subject (300/min) and caps the two shapes the bucket cannot
+   see because they hold a worker for their whole lifetime: concurrent
+   run-events streams (4) and in-flight model previews (2). Keyed by subject,
+   not IP — an IP punishes an office behind one NAT and does not slow one
+   account with a token. Verified against the live UI: 60 rapid reads all `200`.
+6. **A route-specific source cap.** Sources are now capped at 25 MiB
+   (`MAX_SOURCE_MB`) with the edge body cap lowered to 32 MiB — the transport
+   ceiling and "what a governed source may be" are different questions.
+7. **Every wire string list is bounded per item.** `max_length` on a list bounds
+   the count only; `focus_questions` and the four `ThesisRequest` lists could
+   each carry unbounded bytes into pinned state, run events and every compiled
+   prompt.
+8. **The export failure fallback is CAS-bound**, like the build half already was.
+
+### Fixed in deployment and CI
+
+- Every GitHub Action is pinned to a commit SHA. The Trivy installer is fetched
+  from the release tag rather than `main` and verified against a SHA-256 before
+  it is executed — a `curl | sh` from a mutable branch runs whatever that branch
+  holds at the moment CI fires.
+- `postgres`, `clamav`, `caddy` and `alpine` are digest-pinned (resolved from
+  the registry, not guessed). oauth2-proxy and the Python base image already were.
+- Backups are encrypted to an `age` recipient, with the plaintext dump never
+  landing on disk. age is an AEAD, so it supplies the authenticity an unkeyed
+  `cksum` beside the data never could: an attacker who can rewrite the archive
+  can rewrite the checksum, but cannot forge the ciphertext. The manifest's
+  SHA-256 is demoted to an honest corruption pre-check. Key handling, rotation,
+  retention, destination ACLs and two-person restore authorization are written
+  into the script header as policy the script cannot enforce.
+- Both deploy scripts moved to `bash` with `set -euo pipefail`. **This was a bug
+  introduced by the encryption change and caught in the confidence pass:** under
+  POSIX `sh` a pipeline reports only its last command, so a failed `pg_dump`
+  piped into `age` still produced a valid encryption of zero bytes that
+  `test -s` accepted — a "successful" backup of nothing.
+- The AI PR reviewer's secret-bearing step is conditioned on the PR head being
+  same-repo, and the activation notes now name the protected-environment gate as
+  the control that actually addresses a compromised contributor.
+
+### Tests
+
+Nine added, each proven red with its fix disarmed:
+`test_unauthenticated_requests_are_refused_before_request_shape_validation`,
+`test_production_serves_no_framework_documentation_surface`,
+`test_production_refuses_documented_placeholder_secrets`,
+`test_global_reader_cannot_create_a_case`,
+`test_every_response_carries_the_browser_hardening_headers`,
+`test_focus_questions_and_thesis_items_are_bounded_per_item`,
+`test_a_crashing_export_pass_never_clobbers_an_export_published_under_it`,
+`test_per_subject_rate_ceiling_refuses_and_is_not_shared_between_subjects`, and
+`test_concurrent_stream_slots_are_capped_and_always_returned` (driven against
+the middleware directly — `TestClient` cannot hold an endless SSE body open).
+
+### Still open
+
+- **The backup round trip is unexercised here.** Neither `age` nor a running
+  Compose stack exists in the dev worktree, so the scripts are syntax-checked
+  only. Drill a real encrypt/verify/decrypt/restore before relying on them.
+- Dockerfile apt packages, `libreoffice-calc` included, remain unversioned.
+- `requirements.txt` pins versions, not hashes.
+- Exports have no claim at all — two workers would both render one export.
+- `RequestCeilings` counts in-process, so ceilings are per app instance. That
+  matches the single-instance deployment the SQLite checkpoints already force.
+- Both "needs manual review" items (external LLM data governance; encryption,
+  monitoring and incident response outside the repository) are unchanged.
+
+### Verification record
+
+- Backend suite: **401 passed** (392 before), one unrelated Starlette/httpx
+  deprecation warning. `ruff check`: clean. `run_sec_audit.py`: 42 routes, zero
+  failures under the strict `401` rule.
+- Live UI check against the combined app: the register renders with no CSP
+  violation and no blocked resource; 60 rapid reads all `200`; a `.exe` is
+  refused `415`, an empty file `422`, a 26 MiB file `413`.
+- Middleware order verified empirically rather than by reasoning about
+  `add_middleware` prepend semantics: unauthenticated → `401` from the gate
+  (not `422`, not `429`), and both the `401` and the `429` carry the CSP.

@@ -184,7 +184,8 @@ class ModelStore:
         return public_build(dict(row)) if row else None
 
     def update_build(self, build_id: str, *, expected_status: tuple[str, ...] | None = None,
-                     expected_input_fingerprint: str | None = None, **values: Any) -> bool:
+                     expected_input_fingerprint: str | None = None,
+                     expected_export_status: str | None = None, **values: Any) -> bool:
         with self.engine.begin() as conn:
             where = [model_builds.c.id == build_id]
             if expected_status is not None:
@@ -192,6 +193,8 @@ class ModelStore:
             if expected_input_fingerprint is not None:
                 # An executor may only publish under the identity it computed from.
                 where.append(model_builds.c.input_fingerprint == expected_input_fingerprint)
+            if expected_export_status is not None:
+                where.append(model_builds.c.export["status"].as_string() == expected_export_status)
             return bool(conn.execute(sa.update(model_builds).where(*where).values(**values)).rowcount)
 
     def active_build_count(self) -> int:
@@ -296,10 +299,14 @@ class ModelStore:
             return None
         return self.get_revision(head["revision_id"])
 
-    def update_revision_export(self, revision_id: str, export: dict[str, Any]) -> None:
+    def update_revision_export(self, revision_id: str, export: dict[str, Any], *,
+                               expected_export_status: str | None = None) -> bool:
         # The export pointer is job state riding beside the immutable record.
         with self.engine.begin() as conn:
-            conn.execute(sa.update(model_revisions).where(model_revisions.c.id == revision_id).values(export=export))
+            where = [model_revisions.c.id == revision_id]
+            if expected_export_status is not None:
+                where.append(model_revisions.c.export["status"].as_string() == expected_export_status)
+            return bool(conn.execute(sa.update(model_revisions).where(*where).values(export=export)).rowcount)
 
     def revision_order(self, case_id: str) -> list[int]:
         with self.engine.connect() as conn:
