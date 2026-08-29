@@ -44,12 +44,28 @@ Everything below rests on `backup.sh` + `restore_drill.sh`. Two known problems:
    PostgreSQL 17: they pass on a clean restore, and they fail on a malformed
    `payload_digest`, a malformed export `vault_key`, and a malformed
    `run_artifacts.digest`.
-2. **The `age` encryption path has never been executed.** `backup.sh` and
-   `restore_drill.sh` encrypt and decrypt with `age`, but no drill has been run
-   since. Until one has, treat the backup as unproven.
+2. **`restore_drill.sh` required the `app` service to be running.** Its model
+   payload check used `compose exec -T app`, which fails with
+   `service "app" is not running` — precisely when the drill matters most, since
+   a rehearsal during a maintenance window happens with the app stopped. Now
+   `compose run --rm --no-deps`, which starts a one-off container instead.
 
-**Do not proceed past this step until a real backup has been taken and restored
-through `restore_drill.sh` on live data.** An untested backup is a belief.
+Both were found by running the drill rather than reading it. The `age` path has
+since been exercised end to end against a seeded stack: `pg_dump` → encrypt →
+manifest → decrypt → manifest verify → isolated restore → schema assertions →
+payload digest recomputation → vault artifact verification, ending in
+`restore drill passed`. A single flipped ciphertext byte fails to decrypt rather
+than restoring silently, which is the authenticity property an unkeyed checksum
+beside the data could never provide.
+
+**Still do a drill on YOUR data before the window.** The rehearsal above proves
+the scripts work; it does not prove anything about your corpus, your key
+handling, or your backup destination.
+
+Note: `restore_drill.sh` shells out to `docker compose`, and `compose run`
+interpolates the whole compose file. Run it from a shell that has the
+deployment's environment loaded, or every `${VAR:?}` will stop you before the
+restore starts.
 
 ## Why dump/restore, not `pg_upgrade`
 
@@ -93,8 +109,10 @@ docker compose -f caos/deploy/docker-compose.yml exec -T db psql -Atq -U caos -d
 CAOS_BACKUP_RECIPIENT="$RECIPIENT" caos/deploy/backup.sh "$OUT"
 ```
 
-**5. Go / no-go: restore that exact backup.** This is the gate. If it fails,
-stop and restart `app` and `worker` — you have lost nothing.
+**5. Go / no-go: restore that exact backup.** This is the gate. It restores
+into an isolated database and volume, so it is safe to run with the application
+stopped and touches nothing live. If it fails, restart `app` and `worker` — you
+have lost nothing.
 
 ```bash
 CAOS_BACKUP_IDENTITY="$IDENTITY" caos/deploy/restore_drill.sh "$OUT/caos.dump.age"
