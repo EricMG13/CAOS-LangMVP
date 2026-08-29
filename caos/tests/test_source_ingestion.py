@@ -112,9 +112,69 @@ async def test_xlsx_extraction_caps_fail_closed(store, vault, case_id, monkeypat
     await assert_rejected(store, vault, case_id, "sheets.xlsx", xlsx_bytes([["a"]], sheets=2))
 
 
-async def test_long_line_extraction_cap_fails_closed(store, vault, case_id, monkeypatch):
-    monkeypatch.setattr(sources_domain, "MAX_SOURCE_LINE", 8)
-    await assert_rejected(store, vault, case_id, "line.txt", b"far too long a line")
+async def test_over_wide_line_is_split_into_bounded_blocks_rather_than_refused(store, vault, case_id):
+    """An inline-XBRL filing is a whole document on one line. Refusing it loses
+    a real filing over its whitespace, so the extractor splits: every block
+    stays quotable, and no character of the evidence is dropped on the way."""
+    line = "".join(f"fact-{index:06d} " for index in range(6_000))
+    assert len(line) > sources_domain.MAX_BLOCK_CHARS
+    result = await ingest(store, vault, case_id, "inline.txt", line.encode())
+
+    blocks = result["blocks"]
+    assert len(blocks) > 1
+    assert max(len(block["text"]) for block in blocks) <= sources_domain.MAX_BLOCK_CHARS
+    assert "".join(block["text"] for block in blocks) == line, "split dropped evidence"
+    assert [block["locator"] for block in blocks] == [
+        {"line": 1, "part": part} for part in range(1, len(blocks) + 1)
+    ]
+    assert {block["extractor_version"] for block in blocks} == {"builtin-v2"}
+
+
+async def test_large_document_keeps_block_count_inside_the_run_manifest_ceiling(store, vault, case_id):
+    """A 300-page credit agreement indexed line by line costs more context than
+    a module is given to think with — the run manifest carries one row per block
+    into every module prompt. Block count therefore has to stay bounded whatever
+    the document's size, and several such documents must still pin one run."""
+    from caos.engine.budget import MAX_MANIFEST_BLOCKS, bound_manifest
+
+    paragraph = "The Borrower shall not permit the Total Net Leverage Ratio to exceed 4.50:1.00. "
+    document = "\n".join(f"{index}. {paragraph * 12}" for index in range(12_000))
+    assert len(document) > 8_000_000
+
+    sources = []
+    for copy in range(3):
+        body = f"{copy}{document}"
+        source = await ingest(store, vault, case_id, f"agreement-{copy}.txt", body.encode())
+        blocks = source["blocks"]
+        # ~585 blocks for ~11.7 MB: count is set by MAX_BLOCK_CHARS, not by the
+        # 12,000 lines, so it does not track the document's length.
+        assert len(blocks) < len(document.splitlines()) / 15, "block count tracked document size"
+        assert max(len(block["text"]) for block in blocks) <= sources_domain.MAX_BLOCK_CHARS
+        assert "\n".join(block["text"] for block in blocks) == body, "grouping dropped evidence"
+        assert [block["locator"]["lines"][0] for block in blocks] == \
+            sorted(block["locator"]["lines"][0] for block in blocks), "line ranges are out of order"
+        sources.append(source)
+
+    manifest = [
+        {
+            "source_id": source["id"], "sha256": source["sha256"],
+            "filename": source["filename"], "media_type": source["media_type"],
+            "blocks": [
+                {key: block.get(key) for key in ("block_id", "locator", "extractor_version", "confidence")}
+                for block in source["blocks"]
+            ],
+        }
+        for source in sources
+    ]
+    rows = len(manifest) + sum(len(entry["blocks"]) for entry in manifest)
+    assert rows <= MAX_MANIFEST_BLOCKS
+    bound_manifest(manifest)  # the ceiling that used to fail the run before its first provider call
+
+
+async def test_text_beyond_the_extraction_ceiling_is_still_refused(store, vault, case_id, monkeypatch):
+    """Bounded blocks are not an excuse to accept an unbounded document."""
+    monkeypatch.setattr(sources_domain, "MAX_SOURCE_TEXT", 100)
+    await assert_rejected(store, vault, case_id, "huge.txt", b"x " * 200)
 
 
 async def test_eicar_content_is_rejected(store, vault, case_id):

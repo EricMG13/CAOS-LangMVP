@@ -23,8 +23,25 @@ ALLOWED_SUFFIXES = {".pdf", ".xlsx", ".json", ".txt", ".md", ".csv"}
 MAX_ZIP_ENTRIES = 2000
 MAX_ZIP_RATIO = 100
 MAX_ZIP_UNCOMPRESSED = 100_000_000
-MAX_SOURCE_TEXT = 2_000_000
-MAX_SOURCE_LINE = 20_000
+# A real annual report, credit agreement or lender presentation is 0.5-3 MB of
+# extracted text; 12 MB leaves headroom without admitting an EDGAR complete
+# submission package, which is a bundle of uuencoded exhibits rather than a
+# document. The 25 MB route ceiling still bounds what is read off the wire.
+MAX_SOURCE_TEXT = 12_000_000
+# A block is the quotable unit and one row of every module's source manifest,
+# so both its size and its count are bounded. A line longer than MAX_BLOCK_CHARS
+# is split, never refused: an inline-XBRL filing is a whole document on one
+# line, and refusing it loses a real filing over its whitespace.
+MAX_BLOCK_CHARS = 20_000
+# The run manifest carries one row per block into every module prompt, so block
+# count must not track document size. Past this many, lines are grouped into
+# blocks wide enough to hold the count down. It is a switch point, not a hard
+# cap: once the width needed would exceed MAX_BLOCK_CHARS the count grows again,
+# to at most MAX_SOURCE_TEXT / MAX_BLOCK_CHARS = 600 for any shape of document.
+MAX_BLOCKS_PER_SOURCE = 320
+# Floor on a grouped block, so a merely-large document is not chopped into
+# hundreds of fragments when a few hundred would index it just as well.
+TARGET_BLOCK_CHARS = 4_000
 MAX_XLSX_EXTRACT_WORKSHEETS = 64
 MAX_XLSX_EXTRACT_ROWS = 25_000
 MAX_XLSX_EXTRACT_COLUMNS = 64
@@ -256,22 +273,7 @@ def extract_blocks(filename: str, content: bytes) -> list[dict[str, Any]]:
         )
     if len(text) > MAX_SOURCE_TEXT:
         raise HTTPException(status_code=422, detail=EXTRACTION_LIMIT_DETAIL)
-    blocks = []
-    for index, line in enumerate(text.splitlines() or [text], start=1):
-        if line.strip():
-            if len(line) > MAX_SOURCE_LINE:
-                raise HTTPException(status_code=422, detail=EXTRACTION_LIMIT_DETAIL)
-            blocks.append(
-                {
-                    "block_id": f"b{index:05d}",
-                    "locator": {"line": index},
-                    "text": line,
-                    "extractor_version": "builtin-v1",
-                    "confidence": "MEDIUM",
-                    "untrusted_data": True,
-                }
-            )
-    return blocks or [
+    return pack_blocks(text) or [
         {
             "block_id": "b00001",
             "locator": {"line": 1},
@@ -281,6 +283,85 @@ def extract_blocks(filename: str, content: bytes) -> list[dict[str, Any]]:
             "untrusted_data": True,
         }
     ]
+
+
+def _fragments(text: str) -> list[tuple[int, int, str]]:
+    """Non-blank lines as (line, part, text), splitting any line wider than a
+    block. `part` is 0 for a line that was not split, so an ordinary document
+    keeps exactly the block ids and locators it had before blocks were bounded."""
+    fragments: list[tuple[int, int, str]] = []
+    for index, line in enumerate(text.splitlines() or [text], start=1):
+        if not line.strip():
+            continue
+        if len(line) <= MAX_BLOCK_CHARS:
+            fragments.append((index, 0, line))
+            continue
+        for part, start in enumerate(range(0, len(line), MAX_BLOCK_CHARS), start=1):
+            fragments.append((index, part, line[start:start + MAX_BLOCK_CHARS]))
+    return fragments
+
+
+def _block(block_id: str, locator: dict[str, Any], text: str, version: str) -> dict[str, Any]:
+    return {
+        "block_id": block_id,
+        "locator": locator,
+        "text": text,
+        "extractor_version": version,
+        "confidence": "MEDIUM",
+        "untrusted_data": True,
+    }
+
+
+def _line_block(index: int, part: int, fragment: str) -> dict[str, Any]:
+    """One line, or one slice of an over-wide line. An unsplit line keeps
+    exactly the id and locator the extractor produced before blocks were
+    bounded, which is what leaves ordinary documents untouched."""
+    if not part:
+        return _block(f"b{index:05d}", {"line": index}, fragment, "builtin-v1")
+    return _block(f"b{index:05d}p{part:02d}", {"line": index, "part": part}, fragment, "builtin-v2")
+
+
+def pack_blocks(text: str) -> list[dict[str, Any]]:
+    """Evidence blocks: one per line while a document is small, bounded groups
+    of lines once it is not.
+
+    Block count has to stay bounded independently of document size. The run's
+    source manifest carries one row per block into *every* module prompt, so a
+    300-page credit agreement indexed line by line costs more context than a
+    module is given to think with -- which is why such a run used to die in
+    `bound_manifest` before its first provider call. Grouping keeps that index
+    affordable; MAX_BLOCK_CHARS keeps any single block quotable and keeps one
+    evidence read inside its byte budget.
+    """
+    fragments = _fragments(text)
+    if not fragments:
+        return []
+    if len(fragments) <= MAX_BLOCKS_PER_SOURCE:
+        return [_line_block(*fragment) for fragment in fragments]
+
+    width = min(MAX_BLOCK_CHARS, max(TARGET_BLOCK_CHARS, math.ceil(len(text) / MAX_BLOCKS_PER_SOURCE)))
+    blocks: list[dict[str, Any]] = []
+    buffer: list[str] = []
+    first = last = fragments[0][0]
+    size = 0
+
+    def flush() -> None:
+        nonlocal buffer, size
+        if buffer:
+            blocks.append(_block(f"b{len(blocks) + 1:05d}", {"lines": [first, last]},
+                                 "\n".join(buffer), "builtin-v2"))
+            buffer, size = [], 0
+
+    for index, _part, fragment in fragments:
+        if buffer and size + len(fragment) + 1 > width:
+            flush()
+        if not buffer:
+            first = index
+        buffer.append(fragment)
+        size += len(fragment) + 1
+        last = index
+    flush()
+    return blocks
 
 
 async def ingest_upload(
