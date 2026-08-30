@@ -73,6 +73,11 @@ FILE_MAP = {
     r"^\.github/dependabot\.yml": "F-OPS-09",
     r"^run_sec_audit\.py": "F-SEC-09",
     r"^(pytest\.ini|ruff\.toml)": "F-OPS-07",
+    # The quality process's own artifacts. Named rather than excluded, because
+    # "docs/ is not product" would also hide a future doc that IS a feature —
+    # and because this check first went red on exactly these three files, which
+    # were untracked when it was written and tracked the moment it was committed.
+    r"^docs/(QUALITY_[A-Z]+\.csv|quality_ledger_coverage\.py)$": "the ledger itself",
     r"^Modular OS/tools/": "F-OPS-07 (module consistency check)",
     r"^Modular OS/": "F-RUN-15 (methodology corpus the vendored bundle is built from)",
 }
