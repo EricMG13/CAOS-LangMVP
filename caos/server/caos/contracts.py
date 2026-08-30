@@ -80,10 +80,22 @@ DESTINATIONS = (
 )
 
 
+# Bidirectional embedding, override and isolate controls (CVE-2021-42574,
+# "Trojan Source"). These reorder how text DISPLAYS without changing a byte, so
+# a narrative can render one way to the approver binding its preview digest and
+# another to whoever reads the filed PDF. Directional MARKS (U+200E/U+200F,
+# U+061C) are deliberately not here: ordinary Arabic and Hebrew issuer names
+# need them, and they cannot reorder surrounding runs.
+BIDI_CONTROLS = frozenset(
+    "\u202a\u202b\u202c\u202d\u202e"  # LRE RLE PDF LRO RLO
+    "\u2066\u2067\u2068\u2069"          # LRI RLI FSI PDI
+)
+
+
 def validate_boundary_text(value: str) -> str:
     """Unicode boundary (DECISIONS §12.3): strings that can enter pinned state
-    or events must UTF-8-encode (no lone surrogates), carry no control bytes,
-    and are NFC-normalized before any pin is computed."""
+    or events must UTF-8-encode (no lone surrogates), carry no control bytes or
+    bidirectional overrides, and are NFC-normalized before any pin is computed."""
     import unicodedata
 
     try:
@@ -92,6 +104,8 @@ def validate_boundary_text(value: str) -> str:
         raise ValueError("text contains unencodable code points") from exc
     if any(ord(ch) < 32 and ch not in "\n\r\t" for ch in value):
         raise ValueError("text contains control characters")
+    if not BIDI_CONTROLS.isdisjoint(value):
+        raise ValueError("text contains bidirectional override characters")
     return unicodedata.normalize("NFC", value)
 
 
@@ -306,7 +320,7 @@ class ModelPreviewRequest(StrictModel):
 class ModelSignOffRequest(ModelPreviewRequest):
     preview_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     expected_head_revision_id: str | None = Field(default=None, max_length=120)
-    note: str = Field(min_length=1, max_length=2000)
+    note: BoundaryText = Field(min_length=1, max_length=2000)
 
     @field_validator("note")
     @classmethod
@@ -368,7 +382,7 @@ class OneWaySensitivityRequest(StrictModel):
 class EvidenceCitation(StrictModel):
     source_id: str = Field(min_length=1, max_length=120)
     block_ids: list[IdentifierItem] = Field(min_length=1, max_length=50)
-    claim: str = Field(min_length=1, max_length=1000)
+    claim: BoundaryText = Field(min_length=1, max_length=1000)
 
 
 class AnalystRevisionSelection(StrictModel):
@@ -396,12 +410,12 @@ class DeliverableBlock(StrictModel):
 
 class HeadingBlock(DeliverableBlock):
     kind: Literal["HEADING"]
-    text: str = Field(min_length=1, max_length=240)
+    text: BoundaryText = Field(min_length=1, max_length=240)
 
 
 class NarrativeBlock(DeliverableBlock):
     kind: Literal["NARRATIVE"]
-    text: str = Field(min_length=1, max_length=20_000)
+    text: BoundaryText = Field(min_length=1, max_length=20_000)
     content_mode: Literal["EVIDENCE", "ANALYST_JUDGMENT"]
     citations: list[EvidenceCitation] = Field(default_factory=list, max_length=100)
 
@@ -446,7 +460,7 @@ class ScenarioEnvelope(StrictModel):
 
 class ScenarioExhibitBlock(DeliverableBlock):
     kind: Literal["SCENARIO_EXHIBIT"]
-    title: str = Field(min_length=1, max_length=240)
+    title: BoundaryText = Field(min_length=1, max_length=240)
     shocks: list[ModelShock] = Field(min_length=1, max_length=256)
     scenario: ScenarioEnvelope
     scenario_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
@@ -463,7 +477,7 @@ class ModelAppendixBlock(DeliverableBlock):
 
 class LimitationsBlock(DeliverableBlock):
     kind: Literal["LIMITATIONS"]
-    text: str = Field(min_length=1, max_length=10_000)
+    text: BoundaryText = Field(min_length=1, max_length=10_000)
     citations: list[EvidenceCitation] = Field(default_factory=list, max_length=100)
 
 
@@ -501,7 +515,7 @@ class FileDeliverableRequest(StrictModel):
 
 
 class RequestDeliverableChangesRequest(FileDeliverableRequest):
-    comment: str = Field(min_length=1, max_length=2000)
+    comment: BoundaryText = Field(min_length=1, max_length=2000)
 
     @field_validator("comment")
     @classmethod

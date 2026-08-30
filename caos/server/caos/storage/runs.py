@@ -442,8 +442,12 @@ class RunStore:
             conn.execute(sa.update(run_budgets).where(run_budgets.c.run_id == run_id).values(
                 used=used, inflight_request_digest=None,
             ))
-            if used["input_tokens"] > limits.get("input_tokens", 0) or used["output_tokens"] > limits.get("output_tokens", 0):
-                raise StoreConflict("AGENT_BUDGET_EXCEEDED", "actual token usage exceeded the run budget")
+        # The correction commits BEFORE the refusal. Raising inside the
+        # transaction rolled the true-up back on the one path where it matters:
+        # the ledger kept showing the reservation instead of the tokens the
+        # provider actually billed, and the request stayed in flight forever.
+        if used["input_tokens"] > limits.get("input_tokens", 0) or used["output_tokens"] > limits.get("output_tokens", 0):
+            raise StoreConflict("AGENT_BUDGET_EXCEEDED", "actual token usage exceeded the run budget")
 
     def charge_budget(self, run_id: str, dimension: str, amount: int | float) -> None:
         with self.engine.begin() as conn:

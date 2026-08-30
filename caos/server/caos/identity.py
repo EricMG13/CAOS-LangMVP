@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hmac
 from dataclasses import dataclass
 from typing import Any
 
@@ -31,10 +32,21 @@ def _role_from_groups(groups: tuple[str, ...]) -> str:
     return "READER"
 
 
+def _edge_bytes(value: str | None) -> bytes:
+    """Bytes, not str, for the edge-secret comparison.
+
+    `compare_digest` is the point — `!=` leaks the secret's prefix through
+    timing — but its str form accepts ASCII only, and Starlette decodes headers
+    as latin-1, so a single high byte in the client's header would turn a 401
+    into a TypeError. Encoding both sides first is injective and total.
+    """
+    return (value or "").encode("utf-8", "surrogateescape")
+
+
 def identity_from_request(request: Request, settings: Settings) -> Identity:
-    if (
-        settings.environment == "production"
-        and request.headers.get("x-edge-authorization") != settings.edge_proxy_secret
+    if settings.environment == "production" and not hmac.compare_digest(
+        _edge_bytes(request.headers.get("x-edge-authorization")),
+        _edge_bytes(settings.edge_proxy_secret),
     ):
         raise HTTPException(status_code=401, detail="trusted edge identity required")
     subject = request.headers.get("x-forwarded-user") or request.headers.get(

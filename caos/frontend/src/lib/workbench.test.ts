@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { acceptedAuthorityMatch, formatBlockLocator, humanizeCode, moduleLabel, withQuery } from "./workbench.ts";
+import { acceptedAuthorityMatch, evidenceKind, formatBlockLocator, humanizeCode, moduleLabel, withQuery } from "./workbench.ts";
 
 test("every route path keeps its trailing slash", () => {
   assert.equal(withQuery("/run-console", { case: "case_1" }), "/run-console/?case=case_1");
@@ -59,4 +59,14 @@ test("acceptance aftermath binds to the matching snapshot id", () => {
   assert.equal(acceptedAuthorityMatch(null, "snap_a", "snap_a"), "snap_a", "the locally returned snapshot covers a server without the run field");
   assert.equal(acceptedAuthorityMatch("snap_a", "snap_b", "snap_a"), "snap_a", "the served run field wins over local state");
   assert.equal(acceptedAuthorityMatch("snap_a", "snap_b", "snap_b"), "", "local state never overrides a served mismatch");
+});
+
+test("an evidence id resolves whatever this store minted", () => {
+  assert.equal(evidenceKind("src-6b1f2a"), "source");
+  assert.equal(evidenceKind("art-6b1f2a"), "artifact");
+  // A promoted analyst note is `src-note-<hex>`: the tail is itself hyphenated.
+  assert.equal(evidenceKind("src-note-6b1f2a"), "source");
+  assert.equal(evidenceKind("  src_6b1f2a  "), "source", "the legacy underscore form still resolves");
+  assert.equal(evidenceKind("case-6b1f2a"), null);
+  assert.equal(evidenceKind("src-"), null);
 });

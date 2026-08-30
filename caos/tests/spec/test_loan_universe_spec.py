@@ -497,3 +497,36 @@ async def test_cp3_artifact_binds_the_pinned_normalized_loan_universe(client, st
 # test_postgres_loan_import_and_withdrawal_serialize_without_deadlock (test_ledger_contracts.py) -> test_withdraw_then_import_refuses_with_a_typed_source_not_active + test_import_then_withdraw_leaves_the_universe_withdrawn_and_inactive + test_withdrawal_injected_inside_the_import_window_never_yields_an_active_universe (the two-connection Postgres deadlock staging is inexpressible without Postgres; the serialization guarantee is asserted via both sequential orders plus an injected interleaving)
 # test_loan_universe_migration_has_atomic_identity_and_active_constraints -> not ported: MECHANISM row (asserts legacy migration SQL text; the constraint intent — identity uniqueness, one ACTIVE — is asserted behaviorally above)
 # test_loan_universe_source_foreign_key_migration_backfills_before_validation -> not ported: MECHANISM row (legacy Postgres migration-file text with no behavioral counterpart)
+
+
+def test_relationships_part_declaring_a_dtd_is_refused_without_expanding_it():
+    """The screen parses attacker-supplied XML. `ElementTree.fromstring` expands
+    internal entities, so a few hundred bytes of .rels became tens of megabytes
+    of allocation inside the very function that exists to refuse hostile
+    packages. An OOXML part carries no DTD: refuse the declaration."""
+    import time
+    import tracemalloc
+
+    from caos.artifacts.loan_universe import LoanWorkbookValidationError, screen_package
+
+    entities = ['<!ENTITY lol "lol">'] + [
+        f'<!ENTITY lol{level} "{"&%s;" % ("lol" if level == 1 else f"lol{level - 1}") * 10}">'
+        for level in range(1, 10)
+    ]
+    bomb = ('<?xml version="1.0"?>\n<!DOCTYPE Relationships [\n' + "\n".join(entities)
+            + "\n]>\n<Relationships>&lol9;</Relationships>").encode()
+    content = io.BytesIO(_workbook_bytes())
+    with zipfile.ZipFile(content, "a") as archive:
+        archive.writestr("xl/worksheets/_rels/sheet1.xml.rels", bomb)
+
+    tracemalloc.start()
+    started = time.monotonic()
+    try:
+        with pytest.raises(LoanWorkbookValidationError) as raised:
+            screen_package(content.getvalue())
+        peak = tracemalloc.get_traced_memory()[1]
+    finally:
+        tracemalloc.stop()
+    assert "RV_PACKAGE_INVALID" in _codes(raised.value)
+    assert peak < 8_000_000, f"the declaration must be refused, not expanded (peak {peak} bytes)"
+    assert time.monotonic() - started < 1.0

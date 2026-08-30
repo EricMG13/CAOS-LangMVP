@@ -1378,6 +1378,21 @@ async def test_model_reads_are_case_scoped_and_downloads_are_verified(client, mo
     assert tampered.status_code == 409
     assert tampered.json()["detail"] == "MODEL_EXPORT_INTEGRITY_FAILED"
 
+    # Anything that is not the recorded regular file is refused with the same
+    # typed code. A plain read_bytes raised IsADirectoryError here — an OSError
+    # the route's ValueError handler never saw, so this answered 500.
+    stored = settings.storage_dir / export["vault_key"]
+    stored.unlink()
+    stored.mkdir()
+    not_a_file = client.get(f"/api/cases/{case['id']}/models/{build['id']}/download", headers=_ANALYST)
+    assert not_a_file.status_code == 409
+    assert not_a_file.json()["detail"] == "MODEL_EXPORT_INTEGRITY_FAILED"
+
+    stored.rmdir()
+    stored.symlink_to(settings.storage_dir / "elsewhere.xlsx")
+    symlinked = client.get(f"/api/cases/{case['id']}/models/{build['id']}/download", headers=_ANALYST)
+    assert symlinked.status_code == 409, "a symlink standing in for the export is never followed"
+
 
 # ROW MAPPING
 # test_cp_model.py rows:

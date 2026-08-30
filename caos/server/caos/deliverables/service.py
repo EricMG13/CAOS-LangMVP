@@ -19,6 +19,12 @@ import threading
 from pathlib import Path
 from typing import Any, Callable
 
+from ..atomic_files import (
+    MAX_EXPORT_BYTES,
+    VaultFileIntegrityError,
+    VaultFileUnavailable,
+    read_verified_vault_bytes,
+)
 from ..contracts import (
     DeliverableDraftRequest,
     FileDeliverableRequest,
@@ -637,12 +643,21 @@ class DeliverableService:
     def export(self, deliverable_id: str, format_name: str) -> tuple[bytes, str]:
         record = self._frozen_by_id(deliverable_id)
         recorded = (record["exports"] or {}).get(format_name)
-        path = self.vault_dir / "deliverables" / record["thread_id"] / format_name
-        if recorded is None or not path.is_file():
+        if recorded is None:
             raise ValueError("DELIVERABLE_EXPORT_UNAVAILABLE: no stored export for this format")
-        content = path.read_bytes()
-        if hashlib.sha256(content).hexdigest() != recorded["sha256"] or len(content) != recorded["size"]:
-            raise ValueError("DELIVERABLE_EXPORT_INTEGRITY_FAILED: stored bytes do not match the frozen record")
+        # Read through the no-follow descriptor chain, verified against the
+        # frozen record's digest AND length, so a symlink or a non-regular file
+        # standing where the export should be is refused rather than followed.
+        try:
+            content = read_verified_vault_bytes(
+                self.vault_dir, f"deliverables/{record['thread_id']}/{format_name}",
+                expected_sha256=recorded["sha256"], expected_size=recorded["size"],
+                max_bytes=MAX_EXPORT_BYTES,
+            )
+        except VaultFileUnavailable as exc:
+            raise ValueError("DELIVERABLE_EXPORT_UNAVAILABLE: no stored export for this format") from exc
+        except VaultFileIntegrityError as exc:
+            raise ValueError("DELIVERABLE_EXPORT_INTEGRITY_FAILED: stored bytes do not match the frozen record") from exc
         return content, recorded["sha256"]
 
     def _frozen_by_id(self, deliverable_id: str) -> dict[str, Any]:

@@ -29,6 +29,13 @@ from ..contracts import (
     OneWaySensitivityRequest,
     digest,
 )
+from ..atomic_files import (
+    MAX_EXPORT_BYTES,
+    VaultFileIntegrityError,
+    VaultFileUnavailable,
+    publish_hash_addressed_bytes,
+    read_verified_vault_bytes,
+)
 from ..storage.models import ModelStore
 from ..storage.store import DomainStore, now_iso
 from .engine import CpModelBundle, ModelInputError, json_value, project_cp2b
@@ -38,6 +45,12 @@ MAX_EFFECTIVE_ASSUMPTIONS = 256
 MAX_SENSITIVITY_POINTS = 41
 MAX_CALCULATION_SECONDS = 30.0
 MAX_ERROR_DETAIL_CHARS = 2_000
+# ponytail: the per-build caches hold a whole resolved snapshot (six canonical
+# documents plus the assumption rows), and this service lives as long as the
+# process. Work is newest-build-first, so a handful of entries covers every
+# real access pattern; without a bound the API and the worker retain every
+# build they ever resolved. Raise it if a workload proves it needs to.
+MAX_CACHED_BUILDS = 8
 BUILD_ERROR_CODES = {
     "MODEL_INPUT_INVALID",
     "MODEL_CALCULATION_FAILED",
@@ -315,7 +328,7 @@ class ModelService:
         resolved = self._resolve_snapshot(snapshot)
         if resolved["input_fingerprint"] != build["input_fingerprint"]:
             raise ModelInputError("model inputs changed")
-        self._resolved_cache[build["id"]] = resolved
+        _remember(self._resolved_cache, build["id"], resolved)
         return resolved
 
     @staticmethod
@@ -345,7 +358,7 @@ class ModelService:
             rows = _assumption_rows(model)
             rows = self._apply_evolution(build["id"], rows)
             cached = (rows, _annual_outputs(calculations))
-            self._defaults_cache[build["id"]] = cached
+            _remember(self._defaults_cache, build["id"], cached)
         return copy.deepcopy(cached[0]), copy.deepcopy(cached[1])
 
     def _apply_evolution(self, build_id: str, rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -405,7 +418,7 @@ class ModelService:
         }
         rows = self._apply_evolution(build["id"], _assumption_rows(model))
         outputs = _annual_outputs(calculations)
-        self._defaults_cache[build["id"]] = (rows, outputs)
+        _remember(self._defaults_cache, build["id"], (rows, outputs))
         identity = {"assumptions_digest": digest(rows), "outputs_digest": digest(outputs)}
         return result, identity
 
@@ -852,13 +865,17 @@ class ModelService:
     def _publish(self, case_id: str, target_id: str, content: bytes) -> dict[str, Any]:
         import hashlib
 
+        # Hash-addressed atomic publish: O_EXCL + fsync + rename, identity
+        # characters checked, and an already-present target verified byte for
+        # byte rather than overwritten. A plain write_bytes left a truncated
+        # file behind on a crash for `download` to refuse later.
         sha256 = hashlib.sha256(content).hexdigest()
-        relative = Path("models") / case_id / target_id / f"{sha256}.xlsx"
-        path = self.vault_dir / relative
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_bytes(content)
-        return {"status": "READY", "vault_key": str(relative), "filename": f"{target_id}.xlsx",
-                "sha256": sha256, "size": len(content)}
+        _path, vault_key, size = publish_hash_addressed_bytes(
+            self.vault_dir, ("models", case_id, target_id), "xlsx", content,
+            expected_sha256=sha256, max_bytes=MAX_EXPORT_BYTES,
+        )
+        return {"status": "READY", "vault_key": vault_key, "filename": f"{target_id}.xlsx",
+                "sha256": sha256, "size": size}
 
     def _render_bytes(self, build: dict[str, Any], effective: list[dict[str, Any]] | None) -> bytes:
         deadline = self._new_deadline()
@@ -921,11 +938,18 @@ class ModelService:
         export = record.get("export") or {}
         if export.get("status") != "READY":
             raise ValueError("MODEL_EXPORT_NOT_READY")
-        import hashlib
-
-        content = (self.vault_dir / export["vault_key"]).read_bytes()
-        if hashlib.sha256(content).hexdigest() != export["sha256"] or len(content) != export["size"]:
-            raise ValueError("MODEL_REVISION_EXPORT_INTEGRITY_FAILED" if is_revision else "MODEL_EXPORT_INTEGRITY_FAILED")
+        # Read through the no-follow descriptor chain: the stored bytes are
+        # verified against the recorded digest AND length, and a symlink or a
+        # non-regular file where the export should be is refused outright.
+        try:
+            content = read_verified_vault_bytes(
+                self.vault_dir, export["vault_key"], expected_sha256=export["sha256"],
+                expected_size=export["size"], max_bytes=MAX_EXPORT_BYTES,
+            )
+        except (VaultFileUnavailable, VaultFileIntegrityError) as exc:
+            raise ValueError(
+                "MODEL_REVISION_EXPORT_INTEGRITY_FAILED" if is_revision else "MODEL_EXPORT_INTEGRITY_FAILED"
+            ) from exc
         return content, export["sha256"]
 
     # -- test seams ----------------------------------------------------------
@@ -967,6 +991,16 @@ class ModelService:
     def tamper_build_identity_for_tests(self, build_id: str, field: str) -> None:
         assert field in {"input_fingerprint", "payload_digest", "registry_digest", "snapshot_id", "assumptions_digest", "outputs_digest"}
         self.builds.update_build(build_id, **{field: "0" * 64})
+
+
+def _remember(cache: dict[str, Any], key: str, value: Any) -> Any:
+    """Insert, then evict the oldest entries past MAX_CACHED_BUILDS.
+    Plain dicts keep insertion order, so the first key is the oldest."""
+    cache.pop(key, None)
+    cache[key] = value
+    while len(cache) > MAX_CACHED_BUILDS:
+        del cache[next(iter(cache))]
+    return value
 
 
 # -- pure row/output projections (shape shared with the assumption contract) --

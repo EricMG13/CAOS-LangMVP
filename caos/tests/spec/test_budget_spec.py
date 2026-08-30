@@ -242,3 +242,27 @@ async def test_secret_bearing_provider_failure_never_persists_secret_or_evidence
     assert "pinned evidence line" not in serialized, "evidence text never persists in failure metadata"
     record = engine.get_run(run["id"])
     assert record["error"]["code"] == "CANONICAL_GENERATION_FAILED", "run-level collapse rule (§12.9)"
+
+
+def test_reconcile_commits_the_actual_usage_before_it_refuses_the_overage(tmp_path):
+    """§12.12: the true-up is the ledger's record of what the provider actually
+    billed. Raising inside the store transaction rolled it back on exactly the
+    path where it matters, leaving the reservation on the books and the request
+    in flight forever."""
+    import sqlalchemy as sa
+
+    from caos.storage.runs import RunStore, StoreConflict
+
+    store = RunStore(sa.create_engine(f"sqlite:///{tmp_path / 'runs.db'}"))
+    run_id = store.create_run("case-1", "FULL_CREDIT", "full", "analyst")["id"]
+    store.init_budget(run_id, {"turns": 10, "input_tokens": 1_000, "output_tokens": 1_000})
+    store.reserve_provider(run_id, "digest-1", 100, 100, retry=False)
+
+    with pytest.raises(StoreConflict, match="AGENT_BUDGET_EXCEEDED"):
+        store.reconcile_provider(run_id, "digest-1", 100, 100, 100, 5_000)
+
+    budget = store.get_budget(run_id)
+    assert budget["used"]["output_tokens"] == 5_000, "the ledger records what was actually spent"
+    assert budget["inflight_request_digest"] is None, "the request is resolved, not stranded in flight"
+    with pytest.raises(StoreConflict, match="AGENT_BUDGET_EXCEEDED"):
+        store.reserve_provider(run_id, "digest-2", 1, 1, retry=False)

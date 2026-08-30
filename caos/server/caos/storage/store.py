@@ -277,6 +277,15 @@ class DomainStore:
         return [source_id for source_id in ids if source_id in active]
 
     def _next_source_set(self, conn: sa.Connection, case_id: str, actor: str, add: list[str], remove: set[str]) -> dict[str, Any]:
+        # Version allocation is read-max-then-insert against a UNIQUE
+        # (case_id, version). Under READ COMMITTED two concurrent ingests both
+        # read N and both insert N+1; the loser's IntegrityError surfaced from
+        # `ingest` as "source content already active" — a wrong refusal for
+        # content that is not a duplicate, and an upload the analyst is never
+        # told to retry. Lock the CASE row, not the set row: `FOR UPDATE` on the
+        # ORDER BY … LIMIT 1 set row would re-read the same unchanged row and
+        # still compute N+1. No-op on SQLite, which serialises writers already.
+        conn.execute(sa.select(cases.c.id).where(cases.c.id == case_id).with_for_update())
         current = self._current_set_locked(conn, case_id)
         base = self._active_ids(conn, [s for s in (current["source_ids"] if current else []) if s not in remove])
         source_set = {
