@@ -415,16 +415,16 @@ def current_source_set(catalog: DomainStore, case_id: str) -> dict[str, Any] | N
 
 
 def pathway_fit(catalog: DomainStore, case_id: str) -> dict[str, Any]:
-    sources = list_sources(catalog, case_id)
-    types = sorted(
-        {Path(source["filename"]).suffix.lower().lstrip(".") for source in sources}
-    )
+    # Filenames only: this runs once per case on the case-list route, and the
+    # full source row carries the blocks column with it.
+    filenames = catalog.list_source_filenames(case_id)
+    types = sorted({Path(filename).suffix.lower().lstrip(".") for filename in filenames})
     return {
-        "source_count": len(sources),
+        "source_count": len(filenames),
         "file_types": types,
-        "fit": "READY" if sources else "NEEDS_SOURCE",
+        "fit": "READY" if filenames else "NEEDS_SOURCE",
         "language": "Pathway fit is a source-coverage signal, not CP-0 readiness.",
         "message": "Source coverage supports pathway selection."
-        if sources
+        if filenames
         else "Upload governed source material before selecting a route.",
     }

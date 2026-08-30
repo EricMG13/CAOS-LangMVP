@@ -67,6 +67,7 @@ KEY_SETS = {
         "source_count": None,
         "deep_research_available": None,
         "deep_research_unavailable_reason": None,
+        "pathway_fit": {"fit": None, "message": None},
     },
     "source": {
         "id": None,

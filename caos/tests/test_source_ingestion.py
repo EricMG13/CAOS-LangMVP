@@ -88,6 +88,25 @@ async def test_valid_no_text_pdf_is_accepted(store, vault, case_id):
     assert sources_domain.pathway_fit(store, case_id)["fit"] == "READY"
 
 
+async def test_pathway_fit_never_reads_the_blocks_column(store, vault, case_id):
+    """pathway_fit runs once per case on the case-list route, so what it reads is
+    a performance contract, not an implementation detail. list_sources selects the
+    whole source row - blocks column included - which made GET /api/cases 12x
+    slower and made its cost scale with evidence volume rather than case count.
+    Fail loudly if the cheap read is ever swapped back for the wide one."""
+    await ingest(store, vault, case_id, "doc.txt", b"Revenue rose 12 percent.\n", "text/plain")
+
+    def refuse(*args, **kwargs):
+        raise AssertionError(
+            "pathway_fit must use list_source_filenames; list_sources carries every "
+            "evidence block of every source into a route that needs only suffixes"
+        )
+
+    store.list_sources = refuse
+    assert sources_domain.pathway_fit(store, case_id)["fit"] == "READY"
+    assert sources_domain.pathway_fit(store, case_id)["source_count"] == 1
+
+
 async def test_non_empty_xlsx_is_accepted(store, vault, case_id):
     result = await ingest(store, vault, case_id, "book.xlsx", xlsx_bytes([["Revenue", 100]]))
     assert result["source_set"]["version"] == 1

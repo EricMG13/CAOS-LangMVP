@@ -55,6 +55,11 @@ jobs:
           --exclude caos/server/caos/methodology/vendor
       - name: Route security audit
         run: python run_sec_audit.py
+      - name: Quality ledger covers every route and product file
+        # docs/QUALITY_LEDGER.csv is only a source of truth while it is complete.
+        # This fails when a route is added without a ledger row, or when a new
+        # subsystem appears that no feature claims — stdlib and git only.
+        run: python docs/quality_ledger_coverage.py
       # One matrix leg only: the corpus is not interpreter-sensitive, and two
       # legs racing would double a 78 MB download and collide on the cache key.
       - name: Restore the real-issuer corpus
@@ -279,10 +284,32 @@ jobs:
       - name: Dependency CVEs
         run: pip-audit -r caos/server/requirements.txt
       - name: Python SAST
-        run: >-
-          bandit -r caos/server/caos
-          -x caos/server/caos/methodology/vendor
-          --severity-level high --confidence-level medium
+        run: |
+          # bandit SKIPS any file it cannot parse and still exits 0, so a gate
+          # that scanned nothing is indistinguishable from a clean one. bandit
+          # 1.7.10 reaches for the ast.Constant.s alias a newer interpreter no
+          # longer provides — under Python 3.14 it skips all 35 server files and
+          # passes. The setup-python pin above is therefore load-bearing, so
+          # assert the outcome instead of trusting it.
+          bandit -r caos/server/caos \
+            -x caos/server/caos/methodology/vendor \
+            --severity-level high --confidence-level medium \
+            -f json -o "$RUNNER_TEMP/bandit.json"
+          python - "$RUNNER_TEMP/bandit.json" <<'PY'
+          import json, sys
+          report = json.load(open(sys.argv[1]))
+          errors = report.get("errors", [])
+          loc = report["metrics"]["_totals"]["loc"]
+          if errors:
+              sys.exit(f"bandit could not parse {len(errors)} file(s) and still exited 0: "
+                       f"{[e.get('filename') for e in errors][:5]}")
+          # Second, weaker signal, and a different failure: bandit can parse every
+          # file it is GIVEN and still cover nothing if -x or the path is wrong.
+          # The server is ~9.6k lines; half that means the gate lost its target.
+          if loc < 5000:
+              sys.exit(f"bandit scanned only {loc} lines - the gate is not covering the server")
+          print(f"bandit scanned {loc} lines with no parse errors")
+          PY
       - name: Frontend dependency advisories
         working-directory: caos/frontend
         run: npm audit --audit-level=high
