@@ -8,7 +8,7 @@ never fabricated (model_dump defaults to exclude_unset).
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict
 
@@ -37,6 +37,15 @@ class HealthResponse(WireModel):
     status: str
 
 
+class CasePathwayFitResponse(WireModel):
+    """The source-coverage signal the Cases screen renders. Only the two fields
+    the frontend declares are served; sources.domain.pathway_fit computes more,
+    and the rest stay internal rather than widening the wire speculatively."""
+
+    fit: Literal["READY", "NEEDS_SOURCE"]
+    message: str
+
+
 class CaseResponse(WireModel):
     id: str
     name: str
@@ -51,6 +60,7 @@ class CaseResponse(WireModel):
     source_count: int
     deep_research_available: bool
     deep_research_unavailable_reason: str | None
+    pathway_fit: CasePathwayFitResponse
 
 
 class CaseDetailResponse(CaseResponse):

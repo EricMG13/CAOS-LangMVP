@@ -215,6 +215,18 @@ engine, the bundle, or the routes.
   `MAX_SOURCE_TEXT` (12 MB) and uploads over `max_source_bytes` (25 MB) — an
   EDGAR *complete submission package* hits both, which is correct; the unit CAOS
   ingests is a document, not a filing bundle.
+- `npm run test:production-inventory` does not pass against this build and never
+  could: `caos/frontend/scripts/production-inventory.mjs` walks
+  `GET /api/cases/{id}/runs` (only POST is served) and `/api/cases/{id}/members`
+  (no route at all), and its `CAOS_CASE_ID` default is a fixture case id from a
+  seeded deployment. It is not in CI. Treat it as the inventory for a deployment
+  that serves those routes, not as a check on this one.
+- The `security` job's `python-version: "3.12"` pin is load-bearing. bandit 1.7.10
+  reaches for the `ast.Constant.s` alias a newer interpreter no longer provides;
+  under 3.14 it skips all 35 server files and still exits 0, so the SAST gate
+  would pass while scanning nothing. The step now asserts bandit's JSON report
+  carries no parse errors and covers the server, so a naive version bump fails
+  loudly instead of silently.
 - Blocks live in one JSON column on the source row, so `read_evidence` parses
   every block of a source on each call. Measured at the ceiling: a 10 MB source
   costs 17 ms per read, so a run's ~80 reads cost about 1.4 s. Fine at current

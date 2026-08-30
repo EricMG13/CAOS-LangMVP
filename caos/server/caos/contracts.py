@@ -7,7 +7,7 @@ from datetime import date
 from enum import StrEnum
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, field_validator, model_validator
 
 
 class Role(StrEnum):
@@ -80,14 +80,60 @@ DESTINATIONS = (
 )
 
 
+def validate_boundary_text(value: str) -> str:
+    """Unicode boundary (DECISIONS §12.3): strings that can enter pinned state
+    or events must UTF-8-encode (no lone surrogates), carry no control bytes,
+    and are NFC-normalized before any pin is computed."""
+    import unicodedata
+
+    try:
+        value.encode("utf-8")
+    except UnicodeEncodeError as exc:
+        raise ValueError("text contains unencodable code points") from exc
+    if any(ord(ch) < 32 and ch not in "\n\r\t" for ch in value):
+        raise ValueError("text contains control characters")
+    return unicodedata.normalize("NFC", value)
+
+
+def _boundary_before(value: Any) -> Any:
+    """Normalize BEFORE the length constraint, not after.
+
+    NFC can lengthen a string: U+0958 DEVANAGARI KA WITH NUKTA is a composition
+    exclusion that folds to two code points, so a max_length=160 field validated
+    first and folded second stores up to 320 characters — its declared bound
+    silently bypassed. Running first means min_length/max_length see exactly
+    what gets stored.
+
+    Running first also means this sees the RAW input, so it must cover every
+    shape pydantic will accept as a string. `bytes` is one: in lax mode pydantic
+    decodes it, so guarding on `isinstance(value, str)` alone let a control byte
+    or an un-normalized form in through a door the AfterValidator form had shut.
+    Anything else — an int, a list — passes through untouched for the str schema
+    to refuse, so `name: 123` still fails as string_type rather than raising from
+    inside this validator.
+    """
+    if isinstance(value, (bytes, bytearray)):
+        try:
+            value = value.decode("utf-8")
+        except UnicodeDecodeError:
+            return value  # let the str schema refuse it
+    return validate_boundary_text(value) if isinstance(value, str) else value
+
+
+# Every string that can enter pinned state or an event carries this: it must
+# UTF-8-encode, hold no control bytes, and be NFC-normalized BEFORE any digest
+# is taken, so two spellings of the same issuer cannot mint two lineages.
+BoundaryText = Annotated[str, BeforeValidator(_boundary_before)]
+
+
 class StrictModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
 class CreateCaseRequest(StrictModel):
-    name: str = Field(min_length=1, max_length=160)
-    issuer: str = Field(min_length=1, max_length=160)
-    sector: str = Field(default="Unclassified", max_length=120)
+    name: BoundaryText = Field(min_length=1, max_length=160)
+    issuer: BoundaryText = Field(min_length=1, max_length=160)
+    sector: BoundaryText = Field(default="Unclassified", max_length=120)
 
 
 class MemberRequest(StrictModel):
@@ -111,7 +157,7 @@ class ConfirmDraftRequest(StrictModel):
 ResearchBriefItem = Annotated[str, Field(min_length=1, max_length=200)]
 # Item-level caps for the other wire string lists. A `max_length` on the list
 # bounds the count only; without these each element is unbounded.
-FocusQuestion = Annotated[str, Field(min_length=1, max_length=400)]
+FocusQuestion = Annotated[BoundaryText, Field(min_length=1, max_length=400)]
 ThesisItem = Annotated[str, Field(min_length=1, max_length=400)]
 IdentifierItem = Annotated[str, Field(min_length=1, max_length=120)]
 
@@ -138,11 +184,6 @@ class StartRunRequest(StrictModel):
     depth: Depth
     focus_questions: list[FocusQuestion] = Field(default_factory=list, max_length=5)
     research_brief: ResearchBrief | None = None
-
-    @field_validator("focus_questions")
-    @classmethod
-    def boundary_clean_questions(cls, value: list[FocusQuestion]) -> list[FocusQuestion]:
-        return [validate_boundary_text(question) for question in value]
 
     @field_validator("pathway")
     @classmethod
@@ -208,7 +249,7 @@ class ReportInputsRequest(StrictModel):
 
 
 class NoteRequest(StrictModel):
-    body: str = Field(min_length=1, max_length=12000)
+    body: BoundaryText = Field(min_length=1, max_length=12000)
 
 
 class AssumptionRequest(StrictModel):
@@ -519,21 +560,6 @@ class ApproveRequest(StrictModel):
 
 class SnapshotSwitchRequest(StrictModel):
     snapshot_id: str = Field(min_length=1, max_length=120)
-
-
-def validate_boundary_text(value: str) -> str:
-    """Unicode boundary (DECISIONS §12.3): strings that can enter pinned state
-    or events must UTF-8-encode (no lone surrogates), carry no control bytes,
-    and are NFC-normalized before any pin is computed."""
-    import unicodedata
-
-    try:
-        value.encode("utf-8")
-    except UnicodeEncodeError as exc:
-        raise ValueError("text contains unencodable code points") from exc
-    if any(ord(ch) < 32 and ch not in "\n\r\t" for ch in value):
-        raise ValueError("text contains control characters")
-    return unicodedata.normalize("NFC", value)
 
 
 def canonical_json(value: Any) -> str:

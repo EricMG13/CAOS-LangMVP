@@ -120,7 +120,15 @@ jobs:
       - name: Compose and deployment checks
         run: |
           docker compose -f caos/deploy/docker-compose.yml config -q --no-interpolate
-          docker compose --env-file caos/.env.example -f caos/deploy/docker-compose.yml config -q
+          # .env.example ships every required secret EMPTY so an operator who
+          # copies without filling gets Compose's `${VAR:?}` refusal. Feeding it
+          # to `config` as-is therefore always fails -- which it silently did
+          # here, aborting the step under `bash -e` before the two checks below
+          # ever ran. Fill the blanks first, exactly as ci.yml does, so this
+          # still catches a variable MISSING from the example.
+          sed 's/^\([A-Z_][A-Z0-9_]*\)=$/\1=nightly-placeholder-value-not-a-secret/' \
+            caos/.env.example > "$RUNNER_TEMP/.env.filled"
+          docker compose --env-file "$RUNNER_TEMP/.env.filled" -f caos/deploy/docker-compose.yml config -q
           python caos/deploy/verify_image_resources.py
           python "Modular OS/tools/check_module_consistency.py"
       - name: Full-history secret scan

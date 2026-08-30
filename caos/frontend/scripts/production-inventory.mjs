@@ -1,3 +1,10 @@
+// Written against a SEEDED production deployment, not a fresh one, and it does
+// not pass against this build. Two of the routes it walks are not served here:
+// GET /api/cases/{id}/runs (only POST exists) and /api/cases/{id}/members (no
+// route at all), and CAOS_CASE_ID defaults to a fixture case id from another
+// environment. Left in place deliberately — it is the inventory for a deployment
+// that serves those routes, so run it there, not against dev.py or run.py. See
+// the known-gaps ledger in CLAUDE.md.
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";

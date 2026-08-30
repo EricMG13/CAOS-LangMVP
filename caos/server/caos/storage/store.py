@@ -343,6 +343,18 @@ class DomainStore:
             result.update(withdrawn=True)
             return _public_source(result)
 
+    def list_source_filenames(self, case_id: str) -> list[str]:
+        """Filenames of the live sources, and nothing else.
+
+        `list_sources` selects the whole row, and the row carries the `blocks`
+        JSON column — every evidence block of every source. A caller that only
+        needs suffixes (pathway_fit, on the case-list route) would otherwise
+        parse megabytes of block text per case to produce one word."""
+        with self.engine.connect() as conn:
+            return list(conn.execute(sa.select(sources.c.filename).where(
+                sources.c.case_id == case_id, sources.c.withdrawn.is_(False)
+            ).order_by(sources.c.created_at)).scalars())
+
     def list_sources(self, case_id: str) -> list[dict[str, Any]]:
         with self.engine.connect() as conn:
             rows = conn.execute(sa.select(sources).where(

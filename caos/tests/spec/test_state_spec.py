@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import unicodedata
+
 import pytest
 
 
@@ -50,6 +52,46 @@ def test_unicode_boundary_rejects_unencodable_pinned_strings(bad):
 
     with pytest.raises(Exception):
         validate_boundary_text(bad)
+
+
+def test_case_and_note_text_is_boundary_validated_at_the_api_contract(client):
+    """§12.3 applies to every string that reaches pinned state, not only focus
+    questions: case identity and a promotable note body are both pinned and both
+    ride into audit events. A control byte is refused and NFC folding happens
+    before the row is written, so one issuer cannot mint two lineages."""
+    control = client.post("/api/cases", content=r'{"name":"a\u0007b","issuer":"I","sector":"S"}',
+                          headers={"content-type": "application/json"})
+    assert control.status_code == 422
+
+    case = client.post("/api/cases", json={"name": "N", "issuer": "I", "sector": "S"})
+    assert case.status_code == 201
+    note = client.post(f"/api/cases/{case.json()['id']}/notes",
+                       content=r'{"body":"a\u0007b"}',
+                       headers={"content-type": "application/json"})
+    assert note.status_code == 422
+
+    decomposed = client.post("/api/cases", json={"name": "N", "issuer": "Cafe\u0301", "sector": "S"})
+    composed = client.post("/api/cases", json={"name": "N", "issuer": "Caf\u00e9", "sector": "S"})
+    assert decomposed.json()["issuer"] == composed.json()["issuer"]
+
+    # Normalization runs BEFORE the length bound. U+0958 is a composition
+    # exclusion that folds to two code points, so folding after max_length would
+    # store 320 characters in a field declared at 160.
+    expanding = "\u0958"
+    assert len(unicodedata.normalize("NFC", expanding)) == 2, "fixture no longer expands under NFC"
+    # The validator runs BEFORE coercion, so it must cover every shape pydantic
+    # will turn into a string. bytes is one: guarding on isinstance(str) alone let
+    # a control byte and an unnormalized form in through a door the after-form shut.
+    from caos.contracts import CreateCaseRequest
+
+    with pytest.raises(Exception):
+        CreateCaseRequest(name=b"a\x07b", issuer="I")
+    assert CreateCaseRequest(name="Cafe\u0301".encode(), issuer="I").name == "Caf\u00e9"
+
+    over = client.post("/api/cases", json={"name": expanding * 160, "issuer": "I", "sector": "S"})
+    assert over.status_code == 422
+    under = client.post("/api/cases", json={"name": expanding * 80, "issuer": "I", "sector": "S"})
+    assert under.status_code == 201 and len(under.json()["name"]) == 160
 
 
 def test_focus_questions_reject_surrogates_at_the_api_contract(client, store):

@@ -20,6 +20,9 @@ const viewports = [
   { name: "desktop", width: 1440, height: 1000 },
   { name: "laptop", width: 1024, height: 768 },
   { name: "reflow", width: 720, height: 900 },
+  // 375x812 is a real phone, not a reflow proxy: WCAG 1.4.10 is about content
+  // reflowing without a second scroll axis, and the rail collapses below 720.
+  { name: "mobile", width: 375, height: 812 },
 ];
 const browser = await chromium.launch({ headless: true });
 const violations = [];
@@ -32,6 +35,15 @@ try {
       await page.goto(`${baseUrl}${route}${route === "/admin-studio/" ? "" : caseQuery}`, { waitUntil: "networkidle" });
       const result = await new AxeBuilder({ page }).analyze();
       for (const violation of result.violations) violations.push({ viewport: viewport.name, route, id: violation.id, impact: violation.impact, nodes: violation.nodes.map((node) => ({ target: node.target, html: node.html, summary: node.failureSummary })) });
+      // WCAG 1.4.10: wide content (loan table, worksheet grid, artifact tables)
+      // must scroll inside its own container, never move the page sideways.
+      // clientWidth excludes the scrollbar, so under CLASSIC scrollbars a page
+      // sized at 100vw reads as overflowing by the scrollbar width. This runs on
+      // the Chromium that package-lock pins, which uses overlay scrollbars — if
+      // this ever fires with a scrollWidth exactly one scrollbar wider than
+      // clientWidth, suspect the browser before the page.
+      const overflow = await page.evaluate(() => ({ scrollWidth: document.documentElement.scrollWidth, clientWidth: document.documentElement.clientWidth }));
+      if (overflow.scrollWidth > overflow.clientWidth + 1) violations.push({ viewport: viewport.name, route, id: "page-horizontal-scroll", impact: "serious", nodes: [{ target: ["html"], html: "", summary: `document scrollWidth ${overflow.scrollWidth} exceeds clientWidth ${overflow.clientWidth}` }] });
     }
     await context.close();
   }

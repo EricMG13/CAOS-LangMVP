@@ -26,6 +26,7 @@ from ..artifacts.loan_universe import (
 )
 from ..config import Settings
 from ..contracts import (
+    BoundaryText,
     CreateCaseRequest,
     DeliverableDraftRequest,
     FileDeliverableRequest,
@@ -37,6 +38,7 @@ from ..contracts import (
     NoteRequest,
     RequestDeliverableChangesRequest,
     StartRunRequest,
+    finite_or_none,
 )
 from ..identity import EdgeIdentityGate, identity_from_request, require_case, require_role
 from ..storage.store import DomainStore
@@ -69,10 +71,16 @@ class SwitchSnapshotRequest(BaseModel):
 
 
 class RVQuickRow(BaseModel):
+    """The quick-paste twin of contracts.RVRow, and it carries the same two
+    boundary rules: text is NFC-normalized and control-free, numbers are finite.
+    Without the finite check a JSON `Infinity` parses, serializes back to the
+    analyst as `null`, and lands in the rv_universes JSON column as a literal
+    `Infinity` — invalid JSON that a Postgres json column refuses outright."""
+
     model_config = ConfigDict(extra="forbid")
 
-    issuer: str = Field(min_length=1, max_length=160)
-    instrument: str = Field(min_length=1, max_length=160)
+    issuer: BoundaryText = Field(min_length=1, max_length=160)
+    instrument: BoundaryText = Field(min_length=1, max_length=160)
     currency: str = Field(pattern=r"^[A-Za-z]{3}$")
     price: float | None = None
     yield_bps: float | None = None
@@ -83,6 +91,11 @@ class RVQuickRow(BaseModel):
     @classmethod
     def normalize_currency(cls, value: str) -> str:
         return value.upper()
+
+    @field_validator("price", "yield_bps", "spread_bps", "duration")
+    @classmethod
+    def finite_number(cls, value: float | None) -> float | None:
+        return finite_or_none(value)
 
 
 class RVSaveRequest(BaseModel):
@@ -302,14 +315,21 @@ def create_app(*, settings: Settings, store: DomainStore, engine: Any) -> FastAP
         return {"subject": who.subject, "email": who.email, "role": who.role}
 
     def _wire_case(case: dict[str, Any]) -> dict[str, Any]:
-        # ponytail: one current-set read per case (N+1 on the list route);
-        # denormalize a count onto the case row if the register ever gets slow.
+        # ponytail: two reads per case (N+1 on the list route) — the pinned
+        # current set for source_count, the live non-withdrawn list for the fit
+        # signal. Denormalize both onto the case row if the register ever gets
+        # slow. source_count and pathway_fit deliberately measure different
+        # things: membership of the pinned set versus what is available now.
+        from ..sources.domain import pathway_fit
+
         current = store.current_source_set(case["id"])
+        fit = pathway_fit(store, case["id"])
         return {
             **case,
             "source_count": len(current["source_ids"]) if current else 0,
             "deep_research_available": False,
             "deep_research_unavailable_reason": "Deep Research is disabled for this deployment.",
+            "pathway_fit": {"fit": fit["fit"], "message": fit["message"]},
         }
 
     @app.post("/api/cases", status_code=201, response_model=wire.CaseDetailResponse)

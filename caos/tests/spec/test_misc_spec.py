@@ -4,7 +4,10 @@ duplicate-key model output."""
 
 from __future__ import annotations
 
+import io
 import json
+import pathlib
+import zipfile
 
 import pytest
 
@@ -82,6 +85,118 @@ def test_rv_currency_normalized_before_comparability_and_invalid_codes_rejected(
         {"issuer": "C", "instrument": "TL-B", "currency": "U$", "price": 99.5, "yield_bps": 500, "spread_bps": 450, "duration": 3.2},
     ]})
     assert bad.status_code == 422
+
+
+def test_edge_scrubs_every_identity_header_the_app_trusts():
+    """The auth edge is two files that must agree and nothing checked that they do.
+
+    Caddy strips the identity headers off the client request before oauth2-proxy
+    re-adds the authentic ones, so `identity_from_request` can trust them. Add a
+    header to identity.py without adding a `request_header -` line and a client
+    can inject it straight through — an auth bypass produced by editing one file.
+    Both sides are derived from source here rather than restated, so the drift is
+    what fails, not a stale copy of the list.
+    """
+    import re
+
+    deploy = pathlib.Path(__file__).resolve().parents[2] / "deploy"
+    server = pathlib.Path(__file__).resolve().parents[2] / "server" / "caos"
+    scrubbed = {name.lower() for name in re.findall(
+        r"request_header\s+-(\S+)", (deploy / "Caddyfile").read_text())}
+    trusted = {name.lower() for name in re.findall(
+        r'headers\.get\(\s*"([a-z0-9-]+)"', (server / "identity.py").read_text())}
+
+    # x-caos-role is the one header production never reads (the role comes from
+    # OIDC groups), so it is deliberately outside the scrub set. Anything else
+    # new must be scrubbed or explicitly added here as a considered decision.
+    production_trusted = trusted - {"x-caos-role"}
+    assert production_trusted, "identity.py header parse found nothing — the regex has drifted"
+    assert production_trusted <= scrubbed, (
+        f"identity headers trusted by the app but not stripped at the edge: "
+        f"{sorted(production_trusted - scrubbed)}"
+    )
+
+
+def test_client_role_header_cannot_escalate_in_production(tmp_path, store, engine):
+    """The static check above has a behavioural twin: even reaching the app with
+    x-caos-role set, a caller's role comes from OIDC groups alone."""
+
+    from fastapi.testclient import TestClient
+
+    from caos.api import create_app
+    from caos.config import Settings
+
+    secret = "e" * 40
+    settings = Settings(storage_dir=tmp_path / "vault", environment="production",
+                        edge_proxy_secret=secret)
+    client = TestClient(create_app(settings=settings, store=store, engine=engine))
+    headers = {"x-edge-authorization": secret, "x-forwarded-user": "u",
+               "x-forwarded-groups": "caos-reader", "x-caos-role": "ADMIN"}
+    assert client.get("/api/me", headers=headers).json()["role"] == "READER"
+    assert client.get("/api/cases").status_code == 401  # no edge secret at all
+
+
+def test_case_response_carries_the_pathway_fit_signal(client, store):
+    """The Cases screen has a Pathway fit panel and the frontend CaseRecord type
+    declares the field, but no route served it, so the panel read 'Fit unavailable'
+    for every case forever while sources.domain.pathway_fit sat computed and
+    unused. The signal moves with the sources: none means NEEDS_SOURCE."""
+    empty = client.post("/api/cases", json={"name": "Empty", "issuer": "I", "sector": "S"})
+    assert empty.json()["pathway_fit"] == {
+        "fit": "NEEDS_SOURCE",
+        "message": "Upload governed source material before selecting a route.",
+    }
+
+    case, _ = seed_case_with_source(store)
+    detail = client.get(f"/api/cases/{case['id']}")
+    assert detail.json()["pathway_fit"]["fit"] == "READY"
+    listed = {row["id"]: row for row in client.get("/api/cases").json()}
+    assert listed[case["id"]]["pathway_fit"]["fit"] == "READY"
+    assert listed[empty.json()["id"]]["pathway_fit"]["fit"] == "NEEDS_SOURCE"
+
+
+def test_source_route_admission_refusals_reach_the_wire(client, store):
+    """Admission belongs to ingest_upload and nowhere else, and the route comment
+    records that it drifted past its own hardening tests once already. Those tests
+    call ingest_upload directly, so nothing pins the mapping the ANALYST actually
+    sees. This walks the refusals through the multipart route: a missing form
+    field, a type off the allowlist, empty bytes, the EICAR marker, and the two
+    archive guards a PK-prefixed upload triggers."""
+    case, _ = seed_case_with_source(store)
+    path = f"/api/cases/{case['id']}/sources"
+
+    def upload(name, content):
+        return client.post(path, files={"file": (name, content, "application/octet-stream")})
+
+    assert client.post(path, files={"other": ("a.txt", b"x")}).status_code == 422
+    assert upload("a.exe", b"MZ").status_code == 415
+    assert upload("a.txt", b"").status_code == 422
+    assert upload("a.txt", b"X5O!P%@AP[4\\PZX54(P^)7CC)7}EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*").status_code == 422
+
+    traversal = io.BytesIO()
+    with zipfile.ZipFile(traversal, "w", zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr("../escape.txt", b"x" * 100)
+    assert upload("a.xlsx", traversal.getvalue()).status_code == 422
+
+    bomb = io.BytesIO()
+    with zipfile.ZipFile(bomb, "w", zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr("big.txt", b"0" * 20_000_000)
+    assert upload("a.xlsx", bomb.getvalue()).status_code == 422
+
+
+def test_rv_quick_rows_refuse_non_finite_numbers(client, store):
+    """Invariant 7 at the RV boundary. JSON carries NaN/Infinity literals and
+    pydantic admits them, but the response encoder renders them as `null` and the
+    rv_universes JSON column would hold a literal `Infinity` — invalid JSON that a
+    Postgres json column refuses. Refuse before the write, as contracts.RVRow does."""
+    case, _ = seed_case_with_source(store)
+    for literal, field in (("Infinity", "price"), ("NaN", "spread_bps"), ("-Infinity", "duration")):
+        body = ('{"rows":[{"issuer":"A","instrument":"B","currency":"USD","'
+                + field + '":' + literal + '}]}')
+        refused = client.post(f"/api/cases/{case['id']}/rv", content=body,
+                              headers={"content-type": "application/json"})
+        assert refused.status_code == 422, refused.text
+    assert client.get(f"/api/cases/{case['id']}/rv").json()["universe"] is None
 
 
 def test_rv_universe_round_trips_through_the_store(client, store):
