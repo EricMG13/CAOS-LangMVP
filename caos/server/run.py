@@ -21,17 +21,28 @@ from caos.engine.runtime import Engine
 from caos.storage.store import DomainStore
 
 
+def build_provider(settings: Settings):
+    """Anthropic first: it is the only binding that can count tokens before it
+    calls, which is what the budget reserves against. OpenRouter is used when it
+    is the only key configured, and its reservation is a local estimate."""
+    if settings.anthropic_api_key:
+        from caos.engine.anthropic import AnthropicProvider
+
+        return AnthropicProvider(settings.anthropic_api_key, settings.anthropic_model)
+    if settings.openrouter_api_key:
+        from caos.engine.openrouter import OpenRouterProvider
+
+        return OpenRouterProvider(settings.openrouter_api_key, settings.openrouter_model)
+    return None
+
+
 def build(settings: Settings, data: Path) -> tuple[FastAPI, Engine]:
     """Assemble the combined app: store, engine (auto-continue on), API, and the
     static export when one is present (./static in the image, ../frontend/out
     after `npm run build`). API routes are registered first, so they win."""
     data.mkdir(parents=True, exist_ok=True)
     store = DomainStore.from_url(settings.database_url or f"sqlite:///{data / 'caos.db'}")
-    provider = None
-    if settings.anthropic_api_key:
-        from caos.engine.anthropic import AnthropicProvider
-
-        provider = AnthropicProvider(settings.anthropic_api_key, settings.anthropic_model)
+    provider = build_provider(settings)
     # ponytail: run checkpoints ride SQLite on the durable data volume even under
     # a Postgres domain store — the postgres checkpoint saver is pinned in
     # requirements but not yet wired in the engine. Single app instance only.

@@ -192,6 +192,17 @@ engine, the bundle, or the routes.
   requirements but not wired in the engine. Single app instance only.
 - `caos/server/requirements.txt` mirrors `pyproject.toml` dependencies by
   hand — change them together.
+- The OpenRouter binding meters by estimate, not by count.
+  `engine/openrouter.py` is a second provider-port adapter (selected by
+  `build_provider` only when `OPENROUTER_API_KEY` is set and
+  `ANTHROPIC_API_KEY` is not). OpenRouter has no pre-call token-counting
+  endpoint, so `count_tokens` measures locally with tiktoken and multiplies by
+  `TOKEN_ESTIMATE_MARGIN`. Invariant 8's reservation is therefore approximate on
+  this provider in a way it is not on Anthropic; `reconcile_provider` still
+  corrects `used` to the actual figures, so the aggregate ceiling holds, but the
+  pre-call reservation can be wrong by the margin. The margin is calibrated
+  against measurements recorded in the module docstring — raise it, never lower
+  it. The docstring also records why z-ai/glm-5.3-flash cannot complete CP-1.
 - Large documents are packed, not indexed line by line. The run's source
   manifest carries one row per block into *every* module prompt, so block count
   must not track document size: `pack_blocks` in `sources/domain.py` emits one
