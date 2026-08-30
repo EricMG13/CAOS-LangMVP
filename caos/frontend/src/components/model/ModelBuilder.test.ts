@@ -65,7 +65,8 @@ test("readers can run local temporary calculations while shared writes remain ga
   assert.doesNotMatch(modelBuilder, /disabled=\{!canWrite \|\| row\.status !== "READY"\}/);
   assert.doesNotMatch(modelBuilder, /scenario && canWrite/);
   assert.match(modelBuilder, /canWrite && .*Sign Off|canWrite \? "SIGN_OFF"/s);
-  assert.match(modelBuilder, /canWrite && \(revision\.export\.status/);
+  // Optional-chained: a revision with no export record must still render its row.
+  assert.match(modelBuilder, /canWrite && \(revision\?\.export\?\.status/);
 });
 
 test("authoring tabs implement roving WAI-ARIA keyboard semantics", () => {

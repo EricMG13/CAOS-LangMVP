@@ -65,6 +65,7 @@ KEY_SETS = {
         "visible_snapshot_id": None,
         "current_execution_id": None,
         "source_count": None,
+        "available_pathways": None,
         "deep_research_available": None,
         "deep_research_unavailable_reason": None,
         "pathway_fit": {"fit": None, "message": None},

@@ -11,6 +11,35 @@ import pytest
 from spec_helpers import seed_case_with_source, start_full_credit_run
 
 
+# --- the offered cut is the startable cut ----------------------------------------
+
+
+async def test_case_wire_offers_exactly_the_pathways_the_engine_will_start(client, store):
+    """A pathway the workbench offers must be one start_run accepts. These drifted:
+    the Purpose menu listed all six PATHWAYS while the engine's MVP_PATHWAYS held
+    four, so Distressed & Restructuring compiled straight into a 422 dead end.
+    Serving the cut is what keeps the two in step; this test is what keeps the
+    serving honest."""
+    from caos.contracts import PATHWAYS
+    from caos.engine.runtime import MVP_PATHWAYS
+
+    case, _source = seed_case_with_source(store)
+    served = client.get(f"/api/cases/{case['id']}", headers={"x-forwarded-user": "analyst"}).json()
+    assert served["available_pathways"] == sorted(MVP_PATHWAYS)
+
+    for pathway in PATHWAYS:
+        response = client.post(f"/api/cases/{case['id']}/runs", json={"pathway": pathway, "depth": "screen"},
+                               headers={"x-forwarded-user": "analyst"})
+        detail = response.json().get("detail") if response.status_code >= 400 else None
+        if pathway in served["available_pathways"]:
+            assert response.status_code == 201, f"{pathway} is offered but did not start: {detail}"
+        else:
+            # Which layer says no is not the point — DEEP_RESEARCH is refused by
+            # the depth rule before the cut check is reached. Nothing outside the
+            # served cut may start.
+            assert response.status_code != 201, f"{pathway} started but is not offered"
+
+
 # --- source pinning at the entry gate (invariant 1; §10.4, §11.1) -----------------
 
 

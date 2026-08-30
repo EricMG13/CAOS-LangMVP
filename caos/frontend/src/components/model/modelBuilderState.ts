@@ -261,3 +261,27 @@ export function primaryModelAction({
   if (previewCurrent) return canWrite ? "SIGN_OFF" : null;
   return "PREVIEW";
 }
+
+
+// Model outputs and assumption defaults reach the client as Decimal-serialized
+// strings, so this lives beside the other pure state helpers where it can be
+// tested directly — the component file cannot be imported by `node --test`.
+export function formatModelValue(value: unknown): string {
+  if (value === null || value === undefined || value === "") return "Unavailable";
+  if (typeof value === "boolean") return value ? "Yes" : "No";
+  const round = (numeric: number) => new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 }).format(numeric);
+  if (typeof value === "number") return Number.isFinite(value) ? round(value) : "Unavailable";
+  if (typeof value !== "string") return String(value);
+  // The calculation engine serializes Decimals, so an output arrives as a numeric
+  // *string* — "136.8800000000000000000000000". Rounding those to two places is the
+  // point; silently rendering a *different* number is not, and a double cannot
+  // carry every Decimal ("12345678901234567890.5" comes back as …567000). So the
+  // rounded form is used only inside the range a double reproduces exactly;
+  // anything outside it, and anything that is not a number at all, keeps the
+  // digits the server sent. Ugly and exact beats tidy and wrong here.
+  const trimmed = value.trim();
+  if (!/^[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$/.test(trimmed)) return value;
+  const numeric = Number(trimmed);
+  if (!Number.isFinite(numeric) || Math.abs(numeric) > Number.MAX_SAFE_INTEGER) return value;
+  return round(numeric);
+}

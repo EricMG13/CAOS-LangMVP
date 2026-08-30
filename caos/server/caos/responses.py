@@ -58,6 +58,10 @@ class CaseResponse(WireModel):
     visible_snapshot_id: str | None
     current_execution_id: str | None
     source_count: int
+    # The engine's own MVP cut, served so a client never offers a route the
+    # engine will refuse. Deep Research keeps its separate, actor-specific gate
+    # below: this list answers "will this deployment start it", not "may you".
+    available_pathways: list[str]
     deep_research_available: bool
     deep_research_unavailable_reason: str | None
     pathway_fit: CasePathwayFitResponse
@@ -405,6 +409,10 @@ class RVWorkspaceResponse(WireModel):
 
 class DeliverableRevisionResponse(WireModel):
     id: str
+    # The draft this revision belongs to. FreezeDeliverableRequest is keyed on it,
+    # and `id` is the revision — serving only the revision left every client
+    # sending the wrong identity and every freeze refused as an unknown draft.
+    draft_id: str
     case_id: str
     pathway: str
     version: int

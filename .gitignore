@@ -38,3 +38,6 @@ caos/frontend/private/
 # tracked exception, mirroring the legacy repo's convention.
 **/.impeccable/*
 !**/.impeccable/design.json
+
+# QA harness secrets, generated on first use by qa/env.sh — never committed.
+qa/.secrets

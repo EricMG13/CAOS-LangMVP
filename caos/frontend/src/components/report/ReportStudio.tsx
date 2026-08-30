@@ -33,7 +33,7 @@ type ModelEligibility = {
   fallback_acknowledgement_required: boolean;
   default_model_selection: ModelSelection | null;
 };
-type DraftRevision = { id: string; case_id: string; pathway: Pathway; version: number; author: string; created_at: string; template_id: string; template_version: string; digest: string; content: { template_id: string; template_version: string; model_selection: ModelSelection | null; model_identity?: Record<string, unknown> | null; blocks: DeliverableBlock[]; generated_blocks: Record<string, unknown> } };
+type DraftRevision = { id: string; draft_id: string; case_id: string; pathway: Pathway; version: number; author: string; created_at: string; template_id: string; template_version: string; digest: string; content: { template_id: string; template_version: string; model_selection: ModelSelection | null; model_identity?: Record<string, unknown> | null; blocks: DeliverableBlock[]; generated_blocks: Record<string, unknown> } };
 type ExportMetadata = { format: "md" | "pdf" | "xlsx"; sha256: string; size: number };
 type FrozenDeliverable = { id: string; case_id: string; pathway: Pathway; draft_version: number; status: "FROZEN" | "FILED" | "SUPERSEDED" | "CHANGES_REQUESTED"; frozen_by: string; frozen_at: string; approved_by: string | null; approved_at: string | null; superseded_by_id: string | null; change_request: { comment?: string; requested_by?: string; requested_at?: string } | null; digest: string; preview_digest: string; input_fingerprint: string; payload: FrozenPayload; exports: Partial<Record<"md" | "pdf" | "xlsx", ExportMetadata>> };
 type WorkspaceResponse = { template: DeliverableTemplate; current: DraftRevision | null; history: DraftRevision[]; frozen_history: FrozenDeliverable[]; model_eligibility: ModelEligibility };
@@ -383,7 +383,7 @@ export default function ReportStudio({ caseId, role, selectedCase, onDraftStateC
     const token = beginLifecycle("freeze");
     if (!token) return;
     try {
-      const frozen = await reportRequest<FrozenDeliverable>(`/api/cases/${caseId}/deliverables/${pathway}/freeze`, { method: "POST", body: JSON.stringify({ draft_id: current.id, draft_version: current.version, draft_digest: current.digest }) });
+      const frozen = await reportRequest<FrozenDeliverable>(`/api/cases/${caseId}/deliverables/${pathway}/freeze`, { method: "POST", body: JSON.stringify({ draft_id: current.draft_id, draft_version: current.version, draft_digest: current.digest }) });
       if (!lifecycleIsCurrent(token)) return;
       setWorkspace((value) => value ? { ...value, frozen_history: [...value.frozen_history.filter((item) => item.id !== frozen.id), frozen] } : value);
       setSelectedFrozen(frozen); setMessage(`Frozen exact Draft v${current.version}.`);
