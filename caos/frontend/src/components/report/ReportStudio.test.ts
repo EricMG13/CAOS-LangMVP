@@ -123,3 +123,13 @@ test("Workspace owns and retires at most one shared draft-history sentinel", () 
   assert.match(workspace, /if \(!modelHistoryGuardRef\.current && !historyGuardRetiringRef\.current\)/);
   assert.match(workspace, /if \(!modelDraftDirtyRef\.current && !reportDraftDirtyRef\.current\) retireOwnedHistoryGuard\(\)/);
 });
+
+test("every optional-block insertion re-sorts into template order", () => {
+  // The server refuses out-of-order optional blocks (DELIVERABLE_TEMPLATE_ORDER_INVALID),
+  // so appending a scenario (order 4) after a limitations block (order 6) built a draft
+  // that could never be saved. Both insertion sites must go through the comparator.
+  assert.match(studio, /const inTemplateOrder =/);
+  const appends = studio.match(/markChanged\(\s*\[\.\.\.blocks,/g) ?? [];
+  assert.equal(appends.length, 0, "an insertion appends without re-sorting into template order");
+  assert.equal((studio.match(/inTemplateOrder\(\[\.\.\.blocks,/g) ?? []).length, 2);
+});

@@ -19,8 +19,11 @@ bundle_root = root / "caos" / "methodology" / "vendor" / "deploy_v"
 if not bundle_root.is_dir():
     bundle_root = root.parent / "server" / "caos" / "methodology" / "vendor" / "deploy_v"
 report = DeployVBundle(bundle_root).verify()
-assert report["checked"] == 307
-assert report["mismatches"] == 0
+# `raise`, not `assert`: this is the image's bundle gate, and every other check
+# in this file raises. An assert would vanish under `python -O` and pass an
+# image whose vendored authority was never counted.
+if report["checked"] != 307 or report["mismatches"]:
+    raise RuntimeError(f"Deploy V bundle gate failed: {report}")
 arguments = sys.argv[1:]
 runtime = None
 if arguments:

@@ -41,18 +41,28 @@ vacuously is wrong even if the suite stays green.
 
 Standing rules that back them:
 
-- **Wire strictness.** Every JSON success serves a named strict model from
-  `caos/server/caos/responses.py` (`extra="forbid"` both ways). Nothing
-  undeclared is ever served; new fields mean a model change plus an update to
-  the pinned key sets in `caos/tests/spec/test_http_contracts_spec.py`. SSE and
-  binary downloads are the only non-JSON exemptions (`OPENAPI_EXEMPT`).
+- **Wire strictness.** Every JSON success serves a *named* model from
+  `caos/server/caos/responses.py`; new fields mean a model change plus an update
+  to the pinned key sets in `caos/tests/spec/test_http_contracts_spec.py`. Two
+  carve-outs are real and deliberate, so do not read "strict" as universal. SSE
+  and binary downloads are not JSON at all (`OPENAPI_EXEMPT`). And six
+  service-owned envelopes — model queue, assumption registry, preview, scenario,
+  revision, frozen deliverable — subclass `OpenWireModel` (`extra="allow"`)
+  because their payload shape belongs to the model/deliverable service rather
+  than the wire contract. Everything else is `extra="forbid"` both ways and
+  serves nothing undeclared.
 - **Transactional pairing.** Governed writes commit state + audit event in one
   transaction; run-state transitions commit state + run event in one
   transaction, and every event insert rides a conditional transition (zero rows
   updated → no event), which is what makes terminal events exactly-once.
-- **Boundary text.** Every string that can enter pinned state or events is
-  validated at the API boundary: must UTF-8-encode, lone surrogates rejected,
-  NFC-normalized.
+- **Boundary text.** Every string that can enter pinned state or events carries
+  `BoundaryText`, never a bare `str`: it must UTF-8-encode (lone surrogates
+  rejected), carry no control bytes and no bidirectional override/isolate
+  controls (CVE-2021-42574 — directional *marks* stay legal for RTL issuer
+  names), and it is NFC-normalized *before* the length bound is applied. Bare
+  `str` on a field that reaches a revision, a frozen payload or an audit event
+  is a defect: it lets a control byte through to break the XLSX render, and it
+  lets two spellings of one string mint two lineages.
 - **Auth edge.** Dev trusts `x-caos-role`; production derives role from OIDC
   groups only — client role headers never escalate (`identity.py`). Unknown
   runs and unauthorized runs return the same 404.
@@ -192,6 +202,13 @@ engine, the bundle, or the routes.
   requirements but not wired in the engine. Single app instance only.
 - `caos/server/requirements.txt` mirrors `pyproject.toml` dependencies by
   hand — change them together.
+- Source-set version allocation now locks the case row before it reads the
+  current version (`storage/store.py::_next_source_set`), so two concurrent
+  ingests into one case cannot both mint the same version. The lock is a no-op
+  on SQLite and **has not been exercised against a live PostgreSQL** — only the
+  emitted clause is pinned. Locking the set row instead would not work:
+  `ORDER BY version DESC LIMIT 1 FOR UPDATE` re-reads the same unchanged row
+  and still computes N+1.
 - The OpenRouter binding meters by estimate, not by count.
   `engine/openrouter.py` is a second provider-port adapter (selected by
   `build_provider` only when `OPENROUTER_API_KEY` is set and

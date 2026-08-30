@@ -134,6 +134,26 @@ def test_client_role_header_cannot_escalate_in_production(tmp_path, store, engin
                "x-forwarded-groups": "caos-reader", "x-caos-role": "ADMIN"}
     assert client.get("/api/me", headers=headers).json()["role"] == "READER"
     assert client.get("/api/cases").status_code == 401  # no edge secret at all
+    # The edge-secret comparison is constant-time over BYTES. `compare_digest`'s
+    # str form is ASCII-only and Starlette decodes headers as latin-1, so one
+    # high byte from the client would turn a 401 into a TypeError inside the
+    # auth edge. httpx refuses to send such a header, so drive the scope.
+    from fastapi import HTTPException
+    from starlette.requests import Request
+
+    from caos.identity import identity_from_request
+
+    def edge(raw: bytes):
+        scope = {"type": "http", "method": "GET", "path": "/api/me", "query_string": b"",
+                 "headers": [(b"x-edge-authorization", raw), (b"x-forwarded-user", b"u"),
+                             (b"x-forwarded-groups", b"caos-reader")]}
+        return identity_from_request(Request(scope), settings)
+
+    assert edge(secret.encode()).role == "READER", "the exact secret still admits"
+    for wrong in (b"e" * 39, b"\xc3\xa9" + b"e" * 38, b"\xff\xfe", b"", b"e" * 41):
+        with pytest.raises(HTTPException) as refused:
+            edge(wrong)
+        assert refused.value.status_code == 401, wrong
 
 
 def test_case_response_carries_the_pathway_fit_signal(client, store):

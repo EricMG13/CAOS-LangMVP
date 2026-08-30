@@ -193,3 +193,59 @@ def test_stale_or_late_resume_returns_typed_not_applied(client, engine, store):
     assert response.status_code in {404, 409}
     if response.status_code == 409:
         assert response.json()["detail"]["code"] == "RESUME_NOT_APPLIED"
+
+
+# --- boundary text on every string that enters pinned state (§12.3) ----------------
+
+
+@pytest.mark.parametrize("field,payload", [
+    ("narrative text", "control \x00 byte"),
+    ("heading text", "control \x0b byte"),
+    ("citation claim", "control \x1f byte"),
+])
+def test_deliverable_block_text_is_boundary_validated(field, payload):
+    """A control byte in draft text used to reach the append-only revision and only
+    fail later, inside the XLSX render — a 500 on a freeze that can never succeed."""
+    import pydantic
+
+    from caos.contracts import EvidenceCitation, HeadingBlock, NarrativeBlock
+
+    with pytest.raises(pydantic.ValidationError):
+        if field == "narrative text":
+            NarrativeBlock(block_id="b", slot_id="section.01", kind="NARRATIVE",
+                           text=payload, content_mode="ANALYST_JUDGMENT", citations=[])
+        elif field == "heading text":
+            HeadingBlock(block_id="b", slot_id="section.01", kind="HEADING", text=payload)
+        else:
+            EvidenceCitation(source_id="src-1", block_ids=["b00001"], claim=payload)
+
+
+def test_deliverable_narrative_text_is_nfc_normalized_before_it_is_digested():
+    """Two spellings of one string must not mint two lineages: the revision digest
+    is taken over this text, so normalization has to happen at the boundary."""
+    import unicodedata
+
+    from caos.contracts import NarrativeBlock
+
+    nfc = unicodedata.normalize("NFC", "Café exposure")
+    nfd = unicodedata.normalize("NFD", nfc)
+    assert nfc != nfd, "premise: the two spellings differ before validation"
+    block = NarrativeBlock(block_id="b", slot_id="section.01", kind="NARRATIVE",
+                           text=nfd, content_mode="ANALYST_JUDGMENT", citations=[])
+    assert block.text == nfc
+
+
+def test_bidi_override_characters_are_refused_but_rtl_text_is_not():
+    """CVE-2021-42574: an embedding/override/isolate control reorders how text
+    DISPLAYS without changing a byte, so a narrative can render one way to the
+    approver binding its preview digest and another to whoever reads the filed
+    PDF. Directional marks stay legal — Arabic and Hebrew issuer names need them."""
+    from caos.contracts import validate_boundary_text
+
+    for legitimate in ("Northstar Holdings", "شركة النور",
+                       "בנק ‎2026"):
+        assert validate_boundary_text(legitimate) == legitimate
+    for override in ("‪", "‫", "‬", "‭", "‮",
+                     "⁦", "⁧", "⁨", "⁩"):
+        with pytest.raises(ValueError, match="bidirectional"):
+            validate_boundary_text(f"leverage 3.0x{override}")

@@ -12,6 +12,11 @@ from pathlib import Path, PurePosixPath
 SAFE_ID_CHARACTERS = frozenset(
     "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-"
 )
+# Ceiling for anything published to or read back from the vault. A model
+# workbook is bounded by MAX_WORKSHEET_BYTES (8 MB of JSON, less as XLSX) and a
+# deliverable export by the draft's own block caps; this is the outer bound the
+# publish/read pair enforces so a corrupt length can never be read into memory.
+MAX_EXPORT_BYTES = 64 * 1024 * 1024
 
 
 class VaultFileUnavailable(ValueError):

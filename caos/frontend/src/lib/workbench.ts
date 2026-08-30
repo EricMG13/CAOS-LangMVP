@@ -165,7 +165,8 @@ export function evidenceKind(value: string): "source" | "artifact" | null {
   const id = value.trim();
   // This store issues hyphenated ids (src-…, art-…); the legacy underscore form
   // stays accepted so pasted references from ported material still resolve.
-  if (/^src[-_][a-zA-Z0-9]+$/.test(id)) return "source";
-  if (/^art[-_][a-zA-Z0-9]+$/.test(id)) return "artifact";
+  // The tail may itself be hyphenated: a promoted analyst note is `src-note-<hex>`.
+  if (/^src[-_][a-zA-Z0-9][a-zA-Z0-9_-]*$/.test(id)) return "source";
+  if (/^art[-_][a-zA-Z0-9][a-zA-Z0-9_-]*$/.test(id)) return "artifact";
   return null;
 }

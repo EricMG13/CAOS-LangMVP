@@ -42,6 +42,7 @@ from __future__ import annotations
 import copy
 import hashlib
 import io
+import json
 import re
 from concurrent.futures import ThreadPoolExecutor
 
@@ -1148,3 +1149,33 @@ def test_xlsx_export_neutralizes_formula_text_and_preserves_typed_model_values(s
 #   §10.5 supersession terminalizes the parked thread (typed SUPERSEDED) -> test_later_filing_supersedes_prior_with_pointer_and_terminalizes_its_thread
 #
 # Inexpressible rows: none.
+
+
+def test_frozen_pdf_is_structurally_complete_under_optimized_python():
+    """The /Pages object used to be created by the call inside an `assert`.
+    `python -O` drops the whole expression, so every page dangles against a
+    parent that was never written — a corrupt PDF whose sha256 still matches
+    the frozen record. Render in a real -O interpreter and read it back."""
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    server = str(Path(__file__).resolve().parents[2] / "server")
+    script = (
+        "import sys, io, json;"
+        f"sys.path.insert(0, {server!r});"
+        "from caos.publishing.renderers import render_frozen_pdf;"
+        "payload={'pathway':'FULL_CREDIT','content':{'blocks':[{'block_id':'b','slot_id':'s',"
+        "'kind':'NARRATIVE','text':'Pinned narrative body.'}]},'template':{'block_titles':{}},"
+        "'draft':{'version':1,'digest':'d'},'preview_digest':'p','input_fingerprint':'f',"
+        "'methodology':{'build_id':'b'}};"
+        "content=render_frozen_pdf(payload);"
+        "from pypdf import PdfReader;"
+        "reader=PdfReader(io.BytesIO(content));"
+        "print(json.dumps({'pages':len(reader.pages),"
+        "'text':''.join(page.extract_text() or '' for page in reader.pages)}))"
+    )
+    completed = subprocess.run([sys.executable, "-O", "-c", script], capture_output=True, text=True)
+    assert completed.returncode == 0, completed.stderr
+    result = json.loads(completed.stdout)
+    assert result["pages"] == 1 and "Pinned narrative body." in result["text"]

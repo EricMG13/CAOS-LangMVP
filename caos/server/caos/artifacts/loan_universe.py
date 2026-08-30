@@ -10,10 +10,10 @@ import hashlib
 import math
 import zipfile
 import copy  # noqa: F401 — kept from the ported module surface
+import xml.parsers.expat
 from datetime import date, datetime
 from pathlib import Path
 from typing import Any
-from xml.etree import ElementTree
 
 from openpyxl import load_workbook
 from openpyxl.utils import get_column_letter
@@ -160,6 +160,39 @@ class _Findings:
         )
 
 
+class _ForbiddenDoctype(ValueError):
+    pass
+
+
+def _has_external_relationship(part: bytes) -> bool:
+    """Does this .rels part declare an external target?
+
+    Parsed with expat directly and a DOCTYPE refusal rather than
+    `ElementTree.fromstring`: the stdlib tree parser expands internal entities,
+    so a crafted relationships part turns a few hundred bytes of upload into
+    tens of megabytes of allocation inside the screen whose whole job is
+    refusing hostile packages. (openpyxl, parsing the same archive a moment
+    later, routes through defusedxml; this screen did not.) libexpat's default
+    amplification guard happens to cap the blow-up today — that is the
+    runtime's choice, not this screen's. An OOXML part never carries a DTD, so
+    refusing the declaration costs nothing and makes the bound ours.
+    """
+    external = False
+
+    def start_element(_name: str, attributes: dict[str, str]) -> None:
+        nonlocal external
+        external = external or attributes.get("TargetMode", "").casefold() == "external"
+
+    def refuse_doctype(*_args: Any) -> None:
+        raise _ForbiddenDoctype("document type declarations are not allowed")
+
+    parser = xml.parsers.expat.ParserCreate()
+    parser.StartElementHandler = start_element
+    parser.StartDoctypeDeclHandler = refuse_doctype
+    parser.Parse(part, True)
+    return external
+
+
 def _validate_package(content: bytes, findings: _Findings) -> None:
     try:
         with zipfile.ZipFile(io.BytesIO(content)) as archive:
@@ -182,11 +215,7 @@ def _validate_package(content: bytes, findings: _Findings) -> None:
             for info in archive.infolist():
                 if not info.filename.lower().endswith(".rels"):
                     continue
-                relationships = ElementTree.fromstring(archive.read(info))
-                if any(
-                    relationship.attrib.get("TargetMode", "").casefold() == "external"
-                    for relationship in relationships.iter()
-                ):
+                if _has_external_relationship(archive.read(info)):
                     findings.add(
                         "RV_PACKAGE_EXTERNAL_LINK",
                         "External package relationships are not allowed.",
@@ -198,7 +227,8 @@ def _validate_package(content: bytes, findings: _Findings) -> None:
                     "RV_PACKAGE_MACRO", "Macro-enabled workbooks are not allowed."
                 )
     except (
-        ElementTree.ParseError,
+        xml.parsers.expat.ExpatError,
+        _ForbiddenDoctype,
         KeyError,
         OSError,
         zipfile.BadZipFile,

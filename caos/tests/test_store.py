@@ -118,3 +118,32 @@ def test_membership_and_roles_gate_access(store):
     assert store.is_member(case_id, "reviewer", roles={"READER"})
     assert not store.is_member(case_id, "reviewer", roles={"ANALYST", "APPROVER", "ADMIN"})
     assert [c["id"] for c in store.list_cases("reviewer")] == [case_id]
+
+
+def test_source_set_version_allocation_locks_the_case_row(tmp_path):
+    """Version allocation is read-max-then-insert against UNIQUE(case_id, version).
+    Under READ COMMITTED two concurrent ingests both read N and both insert N+1,
+    and the loser's IntegrityError surfaced as "source content already active" —
+    a wrong refusal for content that is not a duplicate. The case row is locked
+    first; locking the set row would not help, because `ORDER BY … LIMIT 1
+    FOR UPDATE` re-reads the same unchanged row and still computes N+1."""
+    import sqlalchemy as sa
+    from sqlalchemy.dialects import postgresql
+
+    from caos.storage.store import DomainStore, cases
+
+    store = DomainStore.from_url(f"sqlite:///{tmp_path / 'lock.db'}")
+    case = store.create_case("Lock", "Issuer", "Sector", "analyst")
+
+    statements: list[str] = []
+    sa.event.listen(store.engine, "before_cursor_execute",
+                    lambda conn, cursor, statement, *rest: statements.append(" ".join(statement.split())))
+    store.ingest({"case_id": case["id"], "filename": "a.txt", "media_type": "text/plain",
+                  "bytes": 1, "sha256": "a" * 64, "vault_path": None, "blocks": []}, "analyst")
+    lock_at = next(i for i, s in enumerate(statements) if "SELECT cases.id FROM cases WHERE cases.id" in s)
+    insert_at = next(i for i, s in enumerate(statements) if "INSERT INTO source_sets" in s)
+    assert lock_at < insert_at, "the case row is claimed before a version is allocated"
+
+    # The clause itself, on the dialect that needs it (SQLite emits nothing).
+    locked = sa.select(cases.c.id).where(cases.c.id == case["id"]).with_for_update()
+    assert "FOR UPDATE" in str(locked.compile(dialect=postgresql.dialect()))

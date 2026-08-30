@@ -308,14 +308,21 @@ export default function ReportStudio({ caseId, role, selectedCase, onDraftStateC
     markChanged(blocks.map((block) => block.block_id === selectedBlock.block_id && "citations" in block ? { ...block, citations: block.citations.filter((item) => !(item.source_id === sourceId && item.block_ids.includes(blockId))) } : block));
   };
 
+  // The server refuses optional blocks that are not in the template's declared
+  // order (DELIVERABLE_TEMPLATE_ORDER_INVALID), so EVERY insertion re-sorts —
+  // appending a scenario (order 4) after a limitations block (order 6) built a
+  // draft that could never be saved. Required blocks all resolve to order 0 and
+  // keep their template order under a stable sort.
+  const inTemplateOrder = (list: DeliverableBlock[]) => [...list].sort((left, right) => {
+    const orderOf = (block: DeliverableBlock) =>
+      workspace?.template.optional_blocks.find((item) => item.kind === block.kind)?.order || 0;
+    return orderOf(left) - orderOf(right);
+  });
+
   const addOptional = (policy: OptionalPolicy) => {
     const count = blocks.filter((block) => block.kind === policy.kind).length + 1;
     if (count > policy.max_items || policy.kind === "SCENARIO_EXHIBIT") return;
-    markChanged([...blocks, optionalBlock(policy, count)].sort((left, right) => {
-      const leftOrder = workspace?.template.optional_blocks.find((item) => item.kind === left.kind)?.order || 0;
-      const rightOrder = workspace?.template.optional_blocks.find((item) => item.kind === right.kind)?.order || 0;
-      return leftOrder - rightOrder;
-    }));
+    markChanged(inTemplateOrder([...blocks, optionalBlock(policy, count)]));
   };
 
   const removeOptional = (blockId: string) => {
@@ -352,7 +359,7 @@ export default function ReportStudio({ caseId, role, selectedCase, onDraftStateC
       const policy = workspace.template.optional_blocks.find((item) => item.kind === "SCENARIO_EXHIBIT");
       if (!policy) return;
       const index = blocks.filter((block) => block.kind === "SCENARIO_EXHIBIT").length + 1;
-      markChanged([...blocks, { kind: "SCENARIO_EXHIBIT", block_id: `${policy.slot_stem}.${index.toString().padStart(2, "0")}`, slot_id: `${policy.slot_stem}.${index.toString().padStart(2, "0")}`, title: `Scenario · ${scenarioForm.assumptionId}`, shocks, scenario: next.scenario, scenario_digest: next.scenario_digest }]);
+      markChanged(inTemplateOrder([...blocks, { kind: "SCENARIO_EXHIBIT", block_id: `${policy.slot_stem}.${index.toString().padStart(2, "0")}`, slot_id: `${policy.slot_stem}.${index.toString().padStart(2, "0")}`, title: `Scenario · ${scenarioForm.assumptionId}`, shocks, scenario: next.scenario, scenario_digest: next.scenario_digest }]));
       setMessage("Server-calculated Scenario Exhibit inserted into the Draft.");
     } catch (caught) { if (lifecycleIsCurrent(token)) setError(firstErrorMessage(caught, "Scenario calculation failed")); }
     finally { finishLifecycle(token); }

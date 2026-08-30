@@ -123,7 +123,12 @@ def render_frozen_pdf(payload: dict[str, Any]) -> bytes:
             f"/Resources << /Font << /F1 {font} 0 R >> >> /Contents {content_id} 0 R >>".encode()
         ))
     kids = " ".join(f"{page_id} 0 R" for page_id in page_ids)
-    assert add(f"<< /Type /Pages /Kids [{kids}] /Count {len(page_ids)} >>".encode()) == pages_id
+    # The object must be ADDED outside the assert: under `python -O` the whole
+    # expression vanishes, the /Pages object is never written, and every page
+    # dangles against a missing parent — a silently corrupt PDF whose sha256
+    # still matches the frozen record.
+    written_pages_id = add(f"<< /Type /Pages /Kids [{kids}] /Count {len(page_ids)} >>".encode())
+    assert written_pages_id == pages_id
     catalog = add(f"<< /Type /Catalog /Pages {pages_id} 0 R >>".encode())
 
     output = io.BytesIO()
