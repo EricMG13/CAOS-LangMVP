@@ -77,7 +77,8 @@ def main() -> None:
     settings.validate_runtime()
     data = Path(os.getenv("CAOS_DATA_DIR", str(settings.storage_dir))).resolve()
     app, engine = build(settings, data)
-    serve(app, engine, host=os.getenv("HOST", "0.0.0.0"), port=settings.port)
+    with engine.store.single_instance("app"):
+        serve(app, engine, host=os.getenv("HOST", "0.0.0.0"), port=settings.port)
 
 
 if __name__ == "__main__":

@@ -79,13 +79,14 @@ def main() -> None:
     service = ModelService(store=store, vault_dir=settings.storage_dir, engine=engine)
     poll_seconds = float(os.getenv("WORKER_POLL_SECONDS", "2"))
     once = "--once" in sys.argv[1:]
-    while True:
-        processed = run_pending(service)
-        if once:
-            print({"processed": processed})
-            return
-        if not processed:
-            time.sleep(poll_seconds)
+    with store.single_instance("worker"):
+        while True:
+            processed = run_pending(service)
+            if once:
+                print({"processed": processed})
+                return
+            if not processed:
+                time.sleep(poll_seconds)
 
 
 if __name__ == "__main__":

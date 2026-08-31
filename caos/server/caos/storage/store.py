@@ -12,13 +12,21 @@ from the legacy contracts:
 from __future__ import annotations
 
 import json
+import logging
+import os
+import threading
+from concurrent.futures import Future
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
 from uuid import uuid4
 
 import sqlalchemy as sa
 from sqlalchemy.exc import IntegrityError
+
+
+logger = logging.getLogger(__name__)
 
 
 def now_iso() -> str:
@@ -152,6 +160,16 @@ audit_events = sa.Table(
 )
 
 PUBLIC_SOURCE_HIDDEN = {"vault_path", "withdrawn_at"}
+_INSTANCE_LOCK_NAMESPACE = int.from_bytes(b"CAOS", "big")
+_INSTANCE_LOCK_ROLES = {"app": 1, "worker": 2}
+_INSTANCE_LOCK_HEARTBEAT_SECONDS = 5.0
+
+
+def _terminate_process(role: str) -> None:
+    try:
+        logger.critical("lost PostgreSQL advisory lock for CAOS %s; terminating", role)
+    finally:
+        os._exit(1)
 
 
 def _public_source(row: dict[str, Any]) -> dict[str, Any]:
@@ -167,6 +185,63 @@ class DomainStore:
         engine = sa.create_engine(url, json_serializer=lambda value: json.dumps(value, sort_keys=True))
         metadata.create_all(engine)
         return cls(engine)
+
+    @contextmanager
+    def single_instance(self, role: str) -> Iterator[None]:
+        """Hold one PostgreSQL session lock for this process role or fail closed."""
+        if self.engine.dialect.name != "postgresql":
+            yield
+            return
+
+        parameters = {"namespace": _INSTANCE_LOCK_NAMESPACE, "role": _INSTANCE_LOCK_ROLES[role]}
+        startup: Future[None] = Future()
+        stop = threading.Event()
+
+        def own_lock() -> None:
+            try:
+                with self.engine.connect() as connection:
+                    acquired = bool(connection.execute(
+                        sa.text("SELECT pg_try_advisory_lock(:namespace, :role)"), parameters,
+                    ).scalar_one())
+                    connection.commit()
+                    if not acquired:
+                        raise RuntimeError(
+                            f"another CAOS {role} instance is already running against this database"
+                        )
+                    startup.set_result(None)
+                    try:
+                        while not stop.wait(_INSTANCE_LOCK_HEARTBEAT_SECONDS):
+                            connection.execute(sa.text("SELECT 1")).scalar_one()
+                            connection.commit()
+                        connection.execute(
+                            sa.text("SELECT pg_advisory_unlock(:namespace, :role)"), parameters,
+                        )
+                        connection.commit()
+                    except Exception:
+                        connection.invalidate()
+                        raise
+            except Exception as exc:
+                if not startup.done():
+                    startup.set_exception(exc)
+                elif not stop.is_set():
+                    _terminate_process(role)
+
+        lock_thread = threading.Thread(
+            target=own_lock,
+            name=f"caos-{role}-instance-lock",
+            daemon=True,
+        )
+        lock_thread.start()
+        try:
+            startup.result()
+        except Exception:
+            lock_thread.join()
+            raise
+        try:
+            yield
+        finally:
+            stop.set()
+            lock_thread.join()
 
     # -- audit ------------------------------------------------------------
 
