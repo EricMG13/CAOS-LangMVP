@@ -122,7 +122,7 @@ try {
   const modelCase = { id: modelCaseId, name: "Ready model", issuer: "Northstar", sector: "Services", current_execution_id: null };
   const modelBuild = { id: modelBuildId, case_id: modelCaseId, accepted_run_id: "run_a11y_model", accepted_snapshot_id: "snap_a11y_model", source_set_id: "set_a11y_model", input_fingerprint: "a".repeat(64), status: "READY", queued_at: "2026-08-24T00:00:00Z", started_at: "2026-08-24T00:00:01Z", completed_at: "2026-08-24T00:00:02Z", error: null, export: { status: "NOT_REQUESTED", error: null }, qa: { status: "PASS", semantic_check_count: 2, formula_count: 1, worksheet_cell_count: 3 }, payload_digest: "b".repeat(64) };
   const modelReadiness = { status: "READY", module_id: "CP-MODEL", accepted_snapshot: { id: "snap_a11y_model", run_id: "run_a11y_model", digest: "c".repeat(64) }, source_set: { id: "set_a11y_model", version: 1, digest: "d".repeat(64) }, requirements: ["CP-1", "CP-1A", "CP-1B", "CP-2", "CP-2A", "CP-2B"].map((module_id) => ({ module_id, status: "READY", digest: "e".repeat(64) })), blockers: [], build: modelBuild };
-  const worksheetTab = (name) => ({ id: name.toUpperCase().replaceAll(" ", "_"), name, max_row: 2, max_column: 2, freeze_panes: "B2", merged_cells: [], columns: [{ column: 1, letter: "A", width: 18, hidden: false }, { column: 2, letter: "B", width: 12, hidden: false }], cells: [{ address: "A1", row: 1, column: 1, value: name, value_type: "text", formula: null, semantic_id: null, owner: null, write_class: null, period_id: null, source_refs: null, number_format: "General", style: { bold: true, italic: false, fill: "0A2E63", align: "left", wrap: false } }, { address: "A2", row: 2, column: 1, value: 100, value_type: "number", formula: null, semantic_id: "account::revenue", owner: "CP-1", write_class: "SOURCE", period_id: "FY2025", source_refs: "SRC-1 | page 1 | 2026-08-24", number_format: "#,##0.0", style: { bold: false, italic: false, fill: "FFF4CC", align: "right", wrap: false } }, { address: "B2", row: 2, column: 2, value: 2.5, value_type: "formula", formula: "=A2/40", semantic_id: "metric::leverage", owner: "CP-MODEL", write_class: "FORMULA", period_id: "FY2025", source_refs: null, number_format: "0.0x", style: { bold: false, italic: false, fill: null, align: "right", wrap: false } }] });
+  const worksheetTab = (name) => ({ id: name.toUpperCase().replaceAll(" ", "_"), title: name, max_row: 2, max_column: 2, freeze_panes: "B2", merged_cells: [], columns: [{ column: 1, letter: "A", width: 18, hidden: false }, { column: 2, letter: "B", width: 12, hidden: false }], cells: [{ address: "A1", row: 1, column: 1, value: name, value_type: "text", formula: null, semantic_id: null, owner: null, write_class: null, period_id: null, source_refs: null, number_format: "General", style: { bold: true, italic: false, fill: "0A2E63", align: "left", wrap: false } }, { address: "A2", row: 2, column: 1, value: 100, value_type: "number", formula: null, semantic_id: "account::revenue", owner: "CP-1", write_class: "SOURCE", period_id: "FY2025", source_refs: "SRC-1 | page 1 | 2026-08-24", number_format: "#,##0.0", style: { bold: false, italic: false, fill: "FFF4CC", align: "right", wrap: false } }, { address: "B2", row: 2, column: 2, value: 2.5, value_type: "formula", formula: "=A2/40", semantic_id: "metric::leverage", owner: "CP-MODEL", write_class: "FORMULA", period_id: "FY2025", source_refs: null, number_format: "0.0x", style: { bold: false, italic: false, fill: null, align: "right", wrap: false } }] });
   await modelPage.route((url) => url.pathname === "/api/cases", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([modelCase]) }));
   await modelPage.route((url) => url.pathname === `/api/cases/${modelCaseId}`, (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(modelCase) }));
   await modelPage.route((url) => url.pathname === `/api/cases/${modelCaseId}/snapshot`, (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ accepted: null, latest_accepted: null, switch_required: false, diff: null }) }));
@@ -170,11 +170,24 @@ try {
   ];
   const reportModelSelection = { kind: "ANALYST_REVISION", build_id: reportBuildId, revision_id: reportRevisionId };
   const reportBlocks = [
-    { kind: "NARRATIVE", block_id: "full-credit.section.01", slot_id: "section.01", text: "Leverage remains elevated, but liquidity supports the current rating case.", content_mode: "EVIDENCE", citations: [{ source_id: "source_a11y_report", block_ids: ["source-block-1"] }] },
+    { kind: "NARRATIVE", block_id: "full-credit.section.01", slot_id: "section.01", text: "Leverage remains elevated, but liquidity supports the current rating case.", content_mode: "EVIDENCE", citations: [{ source_id: "source_a11y_report", block_ids: ["source-block-1"], claim: "Liquidity supports the current rating case." }] },
     { kind: "NARRATIVE", block_id: "full-credit.section.02", slot_id: "section.02", text: "No near-term maturity wall under the Base case.", content_mode: "ANALYST_JUDGMENT", citations: [] },
-    { kind: "EVIDENCE_REGISTER", block_id: "full-credit.evidence-register", slot_id: "appendix.evidence-register", citations: [{ source_id: "source_a11y_report", block_ids: ["source-block-1"] }] },
+    { kind: "EVIDENCE_REGISTER", block_id: "full-credit.evidence-register", slot_id: "appendix.evidence-register", citations: [{ source_id: "source_a11y_report", block_ids: ["source-block-1"], claim: "Liquidity supports the current rating case." }] },
   ];
-  const reportDraft = { id: "deliverable_a11y_report", case_id: reportCaseId, pathway: "FULL_CREDIT", version: 2, author: "analyst.qa@local.invalid", created_at: "2026-08-26T10:00:00Z", template_id: "caos.full-credit.v1", template_version: "caos.deliverable-template.v1", digest: "6".repeat(64), content: { template_id: "caos.full-credit.v1", template_version: "caos.deliverable-template.v1", model_selection: reportModelSelection, model_identity: reportModelSelection, blocks: reportBlocks, generated_blocks: {} } };
+  const reportDocumentSections = [
+    {
+      kind: "columns", section_id: "credit_snapshot", title: "Credit Snapshot", page: "Decision", editable: false,
+      origin: { kind: "ARTIFACT", authority_id: "snapshot_a11y_report", block_ids: [] },
+      items: [
+        [{ kind: "profile", section_id: "accepted_analysis", title: "Accepted Analysis", page: "Decision", editable: false, origin: { kind: "ARTIFACT", authority_id: "snapshot_a11y_report", block_ids: ["source-block-1"] }, rows: [{ label: "CP-1", value: "Liquidity was $210 million at quarter end." }] }],
+        [{ kind: "text", section_id: "analyst_snapshot", title: "Analyst Snapshot", page: "Decision", editable: true, origin: { kind: "ANALYST", authority_id: "full-credit.section.01", block_ids: ["source-block-1"] }, body: reportBlocks[0].text }],
+      ],
+    },
+    { kind: "text", section_id: "capital_structure", title: "Capital Structure and Liquidity", page: "Capital", editable: true, origin: { kind: "ANALYST", authority_id: "full-credit.section.02", block_ids: [] }, body: reportBlocks[1].text },
+    { kind: "table", section_id: "model_outputs", title: "Calculated Model Output", page: "Financials", editable: false, origin: { kind: "MODEL", authority_id: reportRevisionId, block_ids: [] }, columns: ["Case / Period / Metric", "Value"], rows: [["BASE / FY2027 / total_leverage", "4.2"], ["DOWNSIDE / FY2027 / total_leverage", "5.8"]], note: "Generated values are locked to the signed revision." },
+    { kind: "table", section_id: "evidence_register", title: "Evidence Register", page: "Evidence", editable: false, origin: { kind: "ARTIFACT", authority_id: "snapshot_a11y_report", block_ids: ["source-block-1"] }, columns: ["Source", "Blocks", "Claim"], rows: [["source_a11y_report", "source-block-1", "Liquidity supports the current rating case."]], note: null },
+  ];
+  const reportDraft = { id: "deliverable_a11y_report", case_id: reportCaseId, pathway: "FULL_CREDIT", version: 2, author: "analyst.qa@local.invalid", created_at: "2026-08-26T10:00:00Z", template_id: "caos.full-credit.v1", template_version: "caos.deliverable-template.v1", digest: "6".repeat(64), content: { template_id: "caos.full-credit.v1", template_version: "caos.deliverable-template.v1", document_schema_version: "caos.deliverable.document.v1", document_sections: reportDocumentSections, model_selection: reportModelSelection, model_identity: reportModelSelection, blocks: reportBlocks, generated_blocks: {} } };
   const reportWorkspace = {
     template: {
       template_id: "caos.full-credit.v1",
@@ -215,12 +228,16 @@ try {
     await reportPage.setViewportSize({ width: viewport.width, height: viewport.height });
     await reportPage.goto(`${baseUrl}/report-studio/?case=${reportCaseId}&fixture=ready-report-${viewport.name}`, { waitUntil: "networkidle" });
     await reportPage.getByRole("region", { name: "Deliverable paper preview" }).waitFor();
+    const governedPaper = reportPage.getByRole("article", { name: "Draft Deliverable preview" });
+    await governedPaper.getByRole("heading", { name: "Accepted Analysis" }).waitFor();
+    await governedPaper.getByRole("region", { name: "Calculated Model Output table" }).waitFor();
+    assert.equal(await governedPaper.getByText("Locked · model", { exact: true }).getAttribute("title"), `Authority ${reportRevisionId}`);
     const pathwaySelect = reportPage.getByLabel("Pathway template");
     await pathwaySelect.focus();
     await reportPage.keyboard.press("Tab");
     assert.equal(await reportPage.evaluate(() => document.activeElement?.closest(".report-section-nav") !== null), true, `${viewport.name} Report Studio Tab did not move into the section navigator`);
     await reportPage.locator(".evidence-source-list summary").filter({ hasText: "earnings.txt" }).click();
-    await reportPage.getByText("Liquidity was $210 million at quarter end.", { exact: true }).waitFor();
+    await reportPage.locator(".evidence-source-list").getByText("Liquidity was $210 million at quarter end.", { exact: true }).waitFor();
     const reportResult = await new AxeBuilder({ page: reportPage }).analyze();
     for (const violation of reportResult.violations) violations.push({ viewport: `ready-report-${viewport.name}`, route: "/report-studio/", id: violation.id, impact: violation.impact, nodes: violation.nodes.map((node) => ({ target: node.target, html: node.html, summary: node.failureSummary })) });
   }

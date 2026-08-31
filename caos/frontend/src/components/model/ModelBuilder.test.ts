@@ -5,6 +5,7 @@ import test from "node:test";
 const workspace = readFileSync(new URL("../Workspace.tsx", import.meta.url), "utf8");
 const modelBuilder = readFileSync(new URL("./ModelBuilder.tsx", import.meta.url), "utf8");
 const api = readFileSync(new URL("../../lib/api.ts", import.meta.url), "utf8");
+const smoke = readFileSync(new URL("../../../scripts/workbench-smoke.mjs", import.meta.url), "utf8");
 
 test("Workspace delegates Model Builder to the extracted component", () => {
   assert.match(workspace, /import ModelBuilder from "\.\/model\/ModelBuilder";/);
@@ -52,6 +53,13 @@ test("worksheet rendering explains locked history, calculations, and forecast in
   assert.match(modelBuilder, /Historical and calculated cells are locked/);
   assert.match(modelBuilder, /Change forward inputs in Assumptions/);
   assert.doesNotMatch(modelBuilder, /contentEditable|contenteditable/);
+});
+
+test("browser proof keeps historical and calculated worksheet cells unchanged after forecast edits", () => {
+  assert.match(smoke, /data-write-class="SOURCE"/);
+  assert.match(smoke, /data-write-class="FORMULA"/);
+  assert.match(smoke, /forecast assumption changed a historical source cell/);
+  assert.match(smoke, /forecast assumption changed a calculated historical cell/);
 });
 
 test("authoring is registry-driven, browser-memory-only, and identity fenced", () => {

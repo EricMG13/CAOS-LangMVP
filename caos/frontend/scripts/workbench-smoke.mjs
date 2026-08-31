@@ -721,12 +721,12 @@ try {
       schema_version: "caos.model.worksheet.v1",
       identity: { issuer_id: "northstar", issuer_name: primaryIssuer, analysis_date: "2026-08-24" },
       tabs: ["Credit Snapshot", "Model", "KPIs"].map((name) => ({
-        id: name.toUpperCase().replaceAll(" ", "_"), name, max_row: 2, max_column: 2, freeze_panes: "B2", merged_cells: [],
+        id: name.toUpperCase().replaceAll(" ", "_"), title: name, max_row: 2, max_column: 2, freeze_panes: "B2", merged_cells: [],
         columns: [{ column: 1, letter: "A", width: 22, hidden: false }, { column: 2, letter: "B", width: 14, hidden: false }],
         cells: [
           { address: "A1", row: 1, column: 1, value: name, value_type: "text", formula: null, semantic_id: null, owner: null, write_class: null, period_id: null, source_refs: null, number_format: "General", style: { bold: true, italic: false, fill: "0A2E63", align: "left", wrap: false } },
-          { address: "A2", row: 2, column: 1, value: 1160, value_type: "number", formula: null, semantic_id: "account::revenue::FY2025", owner: "CP-1", write_class: "SOURCE", period_id: "FY2025", source_refs: "SRC-1 | page 42 | 2026-08-24", number_format: "#,##0.0", style: { bold: false, italic: false, fill: "FFF4CC", align: "right", wrap: false } },
-          { address: "B2", row: 2, column: 2, value: 4.2, value_type: "formula", formula: "=A2/276", semantic_id: "metric::leverage::FY2025", owner: "CP-MODEL", write_class: "FORMULA", period_id: "FY2025", source_refs: null, number_format: "0.0x", style: { bold: false, italic: false, fill: null, align: "right", wrap: false } },
+          { address: "A2", row: 2, column: 1, value: 1160, value_type: "number", formula: null, semantic_id: "account::revenue::FY2024", owner: "CP-1", write_class: "SOURCE", period_id: "FY2024", source_refs: "SRC-1 | page 42 | 2026-08-24", number_format: "#,##0.0", style: { bold: false, italic: false, fill: "FFF4CC", align: "right", wrap: false } },
+          { address: "B2", row: 2, column: 2, value: 4.2, value_type: "formula", formula: "=A2/276", semantic_id: "metric::leverage::FY2024", owner: "CP-MODEL", write_class: "FORMULA", period_id: "FY2024", source_refs: null, number_format: "0.0x", style: { bold: false, italic: false, fill: null, align: "right", wrap: false } },
         ],
       })),
     },
@@ -886,6 +886,12 @@ try {
   await page.getByText("Active Analyst Model · R1", { exact: true }).waitFor({ timeout: 4000 });
   await page.getByRole("button", { name: "Application Model Build" }).click();
   await page.getByRole("tab", { name: "Credit Snapshot" }).waitFor({ timeout: 4000 });
+  const historicalWorksheetCell = page.locator('td[data-address="A2"][data-write-class="SOURCE"]');
+  const calculatedWorksheetCell = page.locator('td[data-address="B2"][data-write-class="FORMULA"]');
+  const historicalWorksheetValue = await historicalWorksheetCell.innerText();
+  const calculatedWorksheetValue = await calculatedWorksheetCell.innerText();
+  assert.equal(await historicalWorksheetCell.locator("input, textarea, [contenteditable='true']").count(), 0, "historical source cell exposed an edit control");
+  assert.equal(await calculatedWorksheetCell.locator("input, textarea, [contenteditable='true']").count(), 0, "calculated historical cell exposed an edit control");
   const terminalGets = modelGets;
   await page.waitForTimeout(1800);
   assert.equal(modelGets, terminalGets, "Model Builder kept polling after READY");
@@ -900,6 +906,7 @@ try {
   const sourceCell = page.getByRole("button", { name: /Show lineage for account::revenue/ });
   await sourceCell.click();
   await page.locator("#model-cell-lineage").getByText(/SRC-1 \| page 42/).waitFor();
+  await page.locator("#model-cell-lineage").getByText("FY2024", { exact: true }).waitFor();
   const firstTab = page.getByRole("tab", { name: "Credit Snapshot" });
   await firstTab.focus();
   await page.keyboard.press("ArrowRight");
@@ -990,6 +997,11 @@ try {
   await page.getByRole("button", { name: "Sign Off Revision" }).click();
   await page.getByText("Active Analyst Model · R2").waitFor();
   assert.equal(signOffPosts, 2, "conflict and recovered sign-off requests did not both reach the server seam");
+  assert.notEqual(modelRevisions[0].outputs.total_leverage, 4.2, "forecast assumption did not change the signed forward output");
+  await builderTablist.getByRole("tab", { name: "Model" }).click();
+  await page.getByRole("button", { name: "Application Model Build" }).click();
+  assert.equal(await historicalWorksheetCell.innerText(), historicalWorksheetValue, "forecast assumption changed a historical source cell");
+  assert.equal(await calculatedWorksheetCell.innerText(), calculatedWorksheetValue, "forecast assumption changed a calculated historical cell");
   await builderTablist.getByRole("tab", { name: "Assumptions" }).click();
   await page.getByLabel("Revenue growth BASE FY2025").fill("0.06");
   await page.getByLabel("Revenue growth BASE FY2025").press("Enter");
@@ -1123,13 +1135,80 @@ try {
       blocks,
     };
   };
-  const reportSelection = { kind: "ANALYST_REVISION", build_id: modelBuildId, revision_id: `revision_report_${fixtureSuffix}` };
+  const signedReportRevision = modelRevisions.find((revision) => revision.state === "ACTIVE");
+  assert.ok(signedReportRevision, "Report Studio fixture has no signed active model revision");
+  const reportSelection = { kind: "ANALYST_REVISION", build_id: modelBuildId, revision_id: signedReportRevision.id };
   const reportEligibility = () => ({
-    active_revision: { revision_id: reportSelection.revision_id, build_id: modelBuildId, revision_number: 3, signed_by: "analyst", signed_at: "2026-08-26T10:00:00Z" },
+    active_revision: { revision_id: reportSelection.revision_id, build_id: modelBuildId, revision_number: signedReportRevision.revision_number, signed_by: "analyst", signed_at: "2026-08-26T10:00:00Z" },
     application_build: { build_id: modelBuildId, accepted_snapshot_id: accepted.id, input_fingerprint: "b".repeat(64), payload_digest: "c".repeat(64), status: "READY" },
     fallback_acknowledgement_required: false,
     default_model_selection: reportSelection,
   });
+  const reportOrigin = (kind, authority_id, block_ids = []) => ({ kind, authority_id, block_ids });
+  const analystReportSection = (block, title, page) => ({
+    kind: "text", section_id: title.toLowerCase().replaceAll(/[^a-z0-9]+/g, "_").replaceAll(/^_|_$/g, ""),
+    title, page, editable: true, origin: reportOrigin("ANALYST", block.block_id, block.citations.flatMap((citation) => citation.block_ids)), body: block.text,
+  });
+  const reportDocumentSections = (pathway, blocks) => {
+    const narratives = blocks.filter((block) => block.kind === "NARRATIVE");
+    const evidenceBlock = blocks.find((block) => block.kind === "EVIDENCE_REGISTER");
+    const appendices = blocks.filter((block) => block.kind === "SCENARIO_EXHIBIT").map((block) => {
+      const accessibleRows = [];
+      for (const [caseName, periods] of Object.entries(block.scenario.outputs)) {
+        for (const [period, metrics] of Object.entries(periods)) {
+          for (const [metric, value] of Object.entries(metrics)) accessibleRows.push([`${caseName} / ${period} / ${metric}`, String(value)]);
+        }
+      }
+      return {
+        kind: "chart", section_id: block.block_id, title: block.title, page: "Appendix", editable: false,
+        origin: reportOrigin("MODEL", block.scenario_digest), recipe: { chart_kind: "scenario", shocks: block.shocks },
+        accessible_columns: ["Scenario / Metric", "Value"], accessible_rows: accessibleRows,
+      };
+    });
+    const evidence = {
+      kind: "table", section_id: "evidence_register", title: "Evidence Register", page: "Evidence", editable: false,
+      origin: reportOrigin("ARTIFACT", accepted.id, evidenceBlock?.citations.flatMap((citation) => citation.block_ids) || []),
+      columns: ["Source", "Blocks", "Claim"],
+      rows: (evidenceBlock?.citations || []).map((citation) => [citation.source_id, citation.block_ids.join(", "), citation.claim || "Pinned evidence"]), note: null,
+    };
+    let sections;
+    if (pathway !== "FULL_CREDIT") {
+      sections = narratives.map((block, index) => analystReportSection(block, reportSections[pathway][index], "Analysis"));
+    } else {
+      const analyst = (index, page) => analystReportSection(narratives[index], reportSections[pathway][index], page);
+      sections = [
+      {
+        kind: "columns", section_id: "credit_snapshot", title: "Credit Snapshot", page: "Decision", editable: false,
+        origin: reportOrigin("ARTIFACT", accepted.id),
+        items: [
+          [{ kind: "profile", section_id: "credit_snapshot_authority", title: "Accepted Analysis", page: "Decision", editable: false, origin: reportOrigin("ARTIFACT", accepted.id), rows: [{ label: "CP-1", value: "Revenue 1,160; EBITDA 222" }, { label: "CP-2", value: "Starting model assumptions ready" }] }],
+          [{ ...analyst(0, "Decision"), section_id: "credit_snapshot_commentary", title: "Analyst Snapshot" }],
+        ],
+      },
+      analyst(1, "Decision"),
+      analyst(2, "Decision"),
+      analyst(3, "Business"),
+      analyst(4, "Capital"),
+      {
+        kind: "columns", section_id: "base_downside_model", title: "Base and Downside Model", page: "Financials", editable: false,
+        origin: reportOrigin("MODEL", signedReportRevision.id),
+        items: [
+          [{ ...analyst(5, "Financials"), section_id: "base_downside_commentary", title: "Analyst Model View" }],
+          [{
+            kind: "table", section_id: "base_downside_model_outputs", title: "Calculated Model Output", page: "Financials", editable: false,
+            origin: reportOrigin("MODEL", signedReportRevision.id), columns: ["Case / Period / Metric", "Value"],
+            rows: [["BASE / FY2025 / total_leverage", String(signedReportRevision.outputs.total_leverage)], ["BASE / FY2025 / revenue", String(signedReportRevision.outputs.revenue.FY2025)]],
+            note: "Generated values are locked to the selected model authority.",
+          }],
+        ],
+      },
+      analyst(6, "Financials"),
+      analyst(7, "Risk"),
+      analyst(8, "Risk"),
+      ];
+    }
+    return [...sections, ...appendices, evidence];
+  };
   const reportDraft = (pathway, version = 1, contentOverride = null) => {
     const template = reportTemplate(pathway);
     const blocks = template.blocks.map((block) => block.kind === "NARRATIVE"
@@ -1138,7 +1217,11 @@ try {
     return {
       id: `deliverable_${pathway.toLowerCase()}_${version}`, case_id: caseRecord.id, pathway, version, author: "analyst", created_at: `2026-08-26T10:0${version}:00Z`,
       template_id: template.template_id, template_version: template.template_version, digest: String(version).repeat(64),
-      content: contentOverride || { template_id: template.template_id, template_version: template.template_version, model_selection: reportSelection, model_identity: { ...reportSelection }, blocks, generated_blocks: {} },
+      content: contentOverride || {
+        template_id: template.template_id, template_version: template.template_version,
+        document_schema_version: "caos.deliverable.document.v1", document_sections: reportDocumentSections(pathway, blocks),
+        model_selection: reportSelection, model_identity: { ...reportSelection }, blocks, generated_blocks: {},
+      },
     };
   };
   const reportWorkspaces = new Map(Object.keys(reportSections).map((pathway) => {
@@ -1166,13 +1249,20 @@ try {
   };
   const frozenBaseLeverage = 123456.78;
   const frozenDownsideLeverage = 234567.89;
+  const fulfillReportExport = (route, deliverableId, format) => route.fulfill({
+    status: 200,
+    contentType: { md: "text/markdown", pdf: "application/pdf", xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }[format],
+    headers: { "content-disposition": `attachment; filename="${deliverableId}.${format}"` },
+    body: format === "pdf" ? "%PDF-1.4\n% governed fixture" : `governed ${format} fixture`,
+  });
   const reportApiPath = (url) => url.pathname.startsWith(`/api/cases/${caseRecord.id}/deliverables/`);
   await page.route(reportApiPath, async (route) => {
     const url = new URL(route.request().url());
     const suffix = url.pathname.split("/deliverables/")[1];
     if (suffix.startsWith("by-id/")) {
-      const [, deliverableId, action] = suffix.split("/");
+      const [, deliverableId, action, format] = suffix.split("/");
       const current = [...reportWorkspaces.values()].flatMap((item) => item.frozen_history).find((item) => item.id === deliverableId);
+      if (action === "export") return fulfillReportExport(route, deliverableId, format);
       if (action === "approve") {
         await waitForHeldReportLifecycle("file");
         const filed = { ...current, status: "FILED", approved_by: "approver", approved_at: "2026-08-26T12:00:00Z" };
@@ -1205,7 +1295,12 @@ try {
         workspace.current = current; workspace.history.push(current);
         return route.fulfill({ status: 409, contentType: "application/json", body: JSON.stringify({ detail: { code: "DELIVERABLE_VERSION_CONFLICT", current } }) });
       }
-      const saved = reportDraft(pathway, workspace.current.version + 1, { template_id: workspace.template.template_id, template_version: workspace.template.template_version, model_selection: payload.model_selection, model_identity: payload.model_selection, blocks: payload.blocks, generated_blocks: Object.fromEntries(payload.blocks.filter((block) => block.kind.startsWith("GENERATED") || block.kind === "SCENARIO_EXHIBIT").map((block) => [block.block_id, { status: "READY", outputs: { BASE: { FY2027: { total_leverage: 4.2 } } } }])) });
+      const saved = reportDraft(pathway, workspace.current.version + 1, {
+        template_id: workspace.template.template_id, template_version: workspace.template.template_version,
+        document_schema_version: "caos.deliverable.document.v1", document_sections: reportDocumentSections(pathway, payload.blocks),
+        model_selection: payload.model_selection, model_identity: payload.model_selection, blocks: payload.blocks,
+        generated_blocks: Object.fromEntries(payload.blocks.filter((block) => block.kind.startsWith("GENERATED") || block.kind === "SCENARIO_EXHIBIT").map((block) => [block.block_id, { status: "READY", outputs: { BASE: { FY2027: { total_leverage: 4.2 } } } }])),
+      });
       workspace.current = saved; workspace.history.push(saved);
       return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(workspace) });
     }
@@ -1254,6 +1349,7 @@ try {
   await page.goto(`${baseURL}/report-studio/?case=${caseRecord.id}`, { waitUntil: "networkidle" });
   await page.getByRole("heading", { name: "Compose", exact: true }).waitFor();
   await page.getByRole("heading", { name: `${caseRecord.issuer} — ${caseRecord.name}` }).waitFor();
+  await page.getByText(signedReportRevision.id, { exact: true }).first().waitFor();
   assert.equal(await page.evaluate(() => Object.keys(sessionStorage).some((key) => key.startsWith("caos-report-draft:"))), false, "Report Studio retained browser-persistent drafts");
 
   const recoveryPathway = "DEEP_RESEARCH";
@@ -1275,9 +1371,11 @@ try {
   assert.equal(reportLastSave.expected_version, 0, "recovery save discarded its original compare-and-swap base");
   assert.equal(reportLastSave.blocks[0].text, "Recovered from stale server v0.", "recovery save did not use the browser copy");
 
+  const reportPaper = () => page.getByRole("article", { name: /Deliverable preview/i });
+  const reportTitle = (title) => reportPaper().locator(".rd-subtitle").filter({ hasText: title });
   for (const [pathway, label] of Object.entries(reportTitles)) {
     await page.getByRole("combobox", { name: "Pathway template" }).selectOption(pathway);
-    await page.getByText(label, { exact: true }).last().waitFor();
+    await reportTitle(label).waitFor();
   }
 
   await page.getByRole("combobox", { name: "Pathway template" }).selectOption("EARNINGS_UPDATE");
@@ -1337,11 +1435,11 @@ try {
   await page.getByRole("button", { name: "Restore as new revision" }).first().click();
   assert.equal(await page.locator("[data-primary-report-action]").isDisabled(), true, "Freeze remained enabled during Restore");
   await page.getByRole("combobox", { name: "Pathway template" }).selectOption("EARNINGS_UPDATE");
-  await page.getByText("Earnings Update", { exact: true }).last().waitFor();
+  await reportTitle("Earnings Update").waitFor();
   await releaseReportLifecycle("restore");
   await new Promise((resolve) => setTimeout(resolve, 100));
   assert.equal(await page.getByText(/Restored v1 as new revision/).count(), 0, "late Full Credit Restore adopted status in Earnings Update");
-  assert.equal(await page.getByText("Investment Committee Credit Memo", { exact: true }).count(), 0, "late Full Credit Restore replaced the Earnings paper");
+  assert.equal(await reportTitle("Investment Committee Credit Memo").count(), 0, "late Full Credit Restore replaced the Earnings paper");
   await page.getByRole("combobox", { name: "Pathway template" }).selectOption("FULL_CREDIT");
 
   await page.getByLabel("Shock value").fill("0.07");
@@ -1349,11 +1447,11 @@ try {
   await page.getByRole("button", { name: "Calculate and insert exact exhibit" }).click();
   assert.equal(await page.locator("[data-primary-report-action]").isDisabled(), true, "Freeze remained enabled during Scenario calculation");
   await page.getByRole("combobox", { name: "Pathway template" }).selectOption("EARNINGS_UPDATE");
-  await page.getByText("Earnings Update", { exact: true }).last().waitFor();
+  await reportTitle("Earnings Update").waitFor();
   await releaseReportLifecycle("scenario");
   await new Promise((resolve) => setTimeout(resolve, 100));
   assert.equal(await page.getByText("Server-calculated Scenario Exhibit inserted into the Draft.").count(), 0, "late Full Credit Scenario adopted status in Earnings Update");
-  assert.equal(await page.getByText("Investment Committee Credit Memo", { exact: true }).count(), 0, "late Full Credit Scenario replaced the Earnings paper");
+  assert.equal(await reportTitle("Investment Committee Credit Memo").count(), 0, "late Full Credit Scenario replaced the Earnings paper");
   await page.getByRole("combobox", { name: "Pathway template" }).selectOption("FULL_CREDIT");
   await page.getByRole("button", { name: "Credit SnapshotRequired" }).click().catch(() => {});
   await page.getByRole("radio", { name: "Evidence-bound" }).check();
@@ -1365,6 +1463,7 @@ try {
   await page.getByText("Server-calculated Scenario Exhibit inserted into the Draft.").waitFor();
   await page.getByText(/Saved v5/).waitFor({ timeout: 5000 });
   await page.getByText("BASE / FY2027 / total_leverage", { exact: true }).waitFor();
+  await page.getByText("DOWNSIDE / FY2027 / total_leverage", { exact: true }).waitFor();
 
   reportConflict = true;
   await thesisEditor.fill("Local conflict value");
@@ -1400,28 +1499,33 @@ try {
   assert.equal(await page.getByRole("button", { name: "Request changes" }).count(), 0, "Change action became reachable while Freeze owned the lifecycle");
   assert.equal(await thesisEditor.inputValue(), heldFreezeValue, "held Freeze changed the draft narrative");
   await page.getByRole("combobox", { name: "Pathway template" }).selectOption("EARNINGS_UPDATE");
-  await page.getByText("Earnings Update", { exact: true }).last().waitFor();
+  await reportTitle("Earnings Update").waitFor();
   await releaseReportLifecycle("freeze");
   await new Promise((resolve) => setTimeout(resolve, 100));
   assert.equal(await page.getByText(/Immutable FROZEN review/).count(), 0, "late Full Credit Freeze made Earnings Update immutable");
-  assert.equal(await page.getByText("Investment Committee Credit Memo", { exact: true }).count(), 0, "late Full Credit Freeze replaced the Earnings paper");
+  assert.equal(await reportTitle("Investment Committee Credit Memo").count(), 0, "late Full Credit Freeze replaced the Earnings paper");
   assert.equal(await page.getByRole("combobox", { name: "Pathway template" }).inputValue(), "EARNINGS_UPDATE", "late Full Credit Freeze changed the selected pathway");
   await page.getByRole("combobox", { name: "Pathway template" }).selectOption("FULL_CREDIT");
   await page.getByRole("button", { name: /FROZEN · Draft v7/ }).first().click();
   await page.getByText(/Immutable FROZEN review/).waitFor();
   const firstFrozen = reportWorkspaces.get("FULL_CREDIT").frozen_history.at(-1);
   assert.equal(firstFrozen.payload.draft.version, 7, "freeze did not bind the exact saved version");
+  assert.equal(firstFrozen.payload.model.revision_id, signedReportRevision.id, "freeze changed the signed model authority");
+  assert.deepEqual(firstFrozen.payload.content.document_sections, reportWorkspaces.get("FULL_CREDIT").current.content.document_sections, "freeze changed the canonical document");
   assert.equal(await page.getByRole("link", { name: "PDF" }).count(), 0, "Frozen Deliverable exposed unfiled bytes");
   const frozenPaper = page.getByRole("article", { name: "Frozen Deliverable preview" });
-  await frozenPaper.getByRole("heading", { name: "Frozen authority" }).waitFor();
-  await frozenPaper.getByRole("heading", { name: "Base / Downside Model Analysis" }).waitFor();
-  await frozenPaper.getByText("123,456.78", { exact: true }).waitFor();
-  await frozenPaper.getByText("234,567.89", { exact: true }).waitFor();
-  await frozenPaper.getByLabel("Frozen authority identities").getByText(accepted.id, { exact: true }).waitFor();
-  await frozenPaper.getByText("deploy-v-workbench", { exact: true }).waitFor();
-  await frozenPaper.getByText("caos.deliverable-renderer.v2", { exact: true }).waitFor();
-  await frozenPaper.getByLabel("Frozen authority identities").getByText(firstFrozen.preview_digest, { exact: true }).waitFor();
-  await frozenPaper.getByLabel("Frozen authority identities").getByText(firstFrozen.input_fingerprint, { exact: true }).waitFor();
+  await frozenPaper.getByRole("heading", { name: "Credit Snapshot" }).waitFor();
+  await frozenPaper.getByRole("heading", { name: "Accepted Analysis" }).waitFor();
+  await frozenPaper.getByRole("heading", { name: "Analyst Snapshot" }).waitFor();
+  await frozenPaper.getByRole("heading", { name: "Recommendation" }).waitFor();
+  await frozenPaper.getByRole("heading", { name: "Base and Downside Model" }).waitFor();
+  await frozenPaper.getByRole("heading", { name: "Calculated Model Output" }).waitFor();
+  await frozenPaper.getByText("4.1", { exact: true }).waitFor();
+  await frozenPaper.getByText("1194.8", { exact: true }).waitFor();
+  assert.equal(await frozenPaper.getByText("123,456.78", { exact: true }).count(), 0, "Frozen preview bypassed canonical document sections");
+  const modelAuthorityLabel = frozenPaper.getByText("Locked · model", { exact: true }).first();
+  assert.equal(await modelAuthorityLabel.getAttribute("title"), `Authority ${signedReportRevision.id}`);
+  assert.equal(firstFrozen.payload.renderer.version, "caos.deliverable-renderer.v2");
 
   reportRole = "APPROVER";
   await page.goto(`${baseURL}/report-studio/?case=${caseRecord.id}`, { waitUntil: "networkidle" });
@@ -1431,7 +1535,7 @@ try {
   await page.getByRole("button", { name: "Request changes" }).click();
   assert.equal(await page.getByRole("button", { name: "File exact Frozen version" }).isDisabled(), true, "File remained enabled during Request Changes");
   await page.getByRole("combobox", { name: "Pathway template" }).selectOption("EARNINGS_UPDATE");
-  await page.getByText("Earnings Update", { exact: true }).last().waitFor();
+  await reportTitle("Earnings Update").waitFor();
   await releaseReportLifecycle("changes");
   await new Promise((resolve) => setTimeout(resolve, 100));
   assert.equal(await page.getByText(/editable Draft v8 created/).count(), 0, "late Full Credit change request adopted status in Earnings Update");
@@ -1446,7 +1550,7 @@ try {
   await page.getByRole("button", { name: "File exact Frozen version" }).click();
   assert.equal(await page.getByRole("button", { name: "Request changes" }).isDisabled(), true, "Request Changes remained enabled during File");
   await page.getByRole("combobox", { name: "Pathway template" }).selectOption("EARNINGS_UPDATE");
-  await page.getByText("Earnings Update", { exact: true }).last().waitFor();
+  await reportTitle("Earnings Update").waitFor();
   await releaseReportLifecycle("file");
   await new Promise((resolve) => setTimeout(resolve, 100));
   assert.equal(await page.getByText("Exact Frozen Deliverable filed.").count(), 0, "late Full Credit filing adopted status in Earnings Update");
@@ -1454,11 +1558,23 @@ try {
   await page.getByRole("combobox", { name: "Pathway template" }).selectOption("FULL_CREDIT");
   await page.getByRole("button", { name: /FILED · Draft v8/ }).first().click();
   await page.getByText(/Immutable FILED review/).waitFor();
+  let governedDownloadCount = 0;
+  await page.route(`**/api/cases/${caseRecord.id}/deliverables/by-id/*/export/*`, (route) => {
+    governedDownloadCount += 1;
+    const parts = new URL(route.request().url()).pathname.split("/");
+    return fulfillReportExport(route, parts.at(-3), parts.at(-1));
+  });
   for (const format of ["MD", "PDF", "XLSX"]) {
     const link = page.getByRole("link", { name: format });
     await link.waitFor();
     assert.match(await link.getAttribute("href"), new RegExp(`/deliverables/by-id/frozen_report_2/export/${format.toLowerCase()}$`));
+    assert.equal(await link.getAttribute("download"), "", `${format} export lost its native download hint`);
+    await link.evaluate((element) => element.removeAttribute("download"));
+    const [download] = await Promise.all([page.waitForEvent("download"), link.click()]);
+    assert.equal(download.suggestedFilename(), `frozen_report_2.${format.toLowerCase()}`);
+    assert.equal(await download.failure(), null, `${format} export download failed`);
   }
+  assert.equal(governedDownloadCount, 3, "filed export clicks bypassed the governed download responses");
 
   reportRole = "READER";
   await page.goto(`${baseURL}/report-studio/?case=${caseRecord.id}`, { waitUntil: "networkidle" });

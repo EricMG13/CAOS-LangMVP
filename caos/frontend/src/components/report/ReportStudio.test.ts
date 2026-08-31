@@ -7,6 +7,7 @@ const studio = readFileSync(new URL("./ReportStudio.tsx", import.meta.url), "utf
 const document = readFileSync(new URL("./DeliverableDocument.tsx", import.meta.url), "utf8");
 const documentTypes = readFileSync(new URL("./documentTypes.ts", import.meta.url), "utf8");
 const styles = readFileSync(new URL("../../../app/globals.css", import.meta.url), "utf8");
+const smoke = readFileSync(new URL("../../../scripts/workbench-smoke.mjs", import.meta.url), "utf8");
 
 test("Workspace delegates Report Studio to the structured component", () => {
   assert.match(workspace, /import ReportStudio from "\.\/report\/ReportStudio";/);
@@ -136,6 +137,13 @@ test("Draft and Frozen review render the same canonical governed document", () =
   assert.match(studio, /sections=\{previewSections\}/);
   assert.match(document, /groupDocumentPages\(sections\)/);
   assert.doesNotMatch(document, /FrozenEnvelope|flatten\(|application_build/);
+});
+
+test("browser proof carries the signed model into the canonical report and downloads the filed memo", () => {
+  assert.match(smoke, /document_schema_version: "caos\.deliverable\.document\.v1"/);
+  assert.match(smoke, /revision_id: signedReportRevision\.id/);
+  assert.match(smoke, /document_sections: reportDocumentSections/);
+  assert.match(smoke, /waitForEvent\("download"\)/);
 });
 
 test("paper columns collapse at the paper boundary before text is crushed", () => {
