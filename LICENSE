@@ -1,0 +1,87 @@
+CAOS — PROPRIETARY SOFTWARE LICENCE
+
+Copyright (c) 2026 Eric Guei. All rights reserved.
+
+This software and its associated documentation, configuration, methodology
+bundles, and data files (together, the "Software") are proprietary and
+confidential. The Software is licensed, not sold.
+
+1. NO IMPLIED GRANT
+
+   No right or licence to use, copy, modify, merge, publish, distribute,
+   sublicense, sell, host, or create derivative works of the Software is
+   granted by this file, by the Software's presence in any repository, or by
+   any party's access to it. Rights arise only under a separate written
+   agreement signed by the copyright holder. Absent such an agreement you may
+   not use the Software for any purpose.
+
+2. SCOPE OF A GRANTED LICENCE
+
+   Where a signed agreement grants a licence, that agreement governs
+   exclusively and defines the permitted deployment model, which may be a
+   vendor-hosted service, a customer-operated deployment of the Software in the
+   customer's own environment, or both. This file does not enlarge, narrow, or
+   qualify the terms of that agreement.
+
+3. RESTRICTIONS
+
+   Except to the extent a signed agreement expressly permits it, or applicable
+   law grants a right that cannot lawfully be excluded, no person may:
+
+   (a) reproduce, distribute, publish, or make the Software available to any
+       third party;
+   (b) reverse engineer, decompile, or disassemble the Software, or derive its
+       source form from an object form;
+   (c) remove, obscure, or alter any proprietary notice, including this file;
+   (d) use the Software, its outputs, or its methodology bundles to develop a
+       competing product or service;
+   (e) publish benchmarks, evaluations, or analytical outputs of the Software;
+       or
+   (f) sublicense, lease, rent, or provide the Software as a service to any
+       third party.
+
+4. CONFIDENTIALITY
+
+   The Software constitutes the confidential information and trade secrets of
+   the copyright holder. Any person with access to it must protect it with no
+   less care than they apply to their own confidential information of like
+   importance, and in no event with less than reasonable care.
+
+5. THIRD-PARTY COMPONENTS
+
+   The Software incorporates and, when distributed as a container image or
+   otherwise in executable form, redistributes third-party components under
+   their own licence terms. Those terms govern those components and are not
+   superseded by this licence. Nothing here grants rights in third-party
+   components beyond what their own licences allow. The authoritative
+   dependency lists are caos/server/pyproject.toml (with the generated
+   caos/server/requirements.txt and requirements-dev.txt locks) and
+   caos/frontend/package.json. A third-party attribution notice is not yet
+   assembled in this repository; assembling one is a prerequisite for
+   distributing the Software in any form.
+
+6. NO WARRANTY
+
+   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+   FITNESS FOR A PARTICULAR PURPOSE, TITLE, AND NON-INFRINGEMENT.
+
+   The Software produces credit-analytical output for review by qualified
+   professionals. It is not investment advice, and it does not replace the
+   judgement of the analyst, approver, or committee accountable for a decision.
+
+7. LIMITATION OF LIABILITY
+
+   TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, IN NO EVENT SHALL THE
+   COPYRIGHT HOLDER BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER LIABILITY,
+   WHETHER IN AN ACTION OF CONTRACT, TORT, OR OTHERWISE, ARISING FROM, OUT OF,
+   OR IN CONNECTION WITH THE SOFTWARE OR ITS USE. Nothing in this clause
+   excludes or limits liability that cannot lawfully be excluded or limited.
+
+8. TERMINATION
+
+   Any use of the Software outside a signed agreement terminates immediately on
+   notice, and the person or entity concerned must cease all use and destroy
+   all copies in their possession or control.
+
+Contact the copyright holder to obtain a licence.
