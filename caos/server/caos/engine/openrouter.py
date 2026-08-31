@@ -47,6 +47,7 @@ import json
 from typing import Any
 
 from .budget import PROVIDER_TIMEOUT_SECONDS
+from .loop import reject_duplicate_keys
 from .provider import AgentError, ProviderBlock, ProviderMessage, ProviderRequest, ProviderUsage
 
 BASE_URL = "https://openrouter.ai/api/v1"
@@ -238,9 +239,17 @@ class OpenRouterProvider:
             for call in calls:
                 function = call.get("function") or {}
                 try:
-                    arguments = json.loads(function.get("arguments") or "{}")
-                except json.JSONDecodeError as exc:
-                    raise AgentError("AGENT_OUTPUT_INVALID", "tool arguments were not JSON") from exc
+                    # The MODEL authors this string and the host parses it, so
+                    # §12.9's duplicate-key rule governs it exactly as it
+                    # governs the final output: a repeated key is refused, never
+                    # last-wins into a read the model's own first claim did not
+                    # make. The enclosing response body is deliberately NOT
+                    # parsed this way — its shape is the gateway's, not the
+                    # model's, and `_blocks` trusts that shape throughout.
+                    arguments = json.loads(function.get("arguments") or "{}",
+                                           object_pairs_hook=reject_duplicate_keys)
+                except ValueError as exc:  # JSONDecodeError included
+                    raise AgentError("AGENT_OUTPUT_INVALID", "malformed tool arguments") from exc
                 blocks.append(ProviderBlock(
                     type="tool_use", id=call.get("id"), name=function.get("name"), input=arguments,
                 ))

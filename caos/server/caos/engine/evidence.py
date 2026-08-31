@@ -86,8 +86,11 @@ class EvidenceReader:
             or not isinstance(block_ids, list)
             or not block_ids
             or len(block_ids) > 50
-            or len(block_ids) != len(set(block_ids))
+            # Element types are checked BEFORE the dedup set is built: an
+            # unhashable block id (a list, a dict) would otherwise leave the
+            # boundary as a bare TypeError instead of a typed refusal.
             or any(not isinstance(item, str) for item in block_ids)
+            or len(block_ids) != len(set(block_ids))
         ):
             raise AgentError("AGENT_OUTPUT_INVALID", "evidence block IDs must be unique and bounded")
 
@@ -116,6 +119,14 @@ class EvidenceReader:
             raise AgentError("AGENT_BUDGET_EXCEEDED", "evidence byte budget exhausted")
 
         # §12.10: charge -> delivered-set update -> return, one ordered unit.
+        # The run-wide ledger charge comes FIRST, ahead of the reader's own
+        # counters: the per-node read_limit is `limits - used` read at node
+        # entry, so concurrent module nodes each think the whole remainder is
+        # theirs and one of them is refused here rather than by the local guard
+        # above. Updating the delivered set before that charge would leave a
+        # citation expectation for rows this call never returns.
+        if self._on_read is not None:
+            self._on_read(source_id, block_ids, returned_bytes)
         self.reads_used += 1
         self.bytes_used += returned_bytes
         self._delivered.update(
@@ -131,6 +142,4 @@ class EvidenceReader:
                 for row in rows
             }
         )
-        if self._on_read is not None:
-            self._on_read(source_id, block_ids, returned_bytes)
         return rows

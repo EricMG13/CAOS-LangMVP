@@ -276,3 +276,120 @@ green, so both were measured, not assumed.
 No host code changed: every defence these tests assert already existed. Suite
 state after the addition: **461 passed, 12 skipped** (the skips are the
 real-issuer corpus tests, which run when the corpus is downloaded).
+
+## read_evidence argument-shape enumeration (2026-08-31)
+
+`read_evidence` is the only tool a module can call, so its argument surface is
+the whole agentic attack surface. Invariant 2's named test asserted one refusal
+class (a source outside the pinned set) and the injection suite added three more
+end to end (cross-case, withdrawn mid-module, homoglyph ids). What no test
+enumerated was the rest of the shapes a module can put on the wire, and nothing
+asserted invariant 2's "no text" clause *literally* — that no source text
+escapes through an error message, a diagnostic field, or an exception string.
+
+`caos/tests/spec/test_evidence_spec.py` now carries that enumeration: 33 refusal
+scenarios, each asserted twice — once for the typed taxonomy code, once for the
+literal no-text contract (the rendered exception chain plus `args` carries none
+of three marker strings; the delivered set stays empty; the ledger does not
+move). Both assertions run against a pinned FULL_CREDIT run whose evidence text
+is a unique marker.
+
+| Argument shape | Refusal |
+|---|---|
+| absent / unknown `block_id`; empty `block_id` | `AGENT_OUTPUT_INVALID` |
+| duplicate `block_ids`; empty list; > 50 ids | `AGENT_OUTPUT_INVALID` |
+| `block_ids` not a list (str, dict, null) | `AGENT_OUTPUT_INVALID` |
+| a `block_id` that is int, float, null, bool, array, or bytes | `AGENT_OUTPUT_INVALID` |
+| `source_id` that is int, float, null, array, dict, bool, or bytes | `AGENT_OUTPUT_INVALID` |
+| a `block_id` valid for a *different* source of the same case | `AGENT_OUTPUT_INVALID` |
+| lone-surrogate `block_id`; 1 MB `block_id` | `AGENT_OUTPUT_INVALID` |
+| source in another case | `AGENT_AUTHORITY_MISMATCH` |
+| source withdrawn (before, or live during, the run) | `AGENT_AUTHORITY_MISMATCH` |
+| source in this case but outside the pinned set (a later source-set version) | `AGENT_AUTHORITY_MISMATCH` |
+| unknown, empty, lone-surrogate, or 1 MB `source_id` | `AGENT_AUTHORITY_MISMATCH` |
+| read-count ceiling; byte ceiling; run-wide ledger ceiling | `AGENT_BUDGET_EXCEEDED` |
+| tool arguments off the strict `{source_id, block_ids}` shape (14 forms) | `AGENT_OUTPUT_INVALID` |
+| duplicate JSON keys in a tool-call argument object | `AGENT_OUTPUT_INVALID` |
+
+Block ids are per-source counters (`b00001`…), so they collide across sources by
+construction. Evidence identity is therefore the `(source_id, block_id)` **pair**:
+`test_a_block_id_that_collides_across_sources_reads_only_the_named_source` pins
+that naming the pinned source can never reach another source's like-named block.
+
+**No refusal leaks content.** Every `AgentError` message on the read path is a
+static literal; the persisted run error is `{code, module_id}` and carries no
+message; and structurally a refusal is never a `tool_result` at all — it ends the
+module, so there is no channel left to carry text, a code, or a reason. Two
+adjacent paths were inspected and are not leaks: `validate_citations` and the
+canonical validators raise fixed strings, and the loop's repair turn echoes
+`str(exc)[:1500]` from validating the model's **own** output back to the same
+model, which is not a trust boundary.
+
+### The read path's other side: bounding the call count
+
+There is **no per-node bound**. The reader a module node is handed is sized
+`limits["evidence_reads"] - used` read at node entry, so a looping module drinks
+the whole run's allowance. It cannot stall the run: the run-wide ledger refuses
+read N+1 and the run fails closed. Measured on FULL_CREDIT/full (N=9, ceiling 90):
+CP-1 took exactly 91 turns — 90 reads then the refusal — and `used` landed exactly
+on the ceiling, never past it. A *failed* read cannot be looped at all, because
+the refusal is not answered back to the model. Concurrent sibling nodes in one
+superstep each size their reader from the same pre-read `used`, which is why the
+ledger, not the local guard, is the binding bound.
+
+### Three defects found and closed
+
+1. **An unhashable `block_id` left the boundary as a bare `TypeError`.**
+   `len(block_ids) != len(set(block_ids))` was evaluated before the element-type
+   check, so `[["b00001"]]` raised `TypeError: unhashable type: 'list'` instead
+   of a typed refusal — collapsed downstream to `CANONICAL_GENERATION_FAILED`,
+   which fails closed but violates §12.9's rule that the adversarial suite pins
+   which code each refusal carries. Fix: the element-type check moves ahead of
+   the dedup set (`engine/evidence.py`).
+2. **A ledger-refused read left a citation expectation.** The delivered-set
+   update ran *before* the run-wide `charge_budget` call, so a read the store
+   refused still registered `(source_id, block_id)` as delivered. §12.10 orders
+   it charge → delivered-set → return. Unreachable while one node runs alone
+   (the local guard trips first), reachable between concurrent sibling nodes.
+   Fix: the ledger charge moves ahead of both the reader's counters and the
+   delivered-set update (`engine/evidence.py`).
+3. **Duplicate JSON keys in tool arguments were silently last-wins on the
+   OpenRouter binding.** `engine/openrouter.py::_blocks` parsed tool-call
+   arguments with a plain `json.loads`, so `{"source_id": A, …, "source_id": B}`
+   collapsed to B. Not an authority bypass — B is still authority-checked — but
+   the §12.9 duplicate-key rule that governs the final output governs this
+   string for the same reason: the model authors it and the host parses it.
+   Fix: the same `reject_duplicate_keys` hook the final-output parser uses.
+   (The Anthropic binding is unaffected: `block.input` arrives pre-parsed from
+   the SDK and the host never sees the raw bytes. The enclosing OpenRouter
+   response body stays on plain `response.json()` — its shape is the gateway's,
+   not the model's, and `_blocks` trusts that shape throughout.)
+
+### Anti-vacuity ledger
+
+| # | Check deleted | Test that turns red | Pre-existing tests also red |
+|---|---|---|---|
+| 1 | element-type check ahead of the dedup set (`engine/evidence.py`) | `test_every_argument_shape_fails_closed_with_a_typed_refusal[block_id_is_an_array]` | none (+ its no-text twin) |
+| 2 | `object_pairs_hook` on tool arguments (`engine/openrouter.py`) | `test_duplicate_tool_argument_keys_are_refused_not_collapsed` | none |
+| 3 | ledger charge ahead of the delivered-set update (`engine/evidence.py`) | `test_a_ledger_refused_read_leaves_no_expectation_even_though_rows_were_built` | none |
+| 4 | the loop ending the module on a refused read (`engine/loop.py`, replaced with an error row returned as a `tool_result`) | `test_a_refused_read_ends_the_module_instead_of_returning_a_reason_to_the_model` | none |
+| 5 | the reader's local `read_limit` guard (`engine/evidence.py`) | `test_every_argument_shape…[read_ceiling]` + its no-text twin | 1 (`test_ceiling_rejected_read_leaves_no_citation_expectation`) |
+
+Row 5 is the measured, not assumed, one: deleting the local guard leaves
+`test_an_unbounded_read_loop_is_stopped_by_the_run_evidence_read_ceiling`
+**green**, because that test pins the run-wide ledger ceiling and the ledger is a
+second, independent bound. The two are recorded here as distinct defences rather
+than one.
+
+### Recorded non-findings
+
+- **Identifier strings have no length bound.** A 1 MB `source_id` or `block_id`
+  is refused by membership / block lookup, not by a length check, so the refusal
+  costs one hash of the string. No fix: what a module can send is already bounded
+  by its `max_output_tokens` cap, so there is no amplification to close.
+- **`on_read` makes two `charge_budget` calls** (reads, then bytes) that are not
+  atomic with each other. If the byte charge fails the read charge stands — an
+  over-charge, the fail-closed direction, and the module dies either way.
+
+Suite state after the addition: **570 passed** (the real-issuer corpus is
+downloaded in this worktree; without it 12 corpus tests skip).

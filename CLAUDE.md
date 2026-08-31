@@ -135,14 +135,20 @@ engine, the bundle, or the routes.
   `caos/server/worker.py` (polls the store for QUEUED model builds/exports and
   executes them; the only process with LibreOffice, so XLSX rendering lives
   here and nowhere else). `worker.py --once` runs a single pass.
-- Suite: `python -m pytest caos/tests -q` — fully green (461 passed, 12 skipped;
-  the skips are the real-issuer corpus tests, which run once the corpus is
-  downloaded). Spec tests (`caos/tests/spec/`) are the contractual surface —
+- Suite: `python -m pytest caos/tests -q` — fully green (570 passed with the
+  real-issuer corpus downloaded; without it the 12 corpus tests skip). Spec
+  tests (`caos/tests/spec/`) are the contractual surface —
   they pin invariants and wire shapes; `test_injection_spec.py` pins the
   behavioural half of the prompt-injection defence: adversarial documents in
   `caos/tests/fixtures/injection/` driven by a provider double that obeys them,
   asserting only the host's refusal (`SPEC_RECONCILIATION.md` carries its
-  anti-vacuity ledger). Phase-2 tests cover ingestion/store/bundle/config. The
+  anti-vacuity ledger). `test_evidence_spec.py` enumerates the whole
+  `read_evidence` argument surface — 33 refusal shapes, each asserted for its
+  typed code *and* for invariant 2's no-text clause read literally (nothing in
+  the exception chain, the delivered set, or the ledger) — plus the read path's
+  only bound, which is run-wide and not per-node (`SPEC_RECONCILIATION.md`
+  carries the shape table and its anti-vacuity ledger).
+  Phase-2 tests cover ingestion/store/bundle/config. The
   surrogate boundary test sends its lone surrogate as a pre-encoded `\ud800`
   JSON escape (httpx cannot UTF-8-encode the raw character —
   `SPEC_RECONCILIATION.md` addendum).

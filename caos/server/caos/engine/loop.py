@@ -76,7 +76,9 @@ class ProviderSlots:
         self._free += 1
 
 
-def _reject_duplicate_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+def reject_duplicate_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    """§12.9's duplicate-key rule, as a json.loads object_pairs_hook. Public
+    because openrouter.py parses model-authored tool arguments with it too."""
     keys = [key for key, _ in pairs]
     if len(keys) != len(set(keys)):
         collided = next(key for index, key in enumerate(keys) if key in keys[:index])
@@ -88,7 +90,7 @@ def parse_final_output(text: str) -> dict[str, Any]:
     """Raises ValueError-family so the loop's single repair can address it
     (§12.11); a duplicate key surfaces as AGENT_OUTPUT_INVALID once repair is
     spent."""
-    decoded = json.loads(text, object_pairs_hook=_reject_duplicate_keys)
+    decoded = json.loads(text, object_pairs_hook=reject_duplicate_keys)
     if not isinstance(decoded, dict):
         raise ValueError("final JSON must be an object")
     return decoded
