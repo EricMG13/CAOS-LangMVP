@@ -85,7 +85,7 @@ committee-paper counterpoint.
 Exit: the implementation agent can name the source pattern for every planned
 change and can identify report findings that are already resolved.
 
-## Phase 1 — Establish the WIP baseline and port the authored visual system
+## Task 1 — Phase 1: Establish the WIP baseline and port the authored visual system
 
 ### What to implement
 
@@ -124,7 +124,7 @@ change and can identify report findings that are already resolved.
 Exit: all current WIP behavior runs under the same authored visual system that
 the assessment actually reviewed.
 
-## Phase 2 — Restore hierarchy and repair shell polish
+## Task 2 — Phase 2: Restore hierarchy and repair shell polish
 
 ### What to implement
 
@@ -165,7 +165,7 @@ the assessment actually reviewed.
 Exit: uppercase microcopy is a deliberate metadata tool, not the dominant
 visual grammar.
 
-## Phase 3 — Give Accept, Sign-Off, and Freeze one commit-ritual grammar
+## Task 3 — Phase 3: Give Accept, Sign-Off, and Freeze one commit-ritual grammar
 
 ### What to implement
 
@@ -207,7 +207,7 @@ visual grammar.
 Exit: every irreversible act clearly states what changes, the exact authority
 being bound, what blocks completion, and the one next action.
 
-## Phase 4 — Humanize status and identity without hiding exact authority
+## Task 4 — Phase 4: Humanize status and identity without hiding exact authority
 
 ### What to implement
 
@@ -251,7 +251,7 @@ being bound, what blocks completion, and the one next action.
 Exit: analysts can compare identities at human scale while exact bytes remain
 available and unchanged.
 
-## Phase 5 — Reduce cognitive load on the three overloaded surfaces
+## Task 5 — Phase 5: Reduce cognitive load on the three overloaded surfaces
 
 ### What to implement
 
@@ -295,7 +295,7 @@ available and unchanged.
 
 Exit: each surface presents one dominant task while preserving expert depth.
 
-## Phase 6 — Remove verified residue and complete the audit
+## Task 6 — Phase 6: Remove verified residue and complete the audit
 
 ### What to implement
 

@@ -59,6 +59,8 @@
   min-width: 0;
   margin: 0;
   border: 1px solid var(--caos-border);
+  border-radius: var(--radius-md);
+  background: var(--caos-panel);
   padding: var(--space-sm);
 }
 
@@ -102,11 +104,24 @@
   width: 100%;
   min-width: 0;
   border: 1px solid var(--caos-border-strong);
-  border-radius: 0;
+  border-radius: var(--radius-sm);
   background: var(--caos-bg);
   color: var(--caos-text);
   padding: 7px 8px;
   font: 600 11px/1.2 var(--font-mono), ui-monospace, monospace;
+  transition: border-color 160ms var(--ease-out), box-shadow 160ms var(--ease-out);
+}
+
+.scrubber:hover:not(:disabled),
+.control select:hover:not(:disabled),
+.signOff textarea:hover:not(:disabled) { border-color: color-mix(in srgb, var(--caos-border-strong) 55%, var(--caos-text)); }
+
+.scrubber:focus-visible,
+.control select:focus-visible,
+.signOff textarea:focus-visible {
+  outline: none;
+  border-color: var(--caos-accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--caos-accent) 22%, transparent);
 }
 
 .scrubber:not(:disabled) { cursor: ew-resize; touch-action: none; }
@@ -140,13 +155,14 @@
   font-size: 10px;
 }
 
-.tornadoTrack { position: relative; height: 14px; background: var(--caos-bg); }
+.tornadoTrack { position: relative; height: 14px; border-radius: var(--radius-sm); background: var(--caos-bg); }
 
 .tornadoBar {
   position: absolute;
   top: 2px;
   bottom: 2px;
   min-width: 2px;
+  border-radius: var(--radius-sm);
   background: var(--caos-accent);
 }
 

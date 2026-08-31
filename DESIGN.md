@@ -382,3 +382,20 @@ Status meaning must never be color alone. Pair severity color with a drawn glyph
 - **Don't** use emoji in product chrome.
 - **Don't** add shadows to ordinary panels or cards.
 - **Don't** use side-stripe borders, gradient text, huge rounded cards, or identical decorative card grids.
+
+## 2026-08-31 reskin addendum (supersedes where noted)
+
+At the product owner's instruction the workspace moved to the **modern dark
+terminal**: a graphite ramp (`#0a0c10` → `#101319` → `#181d28`), iris accent
+`#8b93f8`, retuned semantics (emerald `#34d399`, amber `#fbbf24`, red
+`#f87171`), a 6–14px radius scale, faint resting panel shadows, Space Grotesk
+as the display face (wordmark, page titles, display headings only), and
+severity-*shaped* status glyphs (disc / triangle / rounded square / flat dot).
+
+This addendum supersedes, for the current design: the all-square geometry, the
+flat-until-floating rule (panels now carry `--shadow-panel`; floating surfaces
+keep the larger shadows), the old blue accent `#63a1ff`, and the uniform status
+dot. Everything else in this document still governs: density with hierarchy,
+color as signal, mono numerics, motion only for live state, the light-paper
+filed-output counterpoint, and every Don't above except the two rules this
+paragraph names.

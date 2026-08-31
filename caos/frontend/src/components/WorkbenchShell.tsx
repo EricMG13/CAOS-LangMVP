@@ -67,13 +67,13 @@ const glyphProps = {
 } as const;
 
 const workflowGlyphs: Record<WorkflowId, ReactNode> = {
-  portfolio: <svg {...glyphProps}><rect x="2" y="2.75" width="12" height="10.5" /><path d="M2 6h12M2 9.5h12M6 6v7.25" /></svg>,
-  credit: <svg {...glyphProps}><path d="M1.5 8h3l2-4.5 3 9 2-4.5h3" /></svg>,
-  sources: <svg {...glyphProps}><path d="M8 2 14 5 8 8 2 5Z" /><path d="m2 8.25 6 3 6-3" /><path d="m2 11.5 6 3 6-3" /></svg>,
-  analysis: <svg {...glyphProps}><rect x="3" y="2" width="10" height="12" /><path d="M5.5 5h5M5.5 8h5M5.5 11h3" /></svg>,
-  market: <svg {...glyphProps}><path d="M2 13.5h12" /><path d="M4.5 13.5V9M8 13.5V5M11.5 13.5V7.5" /></svg>,
-  model: <svg {...glyphProps}><rect x="2" y="2" width="12" height="12" /><path d="M2 6.5h12M6.5 6.5V14" /></svg>,
-  report: <svg {...glyphProps}><path d="M4 1.5h5.5L13 5v9.5H4Z" /><path d="M9.5 1.5V5H13" /></svg>,
+  portfolio: <svg {...glyphProps}><rect x="2.5" y="3" width="11" height="10" rx="1.5" /><path d="M2.5 6.25h11M6 6.25V13" /></svg>,
+  credit: <svg {...glyphProps}><path d="M2 8.25h2.75l1.75-4 3 7.5 1.75-3.5H14" /></svg>,
+  sources: <svg {...glyphProps}><path d="M8 2.25 13.75 5 8 7.75 2.25 5Z" /><path d="m2.25 8.25 5.75 2.75 5.75-2.75" /><path d="m2.25 11.25 5.75 2.75 5.75-2.75" /></svg>,
+  analysis: <svg {...glyphProps}><rect x="3.25" y="2.25" width="9.5" height="11.5" rx="1.5" /><path d="M5.75 5.5h4.5M5.75 8h4.5M5.75 10.5h2.75" /></svg>,
+  market: <svg {...glyphProps}><path d="M2.5 13.5h11" /><path d="M4.75 13.5v-4M8 13.5V3.5M11.25 13.5V7" /></svg>,
+  model: <svg {...glyphProps}><rect x="2.5" y="2.5" width="11" height="11" rx="1.5" /><path d="M2.5 6.25h11M6.25 6.25v7.25" /></svg>,
+  report: <svg {...glyphProps}><path d="M4.25 1.75h5L13 5.5v8.25a1.5 1.5 0 0 1-1.5 1.5h-7.25Z" /><path d="M9 1.75V5.5h4" /></svg>,
 };
 
 export default function WorkbenchShell({
@@ -241,7 +241,7 @@ export default function WorkbenchShell({
     <a className="skip-link" href="#main-content">Skip to content</a>
     <div className="app-shell">
       <aside ref={railRef} className="rail" aria-label="Primary navigation">
-        <Link href={workflowHref("/cases")} className="wordmark"><span className="brand-mark" aria-hidden="true">C</span><span>CAOS<small>Credit Agent OS</small></span></Link>
+        <Link href={workflowHref("/cases")} className="wordmark"><span className="brand-mark" aria-hidden="true"><svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="m4.5 5 3 3-3 3M8.5 11h3.5" /></svg></span><span>CAOS<small>Credit Agent OS</small></span></Link>
         <nav aria-label="Workflows" className="nav-group">
           <div className="nav-label">Workspace</div>
           {workflows.map((workflow) => {
@@ -270,7 +270,7 @@ export default function WorkbenchShell({
           >{tool.label}{tool.destination === "Run Console" && runIsLive && <span className="shortcut">LIVE<span className="sr-only"> run in progress</span></span>}</Link>)}
         </nav> : null}
         <div className="rail-spacer" />
-        <nav className="nav-group governance-nav" aria-label="Governance"><div className="nav-label">Governance</div><Link className={`nav-link ${active === "Admin Studio" ? "active" : ""}`} aria-current={active === "Admin Studio" ? "page" : undefined} href={workflowHref("/admin-studio")}><span className="nav-glyph" aria-hidden="true"><svg {...glyphProps}><path d="M8 1.5 13.5 3.5V8c0 3.5-2.5 5.5-5.5 6.5C5 13.5 2.5 11.5 2.5 8V3.5Z" /></svg></span><span className="nav-text">Admin</span></Link></nav>
+        <nav className="nav-group governance-nav" aria-label="Governance"><div className="nav-label">Governance</div><Link className={`nav-link ${active === "Admin Studio" ? "active" : ""}`} aria-current={active === "Admin Studio" ? "page" : undefined} href={workflowHref("/admin-studio")}><span className="nav-glyph" aria-hidden="true"><svg {...glyphProps}><path d="M8 1.75 13.25 3.5v4.25c0 3.25-2.25 5.25-5.25 6.25-3-1-5.25-3-5.25-6.25V3.5Z" /><path d="m5.75 7.75 1.5 1.5 2.75-2.75" /></svg></span><span className="nav-text">Admin</span></Link></nav>
         <div className="rail-meta"><span>{role === "READER" ? "Reader" : role.toLowerCase().replace(/^./, (value) => value.toUpperCase())}</span><span>{selectedCase ? selectedCase.issuer : "No credit selected"}</span><span>Desktop workbench</span></div>
       </aside>
       <div className="workspace">
