@@ -550,6 +550,21 @@ class DomainStore:
             return None
         return {**self._public_loan_universe(dict(row)), "rows": row["rows"]}
 
+    def loan_universe(self, universe_id: str) -> dict[str, Any] | None:
+        """One record by id, rows included, whatever its status.
+
+        A run pins a universe at gate exit; a later import supersedes it
+        case-wide but must not change what that run binds, so the pinned lookup
+        is by id and deliberately status-blind. Withdrawal is not: it withdraws
+        the underlying source, which the pinned-source check refuses first."""
+        with self.engine.connect() as conn:
+            row = conn.execute(
+                sa.select(loan_universes).where(loan_universes.c.id == universe_id)
+            ).mappings().first()
+        if row is None:
+            return None
+        return {**self._public_loan_universe(dict(row)), "rows": row["rows"]}
+
     def replace_vault_bytes_for_tests(self, source_id: str, content: bytes) -> None:
         row = self.get_source_private(source_id)
         Path(row["vault_path"]).write_bytes(content)

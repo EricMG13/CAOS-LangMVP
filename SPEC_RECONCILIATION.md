@@ -393,3 +393,113 @@ than one.
 
 Suite state after the addition: **570 passed** (the real-issuer corpus is
 downloaded in this worktree; without it 12 corpus tests skip).
+
+## The non-agentic document channel: CP-3's loan universe (2026-08-31)
+
+The two earlier injection passes both went through the model: an adversarial
+document persuades the provider to escape, and the host refuses. This pass asked
+what a document can do to a run with **no model cooperation at all**, and found
+one channel.
+
+CP-3 is a *deterministic* module. `build_deterministic_payload` copies the case's
+loan universe — every parsed workbook row — straight into the artifact under
+`authority: "SYSTEM_ANALYSIS"`, `confidence: {band: "SYSTEM", qa_status:
+"Passed"}`, with the identity triple in both `lineage` and `provenance`. Those
+rows never pass through `read_evidence`: no block locator, no `untrusted_data`
+flag, no citation, no delivered-set membership. Every neutralization the
+injection suite pins (§12.26's five mechanisms, the untrusted label, the
+delivered-set citation contract) sits on the *evidence* path and none of it is on
+this one.
+
+And the universe was read **live off the case, not off the run's pin**:
+
+```python
+universe = self.store.active_loan_universe(self.runs.get_run(run_id)["case_id"])
+```
+
+`active_loan_universe` is `WHERE case_id = ? AND status = 'ACTIVE'`. Nothing tied
+it to `plan["source_set_id"]`. So a workbook uploaded and imported **after gate
+exit** became the ACTIVE universe and CP-3 bound it — a document entering a
+pinned run through the front door, with the run reporting `succeeded`. This is
+invariant 1 read literally ("runs execute only against the pinned, immutable
+source set"), broken by the host itself rather than by a model that obeyed a
+document.
+
+The same read broke invariant 10 in the same motion. `_input_fingerprint` covers
+`plan_digest`, `module_id`, upstream digests and `source_set_digest` — the
+universe appeared in none of them. Two runs pinned to the identical source set
+therefore produced different CP-3 artifacts depending on which import happened to
+be ACTIVE when each reached the node: replay from the same pins, not equivalent.
+
+**Fix (host-side, no prompt text).** The universe binds like every other input —
+pinned once, verified at use:
+
+1. `_gate_node` pins `plan["loan_universe"] = {id, universe_digest, source_id}`
+   at gate exit, and only when that universe's own source is in the set the run
+   just pinned. The key is **absent, never null** (§12.1), so no other route's
+   plan digest moves. Because `plan_preimage` is exclusion-based, the pin is
+   inside `plan_digest` — which is inside `input_fingerprint` — so invariant 10
+   is closed transitively and a superseded universe can no longer be reused
+   under a stale fingerprint.
+2. `Engine._pinned_loan_universe` re-derives the record from the store by id on
+   every attempt and re-checks case, source and a **recomputed** digest (§11.2:
+   the checkpointed digest is an expectation, never authority). Mismatch is a
+   typed `AGENT_AUTHORITY_MISMATCH`.
+3. `artifacts/loan_universe.py::universe_digest` is now the single preimage
+   implementation (§12.1's meta-rule), shared by the importer that writes the
+   digest and the engine that re-derives it. Every field is JSON-native as
+   stored, so the round trip through the store column is byte-identical.
+4. `DomainStore.loan_universe(id)` is the pinned lookup: by id, rows included,
+   deliberately **status-blind** — a later import supersedes case-wide but must
+   not change what an already-pinned run binds. Withdrawal is not status-blind:
+   it withdraws the underlying source, which is in the pinned set, so
+   `_live_sources` refuses the run first.
+
+A workbook imported after the pin now yields exactly the artifact a case with no
+workbook yields — the attacker's rows never enter.
+
+| Injected surface | Structural defence asserted | Invariant |
+|---|---|---|
+| a workbook imported after gate exit (`test_a_workbook_imported_after_the_pin_cannot_bind_itself_to_the_run`) | the universe is pinned at gate exit, not read live off the case | 1 |
+| a second workbook superseding the pinned one mid-run (`test_a_superseding_workbook_cannot_swap_what_the_pinned_run_binds`) | the pinned id is bound and re-verified; the case moving on does not move the run | 1, 10 |
+
+### Anti-vacuity ledger
+
+| # | Check deleted | Test that turns red | Pre-existing tests also red |
+|---|---|---|---|
+| 1 | binding the pinned universe (`engine/runtime.py`, restored to the live `active_loan_universe` read) | both new tests | none |
+| 2 | the gate-exit pinned-set membership guard (`engine/runtime.py`) | **none — measured, not assumed** | none |
+
+Row 2 is recorded as defence-in-depth on measurement, not assumed to be
+load-bearing. Deleting it leaves the whole suite green because an ACTIVE
+universe's source is *always* in the case's current source set today: `ingest`
+adds the source to a new set version, and `withdraw` both removes it and flips
+every universe on it to WITHDRAWN, so the two lifecycles cannot diverge. The
+guard is kept because it states the invariant at the pin site and fails closed
+if they ever do.
+
+### Recorded non-findings
+
+- **Filename and media type are not `BoundaryText`.** `ingest_upload` takes both
+  straight off the multipart headers, and they reach the source manifest in every
+  module prompt. They are bounded (255 / 160 chars, `bound_manifest`) but not
+  control-byte, bidi-override or NFC checked. Not a defect *here*: they ride the
+  user prompt inside the `UNTRUSTED CASE DATA` payload, never the system prompt,
+  they are excluded from the source-set digest preimage (§12.5's six fields) and
+  from `input_fingerprint`, and the `source.ingested` audit event carries only
+  `{case_id, source_id, sha256}`. Nothing pinned or digested sees them.
+- **Loan-workbook cell text is not `BoundaryText` either** (`_text` does
+  `.strip()` plus a 32 KB bound). A borrower name carrying a bidirectional
+  override therefore rides the CP-3 artifact and the API response. It cannot mint
+  two lineages — `universe_digest` is content-addressed over exactly the bytes
+  stored, and `instrument_key` is the uppercased FIGI/Bloomberg id — but a
+  display-reordering name reaching a rendered deliverable is the CVE-2021-42574
+  shape CLAUDE.md's boundary-text rule exists to stop. Left open deliberately:
+  closing it is a change to what the importer accepts (rejected rows become
+  structured findings), which is a wire-visible contract change, not a defect fix.
+- **`rv_universes` is a different surface.** The quick RV universe is analyst-
+  authored through a request body, not parsed out of a document, so it is out of
+  this pass's scope.
+
+Suite state after this pass: **552 passed, 12 skipped** (the skips are the
+real-issuer corpus tests).

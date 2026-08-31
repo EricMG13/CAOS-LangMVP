@@ -248,6 +248,19 @@ class Engine:
         plan["source_set_digest"] = state_mod.source_set_digest(current)
         # §12.6: the plan pins the integrity-manifest digest at gate exit.
         plan["manifest_digest"] = digest(self.bundle.integrity)
+        # Invariant 1: a loan universe is workbook-derived analysis the host
+        # lifts into CP-3's artifact without any evidence read, so it binds like
+        # every other input — pinned here, once, and only when its own source is
+        # in the set this run just pinned. A workbook imported after gate exit is
+        # outside the pin and stays outside it; the key is absent, never null
+        # (§12.1), so no other route's plan digest moves.
+        universe = self.store.active_loan_universe(run["case_id"])
+        if universe is not None and universe["source_id"] in current["source_ids"]:
+            plan["loan_universe"] = {
+                "id": universe["id"],
+                "universe_digest": universe["universe_digest"],
+                "source_id": universe["source_id"],
+            }
         pinned = state_mod.pin_plan(plan)
         self.runs.pin_plan(run_id, pinned["plan"], pinned["plan_digest"])
         return {"plan": pinned["plan"], "plan_digest": pinned["plan_digest"], "error": None}
@@ -275,6 +288,32 @@ class Engine:
             "upstream_artifact_digests": upstream_digests,
             "source_set_digest": plan["source_set_digest"],
         })
+
+    def _pinned_loan_universe(self, plan: dict[str, Any], case_id: str) -> dict[str, Any] | None:
+        """The universe CP-3 binds, re-derived from the store on every attempt.
+
+        §11.2: the plan carries an expectation, not authority — the record is
+        re-read by id and its digest recomputed from the stored fields, so a
+        tampered row or a swapped record fails closed. Case binding is re-checked
+        here for the same reason `_live_sources` re-checks it on a digest-verified
+        source set: the pin is only as good as the record it names. No pin means
+        this run has no loan universe, which is the artifact a case without one
+        already produces.
+        """
+        from ..artifacts.loan_universe import universe_digest
+
+        pinned = plan.get("loan_universe")
+        if pinned is None:
+            return None
+        record = self.store.loan_universe(pinned["id"])
+        if (
+            record is None
+            or record["case_id"] != case_id
+            or record["source_id"] != pinned["source_id"]
+            or universe_digest(record) != pinned["universe_digest"]
+        ):
+            raise AgentError("AGENT_AUTHORITY_MISMATCH", "pinned loan universe does not match the store record")
+        return record
 
     def _live_sources(self, case_id: str, source_set: dict[str, Any]) -> list[dict[str, Any]]:
         """Invariant 1, on EVERY path: the pinned set's digest cannot see a
@@ -340,11 +379,8 @@ class Engine:
                 result = await self._execute_agent(run_id, plan, module_id, source_set, live_sources, fingerprint, upstream)
                 payload, markdown, qa_status = result["payload"], result["markdown"], result["qa_status"]
             else:
-                universe = None
-                if module_id == "CP-3":
-                    # CP-3 consumes the case's pinned normalized loan universe
-                    # when one is active (identity triple bound in the artifact).
-                    universe = self.store.active_loan_universe(self.runs.get_run(run_id)["case_id"])
+                universe = (self._pinned_loan_universe(plan, self.runs.get_run(run_id)["case_id"])
+                            if module_id == "CP-3" else None)
                 payload = build_deterministic_payload(
                     module_id, plan, input_fingerprint=fingerprint,
                     upstream_digests=[a["digest"] for a in upstream],

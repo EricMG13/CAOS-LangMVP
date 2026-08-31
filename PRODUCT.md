@@ -12,6 +12,12 @@ CAOS serves institutional leveraged-finance credit specialists. The primary user
 
 CAOS is a credit-analysis workspace for turning source documents, market marks, module outputs, and evidence trails into committee-ready credit conclusions. Success means a specialist can inspect dense credit information quickly, trace every material number back to evidence, and defend the resulting view under scrutiny.
 
+## MVP Release Standard
+
+The MVP target is enterprise-testing readiness, not production readiness. Source documents are the only required analytical input. CAOS must prepare the evidence, execute the governed analysis, present a reviewable interpretation, preserve the analyst's ownership of the opinion, and publish exact approver-authorized files for external stakeholders.
+
+Every selectable model must pass the same route, evidence, security, failure, analytical-quality, and auditability gates before it appears to a user. A model that cannot satisfy a module contract must fail closed and must not remain selectable. `ENTERPRISE_TESTING_READINESS.md` defines the binding scope and exit criteria.
+
 ## Brand Personality
 
 Precise, defensible, alert. The product should feel like a refined institutional terminal: calm enough for committee work, live enough for market posture, and exact enough that numbers read as audited rather than decorative.

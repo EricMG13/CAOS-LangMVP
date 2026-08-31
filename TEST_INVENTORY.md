@@ -1,5 +1,9 @@
 # Test Inventory — LEGACY `caos/tests/`
 
+> This file remains the historical legacy-test classification. The current MVP
+> release gate is `ENTERPRISE_TESTING_READINESS.md`, which incorporates the
+> contractual rows here without duplicating them.
+
 Classification of every test in the legacy CAOS suite ahead of the LangGraph rebuild.
 
 - **Source:** `/Users/ericguei/Claude/Projects/CAOS/caos/tests/` at commit `84f9705` (2026-08-26)
@@ -389,4 +393,3 @@ Out of MVP scope — all CP-DR (pathway schema, planner content, pilot gating, f
 ## UNCLEAR (0)
 
 None. The single UNCLEAR (`test_loan_universe_findings_are_strict`) was resolved to CONTRACTUAL on 2026-08-26 by the ruling that the RV (relative value) loan-universe importer is in MVP scope.
-
