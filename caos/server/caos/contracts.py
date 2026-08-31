@@ -37,6 +37,7 @@ class NodeStatus(StrEnum):
     SUCCEEDED = "succeeded"
     FAILED = "failed"
     BLOCKED = "blocked"
+    CANCELLED = "cancelled"  # in flight when the run failed elsewhere; abandoned, not failed
 
 
 class SystemSignal(StrEnum):

@@ -345,8 +345,21 @@ class RunStore:
                 sa.update(runs).where(runs.c.id == run_id, runs.c.status.notin_(TERMINAL)).values(status="failed", error=error)
             ).rowcount
             if changed:
-                node_error_target = sa.and_(run_nodes.c.run_id == run_id, run_nodes.c.module_id == module_id) if module_id else sa.false()
-                conn.execute(sa.update(run_nodes).where(node_error_target).values(status="failed", error=error))
+                if module_id:
+                    conn.execute(
+                        sa.update(run_nodes)
+                        .where(run_nodes.c.run_id == run_id, run_nodes.c.module_id == module_id)
+                        .values(status="failed", error=error)
+                    )
+                # Siblings of the blamed module were mid-superstep; the run is over, so
+                # their work is abandoned, not failed (the error belongs to one module).
+                # ponytail: only `running` lies on a terminal record — `pending` stays
+                # true forever, and recover() never revisits a terminal run.
+                conn.execute(
+                    sa.update(run_nodes)
+                    .where(run_nodes.c.run_id == run_id, run_nodes.c.status == "running")
+                    .values(status="cancelled")
+                )
                 self._emit(conn, run_id, "run.failed", **error)
             return bool(changed)
 

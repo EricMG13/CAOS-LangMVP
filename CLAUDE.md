@@ -135,9 +135,9 @@ engine, the bundle, or the routes.
   `caos/server/worker.py` (polls the store for QUEUED model builds/exports and
   executes them; the only process with LibreOffice, so XLSX rendering lives
   here and nowhere else). `worker.py --once` runs a single pass.
-- Suite: `python -m pytest caos/tests -q` — fully green (570 passed with the
-  real-issuer corpus downloaded; without it the 12 corpus tests skip). Spec
-  tests (`caos/tests/spec/`) are the contractual surface —
+- Suite: `python -m pytest caos/tests -q` — fully green (550 passed, 12 skipped
+  without the real-issuer corpus; the corpus tests run once it is downloaded).
+  Spec tests (`caos/tests/spec/`) are the contractual surface —
   they pin invariants and wire shapes; `test_injection_spec.py` pins the
   behavioural half of the prompt-injection defence: adversarial documents in
   `caos/tests/fixtures/injection/` driven by a provider double that obeys them,

@@ -140,6 +140,46 @@ async def test_reuse_relink_on_resume_revalidates_live_sources(tmp_path, setting
     assert revived.get_run(run["id"])["status"] == "failed", "reuse never relinks past a withdrawal"
 
 
+@pytest.mark.parametrize("blamed", ["CP-1", None])
+def test_a_terminal_failure_leaves_no_node_claiming_in_flight_work(tmp_path, blamed):
+    """§12.13: a fan-out superstep has several modules `running` at once, but
+    finalize_failure only ever touched the blamed row — the rest kept `running`
+    on a terminal record. `recover` walks non_terminal_runs() only, so nothing
+    ever reconciled them: `GET /api/runs/{id}` served a failed run carrying live
+    work for the life of the record. Reconciliation rides the same transaction
+    and mints no second terminal event."""
+    import sqlalchemy as sa
+
+    from caos.storage.runs import RunStore
+
+    store = RunStore(sa.create_engine(f"sqlite:///{tmp_path / 'runs.db'}"))
+    run_id = store.create_run("case-1", "FULL_CREDIT", "full", "analyst")["id"]
+    siblings = ["CP-1", "CP-1A", "CP-1B"]
+    store.pin_plan(
+        run_id,
+        {"nodes": [{"module_id": m, "stage": 1, "dependencies": ["CP-0"]} for m in [*siblings, "CP-2"]]},
+        "plan-digest",
+    )
+    for module_id in siblings:
+        store.node_running(run_id, module_id)
+
+    assert store.finalize_failure(run_id, "AGENT_BUDGET_EXCEEDED", blamed)
+
+    nodes = {node["module_id"]: node for node in store.get_run(run_id)["nodes"]}
+    assert [m for m, n in nodes.items() if n["status"] == "running"] == [], \
+        "a terminal run may not carry a node the console renders as live work"
+    if blamed:
+        assert nodes[blamed]["status"] == "failed"
+        assert nodes[blamed]["error"] == {"code": "AGENT_BUDGET_EXCEEDED", "module_id": blamed}
+    for module_id in siblings:
+        if module_id != blamed:
+            assert nodes[module_id]["status"] == "cancelled", "abandoned work is not failed work"
+            assert nodes[module_id]["error"] is None, "only the blamed module carries the error"
+    assert nodes["CP-2"]["status"] == "pending", "a node that never started did not start; that stays true"
+    terminal = [e for e in store.events_after(run_id, 0) if e["event"] in {"run.failed", "run.succeeded"}]
+    assert len(terminal) == 1, "reconciling the siblings must not mint a second terminal event"
+
+
 # --- determinism and replay (invariant 10) ----------------------------------------
 
 
