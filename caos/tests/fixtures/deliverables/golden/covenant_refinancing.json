@@ -1,0 +1,10 @@
+[
+  {"section_id":"credit_snapshot","kind":"columns","title":"Credit Snapshot","page":"Decision","editable":false,"origin":"ARTIFACT","fields":["Accepted Analysis","Accepted Analysis: Snapshot","Analyst Snapshot"]},
+  {"section_id":"capital_structure_and_maturity_wall","kind":"text","title":"Capital Structure and Maturity Wall","page":"Capital","editable":true,"origin":"ANALYST","fields":[]},
+  {"section_id":"covenant_definitions_and_headroom","kind":"text","title":"Covenant Definitions and Headroom","page":"Capital","editable":true,"origin":"ANALYST","fields":[]},
+  {"section_id":"liquidity","kind":"text","title":"Liquidity","page":"Liquidity","editable":true,"origin":"ANALYST","fields":[]},
+  {"section_id":"refinancing_options","kind":"text","title":"Refinancing Options","page":"Liquidity","editable":true,"origin":"ANALYST","fields":[]},
+  {"section_id":"base_and_downside_breakpoints","kind":"columns","title":"Base and Downside Breakpoints","page":"Downside","editable":false,"origin":"MODEL","fields":["Analyst Breakpoint View","Calculated Base and Downside Breakpoints","Calculated Base and Downside Breakpoints: Case / Period / Metric","Calculated Base and Downside Breakpoints: Value"]},
+  {"section_id":"actions_and_monitoring","kind":"text","title":"Actions and Monitoring","page":"Actions","editable":true,"origin":"ANALYST","fields":[]},
+  {"section_id":"evidence_register","kind":"table","title":"Evidence Register","page":"Evidence","editable":false,"origin":"ARTIFACT","fields":["Source","Blocks","Claim"]}
+]

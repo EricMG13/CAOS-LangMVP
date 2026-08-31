@@ -59,7 +59,7 @@ export function overlayAnalystText(
 ): DocumentSection[] {
   const textByBlock = new Map<string, string>();
   for (const block of blocks) {
-    if (block.kind === "NARRATIVE" && typeof block.text === "string") {
+    if ((block.kind === "NARRATIVE" || block.kind === "LIMITATIONS") && typeof block.text === "string") {
       textByBlock.set(block.block_id, block.text);
     }
   }

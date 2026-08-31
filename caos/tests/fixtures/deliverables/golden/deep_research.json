@@ -1,0 +1,9 @@
+[
+  {"section_id":"research_question_and_scope","kind":"columns","title":"Research Question and Scope","page":"Scope","editable":false,"origin":"ARTIFACT","fields":["Accepted Analysis","Accepted Analysis: Snapshot","Analyst Scope"]},
+  {"section_id":"executive_findings","kind":"text","title":"Executive Findings","page":"Findings","editable":true,"origin":"ANALYST","fields":[]},
+  {"section_id":"evidence_synthesis","kind":"text","title":"Evidence Synthesis","page":"Evidence","editable":true,"origin":"ANALYST","fields":[]},
+  {"section_id":"counterevidence_and_gaps","kind":"text","title":"Counterevidence and Gaps","page":"Evidence","editable":true,"origin":"ANALYST","fields":[]},
+  {"section_id":"implications_for_thesis_model_and_recommendation","kind":"text","title":"Implications for Thesis, Model, and Recommendation","page":"Implications","editable":true,"origin":"ANALYST","fields":[]},
+  {"section_id":"unresolved_questions","kind":"text","title":"Unresolved Questions","page":"Implications","editable":true,"origin":"ANALYST","fields":[]},
+  {"section_id":"evidence_register","kind":"table","title":"Evidence Register","page":"Sources","editable":false,"origin":"ARTIFACT","fields":["Source","Blocks","Claim"]}
+]

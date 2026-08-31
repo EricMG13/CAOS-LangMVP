@@ -35,7 +35,7 @@ from ..publishing.renderers import render_frozen_export
 from ..storage.deliverables import DeliverableStore, DeliverableVersionConflict  # noqa: F401 — conflict re-raised to callers
 from ..storage.runs import RunStore
 from ..storage.store import DomainStore, new_id
-from .document import DOCUMENT_SCHEMA_VERSION, compose_document
+from .document import DOCUMENT_SCHEMA_VERSION, compose_document, model_metric_values
 from .graph import canonical_approval_hash, filing_thread_id, validate_approval_hash
 
 PATHWAY_TEMPLATES = (
@@ -48,7 +48,10 @@ PATHWAY_TEMPLATES = (
 )
 EXPORT_FORMATS = ("md", "pdf", "xlsx")
 MODEL_DEPENDENT_KINDS = {"GENERATED_METRIC", "GENERATED_TABLE", "GENERATED_CHART", "SCENARIO_EXHIBIT", "MODEL_APPENDIX"}
-GOVERNED_TABLES = {"debt_schedule": {"instrument", "amount", "maturity", "margin"}}
+GOVERNED_TABLES = {
+    "annual_model": {"revenue", "adjusted_ebitda_calc", "fcf", "total_leverage"},
+    "debt_schedule": {"instrument", "amount", "maturity", "margin"},
+}
 
 # Deliverable templates are the workbench contract: titled required sections per
 # pathway, then the mandatory Evidence Register, then optional appendices.
@@ -360,20 +363,6 @@ class DeliverableService:
                         governed.update(period_values)
         return governed
 
-    @staticmethod
-    def _metric_values(outputs: dict[str, Any], metric: str) -> Any:
-        if metric in outputs:
-            return outputs[metric]
-        return {
-            case: {
-                period: period_values.get(metric)
-                for period, period_values in case_values.items()
-                if isinstance(period_values, dict) and metric in period_values
-            }
-            for case, case_values in outputs.items()
-            if isinstance(case_values, dict)
-        }
-
     def _enrich_block(self, case_id: str, block: dict[str, Any], model: dict[str, Any] | None,
                       identity: dict[str, Any] | None, selection: Any) -> dict[str, Any]:
         if block["kind"] not in MODEL_DEPENDENT_KINDS:
@@ -386,7 +375,7 @@ class DeliverableService:
             rogue = [metric for metric in block["metric_ids"] if metric not in governed]
             if rogue:
                 raise ValueError(f"GENERATED_FIELD_INVALID: ungoverned metric ids {rogue}")
-            stored["values"] = {metric: self._metric_values(model["outputs"], metric) for metric in block["metric_ids"]}
+            stored["values"] = {metric: model_metric_values(model["outputs"], metric) for metric in block["metric_ids"]}
         elif block["kind"] == "GENERATED_TABLE":
             allowed = GOVERNED_TABLES.get(block["table_id"])
             if allowed is None or any(field not in allowed for field in block["field_ids"]):

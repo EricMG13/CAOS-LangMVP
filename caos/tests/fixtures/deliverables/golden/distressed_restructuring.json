@@ -1,0 +1,11 @@
+[
+  {"section_id":"credit_snapshot","kind":"columns","title":"Credit Snapshot","page":"Decision","editable":false,"origin":"ARTIFACT","fields":["Accepted Analysis","Accepted Analysis: Snapshot","Analyst Snapshot"]},
+  {"section_id":"capital_structure_and_priority","kind":"text","title":"Capital Structure and Priority","page":"Capital","editable":true,"origin":"ANALYST","fields":[]},
+  {"section_id":"liquidity_runway","kind":"text","title":"Liquidity Runway","page":"Capital","editable":true,"origin":"ANALYST","fields":[]},
+  {"section_id":"base_downside_and_scenario_exhibits","kind":"columns","title":"Base, Downside, and Scenario Exhibits","page":"Scenarios","editable":false,"origin":"MODEL","fields":["Analyst Scenario View","Calculated Base, Downside, and Scenario Outputs","Calculated Base, Downside, and Scenario Outputs: Case / Period / Metric","Calculated Base, Downside, and Scenario Outputs: Value"]},
+  {"section_id":"recovery","kind":"text","title":"Recovery","page":"Scenarios","editable":true,"origin":"ANALYST","fields":[]},
+  {"section_id":"covenant_default_and_refinancing_milestones","kind":"text","title":"Covenant, Default, and Refinancing Milestones","page":"Milestones","editable":true,"origin":"ANALYST","fields":[]},
+  {"section_id":"catalysts_and_process_risks","kind":"text","title":"Catalysts and Process Risks","page":"Milestones","editable":true,"origin":"ANALYST","fields":[]},
+  {"section_id":"recommendation","kind":"text","title":"Recommendation","page":"Recommendation","editable":true,"origin":"ANALYST","fields":[]},
+  {"section_id":"evidence_register","kind":"table","title":"Evidence Register","page":"Evidence","editable":false,"origin":"ARTIFACT","fields":["Source","Blocks","Claim"]}
+]

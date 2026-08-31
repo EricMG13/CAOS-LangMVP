@@ -1,0 +1,10 @@
+[
+  {"section_id":"credit_snapshot","kind":"columns","title":"Credit Snapshot","page":"Decision","editable":false,"origin":"ARTIFACT","fields":["Accepted Analysis","Accepted Analysis: Snapshot","Analyst Snapshot"]},
+  {"section_id":"instrument_comparison","kind":"text","title":"Instrument Comparison","page":"Comparison","editable":true,"origin":"ANALYST","fields":[]},
+  {"section_id":"structure_and_seniority","kind":"text","title":"Structure and Seniority","page":"Comparison","editable":true,"origin":"ANALYST","fields":[]},
+  {"section_id":"relative_compensation","kind":"text","title":"Relative Compensation","page":"Comparison","editable":true,"origin":"ANALYST","fields":[]},
+  {"section_id":"catalysts_and_risks","kind":"text","title":"Catalysts and Risks","page":"Risk","editable":true,"origin":"ANALYST","fields":[]},
+  {"section_id":"recommendation_and_trade_gates","kind":"text","title":"Recommendation and Trade Gates","page":"Trade","editable":true,"origin":"ANALYST","fields":[]},
+  {"section_id":"market_freshness","kind":"text","title":"Market Freshness","page":"Trade","editable":true,"origin":"ANALYST","fields":[]},
+  {"section_id":"evidence_register","kind":"table","title":"Evidence Register","page":"Evidence","editable":false,"origin":"ARTIFACT","fields":["Source","Blocks","Claim"]}
+]

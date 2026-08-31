@@ -1,0 +1,10 @@
+[
+  {"section_id":"credit_snapshot","kind":"columns","title":"Credit Snapshot","page":"Decision","editable":false,"origin":"ARTIFACT","fields":["Accepted Analysis","Accepted Analysis: Snapshot","Analyst Snapshot"]},
+  {"section_id":"what_changed","kind":"text","title":"What Changed","page":"Decision","editable":true,"origin":"ANALYST","fields":[]},
+  {"section_id":"reported_versus_prior_bridge","kind":"text","title":"Reported Versus Prior Bridge","page":"Performance","editable":true,"origin":"ANALYST","fields":[]},
+  {"section_id":"model_impact","kind":"columns","title":"Model Impact","page":"Model","editable":false,"origin":"MODEL","fields":["Analyst Model Impact","Calculated Model Impact","Calculated Model Impact: Case / Period / Metric","Calculated Model Impact: Value"]},
+  {"section_id":"leverage_and_liquidity","kind":"text","title":"Leverage and Liquidity","page":"Model","editable":true,"origin":"ANALYST","fields":[]},
+  {"section_id":"thesis_and_recommendation_impact","kind":"text","title":"Thesis and Recommendation Impact","page":"View","editable":true,"origin":"ANALYST","fields":[]},
+  {"section_id":"risks_catalysts_and_monitoring","kind":"text","title":"Risks, Catalysts, and Monitoring","page":"View","editable":true,"origin":"ANALYST","fields":[]},
+  {"section_id":"evidence_register","kind":"table","title":"Evidence Register","page":"Evidence","editable":false,"origin":"ARTIFACT","fields":["Source","Blocks","Claim"]}
+]

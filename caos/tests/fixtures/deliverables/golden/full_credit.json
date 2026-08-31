@@ -1,0 +1,12 @@
+[
+  {"section_id":"credit_snapshot","kind":"columns","title":"Credit Snapshot","page":"Decision","editable":false,"origin":"ARTIFACT","fields":["Accepted Analysis","Accepted Analysis: Snapshot","Analyst Snapshot"]},
+  {"section_id":"recommendation","kind":"text","title":"Recommendation","page":"Decision","editable":true,"origin":"ANALYST","fields":[]},
+  {"section_id":"thesis_variant","kind":"text","title":"Thesis and Variant View","page":"Decision","editable":true,"origin":"ANALYST","fields":[]},
+  {"section_id":"business_industry","kind":"text","title":"Business and Industry","page":"Business","editable":true,"origin":"ANALYST","fields":[]},
+  {"section_id":"capital_structure","kind":"text","title":"Capital Structure","page":"Financials","editable":true,"origin":"ANALYST","fields":[]},
+  {"section_id":"base_downside_model","kind":"columns","title":"Base and Downside Model","page":"Financials","editable":false,"origin":"MODEL","fields":["Analyst Model View","Calculated Base and Downside Outputs","Calculated Base and Downside Outputs: Case / Period / Metric","Calculated Base and Downside Outputs: Value"]},
+  {"section_id":"liquidity_covenants","kind":"text","title":"Liquidity and Covenants","page":"Financials","editable":true,"origin":"ANALYST","fields":[]},
+  {"section_id":"risks_catalysts_falsifiers","kind":"text","title":"Risks, Catalysts, and Falsifiers","page":"Risk","editable":true,"origin":"ANALYST","fields":[]},
+  {"section_id":"monitoring","kind":"text","title":"Monitoring","page":"Risk","editable":true,"origin":"ANALYST","fields":[]},
+  {"section_id":"evidence_register","kind":"table","title":"Evidence Register","page":"Evidence","editable":false,"origin":"ARTIFACT","fields":["Source","Blocks","Claim"]}
+]

@@ -75,7 +75,7 @@ def _model_rows(value: Any, prefix: tuple[str, ...] = ()) -> list[list[str]]:
     if isinstance(value, dict):
         return [
             row
-            for key, child in value.items()
+            for key, child in sorted(value.items(), key=lambda item: str(item[0]))
             for row in _model_rows(child, (*prefix, str(key)))
         ]
     if isinstance(value, list):
@@ -85,6 +85,20 @@ def _model_rows(value: Any, prefix: tuple[str, ...] = ()) -> list[list[str]]:
             for row in _model_rows(child, (*prefix, str(index)))
         ]
     return [[" / ".join(prefix) or "Value", _display(value)]]
+
+
+def model_metric_values(outputs: dict[str, Any], metric: str) -> Any:
+    if metric in outputs:
+        return outputs[metric]
+    return {
+        case: {
+            period: period_values[metric]
+            for period, period_values in case_values.items()
+            if isinstance(period_values, dict) and metric in period_values
+        }
+        for case, case_values in outputs.items()
+        if isinstance(case_values, dict)
+    }
 
 
 def _evidence_section(blocks: list[dict[str, Any]], authority_id: str) -> dict[str, Any]:
@@ -113,23 +127,118 @@ def _evidence_section(blocks: list[dict[str, Any]], authority_id: str) -> dict[s
     }
 
 
+def _narratives(template: dict[str, Any], blocks: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    return {
+        definition["title"]: block
+        for definition, block in zip(template["blocks"], blocks[:len(template["blocks"])], strict=True)
+        if block["kind"] == "NARRATIVE"
+    }
+
+
+def _required(by_title: dict[str, dict[str, Any]], title: str) -> dict[str, Any]:
+    return by_title[title]
+
+
+def _artifact_authority(artifacts: dict[str, dict[str, Any]]) -> str:
+    return (artifacts.get("__authority__") or {}).get("id") or "analysis-pending"
+
+
+def _model_authority(model: dict[str, Any] | None) -> str:
+    return (model or {}).get("revision_id") or (model or {}).get("build_id") or "model-unavailable"
+
+
+def _accepted_analysis(
+    artifacts: dict[str, dict[str, Any]], page: str, *, section_id: str = "accepted_analysis",
+) -> dict[str, Any]:
+    authority_id = _artifact_authority(artifacts)
+    rows = _artifact_summary_rows(artifacts)
+    return {
+        "kind": "profile",
+        "section_id": section_id,
+        "title": "Accepted Analysis",
+        "page": page,
+        "editable": False,
+        "origin": _origin("ARTIFACT", authority_id),
+        "rows": rows or [{"label": "Snapshot", "value": authority_id}],
+    }
+
+
+def _snapshot_section(
+    by_title: dict[str, dict[str, Any]],
+    artifacts: dict[str, dict[str, Any]],
+    *,
+    title: str,
+    page: str,
+    analyst_title: str,
+) -> dict[str, Any]:
+    section_id = _slug(title)
+    authority_id = _artifact_authority(artifacts)
+    return {
+        "kind": "columns",
+        "section_id": section_id,
+        "title": title,
+        "page": page,
+        "editable": False,
+        "origin": _origin("ARTIFACT", authority_id),
+        "items": [
+            [_accepted_analysis(artifacts, page)],
+            [_analyst_text(f"{section_id}_commentary", analyst_title, page, _required(by_title, title))],
+        ],
+    }
+
+
+def _model_section(
+    by_title: dict[str, dict[str, Any]],
+    model: dict[str, Any] | None,
+    *,
+    title: str,
+    page: str,
+    analyst_title: str,
+    table_title: str,
+) -> dict[str, Any]:
+    section_id = _slug(title)
+    authority_id = _model_authority(model)
+    rows = _model_rows((model or {}).get("outputs") or {})[:500]
+    table = {
+        "kind": "table",
+        "section_id": f"{section_id}_outputs",
+        "title": table_title,
+        "page": page,
+        "editable": False,
+        "origin": _origin("MODEL" if model else "SYSTEM", authority_id),
+        "columns": ["Case / Period / Metric", "Value"],
+        "rows": rows or [["Model outputs", "Unavailable"]],
+        "note": "Generated values are locked to the selected model authority.",
+    }
+    return {
+        "kind": "columns",
+        "section_id": section_id,
+        "title": title,
+        "page": page,
+        "editable": False,
+        "origin": _origin("MODEL" if model else "SYSTEM", authority_id),
+        "items": [
+            [_analyst_text(f"{section_id}_commentary", analyst_title, page, _required(by_title, title))],
+            [table],
+        ],
+    }
+
+
+def _analyst_section(
+    by_title: dict[str, dict[str, Any]], title: str, page: str,
+) -> dict[str, Any]:
+    return _analyst_text(_slug(title), title, page, _required(by_title, title))
+
+
 def _full_credit(
     template: dict[str, Any],
     blocks: list[dict[str, Any]],
     artifacts: dict[str, dict[str, Any]],
     model: dict[str, Any] | None,
 ) -> list[dict[str, Any]]:
-    by_title = {
-        definition["title"]: block
-        for definition, block in zip(template["blocks"], blocks[:len(template["blocks"])], strict=True)
-        if block["kind"] == "NARRATIVE"
-    }
-    artifact_authority = (artifacts.get("__authority__") or {}).get("id") or "analysis-pending"
-    model_authority = (
-        (model or {}).get("revision_id")
-        or (model or {}).get("build_id")
-        or "model-unavailable"
-    )
+    by_title = _narratives(template, blocks)
+    artifact_authority = _artifact_authority(artifacts)
+    model_authority = _model_authority(model)
     snapshot_block = by_title["Credit Snapshot"]
     artifact_rows = _artifact_summary_rows(artifacts)
     snapshot_profile = {
@@ -184,17 +293,198 @@ def _full_credit(
     return sections
 
 
-def _template_document(
+def compose_earnings_update(
     template: dict[str, Any],
     blocks: list[dict[str, Any]],
     artifacts: dict[str, dict[str, Any]],
+    model: dict[str, Any] | None,
 ) -> list[dict[str, Any]]:
-    artifact_authority = (artifacts.get("__authority__") or {}).get("id") or "analysis-pending"
+    by_title = _narratives(template, blocks)
+    return [
+        _snapshot_section(by_title, artifacts, title="Credit Snapshot", page="Decision", analyst_title="Analyst Snapshot"),
+        _analyst_section(by_title, "What Changed", "Decision"),
+        _analyst_section(by_title, "Reported Versus Prior Bridge", "Performance"),
+        _model_section(
+            by_title, model, title="Model Impact", page="Model",
+            analyst_title="Analyst Model Impact", table_title="Calculated Model Impact",
+        ),
+        _analyst_section(by_title, "Leverage and Liquidity", "Model"),
+        _analyst_section(by_title, "Thesis and Recommendation Impact", "View"),
+        _analyst_section(by_title, "Risks, Catalysts, and Monitoring", "View"),
+        _evidence_section(blocks, _artifact_authority(artifacts)),
+    ]
+
+
+def compose_covenant_refinancing(
+    template: dict[str, Any],
+    blocks: list[dict[str, Any]],
+    artifacts: dict[str, dict[str, Any]],
+    model: dict[str, Any] | None,
+) -> list[dict[str, Any]]:
+    by_title = _narratives(template, blocks)
+    return [
+        _snapshot_section(by_title, artifacts, title="Credit Snapshot", page="Decision", analyst_title="Analyst Snapshot"),
+        _analyst_section(by_title, "Capital Structure and Maturity Wall", "Capital"),
+        _analyst_section(by_title, "Covenant Definitions and Headroom", "Capital"),
+        _analyst_section(by_title, "Liquidity", "Liquidity"),
+        _analyst_section(by_title, "Refinancing Options", "Liquidity"),
+        _model_section(
+            by_title, model, title="Base and Downside Breakpoints", page="Downside",
+            analyst_title="Analyst Breakpoint View", table_title="Calculated Base and Downside Breakpoints",
+        ),
+        _analyst_section(by_title, "Actions and Monitoring", "Actions"),
+        _evidence_section(blocks, _artifact_authority(artifacts)),
+    ]
+
+
+def compose_relative_value(
+    template: dict[str, Any],
+    blocks: list[dict[str, Any]],
+    artifacts: dict[str, dict[str, Any]],
+    _model: dict[str, Any] | None,
+) -> list[dict[str, Any]]:
+    by_title = _narratives(template, blocks)
+    return [
+        _snapshot_section(by_title, artifacts, title="Credit Snapshot", page="Decision", analyst_title="Analyst Snapshot"),
+        _analyst_section(by_title, "Instrument Comparison", "Comparison"),
+        _analyst_section(by_title, "Structure and Seniority", "Comparison"),
+        _analyst_section(by_title, "Relative Compensation", "Comparison"),
+        _analyst_section(by_title, "Catalysts and Risks", "Risk"),
+        _analyst_section(by_title, "Recommendation and Trade Gates", "Trade"),
+        _analyst_section(by_title, "Market Freshness", "Trade"),
+        _evidence_section(blocks, _artifact_authority(artifacts)),
+    ]
+
+
+def compose_distressed_restructuring(
+    template: dict[str, Any],
+    blocks: list[dict[str, Any]],
+    artifacts: dict[str, dict[str, Any]],
+    model: dict[str, Any] | None,
+) -> list[dict[str, Any]]:
+    by_title = _narratives(template, blocks)
+    return [
+        _snapshot_section(by_title, artifacts, title="Credit Snapshot", page="Decision", analyst_title="Analyst Snapshot"),
+        _analyst_section(by_title, "Capital Structure and Priority", "Capital"),
+        _analyst_section(by_title, "Liquidity Runway", "Capital"),
+        _model_section(
+            by_title, model, title="Base, Downside, and Scenario Exhibits", page="Scenarios",
+            analyst_title="Analyst Scenario View", table_title="Calculated Base, Downside, and Scenario Outputs",
+        ),
+        _analyst_section(by_title, "Recovery", "Scenarios"),
+        _analyst_section(by_title, "Covenant, Default, and Refinancing Milestones", "Milestones"),
+        _analyst_section(by_title, "Catalysts and Process Risks", "Milestones"),
+        _analyst_section(by_title, "Recommendation", "Recommendation"),
+        _evidence_section(blocks, _artifact_authority(artifacts)),
+    ]
+
+
+def compose_deep_research(
+    template: dict[str, Any],
+    blocks: list[dict[str, Any]],
+    artifacts: dict[str, dict[str, Any]],
+    _model: dict[str, Any] | None,
+) -> list[dict[str, Any]]:
+    by_title = _narratives(template, blocks)
+    return [
+        _snapshot_section(
+            by_title, artifacts, title="Research Question and Scope", page="Scope", analyst_title="Analyst Scope",
+        ),
+        _analyst_section(by_title, "Executive Findings", "Findings"),
+        _analyst_section(by_title, "Evidence Synthesis", "Evidence"),
+        _analyst_section(by_title, "Counterevidence and Gaps", "Evidence"),
+        _analyst_section(by_title, "Implications for Thesis, Model, and Recommendation", "Implications"),
+        _analyst_section(by_title, "Unresolved Questions", "Implications"),
+        {**_evidence_section(blocks, _artifact_authority(artifacts)), "page": "Sources"},
+    ]
+
+
+def _appendix_sections(
+    blocks: list[dict[str, Any]], model: dict[str, Any] | None,
+) -> list[dict[str, Any]]:
     sections: list[dict[str, Any]] = []
-    for definition, block in zip(template["blocks"], blocks[:len(template["blocks"])], strict=True):
-        if block["kind"] == "NARRATIVE":
-            sections.append(_analyst_text(_slug(definition["title"]), definition["title"], "Analysis", block))
-    sections.append(_evidence_section(blocks, artifact_authority))
+    authority_id = _model_authority(model)
+    outputs = (model or {}).get("outputs") or {}
+    for block in blocks:
+        suffix = block["slot_id"].rsplit(".", 1)[-1]
+        origin = _origin("MODEL", authority_id)
+        common = {
+            "section_id": block["block_id"],
+            "page": "Appendix",
+            "editable": False,
+            "origin": origin,
+        }
+        if block["kind"] == "GENERATED_METRIC":
+            sections.append({
+                **common,
+                "kind": "table",
+                "title": f"Generated Metrics · {suffix}",
+                "columns": ["Metric / Case / Period", "Value"],
+                "rows": _model_rows(block.get("values") or {})[:500],
+                "note": "Generated values are locked to the selected model authority.",
+            })
+        elif block["kind"] == "GENERATED_TABLE":
+            fields = block["field_ids"]
+            if block["table_id"] == "annual_model":
+                columns = ["Case", "Period", *(field.replace("_", " ").title() for field in fields)]
+                rows = [
+                    [_display(case), _display(period.rsplit("::", 1)[-1]), *(_display(record.get(field)) for field in fields)]
+                    for case, case_values in sorted(outputs.items())
+                    if isinstance(case_values, dict)
+                    for period, record in sorted(case_values.items())
+                    if isinstance(record, dict)
+                ][:500]
+            else:
+                value = outputs.get(block["table_id"])
+                records = value if isinstance(value, list) else list(value.values()) if isinstance(value, dict) and all(isinstance(row, dict) for row in value.values()) else [value] if isinstance(value, dict) else []
+                columns = [field.replace("_", " ").title() for field in fields]
+                rows = [[_display(record.get(field)) for field in fields] for record in records[:500]]
+            sections.append({
+                **common,
+                "kind": "table",
+                "title": f"{block['table_id'].replace('_', ' ').title()} · {suffix}",
+                "columns": columns,
+                "rows": rows,
+                "note": "Generated rows are locked to the selected model authority.",
+            })
+        elif block["kind"] == "GENERATED_CHART":
+            values = {field: model_metric_values(outputs, field) for field in block["recipe"]["fields"]}
+            sections.append({
+                **common,
+                "kind": "chart",
+                "title": f"Generated Chart · {suffix}",
+                "recipe": block["recipe"],
+                "accessible_columns": ["Metric / Case / Period", "Value"],
+                "accessible_rows": _model_rows(values)[:500],
+            })
+        elif block["kind"] == "SCENARIO_EXHIBIT":
+            sections.append({
+                **common,
+                "kind": "chart",
+                "title": block["title"],
+                "origin": _origin("MODEL", block["scenario_digest"]),
+                "recipe": {"chart_kind": "scenario", "shocks": block["shocks"]},
+                "accessible_columns": ["Scenario / Metric", "Value"],
+                "accessible_rows": _model_rows(block["scenario"].get("outputs") or {})[:500],
+            })
+        elif block["kind"] == "MODEL_APPENDIX":
+            sections.append({
+                **common,
+                "kind": "table",
+                "title": "Model Appendix",
+                "columns": ["Case / Period / Metric", "Value"],
+                "rows": _model_rows(outputs)[:500],
+                "note": "Complete calculated output projection for review.",
+            })
+        elif block["kind"] == "LIMITATIONS":
+            sections.append({
+                **common,
+                "kind": "text",
+                "title": f"Limitations · {suffix}",
+                "editable": True,
+                "origin": _origin("ANALYST", block["block_id"], _citation_block_ids(block)),
+                "body": block["text"],
+            })
     return sections
 
 
@@ -207,10 +497,26 @@ def compose_document(
     model: dict[str, Any] | None,
 ) -> list[dict[str, Any]]:
     """Return the one validated, JSON-ready document used by every consumer."""
-    raw = (
-        _full_credit(template, blocks, artifacts, model)
-        if pathway == "FULL_CREDIT"
-        else _template_document(template, blocks, artifacts)
-    )
+    composers = {
+        "FULL_CREDIT": _full_credit,
+        "EARNINGS_UPDATE": compose_earnings_update,
+        "COVENANT_REFINANCING": compose_covenant_refinancing,
+        "RELATIVE_VALUE": compose_relative_value,
+        "DISTRESSED_RESTRUCTURING": compose_distressed_restructuring,
+        "DEEP_RESEARCH": compose_deep_research,
+    }
+    raw = composers[pathway](template, blocks, artifacts, model)
+    evidence = raw.pop()
+    raw.extend(_appendix_sections(blocks[len(template["blocks"]):], model))
+    raw.append(evidence)
+    pending = list(raw)
+    section_ids: list[str] = []
+    while pending:
+        section = pending.pop()
+        section_ids.append(section["section_id"])
+        if section["kind"] == "columns":
+            pending.extend(item for column in section["items"] for item in column)
+    if len(section_ids) != len(set(section_ids)):
+        raise ValueError("DELIVERABLE_SECTION_ID_DUPLICATE: canonical section ids must be unique")
     validated = _DOCUMENT_ADAPTER.validate_python(raw)
     return _DOCUMENT_ADAPTER.dump_python(validated, mode="json")

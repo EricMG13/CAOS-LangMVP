@@ -45,6 +45,7 @@ import io
 import json
 import re
 from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 
 import pytest
 
@@ -61,6 +62,7 @@ SIX_PATHWAYS = (
 
 ANALYST_H = {"x-caos-role": "ANALYST", "x-forwarded-user": "analyst"}
 APPROVER_H = {"x-caos-role": "APPROVER", "x-forwarded-user": "approver-user"}
+GOLDEN_DIR = Path(__file__).resolve().parents[1] / "fixtures" / "deliverables" / "golden"
 
 SHOCK = {"assumption_id": "revenue_growth", "case": "DOWNSIDE", "period_id": "FY2026", "value": -0.05}
 
@@ -310,6 +312,153 @@ def test_full_credit_draft_composes_one_governed_decision_document(service, stor
     model_table = sections[5]["items"][1][0]
     assert model_table["origin"]["kind"] == "MODEL"
     assert ["BASE / FY2027 / total_leverage", "3.8"] in model_table["rows"]
+
+
+def _document_structure(sections):
+    def fields(section):
+        if section["kind"] == "profile":
+            return [row["label"] for row in section["rows"]]
+        if section["kind"] == "table":
+            return section["columns"]
+        if section["kind"] == "chart":
+            return section["accessible_columns"]
+        if section["kind"] == "columns":
+            labels = []
+            for column in section["items"]:
+                for item in column:
+                    labels.append(item["title"])
+                    labels.extend(f"{item['title']}: {label}" for label in fields(item))
+            return labels
+        return []
+
+    return [{
+        "section_id": section["section_id"],
+        "kind": section["kind"],
+        "title": section["title"],
+        "page": section["page"],
+        "editable": section["editable"],
+        "origin": section["origin"]["kind"],
+        "fields": fields(section),
+    } for section in sections]
+
+
+@pytest.mark.parametrize("pathway", SIX_PATHWAYS)
+def test_document_recipe_matches_approved_structure(service, store, pathway):
+    case, source, _ = seed_ready_case(service, store)
+    model = seed_model(service, case, outputs={
+        "BASE": {"FY2027": {"total_leverage": 3.8, "accessible_liquidity": 210.0}},
+        "DOWNSIDE": {"FY2027": {"total_leverage": 5.1, "accessible_liquidity": 95.0}},
+    })
+    template = service.templates()[pathway]
+    revision = service.save_draft(
+        case["id"], pathway,
+        draft_request(template, source, model_selection=revision_selection(model)),
+        actor="analyst",
+    )
+
+    expected = json.loads((GOLDEN_DIR / f"{pathway.lower()}.json").read_text())
+    assert _document_structure(revision["content"]["document_sections"]) == expected
+
+
+def test_optional_generated_blocks_become_locked_document_appendices(service, store):
+    case, source, _ = seed_ready_case(service, store)
+    model = seed_model(service, case, outputs={
+        "BASE": {"FY2027": {"total_leverage": 3.8}},
+        "DOWNSIDE": {"FY2027": {"total_leverage": 5.1}},
+        "debt_schedule": [
+            {"instrument": "RCF", "amount": 120.0, "maturity": "FY2028", "margin": "S+350"},
+        ],
+    })
+    template = service.templates()["FULL_CREDIT"]
+    extras = [
+        optional_block(template, "GENERATED_METRIC"),
+        optional_block(template, "GENERATED_TABLE"),
+        optional_block(template, "GENERATED_CHART"),
+        optional_block(template, "MODEL_APPENDIX"),
+        optional_block(template, "LIMITATIONS"),
+    ]
+    revision = service.save_draft(
+        case["id"], "FULL_CREDIT",
+        draft_request(template, source, model_selection=revision_selection(model), extra_blocks=extras),
+        actor="analyst",
+    )
+
+    appendices = revision["content"]["document_sections"][-6:]
+    assert [(section["kind"], section["title"], section["editable"], section["origin"]["kind"]) for section in appendices] == [
+        ("table", "Generated Metrics · 01", False, "MODEL"),
+        ("table", "Debt Schedule · 01", False, "MODEL"),
+        ("chart", "Generated Chart · 01", False, "MODEL"),
+        ("table", "Model Appendix", False, "MODEL"),
+        ("text", "Limitations · 01", True, "ANALYST"),
+        ("table", "Evidence Register", False, "ARTIFACT"),
+    ]
+    assert ["total_leverage / BASE / FY2027", "3.8"] in appendices[0]["rows"]
+    assert appendices[1]["rows"] == [["RCF", "120"]]
+    assert ["total_leverage / DOWNSIDE / FY2027", "5.1"] in appendices[2]["accessible_rows"]
+    assert appendices[4]["body"] == "Covenant definitions unavailable."
+
+
+def test_annual_model_generated_table_uses_only_selected_server_outputs(service, store):
+    case, source, _ = seed_ready_case(service, store)
+    model = seed_model(service, case, outputs={
+        "BASE": {"BASE::FY2027": {"revenue": 517.4, "fcf": 53.6, "total_leverage": 1.7}},
+        "DOWNSIDE": {"DOWNSIDE::FY2027": {"revenue": 423.9, "fcf": 10.3, "total_leverage": 3.2}},
+    })
+    template = service.templates()["FULL_CREDIT"]
+
+    revision = service.save_draft(
+        case["id"],
+        "FULL_CREDIT",
+        draft_request(
+            template,
+            source,
+            model_selection=revision_selection(model),
+            extra_blocks=[optional_block(
+                template,
+                "GENERATED_TABLE",
+                table_id="annual_model",
+                field_ids=["revenue", "total_leverage"],
+            )],
+        ),
+        actor="analyst",
+    )
+
+    table = revision["content"]["document_sections"][-2]
+    assert table["columns"] == ["Case", "Period", "Revenue", "Total Leverage"]
+    assert table["rows"] == [
+        ["BASE", "FY2027", "517.4", "1.7"],
+        ["DOWNSIDE", "FY2027", "423.9", "3.2"],
+    ]
+    frozen = service.freeze(case["id"], freeze_request(revision), actor="analyst")
+    assert frozen["payload"]["content"]["document_sections"] == revision["content"]["document_sections"]
+
+
+def test_optional_block_cannot_collide_with_a_canonical_document_section(service, store):
+    case, source, _ = seed_ready_case(service, store)
+    template = service.templates()["FULL_CREDIT"]
+    collision = optional_block(template, "LIMITATIONS", block_id="credit_snapshot")
+
+    with pytest.raises(Exception, match="DELIVERABLE_SECTION_ID_DUPLICATE"):
+        service.save_draft(
+            case["id"],
+            "FULL_CREDIT",
+            draft_request(template, source, extra_blocks=[collision]),
+            actor="analyst",
+        )
+    assert service.workspace(case["id"], "FULL_CREDIT")["draft"] is None
+
+
+@pytest.mark.parametrize("pathway", ["RELATIVE_VALUE", "DEEP_RESEARCH"])
+def test_model_optional_pathways_compose_without_model_authority(service, store, pathway):
+    case, source, _ = seed_ready_case(service, store)
+    template = service.templates()[pathway]
+
+    revision = service.save_draft(
+        case["id"], pathway, draft_request(template, source), actor="analyst",
+    )
+
+    assert revision["content"]["model_identity"] is None
+    assert all(section["origin"]["kind"] != "MODEL" for section in revision["content"]["document_sections"])
 
 
 def test_draft_request_rejects_client_supplied_document_sections(client, settings, store):
@@ -624,6 +773,14 @@ def test_forged_scenario_outputs_raise_calculation_mismatch(service, store):
     stored = revision["content"]["blocks"][-1]
     assert stored["model_digest"] == digest(revision["content"]["model_identity"])
     assert stored["scenario"]["build_id"] == model["build_id"]
+    exhibit = revision["content"]["document_sections"][-2]
+    assert exhibit["kind"] == "chart"
+    assert exhibit["title"] == "Downside revenue shock"
+    assert exhibit["origin"] == {
+        "kind": "MODEL",
+        "authority_id": stored["scenario_digest"],
+        "block_ids": [],
+    }
 
     # forged outputs with self-consistent digests must still fail the server recompute
     forged = copy.deepcopy(preview)
@@ -700,6 +857,13 @@ def test_ungoverned_metric_ids_and_chart_recipe_fields_are_rejected(service, sto
     rogue_chart = [optional_block(template, "GENERATED_CHART", recipe={"chart_kind": "line", "fields": ["not_a_governed_field"]})]
     with pytest.raises(Exception, match="GENERATED_FIELD_INVALID|RECIPE"):
         service.save_draft(case["id"], "FULL_CREDIT", draft_request(template, source, model_selection=selection, extra_blocks=rogue_chart), actor="analyst")
+    rogue_table = [optional_block(
+        template, "GENERATED_TABLE", table_id="annual_model", field_ids=["not_a_governed_field"],
+    )]
+    with pytest.raises(Exception, match="GENERATED_FIELD_INVALID"):
+        service.save_draft(case["id"], "FULL_CREDIT", draft_request(
+            template, source, model_selection=selection, extra_blocks=rogue_table,
+        ), actor="analyst")
 
 
 def test_scenario_digest_must_equal_server_computed_digest(service, store):

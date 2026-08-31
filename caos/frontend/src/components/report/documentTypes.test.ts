@@ -29,22 +29,26 @@ test("document pages retain first-seen page order and section order", () => {
 });
 
 test("only analyst-owned editable text can be overlaid by draft blocks", () => {
-  const sections: DocumentSection[] = [{
-    kind: "columns",
-    section_id: "model-view",
-    title: "Base and Downside Model",
-    page: "Financials",
-    editable: false,
-    origin: origin("MODEL", "model-1"),
-    items: [
-      [{ kind: "text", section_id: "commentary", title: "Analyst View", page: "Financials", editable: true, origin: origin("ANALYST", "commentary-block"), body: "Saved view" }],
-      [{ kind: "table", section_id: "outputs", title: "Calculated Outputs", page: "Financials", editable: false, origin: origin("MODEL", "model-1"), columns: ["Metric", "Value"], rows: [["Leverage", "4.2x"]], note: "Locked" }],
-    ],
-  }];
+  const sections: DocumentSection[] = [
+    {
+      kind: "columns",
+      section_id: "model-view",
+      title: "Base and Downside Model",
+      page: "Financials",
+      editable: false,
+      origin: origin("MODEL", "model-1"),
+      items: [
+        [{ kind: "text", section_id: "commentary", title: "Analyst View", page: "Financials", editable: true, origin: origin("ANALYST", "commentary-block"), body: "Saved view" }],
+        [{ kind: "table", section_id: "outputs", title: "Calculated Outputs", page: "Financials", editable: false, origin: origin("MODEL", "model-1"), columns: ["Metric", "Value"], rows: [["Leverage", "4.2x"]], note: "Locked" }],
+      ],
+    },
+    { kind: "text", section_id: "limitations", title: "Limitations", page: "Appendix", editable: true, origin: origin("ANALYST", "limitations-block"), body: "Saved limitations" },
+  ];
 
   const overlaid = overlayAnalystText(sections, [
     { kind: "NARRATIVE", block_id: "commentary-block", text: "Unsaved analyst view" },
     { kind: "NARRATIVE", block_id: "model-1", text: "Attempted model overwrite" },
+    { kind: "LIMITATIONS", block_id: "limitations-block", text: "Unsaved limitations" },
   ]);
   const columns = overlaid[0];
   assert.equal(columns.kind, "columns");
@@ -54,6 +58,7 @@ test("only analyst-owned editable text can be overlaid by draft blocks", () => {
   assert.deepEqual(columns.items[1][0], sections[0].kind === "columns" ? sections[0].items[1][0] : null);
   assert.equal(canEditDocumentSection(columns.items[0][0]), true);
   assert.equal(canEditDocumentSection(columns.items[1][0]), false);
+  assert.equal(overlaid[1].kind === "text" ? overlaid[1].body : "", "Unsaved limitations");
 });
 
 test("an unsaved first draft previews only its analyst narrative leaves", () => {
