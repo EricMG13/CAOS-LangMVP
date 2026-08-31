@@ -126,3 +126,10 @@ export function Unavailable({ title, context }: { title: string; context?: strin
     {context ? <p className="muted">{context}</p> : null}
   </div>;
 }
+
+export function MutationReceipt({ children }: { children: ReactNode }) {
+  return <div className="mutation-receipt" role="status" aria-live="polite" aria-atomic="true">
+    <span aria-hidden="true">✓</span>
+    <span>{children}</span>
+  </div>;
+}

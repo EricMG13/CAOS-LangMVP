@@ -33,7 +33,18 @@ test("the structured document is safe and keeps generated content read-only", ()
   assert.match(document, /ANALYST_JUDGMENT/);
   assert.doesNotMatch(document, /dangerouslySetInnerHTML|contentEditable|contenteditable/);
   assert.doesNotMatch(studio, /eval\(|Function\(/);
-  assert.doesNotMatch(studio, /localStorage|sessionStorage/);
+  assert.doesNotMatch(studio, /sessionStorage/);
+});
+
+test("unsaved report work has a scoped non-authoritative recovery copy and automatic retry", () => {
+  assert.match(studio, /reportRecoveryKey\(caseId, pathway\)/);
+  assert.match(studio, /window\.localStorage\.setItem/);
+  assert.match(studio, /clearBrowserRecovery/);
+  assert.match(studio, /SAVE_RETRY_DELAY_MS/);
+  assert.match(studio, /Not shared authority/);
+  for (const label of ["Restore copy", "Retry save now", "Download JSON", "Discard copy"]) assert.match(studio, new RegExp(label));
+  const applyRecovery = studio.slice(studio.indexOf("const applyRecovery"), studio.indexOf("const discardRecovery"));
+  assert.ok(applyRecovery.indexOf("savedVersion.current = recovery.expectedVersion") < applyRecovery.indexOf("markChanged(recovery.blocks"), "recovery must preserve its original compare-and-swap base before saving");
 });
 
 test("exact Frozen and Filed lifecycle is identity-bound and role-gated", () => {
@@ -60,6 +71,14 @@ test("model fallback, evidence, scenario, focus, and case fences remain explicit
   assert.match(studio, /AbortController/);
   assert.match(studio, /aria-live="polite"/);
   assert.match(studio, /onDraftStateChange/);
+});
+
+test("evidence search covers every served source block without silent truncation", () => {
+  assert.match(studio, /block\.text/);
+  assert.match(studio, /JSON\.stringify\(block\.locator\)/);
+  assert.match(studio, /visibleEvidenceBlocks/);
+  assert.doesNotMatch(studio, /visibleSources\.slice/);
+  assert.doesNotMatch(studio, /source\.blocks\.slice/);
 });
 
 test("Scenario registry is build-bound and seeded only from server defaults", () => {

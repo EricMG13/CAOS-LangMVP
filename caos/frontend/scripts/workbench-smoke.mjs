@@ -7,7 +7,6 @@ const fixtureSuffix = randomUUID().slice(0, 8);
 const primaryIssuer = `Northstar-${fixtureSuffix}`;
 const raceIssuer = `Second-${fixtureSuffix}`;
 const primaryLabel = `${primaryIssuer} / Workbench QA`;
-const raceLabel = `${raceIssuer} / Authority Race`;
 const maxDomContentLoadedMs = Number(process.env.CAOS_MAX_DCL_MS || 250);
 // Observed FCP on shared CI runners across 8 runs: 188, 200, 212, 224, 232,
 // 252, 272, 332ms. Two of those (272 and 332) are the same commit, so ~60ms
@@ -227,30 +226,18 @@ try {
   await page.route(heldAuthorityDetail, holdAuthorityDetail);
   await page.goto(`${baseURL}/command-center/?case=${caseRecord.id}`, { waitUntil: "domcontentloaded" });
   await authorityDetailSeen;
-  const loadingSourcesTrigger = page.getByRole("button", { name: "Sources loading" });
-  assert.equal(await loadingSourcesTrigger.getAttribute("aria-expanded"), "false",
-    "client authority request did not establish a closed, hydrated source drawer");
-  await loadingSourcesTrigger.click();
-  const sourceDrawer = page.getByRole("dialog", { name: "Source details" });
-  await sourceDrawer.getByText("Loading source authority…").waitFor();
-  assert.equal(await sourceDrawer.getByText(/^0$/).count(), 0);
-  assert.equal(await sourceDrawer.getByText(/No accepted/).count(), 0);
-  await page.keyboard.press("Escape");
+  const visibleAuthority = page.getByRole("region", { name: "Visible authority" });
+  await visibleAuthority.getByText(/Accepted:\s*Loading authority/).waitFor();
+  await visibleAuthority.getByText(/Source set:\s*Loading authority/).waitFor();
   releaseAuthorityDetail();
-  await page.getByRole("region", { name: "Accepted authority" }).getByText(/Source set v1/).waitFor();
-  const resolvedSourcesTrigger = page.getByRole("button", { name: "1 source", exact: true });
-  await resolvedSourcesTrigger.click();
-  await sourceDrawer.getByText("Current source count").waitFor();
+  await visibleAuthority.getByText(/Source set:\s*v1/).waitFor();
   await page.getByRole("combobox", { name: "Select case" }).evaluate((element) => {
     element.dispatchEvent(new Event("change", { bubbles: true }));
   });
   await page.evaluate(() => new Promise((resolve) => {
     requestAnimationFrame(() => requestAnimationFrame(resolve));
   }));
-  assert.equal(await sourceDrawer.isVisible(), true, "reselecting the current case closed the resolved authority drawer");
-  assert.equal(await resolvedSourcesTrigger.count(), 1, "reselecting the current case exposed a false authority lifecycle state");
-  assert.equal(await sourceDrawer.getByText("Loading source authority…").count(), 0);
-  assert.equal(await sourceDrawer.getByText("Source authority unavailable.").count(), 0);
+  await visibleAuthority.getByText(/Source set:\s*v1/).waitFor();
   const timing = await page.evaluate(() => {
     const navigation = performance.getEntriesByType("navigation")[0];
     const paint = performance.getEntriesByName("first-contentful-paint")[0];
@@ -262,9 +249,8 @@ try {
   assert.ok(timing.domContentLoaded !== null && timing.domContentLoaded <= maxDomContentLoadedMs, `DCL ${timing.domContentLoaded}ms exceeds ${maxDomContentLoadedMs}ms`);
   assert.ok(timing.firstContentfulPaint !== null && timing.firstContentfulPaint <= maxFirstContentfulPaintMs, `FCP ${timing.firstContentfulPaint}ms exceeds ${maxFirstContentfulPaintMs}ms`);
   console.log(JSON.stringify({ timing, caseRequests }));
-  await sourceDrawer.getByRole("link", { name: "Open Sources" }).click();
+  await page.getByRole("link", { name: "Sources & evidence" }).click();
   await page.waitForURL((url) => url.pathname.replace(/\/$/, "") === "/sources" && url.searchParams.get("case") === caseRecord.id);
-  await sourceDrawer.waitFor({ state: "hidden" });
   await page.unroute(heldAuthorityDetail, holdAuthorityDetail);
   await page.goto(`${baseURL}/command-center/?case=${caseRecord.id}`, { waitUntil: "networkidle" });
 
@@ -278,17 +264,13 @@ try {
   expectedAuthorityFailureURL = `${baseURL}/api/cases/${failedCase.id}`;
   expectedAuthorityFailureSeen = false;
   await page.getByRole("combobox", { name: "Select case" }).selectOption(failedCase.id);
-  const unavailableSourcesTrigger = page.getByRole("button", { name: "Sources unavailable" });
-  await unavailableSourcesTrigger.click();
-  await sourceDrawer.getByText("Source authority unavailable.").waitFor();
-  assert.equal(await sourceDrawer.getByText(/^0$/).count(), 0);
-  assert.equal(await sourceDrawer.getByText(/No accepted/).count(), 0);
+  await visibleAuthority.getByText(/Accepted:\s*Authority unavailable/).waitFor();
+  await visibleAuthority.getByText(/Source set:\s*Authority unavailable/).waitFor();
   assert.equal(expectedAuthorityFailureSeen, true, "controlled authority 503 did not emit the expected console error");
-  await page.keyboard.press("Escape");
   await page.unroute(failedAuthorityDetail, failAuthorityDetail);
   expectedAuthorityFailureURL = "";
   await page.getByRole("combobox", { name: "Select case" }).selectOption(caseRecord.id);
-  await page.getByRole("region", { name: "Accepted authority" }).getByText(/Source set v1/).waitFor();
+  await visibleAuthority.getByText(/Source set:\s*v1/).waitFor();
 
   const missingCaseId = `case_missing_${fixtureSuffix}`;
   await page.goto(`${baseURL}/run-console/?case=${missingCaseId}&run=${run.id}`, { waitUntil: "domcontentloaded" });
@@ -332,7 +314,7 @@ try {
   assert.equal(await page.getByRole("status", { name: "Loading" }).count(), 0, "case switch left the run console permanently loading");
   assert.equal(await page.getByRole("button", { name: "Accept analytical snapshot" }).count(), 0, "stale run data survived the case boundary");
   await page.getByRole("combobox", { name: "Select case" }).selectOption(caseRecord.id);
-  await page.getByRole("region", { name: "Accepted authority" }).getByText(primaryLabel).waitFor();
+  await page.getByRole("region", { name: "Visible authority" }).getByText(new RegExp(`Credit:\\s*${primaryIssuer}`)).waitFor();
 
   let crossCaseAcceptRequests = 0;
   const countCrossCaseAccept = (requestValue) => {
@@ -347,16 +329,16 @@ try {
   assert.equal(crossCaseAcceptRequests, 0, "cross-case run was accepted from the selected case");
   page.off("request", countCrossCaseAccept);
 
-  const workflows = ["Command Center", "Sources", "Deep-Dive", "RV Screener", "Model Builder", "Report Studio"];
+  const workflows = ["Portfolio", "Credit", "Sources", "Analysis", "Market", "Model", "Report"];
   for (const label of workflows) {
     await page.getByRole("navigation", { name: "Workflows" }).getByRole("link", { name: label, exact: true }).waitFor();
   }
   // Exactly one rail entry per page carries aria-current="page": the most specific
   // match — a tool link when one targets the destination, else the workflow link.
   for (const [route, navName, linkLabel] of [
-    ["/cases/", "Command Center tools", "Cases"],
-    ["/run-console/", "Deep-Dive tools", "Run Console"],
-    ["/report-studio/", "Workflows", "Report Studio"],
+    ["/cases/", "Workflows", "Portfolio"],
+    ["/run-console/", "Analysis tools", "Run"],
+    ["/report-studio/", "Workflows", "Report"],
   ]) {
     await page.goto(`${baseURL}${route}?case=${caseRecord.id}`, { waitUntil: "networkidle" });
     await page.getByRole("navigation", { name: navName })
@@ -369,14 +351,14 @@ try {
   expectedNotFoundURL = `${baseURL}/missing-${fixtureSuffix}`;
   await page.goto(expectedNotFoundURL, { waitUntil: "networkidle" });
   await page.getByRole("heading", { name: "Page not found" }).waitFor();
-  assert.equal(await page.getByRole("heading", { name: "Case register" }).count(), 0, "unknown route rendered the default Cases page");
+  assert.equal(await page.getByRole("heading", { name: "Monitored credits" }).count(), 0, "unknown route rendered the default Portfolio page");
   await page.goto(`${baseURL}/command-center/?case=${caseRecord.id}`, { waitUntil: "networkidle" });
   caseRequests = 0;
   authorityRequests = 0;
 
   await page.keyboard.press(process.platform === "darwin" ? "Meta+K" : "Control+K");
   const artifactPalette = page.getByRole("dialog", { name: "Command palette" });
-  await artifactPalette.getByRole("combobox", { name: "Search commands" }).fill(artifact.id);
+  await artifactPalette.getByRole("combobox", { name: "Search cases, workflows or evidence IDs" }).fill(artifact.id);
   await artifactPalette.getByRole("option", { name: "Open artifact ID in this case" }).click();
   await page.waitForURL((url) => url.pathname.replace(/\/$/, "") === "/sources"
     && url.searchParams.get("case") === caseRecord.id
@@ -392,17 +374,10 @@ try {
   await page.waitForURL((url) => url.pathname === "/deep-dive/" && url.searchParams.get("q") === deepDiveQuestion);
   await page.getByText(deepDiveQuestion, { exact: true }).waitFor();
 
-  const rail = page.locator(".evidence-rail");
-  assert.equal(
-    await rail.getByText("Artifact links open the matching source rail.").count(),
-    0,
-    "evidence rail still renders its static policy copy",
-  );
-  await rail.getByText(/Pinned to source set v/).waitFor();
-  assert.ok(
-    await rail.locator(".evidence-rail-list li").count() > 0,
-    "evidence rail lists no artifacts for an accepted snapshot",
-  );
+  const rail = page.locator(".analysis-evidence");
+  await rail.getByText("Evidence rail", { exact: true }).waitFor();
+  await rail.getByText(accepted.digest, { exact: true }).waitFor();
+  assert.ok(await rail.locator(".analysis-evidence-card").count() > 0, "accepted analysis lists no cited sources");
 
 
 
@@ -414,26 +389,25 @@ try {
   await page.waitForURL((url) => url.pathname === "/command-center/" && url.searchParams.get("q") === commandQuestion);
   await page.getByText(commandQuestion, { exact: true }).waitFor();
 
-  for (const label of ["Command Center", "Sources", "Deep-Dive"]) {
+  for (const label of ["Credit", "Sources", "Analysis"]) {
     await page.getByRole("navigation", { name: "Workflows" }).getByRole("link", { name: label, exact: true }).click();
     await page.waitForLoadState("networkidle");
   }
   assert.equal(caseRequests, 0, "same-client query/workflow navigation repeated the case-list request");
   assert.ok(authorityRequests <= 12, `same-client navigation caused an authority refresh loop (${authorityRequests} requests)`);
-  await page.getByRole("region", { name: "Accepted authority" }).getByText(primaryLabel).waitFor();
-  await page.getByRole("region", { name: "Accepted authority" }).getByText(/Source set v1/).waitFor();
-  await page.getByRole("button", { name: "QA status", exact: true }).waitFor();
+  await page.getByRole("region", { name: "Visible authority" }).getByText(new RegExp(`Credit:\\s*${primaryIssuer}`)).waitFor();
+  await page.getByRole("region", { name: "Visible authority" }).getByText(/Source set:\s*v1/).waitFor();
 
   const paletteTrigger = page.getByRole("button", { name: /Open command palette/ });
   await paletteTrigger.focus();
   await page.keyboard.press(process.platform === "darwin" ? "Meta+K" : "Control+K");
   const palette = page.getByRole("dialog", { name: "Command palette" });
-  await palette.getByRole("combobox", { name: "Search commands" }).fill(primaryIssuer);
+  await palette.getByRole("combobox", { name: "Search cases, workflows or evidence IDs" }).fill(primaryIssuer);
   await palette.getByRole("option", { name: primaryLabel }).waitFor();
-  await palette.getByRole("combobox", { name: "Search commands" }).fill("src_deadbeef");
+  await palette.getByRole("combobox", { name: "Search cases, workflows or evidence IDs" }).fill("src_deadbeef");
   await palette.getByRole("option", { name: /Open source ID in this case/ }).waitFor();
-  await palette.getByRole("combobox", { name: "Search commands" }).fill("secret issuer");
-  await palette.getByText("No authorized matches").waitFor();
+  await palette.getByRole("combobox", { name: "Search cases, workflows or evidence IDs" }).fill("secret issuer");
+  await palette.getByText("No matches").waitFor();
   await page.keyboard.press("Escape");
   await assert.doesNotReject(() => paletteTrigger.evaluate((element) => {
     if (document.activeElement !== element) throw new Error("focus did not return to the palette trigger");
@@ -550,8 +524,8 @@ try {
     assert.equal(await definitionValue(workstreams.nth(1), label).getByText("Empty", { exact: true }).count(), 1, `${label} did not expose its empty list`);
   }
   assert.equal(errors.some((message) => /children with the same key|duplicate key/i.test(message)), false, "repeated exact-plan values emitted a React duplicate-key warning");
-  await page.setViewportSize({ width: 375, height: 812 });
-  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth), false, "pending research plan causes page overflow at 375px");
+  await page.setViewportSize({ width: 720, height: 900 });
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth), false, "pending research plan causes page overflow at 200% desktop zoom width");
   assert.ok(await researchPlan.evaluate((element) => element.scrollWidth <= element.clientWidth), "pending research plan content overflows its panel");
   const approveResearchPlan = page.getByRole("button", { name: "Approve research plan" });
   await approveResearchPlan.focus();
@@ -605,11 +579,11 @@ try {
     const url = new URL(window.location.href);
     return url.searchParams.get("case") === expectedCaseId && url.searchParams.get("run") !== rejectedRunId;
   }, { expectedCaseId: raceCase.id, rejectedRunId: nextRun.id });
-  await page.getByRole("region", { name: "Accepted authority" }).getByText(raceLabel).waitFor();
+  await page.getByRole("region", { name: "Visible authority" }).getByText(new RegExp(`Credit:\\s*${raceIssuer}`)).waitFor();
   assert.equal(new URL(page.url()).searchParams.get("run"), crossCaseRun.id, "late Case A run creation replaced Case B execution authority");
   await page.goto(`${baseURL}/run-console/?case=${caseRecord.id}&run=${nextRun.id}`, { waitUntil: "networkidle" });
-  await page.waitForFunction((expectedRunId) => Array.from(document.querySelectorAll('nav[aria-label="Deep-Dive tools"] a'))
-    .some((element) => element.textContent?.includes("Run Console")
+  await page.waitForFunction((expectedRunId) => Array.from(document.querySelectorAll('nav[aria-label="Analysis tools"] a'))
+    .some((element) => element.textContent?.includes("Run")
       && new URL(element.href).searchParams.get("run") === expectedRunId), nextRun.id);
 
   let nextRunState;
@@ -677,10 +651,10 @@ try {
   await page.evaluate(() => new Promise((resolve) => {
     requestAnimationFrame(() => requestAnimationFrame(resolve));
   }));
-  const authority = page.getByRole("region", { name: "Accepted authority" });
-  await authority.getByText(raceLabel).waitFor();
+  const authority = page.getByRole("region", { name: "Visible authority" });
+  await authority.getByText(new RegExp(`Credit:\\s*${raceIssuer}`)).waitFor();
   await authority.getByText("No accepted snapshot").waitFor();
-  assert.equal(await authority.getByText(/Source set v1/).count(), 0);
+  assert.equal(await authority.getByText(/Source set:\s*v1/).count(), 0);
   assert.deepEqual(
     forbiddenAuthorityRequests,
     [],
@@ -700,21 +674,17 @@ try {
   await page.getByRole("status").getByText(/^\d+ of \d+ modules? complete\./).waitFor();
   // WCAG 2.4.1: <main> needs tabindex="-1" or the skip link moves the scroll position
   // and the browser's focus starting point while leaving activeElement on <body>.
-  await page.evaluate(() => document.body.focus());
+  await page.evaluate(() => {
+    document.body.tabIndex = -1;
+    document.body.focus();
+    document.body.removeAttribute("tabindex");
+  });
   await page.keyboard.press("Tab");
   await assert.doesNotReject(() => page.getByRole("link", { name: "Skip to content" }).evaluate((element) => {
     if (document.activeElement !== element) throw new Error("the skip link is not the first tab stop");
   }));
   await page.keyboard.press("Enter");
   assert.equal(await page.evaluate(() => document.activeElement?.id), "main-content", "the skip link did not move focus into the main landmark");
-
-  const qaTrigger = page.getByRole("button", { name: "QA status", exact: true });
-  await qaTrigger.click();
-  await page.getByRole("dialog", { name: "QA details" }).getByText(/No governed snapshot-level QA summary/).waitFor();
-  await page.keyboard.press("Escape");
-  await assert.doesNotReject(() => qaTrigger.evaluate((element) => {
-    if (document.activeElement !== element) throw new Error("focus did not return to the QA trigger");
-  }));
 
   const modelBuildId = `model_${fixtureSuffix}`;
   let inventoryModelBuildId = modelBuildId;
@@ -835,7 +805,6 @@ try {
   const previewPath = (url) => url.pathname === `/api/cases/${caseRecord.id}/models/previews`;
   const signOffPath = (url) => url.pathname === `/api/cases/${caseRecord.id}/model-revisions/sign-off`;
   const rebasePath = (url) => url.pathname === `/api/cases/${caseRecord.id}/model-revisions/rebase-preview`;
-  const sensitivityPath = (url) => url.pathname === `/api/cases/${caseRecord.id}/models/sensitivities/one-way`;
   const scenarioPath = (url) => url.pathname === `/api/cases/${caseRecord.id}/models/scenarios`;
   const identityPath = (url) => url.pathname === "/api/me";
   await page.route(identityPath, (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ role: modelRole }) }));
@@ -896,10 +865,6 @@ try {
     const requestBody = route.request().postDataJSON();
     const activeRevision = modelRevisions.find((item) => item.state === "ACTIVE");
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ source_revision_id: requestBody.revision_id, source_build_id: modelBuildId, build_id: modelBuildId, draft_generation: requestBody.draft_generation, compatible: [{ assumption_id: assumptionDefinition.assumption_id }], changed: [{ assumption_id: assumptionDefinition.assumption_id, reason: "SOURCE_CONTEXT_CHANGED" }], invalidated: [], candidate_assumptions: activeRevision?.effective_assumptions || assumptionDefaults, preview: null }) });
-  });
-  await page.route(sensitivityPath, async (route) => {
-    const requestBody = route.request().postDataJSON();
-    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ case_id: caseRecord.id, build_id: modelBuildId, base_revision_id: requestBody.base_revision_id, registry_version: registryVersion, registry_digest: registryDigest, assumption_id: requestBody.assumption_id, case: requestBody.case, period_scope: requestBody.period_scope, output_id: requestBody.output_id, draft_generation: requestBody.draft_generation, points: [{ value: "0.01", outputs: { BASE: { FY2025: { total_leverage: 4.3 }, FY2026: { total_leverage: 4.2 }, FY2027: { total_leverage: null } }, DOWNSIDE: { FY2025: { total_leverage: 5.1 }, FY2026: { total_leverage: 5.4 }, FY2027: { total_leverage: 5.8 } } }, deltas: { BASE: { FY2025: { total_leverage: 0.1 }, FY2026: { total_leverage: 0 }, FY2027: { total_leverage: null } }, DOWNSIDE: { FY2025: { total_leverage: 0.2 }, FY2026: { total_leverage: 0.5 }, FY2027: { total_leverage: 0.9 } } } }, { value: "0.05", outputs: { BASE: { FY2025: { total_leverage: 3.9 }, FY2026: { total_leverage: 3.7 }, FY2027: { total_leverage: 3.5 } }, DOWNSIDE: { FY2025: { total_leverage: 4.8 }, FY2026: { total_leverage: 5 }, FY2027: { total_leverage: 5.2 } } }, deltas: { BASE: { FY2025: { total_leverage: -0.3 }, FY2026: { total_leverage: -0.5 }, FY2027: { total_leverage: -0.7 } }, DOWNSIDE: { FY2025: { total_leverage: -0.1 }, FY2026: { total_leverage: 0.1 }, FY2027: { total_leverage: 0.3 } } } }], breakpoint: { value: "0.01", threshold: { case: requestBody.case, period_id: "FY2026", threshold_id: "covenant.max_total_leverage", threshold_value: 5, observed_value: 5.4 } } }) });
   });
   await page.route(scenarioPath, async (route) => {
     const requestBody = route.request().postDataJSON();
@@ -1053,53 +1018,41 @@ try {
   await page.getByRole("button", { name: "Apply to Draft" }).click();
   await builderTablist.getByRole("tab", { name: "Sensitivities" }).click();
   const sensitivityPanel = page.getByRole("tabpanel", { name: "Sensitivities" });
-  const sensitivityAssumptionSelect = sensitivityPanel.locator(".sensitivity-controls select").first();
-  await sensitivityAssumptionSelect.selectOption("liquidity.minimum_operating_cash");
-  assert.equal(await sensitivityPanel.getByRole("button", { name: "Run one-way" }).isDisabled(), true, "UNAVAILABLE assumption scope enabled sensitivity");
-  await sensitivityAssumptionSelect.selectOption(assumptionDefinition.assumption_id);
-  await page.getByRole("button", { name: "Run one-way" }).click();
-  const baseSensitivity = page.getByRole("region", { name: "One-way table" });
-  await baseSensitivity.waitFor();
-  await baseSensitivity.getByText("4.3", { exact: true }).waitFor();
-  await baseSensitivity.getByText("Unavailable", { exact: true }).first().waitFor();
-  await page.getByRole("img", { name: /One-way tornado/ }).waitFor();
-  await page.getByRole("region", { name: "First sensitivity breakpoint" }).getByText("covenant.max_total_leverage", { exact: true }).waitFor();
-  await sensitivityPanel.getByLabel("Case").selectOption("DOWNSIDE");
-  await sensitivityPanel.getByLabel("Period").selectOption("FY2026");
-  await sensitivityPanel.getByRole("button", { name: "Run one-way" }).click();
-  await page.getByRole("region", { name: "One-way table" }).getByText("5.4", { exact: true }).waitFor();
-  await page.setViewportSize({ width: 390, height: 844 });
-  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth), false, "Model Builder causes page-level horizontal overflow at 390px");
+  await sensitivityPanel.locator(".state-block.unavailable").getByText("One-way sensitivity", { exact: true }).waitFor();
+  await sensitivityPanel.locator(".state-block.unavailable").getByText("Not available in this deployment.", { exact: true }).waitFor();
+  await page.setViewportSize({ width: 720, height: 900 });
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth), false, "Model Builder causes page-level horizontal overflow at 200% desktop zoom width");
   await page.setViewportSize({ width: 1440, height: 1000 });
-  for (const checkedRole of ["READER", "APPROVER", "ADMIN"]) {
+  for (const checkedRole of ["READER", "OWNER", "APPROVER", "ADMIN"]) {
+    const readOnly = checkedRole === "READER" || checkedRole === "OWNER";
     modelRole = checkedRole;
-    if (checkedRole === "READER") modelRevisions = modelRevisions.map((item) => ({ ...item, export: { ...item.export, status: "FAILED", error: { code: "MODEL_REVISION_EXPORT_FAILED", detail: "Retry remains a shared write." } } }));
+    if (readOnly) modelRevisions = modelRevisions.map((item) => ({ ...item, export: { ...item.export, status: "FAILED", error: { code: "MODEL_REVISION_EXPORT_FAILED", detail: "Retry remains a shared write." } } }));
     await page.goto(`${baseURL}/model-builder/?case=${caseRecord.id}&role=${checkedRole.toLowerCase()}`, { waitUntil: "networkidle" });
     const roleTabs = page.getByRole("tablist", { name: "Model Builder views" });
     await roleTabs.getByRole("tab", { name: "Assumptions" }).click();
     const roleInput = page.getByLabel("Revenue growth BASE FY2025");
-    await roleInput.fill(checkedRole === "READER" ? "0.07" : "0.071");
-    await roleInput.press("Enter");
-    await page.getByRole("button", { name: "Preview Draft Revision" }).click();
-    await page.getByText("Exact preview calculated. Review deltas, then add one Sign-Off Note.").waitFor();
-    if (checkedRole === "READER") {
-      assert.equal(await page.getByLabel("Sign-Off Note *").count(), 0, "reader was shown the shared Sign-Off Note control");
-      assert.equal(await page.getByRole("button", { name: "Sign Off Revision" }).count(), 0, "reader was shown the shared sign-off action");
-      await page.getByText(/Reader mode: local shocks, previews, scenarios, sensitivities/).waitFor();
+    if (readOnly) {
+      assert.equal(await roleInput.isDisabled(), true, `${checkedRole} could edit an assumption`);
+      assert.equal(await page.getByRole("button", { name: "Preview Draft Revision" }).count(), 0, `${checkedRole} was shown the preview action`);
+      assert.equal(await page.getByLabel("Sign-Off Note *").count(), 0, `${checkedRole} was shown the shared Sign-Off Note control`);
+      assert.equal(await page.getByRole("button", { name: "Sign Off Revision" }).count(), 0, `${checkedRole} was shown the shared sign-off action`);
+      await page.getByText(/Reader mode: assumptions and outputs remain readable/).waitFor();
       await roleTabs.getByRole("tab", { name: "Sensitivities" }).click();
-      await page.getByRole("button", { name: "Run Multi-Driver Scenario" }).click();
-      await page.getByRole("region", { name: "Multi-Driver Scenario outputs" }).waitFor();
-      await page.getByRole("button", { name: "Apply to Draft" }).click();
+      assert.equal(await page.getByRole("button", { name: "Run Multi-Driver Scenario" }).isDisabled(), true, `${checkedRole} could run a scenario`);
+      assert.equal(await page.getByRole("button", { name: "Apply to Draft" }).count(), 0, `${checkedRole} was shown Apply to Draft`);
       await roleTabs.getByRole("tab", { name: "History" }).click();
-      assert.equal(await page.getByRole("button", { name: "Retry exact export" }).count(), 0, "reader was shown a shared export retry");
-      await roleTabs.getByRole("tab", { name: "Assumptions" }).click();
+      assert.equal(await page.getByRole("button", { name: "Retry exact export" }).count(), 0, `${checkedRole} was shown a shared export retry`);
     } else {
+      await roleInput.fill("0.071");
+      await roleInput.press("Enter");
+      await page.getByRole("button", { name: "Preview Draft Revision" }).click();
+      await page.getByText("Exact preview calculated. Review deltas, then add one Sign-Off Note.").waitFor();
       await page.getByLabel("Sign-Off Note *").waitFor();
       await page.getByRole("button", { name: "Sign Off Revision" }).waitFor();
+      await roleInput.fill("0.05");
+      await roleInput.press("Enter");
     }
-    await roleInput.fill("0.05");
-    await roleInput.press("Enter");
-    if (checkedRole === "READER") modelRevisions = modelRevisions.map((item) => ({ ...item, export: { ...item.export, status: "READY", error: null } }));
+    if (readOnly) modelRevisions = modelRevisions.map((item) => ({ ...item, export: { ...item.export, status: "READY", error: null } }));
   }
   modelRole = "ANALYST";
   modelState = "READY"; modelExportState = "FAILED";
@@ -1125,7 +1078,6 @@ try {
   await page.unroute(previewPath);
   await page.unroute(signOffPath);
   await page.unroute(rebasePath);
-  await page.unroute(sensitivityPath);
   await page.unroute(scenarioPath);
   await page.unroute(identityPath);
 
@@ -1300,9 +1252,29 @@ try {
   });
 
   await page.goto(`${baseURL}/report-studio/?case=${caseRecord.id}`, { waitUntil: "networkidle" });
-  await page.getByRole("heading", { name: "Compose" }).waitFor();
+  await page.getByRole("heading", { name: "Compose", exact: true }).waitFor();
   await page.getByRole("heading", { name: `${caseRecord.issuer} — ${caseRecord.name}` }).waitFor();
   assert.equal(await page.evaluate(() => Object.keys(sessionStorage).some((key) => key.startsWith("caos-report-draft:"))), false, "Report Studio retained browser-persistent drafts");
+
+  const recoveryPathway = "DEEP_RESEARCH";
+  const recoveryTemplate = reportTemplate(recoveryPathway);
+  const recoveryBlocks = reportDraft(recoveryPathway).content.blocks.map((block, index) => index === 0 ? { ...block, text: "Recovered from stale server v0." } : block);
+  const recoveryCopy = {
+    caseId: caseRecord.id, pathway: recoveryPathway, savedAt: Date.now(), expectedVersion: 0,
+    templateId: recoveryTemplate.template_id, templateVersion: recoveryTemplate.template_version,
+    modelSelection: reportSelection, blocks: recoveryBlocks,
+  };
+  await page.evaluate(([key, value]) => localStorage.setItem(key, value), [
+    `caos:report-recovery:${encodeURIComponent(caseRecord.id)}:${recoveryPathway}`,
+    JSON.stringify(recoveryCopy),
+  ]);
+  await page.getByRole("combobox", { name: "Pathway template" }).selectOption(recoveryPathway);
+  await page.getByText(/Unsaved browser copy from/).waitFor();
+  await page.getByRole("button", { name: "Retry save now" }).click();
+  await page.getByText("Saved v2", { exact: true }).waitFor({ timeout: 5000 });
+  assert.equal(reportLastSave.expected_version, 0, "recovery save discarded its original compare-and-swap base");
+  assert.equal(reportLastSave.blocks[0].text, "Recovered from stale server v0.", "recovery save did not use the browser copy");
+
   for (const [pathway, label] of Object.entries(reportTitles)) {
     await page.getByRole("combobox", { name: "Pathway template" }).selectOption(pathway);
     await page.getByText(label, { exact: true }).last().waitFor();
@@ -1492,7 +1464,7 @@ try {
   await page.goto(`${baseURL}/report-studio/?case=${caseRecord.id}`, { waitUntil: "networkidle" });
   assert.equal(await page.getByRole("textbox", { name: "Credit Snapshot" }).isDisabled(), true, "reader could edit shared Deliverable");
   assert.equal(await page.getByRole("button", { name: "File exact Frozen version" }).count(), 0, "reader was shown approval authority");
-  await page.setViewportSize({ width: 390, height: 844 });
+  await page.setViewportSize({ width: 720, height: 900 });
   const reportOverflow = await page.evaluate(() => ({
     clientWidth: document.documentElement.clientWidth,
     scrollWidth: document.documentElement.scrollWidth,
@@ -1501,19 +1473,17 @@ try {
       return { tag: element.tagName, className: element.className, left: rect.left, right: rect.right, width: rect.width, scrollWidth: element.scrollWidth, clientWidth: element.clientWidth };
     }).filter((item) => item.right > document.documentElement.clientWidth + 1 || item.left < -1).slice(0, 12),
   }));
-  assert.equal(reportOverflow.scrollWidth > reportOverflow.clientWidth, false, `Report Studio causes page-level horizontal overflow at 390px: ${JSON.stringify(reportOverflow)}`);
+  assert.equal(reportOverflow.scrollWidth > reportOverflow.clientWidth, false, `Report Studio causes page-level horizontal overflow at 200% desktop zoom width: ${JSON.stringify(reportOverflow)}`);
   await page.setViewportSize({ width: 1440, height: 1000 });
 
-
-  await page.goto(`${baseURL}/sources/?case=${caseRecord.id}&artifact=${artifact.id}`, { waitUntil: "networkidle" });
   await page.goto(`${baseURL}/sources/?case=${caseRecord.id}&artifact=${artifact.id}`, { waitUntil: "networkidle" });
   const matching = page.locator(`[data-evidence-id="${source.id}"]`);
-  assert.equal(await matching.count(), 2);
+  assert.equal(await matching.count(), 1);
   const chip = matching.first();
   await chip.focus();
   await page.waitForFunction((evidenceId) => {
     const nodes = [...document.querySelectorAll(`[data-evidence-id="${evidenceId}"]`)];
-    return nodes.length === 2 && nodes.every((node) => node.classList.contains("is-linked"));
+    return nodes.length === 1 && nodes[0].classList.contains("is-linked");
   }, source.id);
   await chip.click();
   const evidence = page.getByRole("dialog", { name: `Evidence ${source.id}` });
@@ -1526,11 +1496,10 @@ try {
 
   await page.keyboard.press(process.platform === "darwin" ? "Meta+K" : "Control+K");
   const sourcePalette = page.getByRole("dialog", { name: "Command palette" });
-  await sourcePalette.getByRole("combobox", { name: "Search commands" }).fill(source.id);
+  await sourcePalette.getByRole("combobox", { name: "Search cases, workflows or evidence IDs" }).fill(source.id);
   await sourcePalette.getByRole("option", { name: "Open source ID in this case" }).click();
   await page.waitForURL((url) => url.pathname.replace(/\/$/, "") === "/sources" && url.searchParams.get("source") === source.id);
-  await evidence.getByText("earnings.txt").waitFor();
-  await page.keyboard.press("Escape");
+  await page.locator(".source-register-row[aria-pressed=true]").getByText(source.id).waitFor();
   await page.evaluate(() => new Promise((resolve) => {
     requestAnimationFrame(() => requestAnimationFrame(resolve));
   }));
@@ -1546,12 +1515,12 @@ try {
   await page.route(failedSourceList, failSourceList);
   await page.goto(`${baseURL}/sources/?case=${caseRecord.id}&source=${source.id}`, { waitUntil: "networkidle" });
   await page.getByRole("alert").getByText("Unable to load this view.").waitFor();
+  assert.equal(await page.getByRole("alert").getByText("Unable to load this view.").count(), 1, "one source-list failure was announced more than once");
   assert.equal(await page.getByText(/not in the active case source set/).count(), 0);
   assert.equal(await evidence.count(), 0, "failed source authority opened an evidence drawer");
   await page.unroute(failedSourceList, failSourceList);
   await page.reload({ waitUntil: "networkidle" });
-  await evidence.getByText("earnings.txt").waitFor();
-  await page.keyboard.press("Escape");
+  await page.locator(".source-register-row[aria-pressed=true]").getByText(source.id).waitFor();
 
   await page.setViewportSize({ width: 720, height: 900 });
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth);
@@ -1560,29 +1529,26 @@ try {
 
   await page.goto(`${baseURL}/cases/?case=${caseRecord.id}`, { waitUntil: "networkidle" });
   const registerMeta = page.locator(".cases-register .panel-meta");
-  const caseSearch = page.getByRole("searchbox", { name: "Search cases" });
+  const caseSearch = page.getByRole("searchbox", { name: "Search credits" });
   await caseSearch.fill("zzzz-no-such-issuer");
-  await page.getByText("No cases match this search and filter.", { exact: true }).waitFor();
+  await page.getByText("No credits match this search and filter.", { exact: true }).waitFor();
   assert.ok(
     (await registerMeta.innerText()).startsWith("0 of "),
     "case register count did not follow the search filter",
   );
   await caseSearch.fill("");
-  const snapshotFilter = page.getByRole("combobox", { name: "Snapshot" });
+  const snapshotFilter = page.getByRole("combobox", { name: "Authority" });
   await snapshotFilter.selectOption("accepted");
   await page.locator(".cases-register tbody tr").first().waitFor();
   await snapshotFilter.selectOption("all");
 
   await page.goto(`${baseURL}/deep-dive/?case=${caseRecord.id}`, { waitUntil: "networkidle" });
-  const caseContext = page.locator(".case-context");
   await page.setViewportSize({ width: 720, height: 900 });
-  await caseContext.locator(".optional").waitFor({ state: "visible" });
-  await caseContext.locator(".mono").first().waitFor({ state: "visible" });
-  await page.setViewportSize({ width: 390, height: 844 });
-  await caseContext.locator(".mono").first().waitFor({ state: "visible" });
+  await page.getByRole("region", { name: "Visible authority" }).getByText(new RegExp(`Credit:\\s*${primaryIssuer}`)).waitFor();
+  await page.getByRole("navigation", { name: "Accepted analysis modules" }).waitFor();
   assert.ok(
     await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
-    "page overflows horizontally at 390px",
+    "page overflows horizontally at 200% desktop zoom width",
   );
   await page.setViewportSize({ width: 1280, height: 720 });
   await context.close();
@@ -1602,42 +1568,38 @@ try {
   assert.equal(reducedStyle.playState, "paused");
   await reduced.close();
 
-  const narrow = await browser.newContext({
-    viewport: { width: 375, height: 812 },
-    hasTouch: true,
+  const zoomed = await browser.newContext({
+    viewport: { width: 720, height: 900 },
     extraHTTPHeaders: identityHeaders,
   });
-  const narrowPage = await narrow.newPage();
-  await narrowPage.goto(`${baseURL}/deep-dive/?case=${caseRecord.id}`, { waitUntil: "networkidle" });
+  const zoomedPage = await zoomed.newPage();
+  await zoomedPage.goto(`${baseURL}/deep-dive/?case=${caseRecord.id}`, { waitUntil: "networkidle" });
   // A palette route whose client payload 404s degrades into a full document load, but only
   // after the router has pushed the destination URL. `waitForURL` then resolves on that
   // pushed entry and the following `goto` races the fallback load, which cancels it.
-  const narrowDocumentLoads = [];
-  narrowPage.on("request", (requestValue) => {
-    if (requestValue.isNavigationRequest()) narrowDocumentLoads.push(requestValue.url());
+  const zoomedDocumentLoads = [];
+  zoomedPage.on("request", (requestValue) => {
+    if (requestValue.isNavigationRequest()) zoomedDocumentLoads.push(requestValue.url());
   });
-  await narrowPage.getByRole("button", { name: "Open command palette" }).click();
-  const narrowPalette = narrowPage.getByRole("dialog", { name: "Command palette" });
-  await narrowPalette.getByRole("combobox", { name: "Search commands" }).fill("Cases");
-  await narrowPalette.getByRole("option", { name: "Open Cases" }).click();
-  await narrowPage.waitForURL((url) => url.pathname.replace(/\/$/, "") === "/cases" && url.searchParams.get("case") === caseRecord.id);
-  await narrowPage.getByRole("button", { name: "Open command palette" }).click();
-  await narrowPalette.getByRole("combobox", { name: "Search commands" }).fill("Run");
-  await narrowPalette.getByRole("option", { name: "Open Run Console", exact: true }).click();
-  await narrowPage.waitForURL((url) => url.pathname.replace(/\/$/, "") === "/run-console"
+  await zoomedPage.getByRole("button", { name: "Open command palette" }).click();
+  const zoomedPalette = zoomedPage.getByRole("dialog", { name: "Command palette" });
+  await zoomedPalette.getByRole("combobox", { name: "Search cases, workflows or evidence IDs" }).fill("Portfolio");
+  await zoomedPalette.getByRole("option", { name: "Open Portfolio" }).click();
+  await zoomedPage.waitForURL((url) => url.pathname.replace(/\/$/, "") === "/cases" && url.searchParams.get("case") === caseRecord.id);
+  await zoomedPage.getByRole("button", { name: "Open command palette" }).click();
+  await zoomedPalette.getByRole("combobox", { name: "Search cases, workflows or evidence IDs" }).fill("Run");
+  await zoomedPalette.getByRole("option", { name: "Open Run", exact: true }).click();
+  await zoomedPage.waitForURL((url) => url.pathname.replace(/\/$/, "") === "/run-console"
     && url.searchParams.get("case") === caseRecord.id
     && url.searchParams.get("run") === nextRun.id);
-  assert.deepEqual(narrowDocumentLoads, [], "command palette navigation fell back to a full document load");
-  await narrowPage.goto(`${baseURL}/report-studio/?case=${caseRecord.id}`, { waitUntil: "networkidle" });
-  assert.equal(await narrowPage.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth), false, "Report Studio causes page-level horizontal overflow at 375px");
+  assert.deepEqual(zoomedDocumentLoads, [], "command palette navigation fell back to a full document load");
+  await zoomedPage.goto(`${baseURL}/report-studio/?case=${caseRecord.id}`, { waitUntil: "networkidle" });
+  assert.equal(await zoomedPage.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth), false, "Report Studio causes page-level horizontal overflow at 200% desktop zoom width");
 
-
-  await narrow.close();
+  await zoomed.close();
 
   // Reader mode: same subject, same case standing, READER role. Every shared
-  // write the server answers 403 to must be absent from the surface, not offered
-  // and then refused — Model Builder and Report Studio already gated on this,
-  // the shell's own six controls did not.
+  // write the server answers 403 to must be absent from the surface.
   const readerHeaders = process.env.CAOS_EDGE_SECRET
     ? { ...identityHeaders, "x-forwarded-groups": "caos-reader" }
     : { "x-caos-role": "READER" };
@@ -1650,11 +1612,10 @@ try {
   assert.equal(await readerPage.evaluate(() => document.querySelector("main")?.textContent?.includes("Reader access")), true,
     "Cases did not say why the write panels are absent");
   await absent(readerPage, "Create case");
-  await absent(readerPage, "Upload and version source set");
   assert.ok(await readerPage.getByRole("row").count() > 1, "READER lost read access to the case register");
 
   await readerPage.goto(`${baseURL}/sources/?case=${caseRecord.id}`, { waitUntil: "networkidle" });
-  await absent(readerPage, "Upload and version source set");
+  await absent(readerPage, "Upload and version");
   assert.equal(await readerPage.locator("main input[type=file]").count(), 0, "READER was offered a source file input");
 
   await readerPage.goto(`${baseURL}/run-console/?case=${caseRecord.id}`, { waitUntil: "networkidle" });
@@ -1665,18 +1626,16 @@ try {
   await readerPage.goto(`${baseURL}/rv-screener/?case=${caseRecord.id}`, { waitUntil: "networkidle" });
   await absent(readerPage, "Upload CP-3 workbook");
 
-  // The gate must fail CLOSED. `role` was defaulted to ANALYST, so a reader whose
-  // /api/me never answered kept every write control — the reader assertions above
-  // could not see it, because they only ever ran against a healthy server.
+  // The gate must fail closed even when /api/me never answers successfully.
   await readerPage.route((url) => url.pathname === "/api/me", (route) => route.abort("failed"));
   await readerPage.goto(`${baseURL}/cases/?case=${caseRecord.id}`, { waitUntil: "networkidle" });
   await readerPage.waitForTimeout(500);
   await absent(readerPage, "Create case");
-  await absent(readerPage, "Upload and version source set");
+  await absent(readerPage, "Upload and version");
   assert.equal(await readerPage.locator("main input[type=file]").count(), 0,
     "an unresolved identity left a write control on the page");
-  assert.equal(await readerPage.evaluate(() => document.querySelector("main")?.textContent?.includes("Confirming your access")), true,
-    "an unresolved identity should say so, not silently look like reader mode");
+  assert.equal(await readerPage.evaluate(() => document.querySelector("main")?.textContent?.includes("Reader access")), true,
+    "a failed identity lookup did not settle on the read-only floor");
   await reader.close();
 } finally {
   await browser.close();

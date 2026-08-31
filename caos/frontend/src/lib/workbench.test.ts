@@ -1,6 +1,21 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { acceptedAuthorityMatch, evidenceKind, formatBlockLocator, humanizeCode, moduleLabel, withQuery } from "./workbench.ts";
+import { acceptedAuthorityMatch, destinationMeta, evidenceKind, formatBlockLocator, humanizeCode, moduleLabel, withQuery, workflows } from "./workbench.ts";
+
+test("approved workspace labels preserve the existing routes", () => {
+  assert.deepEqual(workflows.map(({ label, href }) => [label, href]), [
+    ["Portfolio", "/cases"],
+    ["Credit", "/command-center"],
+    ["Sources", "/sources"],
+    ["Analysis", "/deep-dive"],
+    ["Market", "/rv-screener"],
+    ["Model", "/model-builder"],
+    ["Report", "/report-studio"],
+  ]);
+  assert.equal(destinationMeta.Cases.reading, "Portfolio");
+  assert.equal(destinationMeta.Sources.reading, "Assurance");
+  assert.equal(destinationMeta["Model Builder"].reading, "Analysis");
+});
 
 test("every route path keeps its trailing slash", () => {
   assert.equal(withQuery("/run-console", { case: "case_1" }), "/run-console/?case=case_1");

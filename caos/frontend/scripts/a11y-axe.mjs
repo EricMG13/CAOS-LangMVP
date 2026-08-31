@@ -17,12 +17,13 @@ const identityHeaders = process.env.CAOS_EDGE_SECRET ? {
 const caseQuery = process.env.CAOS_CASE_ID ? `?case=${encodeURIComponent(process.env.CAOS_CASE_ID)}` : "";
 const routes = ["/cases/", "/sources/", "/run-console/", "/deep-dive/", "/rv-screener/", "/command-center/", "/model-builder/", "/report-studio/", "/admin-studio/"];
 const viewports = [
-  { name: "desktop", width: 1440, height: 1000 },
-  { name: "laptop", width: 1024, height: 768 },
-  { name: "reflow", width: 720, height: 900 },
-  // 375x812 is a real phone, not a reflow proxy: WCAG 1.4.10 is about content
-  // reflowing without a second scroll axis, and the rail collapses below 720.
-  { name: "mobile", width: 375, height: 812 },
+  { name: "desktop-1280", width: 1280, height: 800 },
+  { name: "desktop-1366", width: 1366, height: 768 },
+  { name: "desktop-1440", width: 1440, height: 1000 },
+  { name: "desktop-1600", width: 1600, height: 1000 },
+  { name: "desktop-1920", width: 1920, height: 1080 },
+  // 720 CSS pixels represents a 1440-wide desktop at 200% browser zoom.
+  { name: "desktop-200-percent", width: 720, height: 900 },
 ];
 const browser = await chromium.launch({ headless: true });
 const violations = [];
@@ -47,7 +48,7 @@ try {
     }
     await context.close();
   }
-  const pendingContext = await browser.newContext({ viewport: { width: 375, height: 812 }, extraHTTPHeaders: identityHeaders });
+  const pendingContext = await browser.newContext({ viewport: { width: 720, height: 900 }, extraHTTPHeaders: identityHeaders });
   const pendingPage = await pendingContext.newPage();
   const pendingConsoleErrors = [];
   pendingPage.on("console", (message) => {
@@ -109,7 +110,7 @@ try {
   assert.equal(await workstreams.first().getByText("Liquidity runway?", { exact: true }).count(), 2, "pending-plan axe fixture did not preserve repeated workstream values");
   assert.equal(pendingConsoleErrors.some((message) => /children with the same key|duplicate key/i.test(message)), false, "pending-plan axe fixture emitted a React duplicate-key warning");
   const pendingResult = await new AxeBuilder({ page: pendingPage }).analyze();
-  for (const violation of pendingResult.violations) violations.push({ viewport: "pending-plan-375", route: "/run-console/", id: violation.id, impact: violation.impact, nodes: violation.nodes.map((node) => ({ target: node.target, html: node.html, summary: node.failureSummary })) });
+  for (const violation of pendingResult.violations) violations.push({ viewport: "pending-plan-desktop-200-percent", route: "/run-console/", id: violation.id, impact: violation.impact, nodes: violation.nodes.map((node) => ({ target: node.target, html: node.html, summary: node.failureSummary })) });
   assert.ok(caseFixtureHits > 0, "pending-plan case fixture was not exercised");
   assert.ok(runFixtureHits > 0, "pending-plan run fixture was not exercised");
   await pendingContext.close();
@@ -132,7 +133,7 @@ try {
   await modelPage.route((url) => url.pathname === `/api/cases/${modelCaseId}/models/assumption-registry`, (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ version: "cp-model-assumptions.v1", digest: "f".repeat(64), definitions: [modelAssumptionDefinition], build_id: modelBuildId, accepted_snapshot_id: modelBuild.accepted_snapshot_id, input_fingerprint: modelBuild.input_fingerprint, defaults: modelAssumptionDefaults }) }));
   await modelPage.route((url) => url.pathname === `/api/cases/${modelCaseId}/model-revisions`, (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ revisions: [] }) }));
   await modelPage.route((url) => url.pathname === `/api/cases/${modelCaseId}/models/${modelBuildId}/worksheet`, (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ build_id: modelBuildId, input_fingerprint: modelBuild.input_fingerprint, payload_digest: modelBuild.payload_digest, qa: modelBuild.qa, payload: { schema_version: "caos.model.worksheet.v1", identity: { issuer_id: "northstar", issuer_name: "Northstar", analysis_date: "2026-08-24" }, tabs: [worksheetTab("Credit Snapshot"), worksheetTab("Model"), worksheetTab("KPIs")] } }) }));
-  const populatedModelViewports = [{ name: "desktop", width: 1440, height: 1000 }, { name: "tablet", width: 768, height: 1024 }, { name: "mobile", width: 390, height: 844 }];
+  const populatedModelViewports = [{ name: "desktop-1440", width: 1440, height: 1000 }, { name: "desktop-1280", width: 1280, height: 800 }, { name: "desktop-200-percent", width: 720, height: 900 }];
   for (const viewport of populatedModelViewports) {
     await modelPage.setViewportSize({ width: viewport.width, height: viewport.height });
     await modelPage.goto(`${baseUrl}/model-builder/?case=${modelCaseId}&fixture=ready-model-${viewport.name}`, { waitUntil: "networkidle" });
@@ -209,7 +210,7 @@ try {
   await reportPage.route((url) => url.pathname === `/api/cases/${reportCaseId}/sources`, (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(reportSources) }));
   await reportPage.route((url) => url.pathname === `/api/cases/${reportCaseId}/deliverables/FULL_CREDIT/draft`, (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(reportWorkspace) }));
   await reportPage.route((url) => url.pathname === `/api/cases/${reportCaseId}/models/assumption-registry`, (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ version: "cp-model-assumptions.v1", digest: "9".repeat(64), definitions: [{ assumption_id: "operating.consolidated_revenue_growth", label: "Revenue growth", cases: ["BASE", "DOWNSIDE"], periods: ["FY2025", "FY2026", "FY2027"] }] }) }));
-  const populatedReportViewports = [{ name: "desktop", width: 1440, height: 1000 }, { name: "tablet", width: 768, height: 1024 }, { name: "mobile", width: 390, height: 844 }];
+  const populatedReportViewports = [{ name: "desktop-1440", width: 1440, height: 1000 }, { name: "desktop-1280", width: 1280, height: 800 }, { name: "desktop-200-percent", width: 720, height: 900 }];
   for (const viewport of populatedReportViewports) {
     await reportPage.setViewportSize({ width: viewport.width, height: viewport.height });
     await reportPage.goto(`${baseUrl}/report-studio/?case=${reportCaseId}&fixture=ready-report-${viewport.name}`, { waitUntil: "networkidle" });

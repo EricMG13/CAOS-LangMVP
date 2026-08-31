@@ -11,7 +11,25 @@ export const routeDestinations = [
 ] as const;
 
 export type Destination = (typeof routeDestinations)[number][1];
-export type WorkflowId = "overview" | "sources" | "analyse" | "compare" | "model" | "publish";
+export type WorkflowId = "portfolio" | "credit" | "sources" | "analysis" | "market" | "model" | "report";
+
+export type DestinationMeta = {
+  kicker: string;
+  title: string;
+  reading: "Portfolio" | "Analysis" | "Assurance";
+};
+
+export const destinationMeta: Record<Destination, DestinationMeta> = {
+  Cases: { kicker: "Portfolio / Surveillance", title: "Monitored credits", reading: "Portfolio" },
+  "Command Center": { kicker: "Credit / Current state", title: "Current state and what changed", reading: "Analysis" },
+  Sources: { kicker: "Sources / Evidence", title: "Documents, extraction and coverage", reading: "Assurance" },
+  "Run Console": { kicker: "Analysis / Execution", title: "Run and acceptance", reading: "Analysis" },
+  "Deep-Dive": { kicker: "Analysis / Reader", title: "Accepted analysis", reading: "Analysis" },
+  "RV Screener": { kicker: "Market / Comparison", title: "Governed loan universe", reading: "Analysis" },
+  "Model Builder": { kicker: "Model / Forecast", title: "Assumptions, lineage and sign-off", reading: "Analysis" },
+  "Report Studio": { kicker: "Report / Publication", title: "Compose, freeze and file", reading: "Analysis" },
+  "Admin Studio": { kicker: "Admin / Governance", title: "Deployment capability", reading: "Assurance" },
+};
 
 export type Snapshot = {
   id: string;
@@ -58,12 +76,13 @@ export type Workflow = {
 // pinned by workbench.test.ts and the aria-current rule keys on destinations, never
 // on labels.
 export const workflows: readonly Workflow[] = [
-  { id: "overview", label: "Command Center", href: "/command-center", destinations: ["Cases", "Command Center"], tools: [{ label: "Cases", href: "/cases", destination: "Cases" }] },
+  { id: "portfolio", label: "Portfolio", href: "/cases", destinations: ["Cases"] },
+  { id: "credit", label: "Credit", href: "/command-center", destinations: ["Command Center"] },
   { id: "sources", label: "Sources", href: "/sources", destinations: ["Sources"] },
-  { id: "analyse", label: "Deep-Dive", href: "/deep-dive", destinations: ["Run Console", "Deep-Dive"], tools: [{ label: "Run Console", href: "/run-console", destination: "Run Console" }, { label: "Deep-Dive", href: "/deep-dive", destination: "Deep-Dive" }] },
-  { id: "compare", label: "RV Screener", href: "/rv-screener", destinations: ["RV Screener"] },
-  { id: "model", label: "Model Builder", href: "/model-builder", destinations: ["Model Builder"] },
-  { id: "publish", label: "Report Studio", href: "/report-studio", destinations: ["Report Studio"] },
+  { id: "analysis", label: "Analysis", href: "/deep-dive", destinations: ["Run Console", "Deep-Dive"], tools: [{ label: "Run", href: "/run-console", destination: "Run Console" }] },
+  { id: "market", label: "Market", href: "/rv-screener", destinations: ["RV Screener"] },
+  { id: "model", label: "Model", href: "/model-builder", destinations: ["Model Builder"] },
+  { id: "report", label: "Report", href: "/report-studio", destinations: ["Report Studio"] },
 ];
 
 // Human module names beside the ids. Every name is the module's own `skill_slug`

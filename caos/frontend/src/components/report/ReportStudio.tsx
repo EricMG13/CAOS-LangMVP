@@ -11,9 +11,11 @@ import DeliverableDocument, {
   type NarrativeBlock,
   type TemplateBlock,
 } from "./DeliverableDocument";
+import { parseReportRecovery, reportRecoveryKey, type RecoveryModelSelection, type ReportRecovery } from "./reportRecovery";
 
 const apiBase = process.env.NEXT_PUBLIC_API_URL || "";
 const AUTOSAVE_DELAY_MS = 850;
+const SAVE_RETRY_DELAY_MS = 5000;
 const pathwayOptions = [
   ["FULL_CREDIT", "Full Credit"],
   ["EARNINGS_UPDATE", "Earnings Update"],
@@ -26,7 +28,7 @@ const pathwayOptions = [
 type Pathway = typeof pathwayOptions[number][0];
 type OptionalPolicy = { kind: DeliverableBlock["kind"]; slot_stem: string; max_items: number; order: number; model_dependent: boolean };
 type DeliverableTemplate = { template_id: string; template_version: string; pathway: Pathway; title: string; model_requirement: "REQUIRED" | "OPTIONAL"; allowed_appendices: string[]; optional_blocks: OptionalPolicy[]; blocks: TemplateBlock[] };
-type ModelSelection = { kind: "ANALYST_REVISION"; build_id: string; revision_id: string } | { kind: "APPLICATION_BUILD"; build_id: string; fallback_acknowledged: true };
+type ModelSelection = RecoveryModelSelection;
 type ModelEligibility = {
   active_revision: { revision_id: string; build_id: string; revision_number: number; signed_by: string; signed_at: string } | null;
   application_build: { build_id: string; accepted_snapshot_id: string; input_fingerprint: string; payload_digest: string; status: "READY" } | null;
@@ -136,6 +138,21 @@ function saveLabel(state: SaveState): string {
   return state.kind === "DIRTY" ? "Unsaved changes" : "Ready";
 }
 
+function readBrowserRecovery(caseId: string, pathway: Pathway) {
+  try { return { raw: window.localStorage.getItem(reportRecoveryKey(caseId, pathway)), failed: false }; }
+  catch { return { raw: null, failed: true }; }
+}
+
+function storeBrowserRecovery(copy: ReportRecovery) {
+  try { window.localStorage.setItem(reportRecoveryKey(copy.caseId, copy.pathway), JSON.stringify(copy)); return true; }
+  catch { return false; }
+}
+
+function clearBrowserRecovery(caseId: string, pathway: Pathway) {
+  try { window.localStorage.removeItem(reportRecoveryKey(caseId, pathway)); return true; }
+  catch { return false; }
+}
+
 export default function ReportStudio({ caseId, role, selectedCase, onDraftStateChange }: { caseId: string; role: string; selectedCase: CaseRecord | null; onDraftStateChange: (dirty: boolean) => void }) {
   const [pathway, setPathway] = useState<Pathway>("FULL_CREDIT");
   const [workspace, setWorkspace] = useState<WorkspaceResponse | null>(null);
@@ -148,6 +165,8 @@ export default function ReportStudio({ caseId, role, selectedCase, onDraftStateC
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
   const [saveState, setSaveState] = useState<SaveState>({ kind: "IDLE" });
+  const [recovery, setRecovery] = useState<ReportRecovery | null>(null);
+  const [recoveryError, setRecoveryError] = useState("");
   const [draftIsUnsaved, setDraftIsUnsaved] = useState(false);
   const [persistedVersion, setPersistedVersion] = useState(0);
   const [conflict, setConflict] = useState<DraftRevision | null>(null);
@@ -220,6 +239,10 @@ export default function ReportStudio({ caseId, role, selectedCase, onDraftStateC
       setPersistedVersion(savedVersion.current);
       const nextModelSelection = next.current?.content.model_selection || next.model_eligibility.default_model_selection;
       setWorkspace(next); setBlocks(nextBlocks); setModelSelection(nextModelSelection); setSelectedBlockId(nextBlocks[0]?.block_id || ""); setSources(sourceResult.value); setEvidenceError(sourceResult.error); setSaveState(next.current ? { kind: "SAVED", version: next.current.version } : { kind: "IDLE" });
+      const recoveryRead = readBrowserRecovery(caseId, pathway);
+      const storedRecovery = parseReportRecovery(recoveryRead.raw, caseId, pathway);
+      setRecovery(storedRecovery);
+      setRecoveryError(recoveryRead.failed ? "Browser recovery is unavailable in this session." : recoveryRead.raw && !storedRecovery ? "A stored recovery copy was unreadable and was not restored." : "");
       const buildId = nextModelSelection?.build_id;
       if (buildId) {
         void request<RegistryResponse>(assumptionRegistryPath(caseId, buildId), {}, signal).then((value) => {
@@ -268,13 +291,14 @@ export default function ReportStudio({ caseId, role, selectedCase, onDraftStateC
         savedVersion.current = next.current?.version || savedVersion.current;
         setPersistedVersion(savedVersion.current);
         setWorkspace(next); setConflict(null);
-        if (generation === saveGeneration.current) { unsavedDraft.current = false; setDraftIsUnsaved(false); setBlocks(next.current?.content.blocks || prepared); setSaveState({ kind: "SAVED", version: savedVersion.current }); onDraftStateChange(false); }
+        if (generation === saveGeneration.current) { unsavedDraft.current = false; setDraftIsUnsaved(false); setBlocks(next.current?.content.blocks || prepared); setSaveState({ kind: "SAVED", version: savedVersion.current }); const cleared = clearBrowserRecovery(caseId, pathway); setRecovery(null); setRecoveryError(cleared ? "" : "The server saved this revision, but its browser recovery copy could not be cleared."); onDraftStateChange(false); }
       } catch (caught) {
         if (scope !== currentScope.current) return;
         if (caught instanceof ReportRequestError && caught.status === 409 && typeof caught.detail === "object" && caught.detail) {
           const detail = caught.detail as { code?: string; current?: DraftRevision | null };
-          if (detail.code === "DELIVERABLE_VERSION_CONFLICT") { setConflict(detail.current || null); setSaveState({ kind: "CONFLICT", detail: "A newer shared revision is available." }); return; }
+          if (detail.code === "DELIVERABLE_VERSION_CONFLICT") { setRecovery(parseReportRecovery(readBrowserRecovery(caseId, pathway).raw, caseId, pathway)); setConflict(detail.current || null); setSaveState({ kind: "CONFLICT", detail: "A newer shared revision is available." }); return; }
         }
+        setRecovery(parseReportRecovery(readBrowserRecovery(caseId, pathway).raw, caseId, pathway));
         setSaveState({ kind: "ERROR", detail: firstErrorMessage(caught, "Autosave failed") });
       }
     });
@@ -287,14 +311,42 @@ export default function ReportStudio({ caseId, role, selectedCase, onDraftStateC
     unsavedDraft.current = true;
     setDraftIsUnsaved(true);
     setSaveState({ kind: "DIRTY" }); onDraftStateChange(true);
+    if (workspace) {
+      const copy: ReportRecovery = { caseId, pathway, savedAt: Date.now(), expectedVersion: savedVersion.current, templateId: workspace.template.template_id, templateVersion: workspace.template.template_version, modelSelection: nextSelection, blocks: nextBlocks };
+      if (storeBrowserRecovery(copy)) { setRecovery((current) => current ? copy : null); setRecoveryError(""); }
+      else setRecoveryError("Browser recovery could not be updated. Keep this tab open until the server save succeeds.");
+    }
     if (saveTimer.current !== null) window.clearTimeout(saveTimer.current);
     const scope = currentScope.current;
     saveTimer.current = window.setTimeout(() => enqueueSave(nextBlocks, nextSelection, generation, scope), AUTOSAVE_DELAY_MS);
-  }, [enqueueSave, modelSelection, onDraftStateChange]);
+  }, [caseId, enqueueSave, modelSelection, onDraftStateChange, pathway, workspace]);
+
+  useEffect(() => {
+    if (saveState.kind !== "ERROR" || !draftIsUnsaved || !canWrite) return;
+    const timer = window.setTimeout(() => enqueueSave(blocks, modelSelection, saveGeneration.current, currentScope.current), SAVE_RETRY_DELAY_MS);
+    return () => window.clearTimeout(timer);
+  }, [blocks, canWrite, draftIsUnsaved, enqueueSave, modelSelection, saveState.kind]);
+
+  const applyRecovery = (retryNow: boolean) => {
+    if (!workspace || !recovery || recovery.templateId !== workspace.template.template_id || recovery.templateVersion !== workspace.template.template_version) { setRecoveryError("This recovery copy belongs to a different template version and cannot be restored here."); return; }
+    savedVersion.current = recovery.expectedVersion;
+    markChanged(recovery.blocks, recovery.modelSelection);
+    setSelectedBlockId(recovery.blocks[0]?.block_id || "");
+    if (retryNow) { if (saveTimer.current !== null) window.clearTimeout(saveTimer.current); enqueueSave(recovery.blocks, recovery.modelSelection, draftGeneration.current, currentScope.current); }
+  };
+
+  const discardRecovery = () => { if (clearBrowserRecovery(caseId, pathway)) { setRecovery(null); setRecoveryError(""); } else setRecoveryError("The browser recovery copy could not be discarded in this session."); };
+  const downloadRecovery = () => {
+    if (!recovery) return;
+    const url = URL.createObjectURL(new Blob([JSON.stringify(recovery, null, 2)], { type: "application/json" }));
+    const link = document.createElement("a"); link.href = url; link.download = `caos-report-recovery-${pathway.toLowerCase()}.json`; link.click(); URL.revokeObjectURL(url);
+  };
 
   const updateNarrative = (blockId: string, patch: Partial<NarrativeBlock>) => markChanged(blocks.map((block) => block.block_id === blockId && block.kind === "NARRATIVE" ? { ...block, ...patch } : block));
   const selectedBlock = blocks.find((block) => block.block_id === selectedBlockId) || null;
-  const visibleSources = useMemo(() => { const query = evidenceQuery.trim().toLowerCase(); return sources.filter((source) => `${source.filename} ${source.id}`.toLowerCase().includes(query)); }, [evidenceQuery, sources]);
+  const normalizedEvidenceQuery = evidenceQuery.trim().toLowerCase();
+  const visibleSources = useMemo(() => sources.filter((source) => !normalizedEvidenceQuery || `${source.filename} ${source.id} ${source.blocks.map((block) => `${block.block_id} ${block.text || ""} ${JSON.stringify(block.locator)}`).join(" ")}`.toLowerCase().includes(normalizedEvidenceQuery)), [normalizedEvidenceQuery, sources]);
+  const visibleEvidenceBlocks = (source: SourceRecord) => source.blocks.filter((block) => !normalizedEvidenceQuery || `${source.filename} ${source.id}`.toLowerCase().includes(normalizedEvidenceQuery) || `${block.block_id} ${block.text || ""} ${JSON.stringify(block.locator)}`.toLowerCase().includes(normalizedEvidenceQuery));
   const scenarioPeriods = [...new Set(registry?.defaults.filter((row) => row.status === "READY" && row.assumption_id === scenarioForm.assumptionId && row.case === scenarioForm.case).map((row) => row.period_id) || [])].sort();
 
   const cite = (source: SourceRecord, blockId: string) => {
@@ -448,11 +500,13 @@ export default function ReportStudio({ caseId, role, selectedCase, onDraftStateC
     <section className="panel report-compose" aria-labelledby="report-compose-title">
       <div className="panel-header"><h2 id="report-compose-title">Compose</h2><span className={`status ${saveState.kind === "SAVED" ? "success" : saveState.kind === "CONFLICT" || saveState.kind === "ERROR" ? "critical" : "warning"}`} aria-live="polite">{saveLabel(saveState)}</span></div>
       <div className="panel-body report-editor-scroll">
-        {selectedFrozen ? <div className="flow"><p className="status warning">Immutable {selectedFrozen.status} review · Draft v{selectedFrozen.draft_version}</p><button className="button small" type="button" onClick={() => setSelectedFrozen(null)} disabled={lifecycleBusy}>Return to shared Draft</button>{selectedFrozen.status === "FROZEN" && canApprove ? <div className="approval-panel"><button className="button primary" type="button" onClick={() => void fileFrozen()} disabled={lifecycleBusy}>{pending === "file" ? "Filing…" : "File exact Frozen version"}</button><div className="field"><label htmlFor="change-request-comment">Required comment to request changes</label><textarea id="change-request-comment" value={changeComment} maxLength={2000} onChange={(event) => setChangeComment(event.target.value)} disabled={lifecycleBusy} /></div><button className="button" type="button" onClick={() => void requestChanges()} disabled={!changeComment.trim() || lifecycleBusy}>{pending === "changes" ? "Creating new Draft…" : "Request changes"}</button></div> : null}{["FILED", "SUPERSEDED"].includes(selectedFrozen.status) ? <div className="proof-actions">{(["md", "pdf", "xlsx"] as const).map((format) => <a className="button small" key={format} download href={`${apiBase}/api/cases/${caseId}/deliverables/by-id/${selectedFrozen.id}/export/${format}`}>{format.toUpperCase()}</a>)}</div> : <p className="muted">Downloads unlock only after independent filing.</p>}</div> : <>
+        {selectedFrozen ? <div className="flow"><p className="status warning">Immutable {selectedFrozen.status} review · Draft v{selectedFrozen.draft_version}</p><button className="button small" type="button" onClick={() => setSelectedFrozen(null)} disabled={lifecycleBusy}>Return to shared Draft</button>{selectedFrozen.status === "FROZEN" && canApprove ? <div className="approval-panel"><button className="button primary" type="button" onClick={() => void fileFrozen()} disabled={lifecycleBusy}>{pending === "file" ? "Filing…" : "File exact Frozen version"}</button><div className="field"><label htmlFor="change-request-comment">Required comment to request changes</label><textarea id="change-request-comment" value={changeComment} maxLength={2000} onChange={(event) => setChangeComment(event.target.value)} disabled={lifecycleBusy} /></div><button className="button" type="button" onClick={() => void requestChanges()} disabled={!changeComment.trim() || lifecycleBusy}>{pending === "changes" ? "Creating new Draft…" : "Request changes"}</button></div> : null}{["FILED", "SUPERSEDED"].includes(selectedFrozen.status) ? <div className="proof-actions">{(["md", "pdf", "xlsx"] as const).map((format) => <a className="button small" key={format} download href={`${apiBase}/api/cases/${caseId}/deliverables/by-id/${selectedFrozen.id}/export/${format}`}>{format.toUpperCase()}</a>)}</div> : <p className="muted">Downloads unlock after filing.</p>}</div> : <>
+          {recovery ? <section className="report-recovery" aria-labelledby="report-recovery-title"><div><span className="flag">RECOVERY COPY</span><h3 id="report-recovery-title">Unsaved browser copy from {formatDate(new Date(recovery.savedAt).toISOString())}</h3><p>Not shared authority · based on server v{recovery.expectedVersion}. Restore explicitly or retry the server save.</p></div><div className="row-actions"><button className="button small" type="button" onClick={() => applyRecovery(false)} disabled={!canWrite || authoringLocked}>Restore copy</button><button className="button small primary" type="button" onClick={() => applyRecovery(true)} disabled={!canWrite || authoringLocked}>Retry save now</button><button className="button small" type="button" onClick={downloadRecovery}>Download JSON</button><button className="button small" type="button" onClick={discardRecovery} disabled={authoringLocked}>Discard copy</button></div></section> : null}
+          {recoveryError ? <StateNote tone="warning" live="status">{recoveryError}</StateNote> : null}
           <div className="report-authority-strip"><div><span>Model authority</span><strong>{modelSelection?.kind === "ANALYST_REVISION" ? `Active Revision ${workspace.model_eligibility.active_revision?.revision_number || ""}` : modelSelection?.kind === "APPLICATION_BUILD" ? "Application Model Build · acknowledged fallback" : "No model selected"}</strong></div>{modelStale ? <span className="status critical">Stale model identity</span> : null}</div>
           <fieldset className="report-model-picker"><legend>Deliverable model</legend>{workspace.model_eligibility.active_revision ? <label><input type="radio" name="report-model" checked={modelSelection?.kind === "ANALYST_REVISION"} onChange={() => chooseModel("ACTIVE")} disabled={!canWrite || authoringLocked} />Active Analyst Model <code>{workspace.model_eligibility.active_revision.revision_id}</code></label> : null}{!workspace.model_eligibility.active_revision && workspace.model_eligibility.application_build ? <label><input type="checkbox" checked={modelSelection?.kind === "APPLICATION_BUILD"} onChange={(event) => chooseModel(event.target.checked ? "FALLBACK" : "NONE")} disabled={!canWrite || authoringLocked} />I acknowledge fallback to the Application Model Build <code>{workspace.model_eligibility.application_build.build_id}</code></label> : null}{workspace.template.model_requirement === "OPTIONAL" ? <button className="button small" type="button" onClick={() => chooseModel("NONE")} disabled={!canWrite || authoringLocked || modelSelection === null}>Omit model</button> : null}</fieldset>
           {selectedNarrative ? <div className="flow"><div className="field"><label htmlFor={`narrative-${selectedNarrative.block_id}`}>{workspace.template.blocks.find((item) => item.block_id === selectedNarrative.block_id)?.title || "Narrative"}</label><textarea ref={editorFocus} id={`narrative-${selectedNarrative.block_id}`} value={selectedNarrative.text} maxLength={20000} rows={12} onChange={(event) => updateNarrative(selectedNarrative.block_id, { text: event.target.value })} disabled={!canWrite || authoringLocked} /><span className="field-meta">{selectedNarrative.text.length.toLocaleString()} / 20,000</span></div><fieldset><legend>Claim authority</legend><label><input type="radio" name={`mode-${selectedNarrative.block_id}`} checked={selectedNarrative.content_mode === "EVIDENCE"} onChange={() => updateNarrative(selectedNarrative.block_id, { content_mode: "EVIDENCE" })} disabled={!canWrite || authoringLocked} />Evidence-bound</label><label><input type="radio" name={`mode-${selectedNarrative.block_id}`} checked={selectedNarrative.content_mode === "ANALYST_JUDGMENT"} onChange={() => updateNarrative(selectedNarrative.block_id, { content_mode: "ANALYST_JUDGMENT" })} disabled={!canWrite || authoringLocked} />Analyst judgment</label></fieldset>{selectedNarrative.content_mode === "EVIDENCE" && !selectedNarrative.citations.length ? <StateNote tone="critical" live="alert">Evidence-bound narrative requires at least one citation.</StateNote> : null}</div> : selectedBlock ? <div className="generated-block-card"><span className="eyebrow">{selectedBlock.kind}</span><h3>Read-only structured block</h3><p>Calculated values and Scenario outputs are accepted only from the server response.</p>{!workspace.template.blocks.some((item) => item.block_id === selectedBlock.block_id) ? <button className="button small" type="button" onClick={() => removeOptional(selectedBlock.block_id)} disabled={!canWrite || authoringLocked}>Omit block</button> : null}</div> : null}
-          <section className="evidence-inspector" aria-labelledby="evidence-inspector-title"><div className="section-heading"><h3 id="evidence-inspector-title">Evidence inspector</h3><span>{sources.length} sources</span></div><div className="field"><label htmlFor="report-evidence-search">Find case evidence</label><input id="report-evidence-search" type="search" value={evidenceQuery} onChange={(event) => setEvidenceQuery(event.target.value)} /></div>{evidenceError ? <StateNote tone="critical" live="alert">{evidenceError}</StateNote> : null}<div className="evidence-source-list">{visibleSources.slice(0, 8).map((source) => <details key={source.id}><summary>{source.filename}<code>{source.id}</code></summary>{source.blocks.slice(0, 12).map((item) => <div className="evidence-source-block" key={item.block_id}><p>{item.text || item.block_id}</p>{selectedBlock && "citations" in selectedBlock && selectedBlock.citations.some((citation) => citation.source_id === source.id && citation.block_ids.includes(item.block_id)) ? <button className="button small" type="button" onClick={() => removeCitation(source.id, item.block_id)} disabled={!canWrite || authoringLocked}>Remove citation</button> : <button className="button small" type="button" onClick={() => cite(source, item.block_id)} disabled={!canWrite || authoringLocked || !selectedBlock || !("citations" in selectedBlock)}>Cite block</button>}</div>)}</details>)}</div></section>
+          <section className="evidence-inspector" aria-labelledby="evidence-inspector-title"><div className="section-heading"><h3 id="evidence-inspector-title">Evidence inspector</h3><span>{normalizedEvidenceQuery ? `${visibleSources.length} of ${sources.length}` : sources.length} sources</span></div><div className="field"><label htmlFor="report-evidence-search">Find filenames, source IDs, block text or locators</label><input id="report-evidence-search" type="search" value={evidenceQuery} onChange={(event) => setEvidenceQuery(event.target.value)} /></div>{evidenceError ? <StateNote tone="critical" live="alert">{evidenceError}</StateNote> : null}<div className="evidence-source-list">{visibleSources.map((source) => <details key={source.id}><summary>{source.filename}<code>{source.id}</code></summary>{visibleEvidenceBlocks(source).map((item) => <div className="evidence-source-block" key={item.block_id}><p>{item.text || item.block_id}</p>{selectedBlock && "citations" in selectedBlock && selectedBlock.citations.some((citation) => citation.source_id === source.id && citation.block_ids.includes(item.block_id)) ? <button className="button small" type="button" onClick={() => removeCitation(source.id, item.block_id)} disabled={!canWrite || authoringLocked}>Remove citation</button> : <button className="button small" type="button" onClick={() => cite(source, item.block_id)} disabled={!canWrite || authoringLocked || !selectedBlock || !("citations" in selectedBlock)}>Cite block</button>}</div>)}</details>)}</div>{normalizedEvidenceQuery && !visibleSources.length ? <p className="muted">No case evidence matches this search.</p> : null}</section>
           {modelSelection && registry ? <section className="scenario-insert" aria-labelledby="scenario-insert-title"><div className="section-heading"><h3 id="scenario-insert-title">Scenario Exhibit</h3><span>Temporary server calculation</span></div><div className="scenario-fields"><div className="field"><label htmlFor="scenario-assumption">Assumption</label><select id="scenario-assumption" value={scenarioForm.assumptionId} onChange={(event) => { const assumptionId = event.target.value; const available = registry.defaults.find((row) => row.assumption_id === assumptionId && row.case === scenarioForm.case && row.status === "READY") || registry.defaults.find((row) => row.assumption_id === assumptionId && row.status === "READY"); setScenarioForm((current) => ({ ...current, assumptionId, case: available?.case || current.case, periodId: available?.period_id || "" })); }} disabled={authoringLocked}>{registry.definitions.map((definition) => <option key={definition.assumption_id} value={definition.assumption_id}>{definition.label || definition.assumption_id}</option>)}</select></div><div className="field"><label htmlFor="scenario-case">Case</label><select id="scenario-case" value={scenarioForm.case} onChange={(event) => { const caseName = event.target.value as "BASE" | "DOWNSIDE"; const available = registry.defaults.find((row) => row.assumption_id === scenarioForm.assumptionId && row.case === caseName && row.status === "READY"); setScenarioForm((current) => ({ ...current, case: caseName, periodId: available?.period_id || "" })); }} disabled={authoringLocked}><option value="BASE">Base</option><option value="DOWNSIDE">Downside</option></select></div><div className="field"><label htmlFor="scenario-period">Period</label><select id="scenario-period" value={scenarioForm.periodId} onChange={(event) => setScenarioForm((current) => ({ ...current, periodId: event.target.value }))} disabled={authoringLocked}>{scenarioPeriods.map((periodId) => <option key={periodId} value={periodId}>{periodId}</option>)}</select></div><div className="field"><label htmlFor="scenario-value">Shock value</label><input id="scenario-value" inputMode="decimal" value={scenarioForm.value} onChange={(event) => setScenarioForm((current) => ({ ...current, value: event.target.value }))} disabled={authoringLocked} /></div></div><button className="button small" type="button" onClick={() => void insertScenario()} disabled={!canWrite || authoringLocked || !scenarioForm.periodId || !scenarioForm.value}>{pending === "scenario" ? "Calculating…" : "Calculate and insert exact exhibit"}</button></section> : null}
           {conflict ? <StateBlock shape="action" tone="warning" live="alert" title="Shared Draft conflict" body={<>{conflict.author} saved v{conflict.version} at {formatDate(conflict.created_at)}. Your local content remains unchanged.</>}><button className="button small" type="button" onClick={() => { savedVersion.current = conflict.version; setPersistedVersion(conflict.version); setWorkspace((current) => current ? { ...current, current: conflict, history: [...current.history.filter((item) => item.id !== conflict.id), conflict] } : current); setSaveState({ kind: "DIRTY" }); markChanged(blocks); }} disabled={authoringLocked}>Retry over current v{conflict.version}</button><button className="button small" type="button" onClick={() => { setBlocks(conflict.content.blocks); setModelSelection(conflict.content.model_selection); savedVersion.current = conflict.version; unsavedDraft.current = false; setDraftIsUnsaved(false); setPersistedVersion(conflict.version); setConflict(null); setSaveState({ kind: "SAVED", version: conflict.version }); onDraftStateChange(false); }} disabled={authoringLocked}>Use shared v{conflict.version}</button></StateBlock> : null}
           <div className="report-actions"><button className="button primary" data-primary-report-action type="button" onClick={() => void freeze()} disabled={!freezeReady || lifecycleBusy}>{pending === "freeze" ? "Freezing…" : `Freeze saved v${workspace.current?.version || "—"}`}</button><span>{requiredModelMissing ? "An eligible model is required." : modelStale ? "Refresh the stale model selection." : saveState.kind !== "SAVED" ? "Freeze requires an exact saved revision." : "Freeze revalidates all authority on the server."}</span></div>
@@ -461,6 +515,6 @@ export default function ReportStudio({ caseId, role, selectedCase, onDraftStateC
       </div>
     </section>
 
-    <section className="report-proof-stage" aria-label="Deliverable paper preview" tabIndex={0}><DeliverableDocument title={selectedFrozen?.payload.template.title || workspace.template.title} issuer={selectedCase ? `${selectedCase.issuer} — ${selectedCase.name}` : workspace.template.title} pathwayLabel={pathwayLabel} status={selectedFrozen?.status || "DRAFT"} version={selectedFrozen?.draft_version || workspace.current?.version} digest={selectedFrozen?.digest || workspace.current?.digest} blocks={previewBlocks} templateBlocks={workspace.template.blocks} generated={previewGenerated} frozen={Boolean(selectedFrozen)} frozenPayload={selectedFrozen?.payload || null} /></section>
+    <section className="report-proof-stage" aria-label="Deliverable paper preview" tabIndex={0}><DeliverableDocument title={selectedFrozen?.payload.template.title || workspace.template.title} issuer={selectedCase ? `${selectedCase.issuer} — ${selectedCase.name}` : workspace.template.title} pathwayLabel={pathwayLabel} status={selectedFrozen?.status || (draftIsUnsaved ? "UNSAVED" : "DRAFT")} version={selectedFrozen?.draft_version || workspace.current?.version} digest={selectedFrozen?.digest || (draftIsUnsaved ? undefined : workspace.current?.digest)} blocks={previewBlocks} templateBlocks={workspace.template.blocks} generated={previewGenerated} frozen={Boolean(selectedFrozen)} frozenPayload={selectedFrozen?.payload || null} /></section>
   </div>;
 }

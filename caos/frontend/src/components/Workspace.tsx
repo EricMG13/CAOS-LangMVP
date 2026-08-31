@@ -6,13 +6,13 @@ import { FormEvent, ReactNode, useCallback, useEffect, useMemo, useReducer, useR
 import EvidenceChip from "./EvidenceChip";
 import ModelBuilder from "./model/ModelBuilder";
 import ReportStudio from "./report/ReportStudio";
-import { EmptyPanel, LoadState, StateBlock, StateNote, Unavailable } from "./states";
+import { EmptyPanel, LoadState, MutationReceipt, StateBlock, StateNote, Unavailable } from "./states";
 import { api as request, firstErrorMessage, isUnavailableRoute, type ArtifactRecord, type CaseRecord, type LoanFinding, type LoanRow, type LoanUniverseResponse, type ResearchPlan, type RunRecord, type SourceRecord } from "../lib/api";
 import { displayValue, flattenValue, markdownBlocks, normalizeEvidenceRefs, type NormalizedEvidenceRef } from "../lib/artifactReader";
 import { initialAuthorityState, matchesAuthority, requestContext, workspaceAuthorityReducer, type AuthorityEvent } from "../lib/workspaceAuthority";
 
 import WorkbenchShell, { type DrawerState } from "./WorkbenchShell";
-import { type Destination, type Snapshot, type SnapshotView, acceptedAuthorityMatch, destinationFromSlug, formatBlockLocator, formatDate, humanizeCode, moduleLabel, routeDestinations, withQuery } from "../lib/workbench";
+import { type Destination, type Snapshot, type SnapshotView, acceptedAuthorityMatch, destinationFromSlug, destinationMeta, formatBlockLocator, formatDate, humanizeCode, moduleLabel, routeDestinations, withQuery } from "../lib/workbench";
 
 type WriteAccess = "yes" | "no" | "unknown";
 
@@ -333,8 +333,14 @@ export default function Workspace({ destination, children }: { destination?: Des
     document.addEventListener("click", guardDraftNavigation, true);
     window.addEventListener("popstate", guardBrowserHistory, true);
     window.addEventListener("beforeunload", guardUnload);
-    void request<{ role: string }>("/api/me", {}, controller.signal).then((who) => { setRole(who.role); setRoleResolved(true); }).catch((caught) => {
-      if (!(caught instanceof DOMException && caught.name === "AbortError")) setError(firstErrorMessage(caught, "Unable to load identity"));
+    void request<{ role: string }>("/api/me", {}, controller.signal).then((who) => {
+      setRole(["ANALYST", "APPROVER", "ADMIN"].includes(who.role) ? who.role : "READER");
+      setRoleResolved(true);
+    }).catch((caught) => {
+      if (!(caught instanceof DOMException && caught.name === "AbortError")) {
+        setRoleResolved(true);
+        setError(firstErrorMessage(caught, "Unable to load identity"));
+      }
     });
     const timer = window.setTimeout(() => void refreshCases(controller.signal), 0);
     return () => { controller.abort(); window.clearTimeout(timer); if (modelHistoryPopFenceTimerRef.current !== null) window.clearTimeout(modelHistoryPopFenceTimerRef.current); suppressNextModelHistoryPopRef.current = false; historyGuardRetiringRef.current = false; historyGuardRearmRef.current = false; modelHistoryPopFenceTimerRef.current = null; document.removeEventListener("click", guardDraftNavigation, true); window.removeEventListener("popstate", guardBrowserHistory, true); window.removeEventListener("beforeunload", guardUnload); };
@@ -391,7 +397,7 @@ export default function Workspace({ destination, children }: { destination?: Des
   }, [authorityState.generation, caseId, caseIsAuthorized]);
 
   useEffect(() => {
-    document.title = `CAOS — ${active}`;
+    document.title = `CAOS — ${destinationMeta[active].title}`;
   }, [active]);
 
   // Last element the user actually focused. Read by the repair effect below, which
@@ -708,10 +714,10 @@ export default function Workspace({ destination, children }: { destination?: Des
   const renderDestination = () => {
     if (!selectedCase && active !== "Cases" && active !== "Admin Studio") return <EmptyPanel text="Create or select a case before entering an analytical workspace." action={{ label: "Open Cases", href: "/cases/" }} />;
     switch (active) {
-      case "Cases": return <CasesView writeAccess={writeAccess} cases={cases} casesLoading={casesLoading} selectedCase={selectedCase} caseId={caseId} onCaseChange={selectCase} createCase={createCase} upload={upload} pendingAction={pendingAction} run={run} runLoading={runLoading} runError={runError} acceptedSnapshotId={acceptedRunSnapshotId} />;
+      case "Cases": return <CasesView writeAccess={writeAccess} cases={cases} casesLoading={casesLoading} selectedCase={selectedCase} caseId={caseId} createCase={createCase} pendingAction={pendingAction} />;
       case "Sources": return <SourcesView writeAccess={writeAccess} selectedCase={selectedCase} artifactId={routeArtifactId} sourceId={routeSourceId} upload={upload} pendingAction={pendingAction} onOpenEvidence={(evidenceId, source) => setDrawer({ kind: "evidence", evidenceId, source })} />;
       case "Run Console": return <RunConsole writeAccess={writeAccess} caseId={caseId} selectedCase={selectedCase} run={run} runLoading={runLoading} runError={runError} startRun={startRun} acceptRun={acceptRun} acceptedSnapshotId={acceptedRunSnapshotId} approveResearchPlan={approveResearchPlan} approvalUnavailable={approvalUnavailable} pendingAction={pendingAction} resumeSlot={resumeSlot} />;
-      case "Deep-Dive": return <DeepDive writeAccess={writeAccess} selectedCase={selectedCase} question={routeQuestion} caseId={caseId} run={run} runLoading={runLoading} runError={runError} acceptedSnapshotId={acceptedRunSnapshotId} onSwitchSnapshot={switchSnapshot} />;
+      case "Deep-Dive": return <DeepDive writeAccess={writeAccess} selectedCase={selectedCase} question={routeQuestion} caseId={caseId} run={run} onSwitchSnapshot={switchSnapshot} />;
       case "RV Screener": return <RVView key={caseId} writeAccess={writeAccess} caseId={caseId} />;
       case "Command Center": return <CommandView caseId={caseId} question={routeQuestion} />;
       case "Model Builder": return <ModelBuilder caseId={caseId} role={role} onDraftStateChange={onModelDraftStateChange} />;
@@ -737,14 +743,14 @@ export default function Workspace({ destination, children }: { destination?: Des
       selectedCase={selectedCase}
       unknownRoute={!routeIsKnown}
     >
-      <p className="sr-only" role="status">{notice}</p>
+      {notice ? <MutationReceipt>{notice}</MutationReceipt> : null}
       <div key={`${active}:${caseId}`}>{routeIsKnown ? <>{renderDestination()}{children}</> : children}</div>
     </WorkbenchShell>
     <AcceptDialog open={acceptPrompt} run={run} replaces={authority?.accepted ?? null} pending={pendingAction === "accept-run"} onConfirm={confirmAccept} onClose={() => setAcceptPrompt(false)} />
   </>;
 }
 
-function CasesView({ writeAccess, cases, casesLoading, selectedCase, caseId, onCaseChange, createCase, upload, pendingAction, run, runLoading, runError, acceptedSnapshotId }: { writeAccess: WriteAccess; cases: CaseRecord[]; casesLoading: boolean; selectedCase: CaseRecord | null; caseId: string; onCaseChange: (id: string) => void; createCase: (event: FormEvent<HTMLFormElement>) => void; upload: (event: FormEvent<HTMLFormElement>) => void; pendingAction: string; run: RunRecord | null; runLoading: boolean; runError: string; acceptedSnapshotId: string }) {
+function CasesView({ writeAccess, cases, casesLoading, selectedCase, caseId, createCase, pendingAction }: { writeAccess: WriteAccess; cases: CaseRecord[]; casesLoading: boolean; selectedCase: CaseRecord | null; caseId: string; createCase: (event: FormEvent<HTMLFormElement>) => void; pendingAction: string }) {
   const [search, setSearch] = useState("");
   const [snapshotFilter, setSnapshotFilter] = useState<"all" | "accepted" | "unaccepted">("all");
   const visibleCases = useMemo(() => cases.filter((item) => {
@@ -754,15 +760,14 @@ function CasesView({ writeAccess, cases, casesLoading, selectedCase, caseId, onC
     return matchesSearch && matchesFilter;
   }), [cases, search, snapshotFilter]);
   return <div className="grid cases-layout">
-    <section className="panel cases-register"><div className="panel-header"><h2>Case register</h2><span className="panel-meta">{casesLoading ? "Loading…" : `${visibleCases.length} of ${cases.length}`}</span></div><div className="worklist-toolbar"><div className="field"><label htmlFor="case-search">Search cases</label><input id="case-search" type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Issuer, case, or sector" /></div><div className="field"><label htmlFor="case-snapshot-filter">Snapshot</label><select id="case-snapshot-filter" value={snapshotFilter} onChange={(event) => setSnapshotFilter(event.target.value as "all" | "accepted" | "unaccepted")}><option value="all">All</option><option value="accepted">Accepted</option><option value="unaccepted">Not accepted</option></select></div></div><div className="panel-body table-wrap" tabIndex={0} role="region" aria-label="Scrollable table"><table><thead><tr><th scope="col">Issuer</th><th scope="col">Case</th><th scope="col">Sources</th><th scope="col">Snapshot</th><th scope="col">Actions</th></tr></thead><tbody>{visibleCases.map((item) => <tr key={item.id}><td>{item.issuer}</td><td>{item.name}<div className="muted">{item.sector}</div></td><td className="num">{item.source_count ?? "—"}</td><td>{item.accepted_snapshot_id ? <span className="status success">accepted</span> : <span className="status warning">not accepted</span>}</td><td><button className="button small" type="button" aria-pressed={caseId === item.id} onClick={() => onCaseChange(item.id)}>{caseId === item.id ? "Selected" : "Select"}</button></td></tr>)}</tbody></table>{!visibleCases.length && <LoadState loading={casesLoading} empty={cases.length ? "No cases match this search and filter." : "No cases yet. Create the first case to establish the context boundary."} />}</div></section>
+    <section className="portfolio-contract-notice span-12" aria-labelledby="portfolio-contract-title"><span className="flag">PROPOSED</span><div><strong id="portfolio-contract-title">Attention ordering requires a governed portfolio-summary response.</strong><p>The production register below is not ranked. Threshold distance, freshness and material-change scores are withheld until the server owns those fields.</p></div></section>
+    <section className="panel cases-register"><div className="panel-header"><h2>Monitored credits</h2><span className="panel-meta">{casesLoading ? "Loading…" : `${visibleCases.length} of ${cases.length}`}</span></div><div className="worklist-toolbar"><div className="field"><label htmlFor="case-search">Search credits</label><input id="case-search" type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Issuer, case, or sector" /></div><div className="field"><label htmlFor="case-snapshot-filter">Authority</label><select id="case-snapshot-filter" value={snapshotFilter} onChange={(event) => setSnapshotFilter(event.target.value as "all" | "accepted" | "unaccepted")}><option value="all">All credits</option><option value="accepted">Accepted authority</option><option value="unaccepted">No accepted authority</option></select></div></div><div className="panel-body table-wrap" tabIndex={0} role="region" aria-label="Monitored credit register"><table><thead><tr><th scope="col">Credit</th><th scope="col">Case</th><th scope="col">Evidence</th><th scope="col">Authority</th><th scope="col">Action</th></tr></thead><tbody>{visibleCases.map((item) => <tr className={caseId === item.id ? "selected-row" : undefined} key={item.id}><td><strong>{item.issuer}</strong><div className="muted">{item.sector}</div></td><td>{item.name}</td><td className="num">{item.source_count == null ? "Unavailable" : `${item.source_count} source${item.source_count === 1 ? "" : "s"}`}</td><td>{item.accepted_snapshot_id ? <span className="status success">Accepted</span> : <span className="status warning">Not accepted</span>}</td><td><Link className="button small" href={withQuery("/command-center", { case: item.id })}>Open credit</Link></td></tr>)}</tbody></table>{!visibleCases.length && <LoadState loading={casesLoading} empty={cases.length ? "No credits match this search and filter." : "No credits yet. Create the first case to establish the context boundary."} />}</div></section>
     <section className="panel cases-create"><div className="panel-header"><h2>Create case</h2></div><div className="panel-body">{writeAccess === "yes" ? <form onSubmit={createCase}><div className="field"><label htmlFor="case-name">Case name</label><input id="case-name" name="name" autoComplete="off" required placeholder="Q3 credit review…" /></div><div className="field"><label htmlFor="issuer">Issuer</label><input id="issuer" name="issuer" autoComplete="organization" required placeholder="Issuer legal name…" /></div><div className="field"><label htmlFor="sector">Sector</label><input id="sector" name="sector" autoComplete="off" placeholder="Business services…" /></div><button className={`button ${selectedCase ? "" : "primary"}`} type="submit" disabled={pendingAction === "create-case"}>{pendingAction === "create-case" ? "Creating…" : "Create case"}</button></form> : <WriteBlocked access={writeAccess} action="case creation" />}</div></section>
     {/* Fit truth: render the served fit when the wire carries one; claim NEEDS_SOURCE
         only when the case verifiably has zero sources (the server's own rule); stay
         neutral otherwise. The case wire now serves pathway_fit, so the fallback below
         is only for a deployment whose build predates it. */}
     <section className="panel cases-fit"><div className="panel-header"><h2>Pathway fit</h2></div><div className="panel-body">{selectedCase ? selectedCase.pathway_fit ? <><span className={`status ${selectedCase.pathway_fit.fit === "READY" ? "success" : "warning"}`}>{selectedCase.pathway_fit.fit}</span><p>{selectedCase.pathway_fit.message}</p></> : selectedCase.source_count === 0 ? <><span className="status warning">NEEDS_SOURCE</span><p>Upload a source to see fit.</p></> : <p className="muted">Fit unavailable. Pathway fit is not served by this deployment.</p> : <div className="empty">Select a case to inspect pathway fit.</div>}</div></section>
-    <section className="panel cases-intake"><div className="panel-header"><h2>Source intake</h2><span className="panel-meta">Immutable · versioned</span></div><div className="panel-body">{writeAccess !== "yes" ? <WriteBlocked access={writeAccess} action="governed source intake" /> : selectedCase ? <><p className="muted">{selectedCase.issuer} / {selectedCase.name}</p><form onSubmit={upload}><div className="field"><label htmlFor="case-source">Source file</label><input id="case-source" name="file" type="file" accept=".pdf,.xlsx,.json,.txt,.md,.csv" required /></div><button className="button primary" type="submit" disabled={pendingAction === "upload"}>{pendingAction === "upload" ? "Uploading…" : "Upload and version source set"}</button></form></> : <div className="empty">Select a case before adding governed source material.</div>}</div></section>
-    <RunSummary caseId={caseId} run={run} runLoading={runLoading} runError={runError} acceptedSnapshotId={acceptedSnapshotId} />
   </div>;
 }
 
@@ -775,6 +780,9 @@ function SourcesView({ writeAccess, selectedCase, artifactId, sourceId, upload, 
   const [artifactError, setArtifactError] = useState("");
   const [linkedEvidenceId, setLinkedEvidenceId] = useState("");
   const [selectedEvidenceId, setSelectedEvidenceId] = useState("");
+  const [selectedSourceId, setSelectedSourceId] = useState("");
+  const [selectedBlockId, setSelectedBlockId] = useState("");
+  const [search, setSearch] = useState("");
   const openedSourceQuery = useRef("");
   useEffect(() => {
     if (!selectedCase) return;
@@ -813,12 +821,22 @@ function SourcesView({ writeAccess, selectedCase, artifactId, sourceId, upload, 
     }
     // Exact source-query hydration is an external navigation boundary.
     setSelectedEvidenceId(sourceId);
-    onOpenEvidence(sourceId, source);
-  }, [loading, onOpenEvidence, readySourceCaseId, selectedCase, sourceById, sourceId]);
+    setSelectedSourceId(sourceId);
+  }, [loading, readySourceCaseId, selectedCase, sourceById, sourceId]);
+  const filteredSources = useMemo(() => {
+    const query = search.trim().toLowerCase();
+    return sources.filter((source) => !query || `${source.filename} ${source.id} ${source.sha256}`.toLowerCase().includes(query));
+  }, [search, sources]);
+  const selectedSource = filteredSources.find((source) => source.id === selectedSourceId) || filteredSources[0] || null;
+  const selectedBlock = selectedSource?.blocks.find((block) => block.block_id === selectedBlockId) || selectedSource?.blocks[0] || null;
   return <div className="grid">
     {artifactId && <section className="panel span-12 evidence-focus"><div className="panel-header"><h2>Evidence focus</h2><span className="eyebrow">ARTIFACT {artifact?.module_id || artifactId}</span></div><div className="panel-body">{artifact ? <ArtifactReader artifact={artifact} evidenceRefs={evidenceRefs} activeEvidenceId={activeEvidenceId} onOpenEvidence={openEvidence} onPreview={setLinkedEvidenceId} onPreviewEnd={() => setLinkedEvidenceId("")} /> : <LoadState loading={!artifactError && loading} error={artifactError} empty="No artifact details were returned." />}</div></section>}
-    <section className="panel span-8"><div className="panel-header"><h2>Source set</h2><span className="eyebrow">{loading ? "LOADING…" : `${sources.length} immutable objects`}</span></div><div className="panel-body table-wrap" tabIndex={0} role="region" aria-label="Scrollable table">{selectedEvidenceId && <div className="selection-strip" role="status"><span>Evidence {selectedEvidenceId}</span><button type="button" className="button small" onClick={() => setSelectedEvidenceId("")}>Clear</button></div>}{artifactError && !artifactId && <StateNote tone="critical" live="alert">{artifactError}</StateNote>}<table><thead><tr><th scope="col">File</th><th scope="col">SHA-256</th><th scope="col">Blocks</th></tr></thead><tbody>{sources.map((source) => <tr id={`source-${source.id}`} className={activeEvidenceId === source.id ? "evidence-match" : undefined} key={source.id}><td><div className="source-file"><details><summary>{source.filename}</summary><div className="source-blocks">{source.blocks.slice(0, 20).map((block) => <article className="source-block" id={`block-${source.id}-${block.block_id}`} key={block.block_id}><div className="eyebrow">{block.block_id} · {formatBlockLocator(block.locator)}</div><p>{block.text || "No extracted text."}</p></article>)}{source.blocks.length > 20 && <p className="muted">Showing the first 20 blocks. Use the source object for the remaining {source.blocks.length - 20} blocks.</p>}</div></details>{evidenceRefs.some((ref) => ref.sourceId === source.id) && <EvidenceChip evidenceId={source.id} linkedId={activeEvidenceId} onOpen={openEvidence} onPreview={setLinkedEvidenceId} onPreviewEnd={() => setLinkedEvidenceId("")} />}</div></td><td className="mono">{source.sha256.slice(0, 16)}…</td><td className="num">{source.blocks.length}</td></tr>)}</tbody></table>{!sources.length && <LoadState loading={loading} error={loadError} empty="No source objects in this case." />}{sources.length > 0 && loadError && <StateNote tone="critical" live="alert">{loadError}</StateNote>}</div></section>
-    <section className="panel span-4"><div className="panel-header"><h2>Add source</h2><span className="eyebrow">BOUNDARY</span></div><div className="panel-body">{writeAccess !== "yes" ? <WriteBlocked access={writeAccess} action="governed source intake" /> : selectedCase ? <form onSubmit={upload}><div className="field"><label htmlFor="source-file">Source file</label><input id="source-file" name="file" type="file" accept=".pdf,.xlsx,.json,.txt,.md,.csv" required /></div><button className="button primary" type="submit" disabled={pendingAction === "upload"}>{pendingAction === "upload" ? "Uploading…" : "Upload and version source set"}</button></form> : <div className="empty">Select a case.</div>}</div></section>
+    <section className="panel span-12 source-toolbar"><div className="panel-body"><div className="field"><label htmlFor="source-search">Search documents</label><input id="source-search" type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Filename, source id, or digest" /></div>{writeAccess !== "yes" ? <WriteBlocked access={writeAccess} action="governed source intake" /> : selectedCase ? <form onSubmit={upload}><div className="field"><label htmlFor="source-file">Add governed source</label><input id="source-file" name="file" type="file" accept=".pdf,.xlsx,.json,.txt,.md,.csv" required /></div><button className="button primary" type="submit" disabled={pendingAction === "upload"}>{pendingAction === "upload" ? "Uploading…" : "Upload and version"}</button></form> : null}</div></section>
+    <section className="source-workspace span-12" aria-label="Source workspace">
+      <aside className="source-register"><div className="source-region-head"><h2>Source register</h2><span className="mono muted">{loading ? "Loading…" : `${filteredSources.length} / ${sources.length}`}</span></div>{artifactError && !artifactId ? <StateNote tone="critical" live="alert">{artifactError}</StateNote> : null}{filteredSources.map((source) => <button id={`source-${source.id}`} className={`source-register-row ${selectedSource?.id === source.id ? "is-active" : ""}`} type="button" aria-pressed={selectedSource?.id === source.id} onClick={() => { setSelectedSourceId(source.id); setSelectedBlockId(""); }} key={source.id}><strong>{source.filename}</strong><span className="mono">{source.id} · {source.blocks.length} blocks</span><span className={`status ${source.blocks.length ? "success" : "warning"}`}>{source.blocks.length ? "Extracted" : "No blocks"}</span></button>)}{!filteredSources.length ? <LoadState loading={loading} error={loadError} empty={sources.length ? "No documents match this search." : "No source objects in this credit."} /> : null}</aside>
+      <section className="source-reader" aria-labelledby="source-reader-title">{selectedSource ? <><div className="meta-label">{selectedSource.id} · immutable source object</div><h2 id="source-reader-title">{selectedSource.filename}</h2><div className="source-document-blocks">{selectedSource.blocks.slice(0, 40).map((block) => <article className={selectedBlock?.block_id === block.block_id ? "source-document-block is-selected" : "source-document-block"} id={`block-${selectedSource.id}-${block.block_id}`} key={block.block_id}><button type="button" onClick={() => setSelectedBlockId(block.block_id)} aria-pressed={selectedBlock?.block_id === block.block_id}><span className="meta-label">{block.block_id} · {formatBlockLocator(block.locator)}</span><span>{block.text || "No extracted text."}</span></button></article>)}</div>{selectedSource.blocks.length > 40 ? <p className="muted">Showing the first 40 of {selectedSource.blocks.length} extracted blocks.</p> : null}</> : <LoadState loading={loading} empty={loadError ? "Source reader unavailable while the source register could not be loaded." : "Select a source document."} />}</section>
+      <aside className="source-support"><div className="meta-label">Evidence support</div><h2>Selected source authority</h2>{selectedSource ? <><dl className="state-facts"><dt>Source</dt><dd className="mono">{selectedSource.id}</dd><dt>SHA-256</dt><dd className="mono">{selectedSource.sha256}</dd><dt>Blocks</dt><dd className="num">{selectedSource.blocks.length}</dd>{selectedBlock ? <><dt>Selected block</dt><dd className="mono">{selectedBlock.block_id}</dd><dt>Locator</dt><dd className="mono">{formatBlockLocator(selectedBlock.locator)}</dd></> : null}</dl><button className="button small" type="button" onClick={() => openEvidence(selectedSource.id)}>Open evidence context</button></> : <p className="muted">No source selected.</p>}<div className="source-coverage-gate"><Unavailable title="Claim coverage" context="A normalized claim-to-source map is not served by this deployment. Source blocks remain readable above." /></div></aside>
+    </section>
   </div>;
 }
 
@@ -960,10 +978,14 @@ function ModuleIdentity({ moduleId }: { moduleId: string }) {
 // instead, since plan approval is a Run Console responsibility.
 function RunStatus({ writeAccess, caseId, run, runLoading, runError, acceptRun, acceptedSnapshotId, pendingAction, approvalSlot, resumeSlot }: { writeAccess: WriteAccess; caseId: string; run: RunRecord | null; runLoading: boolean; runError: string; acceptRun: () => void; acceptedSnapshotId: string; pendingAction: string; approvalSlot: ReactNode; resumeSlot: ReactNode }) {
   if (!run) return <LoadState loading={runLoading} error={runError} empty="No current execution. Select a purpose and depth to create an immutable plan." />;
+  const complete = run.nodes.filter((node) => node.status === "succeeded").length;
+  const current = run.nodes.find((node) => node.status === "running") || run.nodes.find((node) => node.status === "pending");
+  const progress = run.nodes.length ? Math.round(complete / run.nodes.length * 100) : 0;
   // `flow` here, not on the caller: the acceptance control must never abut the
   // route it accepts, whichever panel body this block is mounted in.
   return <div className="flow">
     <RunProgressAnnouncer run={run} />
+    <div className="run-progress" role="progressbar" aria-label="Execution progress" aria-valuemin={0} aria-valuemax={run.nodes.length} aria-valuenow={complete} aria-valuetext={`${complete} of ${run.nodes.length} modules complete${current ? `; ${moduleLabel(current.module_id)} ${current.status}` : ""}`}><div><span>{current ? `${moduleLabel(current.module_id)} · ${current.status}` : run.status}</span><span className="mono">{complete}/{run.nodes.length}</span></div><span className="run-progress-track" aria-hidden="true"><span style={{ width: `${progress}%` }} /></span></div>
     <div className="dag">{run.nodes.map((node, index) => <div className="dag-step" key={node.id}>{index > 0 && <span className="dag-edge" aria-hidden="true">→</span>}{node.artifact_id ? <Link className={`dag-node ${node.status}`} href={withQuery("/sources/", { case: caseId, artifact: node.artifact_id })}><ModuleIdentity moduleId={node.module_id} /><div className="muted">{node.status}</div><span className="dag-node-open">Open output</span></Link> : <div className={`dag-node ${node.status}`}><ModuleIdentity moduleId={node.module_id} /><div className="muted">{node.status}</div></div>}</div>)}</div>
     {run.status === "failed" && run.error && <StateNote tone="critical" live="alert" code={run.error.code}>{run.error.message || "Run exception"}</StateNote>}
     {run.status === "succeeded" && (acceptedSnapshotId
@@ -977,35 +999,11 @@ function RunStatus({ writeAccess, caseId, run, runLoading, runError, acceptRun, 
   </div>;
 }
 
-// Cases and Deep-Dive report the current execution; they do not drive it. The
-// console proper — compile form, route DAG, acceptance — has exactly one home,
-// which is what keeps `/cases/` to one page-level primary action (DESIGN.md:348).
-// Everything here is read-only status plus the route to the console.
-function RunSummary({ caseId, run, runLoading, runError, acceptedSnapshotId }: { caseId: string; run: RunRecord | null; runLoading: boolean; runError: string; acceptedSnapshotId: string }) {
-  const total = run?.nodes.length ?? 0;
-  const complete = run?.nodes.filter((node) => node.status === "succeeded").length ?? 0;
-  return <section className="panel span-12 run-summary" aria-label="Current execution">
-    <div className="panel-header run-summary-header"><h2>Current execution</h2><div className="run-summary-actions"><RunStatusBadge run={run} /><Link className="button small" href={withQuery("/run-console", { case: caseId, run: run?.id })}>Open Run Console</Link></div></div>
-    <div className="panel-body flow">
-      {run ? <>
-        <p className="muted">{complete} of {total} {total === 1 ? "module" : "modules"} complete · <span className="mono">{run.id}</span></p>
-        <RunProgressAnnouncer run={run} />
-        <ul className="run-summary-modules">{run.nodes.map((node) => <li key={node.id}><span>{moduleLabel(node.module_id)}</span><span className={`status ${node.status === "succeeded" ? "success" : node.status === "failed" ? "critical" : node.status === "running" ? "warning" : ""}`}>{node.status}</span></li>)}</ul>
-        {run.status === "failed" && run.error && <StateNote tone="critical" live="alert" code={run.error.code}>{run.error.message || "Run exception"}</StateNote>}
-        {run.status === "paused" && <StateNote tone="warning" live="status" code={run.error?.code || "RUN_PAUSED"}>{run.error?.message || "Run paused."} Resolve it in Run Console.</StateNote>}
-        {run.status === "succeeded" && (acceptedSnapshotId
-          ? <div className="run-accepted" role="status"><span className="status success">Accepted — visible authority</span><span className="mono muted">{acceptedSnapshotId}</span></div>
-          : <p className="muted">Not yet accepted. Review the modules in Run Console, then accept it there.</p>)}
-      </> : <LoadState loading={runLoading} error={runError} empty="No current execution. Compile a route in Run Console." />}
-    </div>
-  </section>;
-}
-
 function RunConsole({ writeAccess, caseId, selectedCase, run, runLoading, runError, startRun, acceptRun, acceptedSnapshotId, approveResearchPlan, approvalUnavailable, pendingAction, resumeSlot }: { writeAccess: WriteAccess; caseId: string; selectedCase: CaseRecord | null; run: RunRecord | null; runLoading: boolean; runError: string; startRun: (event: FormEvent<HTMLFormElement>) => void; acceptRun: () => void; acceptedSnapshotId: string; approveResearchPlan: (planHash: string) => void; approvalUnavailable: boolean; pendingAction: string; resumeSlot: ReactNode }) {
   const [pathway, setPathway] = useState("EARNINGS_UPDATE");
   const [depth, setDepth] = useState("screen");
   const deepResearchAvailable = selectedCase?.deep_research_available === true;
-  const deepResearchReason = selectedCase?.deep_research_unavailable_reason || "Checking Deep Research availability…";
+  const deepResearchReason = selectedCase?.deep_research_unavailable_reason || "Deep Research availability is not served for this credit.";
   // The served cut, not a second copy of it. Deep Research keeps its own
   // actor-specific gate above; every other pathway is offered only when the
   // engine says it will start one. A server that serves no list (older build)
@@ -1090,31 +1088,92 @@ function ResearchPlanView({ plan, planHash, approving, approvalUnavailable, onAp
   </section>;
 }
 
-function DeepDive({ writeAccess, selectedCase, question, caseId, run, runLoading, runError, acceptedSnapshotId, onSwitchSnapshot }: { writeAccess: WriteAccess; selectedCase: CaseRecord | null; question: string; caseId: string; run: RunRecord | null; runLoading: boolean; runError: string; acceptedSnapshotId: string; onSwitchSnapshot: (snapshotId: string) => Promise<SnapshotView | null> }) {
+function DeepDive({ writeAccess, selectedCase, question, caseId, run, onSwitchSnapshot }: { writeAccess: WriteAccess; selectedCase: CaseRecord | null; question: string; caseId: string; run: RunRecord | null; onSwitchSnapshot: (snapshotId: string) => Promise<SnapshotView | null> }) {
+  const selectedCaseId = selectedCase?.id || "";
   const [view, setView] = useState<{ accepted: Snapshot | null; latest_accepted: Snapshot | null; switch_required: boolean } | null>(null);
+  const [artifacts, setArtifacts] = useState<ArtifactRecord[]>([]);
+  const [selectedArtifactId, setSelectedArtifactId] = useState("");
+  const [artifactError, setArtifactError] = useState("");
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
+  const loadGeneration = useRef(0);
   useEffect(() => {
-    if (!selectedCase) return;
+    const generation = ++loadGeneration.current;
     let ignore = false;
-    // The fetch boundary intentionally resets its loading and error state.
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    setLoading(true); setLoadError("");
-    void request<typeof view>(`/api/cases/${selectedCase.id}/snapshot`).then((next) => { if (!ignore) setView(next); }).catch((caught) => { if (!ignore) setLoadError(firstErrorMessage(caught, "Unable to load snapshot authority")); }).finally(() => { if (!ignore) setLoading(false); });
-    return () => { ignore = true; };
-  }, [selectedCase]);
+    setView(null); setArtifacts([]); setSelectedArtifactId(""); setArtifactError(""); setMessage(""); setLoadError(""); setLoading(Boolean(selectedCaseId));
+
+    if (selectedCaseId) {
+      void (async () => {
+        try {
+          const next = await request<typeof view>(`/api/cases/${selectedCaseId}/snapshot`);
+          if (ignore || generation !== loadGeneration.current) return;
+          const expected = next?.accepted?.artifacts ?? [];
+          const loaded = await Promise.all(expected.map(({ id }) =>
+            request<ArtifactRecord>(`/api/cases/${selectedCaseId}/artifacts/${id}`).catch(() => null)
+          ));
+          if (ignore || generation !== loadGeneration.current) return;
+          const available = loaded.filter((item): item is ArtifactRecord => item !== null);
+          setView(next);
+          setArtifacts(available);
+          if (available.length !== expected.length) setArtifactError("Some accepted module outputs could not be loaded.");
+        } catch (caught) {
+          if (ignore || generation !== loadGeneration.current || caught instanceof DOMException && caught.name === "AbortError") return;
+          setLoadError(firstErrorMessage(caught, "Unable to load snapshot authority"));
+        } finally {
+          if (!ignore && generation === loadGeneration.current) setLoading(false);
+        }
+      })();
+    }
+
+    return () => { ignore = true; loadGeneration.current += 1; };
+  }, [selectedCaseId]);
   const switchSnapshot = async () => {
     if (!selectedCase || !view?.latest_accepted) return;
+    const generation = ++loadGeneration.current;
+    const selectedCaseId = selectedCase.id;
+    const snapshotId = view.latest_accepted.id;
+    setLoading(true); setLoadError(""); setArtifactError(""); setMessage("");
+
     try {
-      const next = await onSwitchSnapshot(view.latest_accepted.id);
-      if (!next) return;
+      const next = await onSwitchSnapshot(snapshotId);
+      if (!next || generation !== loadGeneration.current) return;
+      const expected = next.accepted?.artifacts ?? [];
+      const loaded = await Promise.all(expected.map(({ id }) =>
+        request<ArtifactRecord>(`/api/cases/${selectedCaseId}/artifacts/${id}`).catch(() => null)
+      ));
+      if (generation !== loadGeneration.current) return;
+      const available = loaded.filter((item): item is ArtifactRecord => item !== null);
       setView(next);
+      setArtifacts(available);
+      setSelectedArtifactId("");
+      if (available.length !== expected.length) setArtifactError("Some accepted module outputs could not be loaded.");
       setMessage("Visible snapshot switched.");
-    } catch (caught) { setMessage(firstErrorMessage(caught, "Unable to switch snapshot")); }
+    } catch (caught) {
+      if (generation !== loadGeneration.current || caught instanceof DOMException && caught.name === "AbortError") return;
+      setArtifactError(firstErrorMessage(caught, "Unable to switch snapshot"));
+    } finally {
+      if (generation === loadGeneration.current) setLoading(false);
+    }
   };
   const snapshot = view?.accepted;
-  return <div className="grid deep-dive-layout">{question && <section className="context-strip span-12"><strong>Evidence request</strong><p>{question}</p></section>}<section className="panel span-8"><div className="panel-header"><h2>Accepted analysis</h2><span className="panel-meta">Visible authority</span></div><div className="panel-body flow">{snapshot ? <><div className="callout"><strong>Visible accepted snapshot</strong><br /><span className="mono">{snapshot.digest}</span><br /><span className="muted">Source set v{snapshot.source_set_version ?? "—"} · accepted {formatDate(snapshot.accepted_at)}</span></div><div className="section-heading"><h3>Artifact register</h3><span>{snapshot.artifacts.length} typed artifacts</span></div><div className="table-wrap" tabIndex={0} role="region" aria-label="Scrollable table"><table><caption>Typed artifacts bound to this snapshot</caption><thead><tr><th scope="col">Module</th><th scope="col">Artifact digest</th><th scope="col">Evidence</th></tr></thead><tbody>{snapshot.artifacts.map((artifact) => <tr key={artifact.id}><td><ModuleIdentity moduleId={artifact.module_id} /></td><td className="mono">{artifact.digest.slice(0, 16)}…</td><td><Link href={withQuery("/sources/", { case: selectedCase?.id, artifact: artifact.id })}>Open output</Link></td></tr>)}</tbody></table></div>{view?.switch_required && <div className="callout warning">A newer accepted execution exists. This view remains on the selected snapshot until you switch it explicitly.{writeAccess === "yes" && <div className="top-actions"><button className="button small" type="button" onClick={switchSnapshot}>Switch visible snapshot</button></div>}</div>}{message && <p className="muted" role="status">{message}</p>}</> : loading || loadError ? <LoadState loading={loading} error={loadError} /> : <StateBlock shape="action" title="Analysis unavailable" body="No accepted snapshot. Run the selected route, inspect exceptions, then accept it explicitly." action={{ label: "Open Run Console", href: withQuery("/run-console", { case: selectedCase?.id, run: run?.id }) }} />}</div></section><section className="panel span-4 evidence-rail"><div className="panel-header"><h2>Evidence rail</h2></div><div className="panel-body flow">{snapshot ? <><p className="muted">Pinned to source set v{snapshot.source_set_version ?? "—"}, accepted {formatDate(snapshot.accepted_at)}.</p><ul className="evidence-rail-list">{snapshot.artifacts.map((artifact) => <li key={artifact.id}><Link href={withQuery("/sources/", { case: selectedCase?.id, artifact: artifact.id })}><span className="mono">{artifact.module_id}</span></Link><div className="muted mono">{artifact.digest.slice(0, 16)}…</div></li>)}</ul></> : <p className="muted">No accepted snapshot, so no evidence is bound yet.</p>}</div></section><RunSummary caseId={caseId} run={run} runLoading={runLoading} runError={runError} acceptedSnapshotId={acceptedSnapshotId} /></div>;
+  const selectedArtifact = artifacts.find((item) => item.id === selectedArtifactId) || artifacts.find((item) => item.module_id === "CP-2") || artifacts[0] || null;
+  const selectedBlocks = selectedArtifact?.markdown ? markdownBlocks(selectedArtifact.markdown) : [];
+  const selectedEvidence = normalizeEvidenceRefs(selectedArtifact?.payload?.evidence_refs);
+  if (loading) return <div className="panel"><div className="panel-body"><LoadState loading /></div></div>;
+  if (!snapshot) return <div className="panel"><div className="panel-body">{loading || loadError ? <LoadState loading={loading} error={loadError} /> : <StateBlock shape="action" title="Analysis unavailable" body="No accepted snapshot. Run the selected route, inspect exceptions, then accept it explicitly." action={{ label: "Open analysis run", href: withQuery("/run-console", { case: selectedCase?.id, run: run?.id }) }} />}</div></div>;
+  return <div className="analysis-screen">
+    {question ? <section className="context-strip"><strong>Evidence request</strong><p>{question}</p></section> : null}
+    {view?.switch_required ? <div className="analysis-switch callout warning"><strong>New accepted execution available.</strong><p>This reader remains on snapshot <span className="mono">{snapshot.id}</span> until authority is switched explicitly.</p>{writeAccess === "yes" ? <button className="button small" type="button" onClick={switchSnapshot}>Switch visible snapshot</button> : null}</div> : null}
+    {message ? <MutationReceipt>{message}</MutationReceipt> : null}
+    {artifactError ? <StateNote tone="critical" live="alert">{artifactError}</StateNote> : null}
+    <div className="analysis-reader-shell">
+      <nav className="analysis-toc" aria-label="Accepted analysis modules"><div className="meta-label">Accepted modules</div>{artifacts.map((artifact) => <button type="button" aria-pressed={selectedArtifact?.id === artifact.id} className={selectedArtifact?.id === artifact.id ? "is-active" : ""} onClick={() => setSelectedArtifactId(artifact.id)} key={artifact.id}><span>{moduleLabel(artifact.module_id)}</span><span className="mono">{artifact.module_id}</span></button>)}<Link className="button small" href={withQuery("/run-console", { case: caseId, run: run?.id })}>Open selected run</Link></nav>
+      <article className="analysis-reader" aria-labelledby="analysis-artifact-title">{selectedArtifact ? <><div className="meta-label">Accepted {formatDate(snapshot.accepted_at)} · Source set v{snapshot.source_set_version ?? "Unavailable"}</div><h2 id="analysis-artifact-title">{moduleLabel(selectedArtifact.module_id)}</h2><p className="analysis-lead">{selectedArtifact.payload?.narrative?.takeaway || selectedArtifact.payload?.summary || selectedBlocks.find((block) => block.kind === "paragraph")?.text || "No module summary is available."}</p>{selectedArtifact.markdown ? <div className="analysis-copy">{selectedBlocks.map((block, index) => block.kind === "heading" ? <h3 key={`${block.text}:${index}`}>{block.text}</h3> : <p key={`${block.text}:${index}`}>{block.text}</p>)}</div> : <div className="analysis-copy">{selectedArtifact.payload?.narrative?.basis ? <><h3>Basis</h3><p>{selectedArtifact.payload.narrative.basis}</p></> : null}{selectedArtifact.payload?.narrative?.exceptions ? <div className="callout warning"><strong>Exceptions</strong><p>{selectedArtifact.payload.narrative.exceptions}</p></div> : null}</div>}<dl className="analysis-provenance"><dt>Artifact</dt><dd className="mono">{selectedArtifact.id}</dd><dt>Digest</dt><dd className="mono">{selectedArtifact.digest}</dd><dt>Input fingerprint</dt><dd className="mono">{selectedArtifact.payload?.lineage?.input_fingerprint || selectedArtifact.input_fingerprint || "Unavailable"}</dd></dl></> : <LoadState loading={loading} error={loadError} empty="No accepted module output is available." />}</article>
+      <aside className="analysis-evidence"><div className="meta-label">Evidence rail</div><h2>{selectedEvidence.length} cited source{selectedEvidence.length === 1 ? "" : "s"}</h2>{selectedEvidence.map((ref, index) => <div className="analysis-evidence-card" key={`${ref.sourceId}:${index}`}><Link href={withQuery("/sources", { case: caseId, source: ref.sourceId })}>{ref.sourceId}</Link><span className="mono muted">{ref.blockIds.length ? ref.blockIds.join(" · ") : "Source-level reference"}</span></div>)}{selectedArtifact && !selectedEvidence.length ? <Unavailable title="Evidence citations" context="This accepted module output contains no normalized evidence references." /> : null}<div className="analysis-evidence-authority"><span className="meta-label">Visible authority</span><span className="mono">{snapshot.digest}</span></div></aside>
+    </div>
+  </div>;
 }
 
 const loanColumns: { key: keyof LoanRow; label: string; numeric?: boolean; signed?: boolean }[] = [
@@ -1216,12 +1275,15 @@ function RVView({ writeAccess, caseId }: { writeAccess: WriteAccess; caseId: str
     <section className="panel span-12"><div className="panel-header"><h2>Leveraged-loan universe</h2><span className="eyebrow">SOURCE DATA · UNANALYZED</span></div><div className="panel-body loan-upload">{writeAccess === "yes" ? <form onSubmit={upload}><div className="field"><label htmlFor="loan-workbook">Fixed CP-3 sector workbook (.xlsx)</label><input id="loan-workbook" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" onChange={(event) => setFile(event.target.files?.[0] || null)} required /></div><button className="button primary" type="submit" disabled={pending || !file}>{pending ? "Importing…" : "Upload CP-3 workbook"}</button></form> : <WriteBlocked access={writeAccess} action="importing a CP-3 workbook" />}<p className="muted">All visible sector tabs are ingested. Values remain in workbook units: prices and changes in points, margin and discount margin in bps, yield in percent.</p>{message && <p className={messageIsError ? "error" : "muted"} role={messageIsError ? "alert" : "status"}>{message}</p>}{findings.length ? <ul className="loan-findings" role="alert">{findings.map((finding, index) => <li key={`${finding.code}-${index}`}><strong>{humanizeCode(finding.code)}</strong> {finding.sheet ? `${finding.sheet}${finding.row ? ` R${finding.row}` : ""}: ` : ""}{finding.detail}</li>)}</ul> : null}</div></section>
     {rv?.universe ? <section className="panel span-12"><div className="panel-header"><h2>Active authority</h2><span className="status success">ACTIVE · v{rv.universe.version}</span></div><div className="panel-body loan-authority"><dl><dt>Workbook date</dt><dd>{rv.universe.workbook_date || "N/A"}</dd><dt>Source</dt><dd><Link href={withQuery("/sources/", { case: caseId, source: rv.universe.source_id })}>{rv.universe.source_filename}</Link></dd><dt>Instruments</dt><dd className="num">{rv.universe.row_count}</dd><dt>Template</dt><dd className="mono">{rv.universe.template_version}</dd><dt>Digest</dt><dd className="mono">{rv.universe.universe_digest}</dd></dl></div></section> : null}
     <section className="panel span-12"><div className="panel-header"><h2>Loan screener</h2><span className="panel-meta">{filteredRows.length} / {rv?.rows.length || 0} instruments</span></div><div className="panel-body loan-filters"><div className="field"><label htmlFor="loan-search">Issuer / ID</label><input id="loan-search" type="search" value={search} onChange={(event) => setSearch(event.target.value)} /></div>{[["loan-sector", "Sector", sector, setSector, filterOptions.sector], ["loan-rating", "Rating", rating, setRating, filterOptions.ratings], ["loan-ranking", "Ranking", ranking, setRanking, filterOptions.ranking], ["loan-type", "Loan type", loanType, setLoanType, filterOptions.loan_type]] .map(([id, label, value, setter, values]) => <div className="field" key={id as string}><label htmlFor={id as string}>{label as string}</label><select id={id as string} value={value as string} onChange={(event) => (setter as (value: string) => void)(event.target.value)}><option value="">All</option>{(values as string[]).map((option) => <option key={option}>{option}</option>)}</select></div>)}<div className="field"><label htmlFor="loan-maturity-from">Maturity from</label><input id="loan-maturity-from" type="date" value={maturityFrom} onChange={(event) => setMaturityFrom(event.target.value)} /></div><div className="field"><label htmlFor="loan-maturity-to">Maturity to</label><input id="loan-maturity-to" type="date" value={maturityTo} onChange={(event) => setMaturityTo(event.target.value)} /></div>{[["loan-margin-min", "Min margin (bps)", marginMin, setMarginMin], ["loan-margin-max", "Max margin (bps)", marginMax, setMarginMax], ["loan-dm-min", "Min 3Y DM (bps)", dmMin, setDmMin], ["loan-dm-max", "Max 3Y DM (bps)", dmMax, setDmMax]].map(([id, label, value, setter]) => <div className="field" key={id as string}><label htmlFor={id as string}>{label as string}</label><input id={id as string} type="number" step="any" value={value as string} onChange={(event) => (setter as (value: string) => void)(event.target.value)} /></div>)}</div><div className="table-wrap loan-table-wrap" tabIndex={0} role="region" aria-label="Leveraged-loan screener; scroll horizontally to review all workbook fields">{rv?.rows.length ? <table className="loan-table"><caption className="sr-only">Active leveraged-loan universe. Column labels state the source unit.</caption><thead><tr className="loan-groups"><th scope="colgroup" colSpan={7}>Issuer profile</th><th scope="colgroup" colSpan={2}>Identifiers</th><th scope="colgroup" colSpan={6}>Loan terms</th><th scope="colgroup" colSpan={11}>Market data</th><th scope="colgroup" colSpan={1}>Source</th></tr><tr>{loanColumns.map((column) => <th scope="col" key={column.key} aria-sort={sort.key === column.key ? (sort.direction === "asc" ? "ascending" : "descending") : undefined}><button className="loan-sort" type="button" onClick={() => changeSort(column.key)}>{column.label}{sort.key === column.key ? (sort.direction === "asc" ? " ↑" : " ↓") : ""}</button></th>)}<th scope="col">Locator</th></tr></thead><tbody>{pageRows.map((row) => <tr key={row.instrument_key}>{loanColumns.map((column) => { const value = row[column.key]; const change = column.signed && typeof value === "number" ? value > 0 ? "positive" : value < 0 ? "negative" : "flat" : ""; return <td key={column.key} className={`${column.numeric ? "num" : ""} ${change}`.trim()}>{loanCell(value, column.signed)}</td>; })}<td className="mono">{row.source_locators.map((locator) => `${locator.sheet} R${locator.row}`).join("; ")}</td></tr>)}</tbody></table> : <LoadState loading={loading} error={loadError} empty="Upload the fixed CP-3 workbook to activate a leveraged-loan universe." />}{rv?.rows.length && !filteredRows.length ? <div className="empty">No loans match the current filters.</div> : null}</div>{filteredRows.length > LOAN_PAGE_SIZE ? <nav className="loan-pagination" aria-label="Loan screener pages"><button className="button small" type="button" disabled={currentPage === 0} onClick={() => setPage(currentPage - 1)}>Previous</button><span className="mono">Page {currentPage + 1} of {pageCount}</span><button className="button small" type="button" disabled={currentPage + 1 >= pageCount} onClick={() => setPage(currentPage + 1)}>Next</button></nav> : null}</section>
+    <section className="context-strip span-12"><strong>Relative percentile unavailable</strong><p>The active universe serves exact source fields and filters, but no governed relative-position score. The browser does not infer one.</p></section>
   </div>;
 }
 
 function CommandView({ caseId, question }: { caseId: string; question: string }) {
   const [lens, setLens] = useState<{ issuer: string; sector: string; accepted_snapshot_id: string | null; source_set?: { version: number } | null } | null>(null);
   const [snapshot, setSnapshot] = useState<{ accepted: Snapshot | null; latest_accepted: Snapshot | null; diff: { changed?: boolean; added?: { module_id: string; digest: string }[]; removed?: { module_id: string; digest: string }[]; modified?: { module_id: string; before: string; after: string }[]; source_set_changed?: boolean } | null } | null>(null);
+  const [artifacts, setArtifacts] = useState<ArtifactRecord[]>([]);
+  const [artifactError, setArtifactError] = useState("");
   const [lensLoading, setLensLoading] = useState(true); const [lensError, setLensError] = useState(""); const [lensUnavailable, setLensUnavailable] = useState(false);
   const [snapshotLoading, setSnapshotLoading] = useState(true); const [snapshotError, setSnapshotError] = useState(""); const [snapshotUnavailable, setSnapshotUnavailable] = useState(false);
   // Command-center state is synchronized from two external authorities. The two
@@ -1232,7 +1294,7 @@ function CommandView({ caseId, question }: { caseId: string; question: string })
     let ignore = false;
     // The fetch boundary intentionally resets both panels' state.
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    setLensLoading(true); setLensError(""); setLensUnavailable(false); setSnapshotLoading(true); setSnapshotError(""); setSnapshotUnavailable(false);
+    setLensLoading(true); setLensError(""); setLensUnavailable(false); setSnapshotLoading(true); setSnapshotError(""); setSnapshotUnavailable(false); setArtifacts([]); setArtifactError("");
     void request<typeof lens>(`/api/cases/${caseId}/lens`)
       .then((nextLens) => { if (!ignore) setLens(nextLens); })
       .catch((caught) => {
@@ -1242,7 +1304,16 @@ function CommandView({ caseId, question }: { caseId: string; question: string })
       })
       .finally(() => { if (!ignore) setLensLoading(false); });
     void request<typeof snapshot>(`/api/cases/${caseId}/snapshot`)
-      .then((nextSnapshot) => { if (!ignore) setSnapshot(nextSnapshot); })
+      .then(async (nextSnapshot) => {
+        if (ignore) return;
+        setSnapshot(nextSnapshot);
+        const acceptedArtifacts = nextSnapshot?.accepted?.artifacts || [];
+        const loaded = await Promise.all(acceptedArtifacts.map((item) => request<ArtifactRecord>(`/api/cases/${caseId}/artifacts/${item.id}`).catch(() => null)));
+        if (ignore) return;
+        const available = loaded.filter((item): item is ArtifactRecord => item !== null);
+        setArtifacts(available);
+        if (available.length !== acceptedArtifacts.length) setArtifactError("Some accepted module outputs could not be loaded. Snapshot identity remains visible.");
+      })
       .catch((caught) => {
         if (ignore) return;
         if (isUnavailableRoute(caught)) setSnapshotUnavailable(true);
@@ -1252,22 +1323,37 @@ function CommandView({ caseId, question }: { caseId: string; question: string })
     return () => { ignore = true; };
   }, [caseId]);
   const diff = snapshot?.diff;
-  return <div className="grid command-layout">{question && <section className="context-strip span-12"><strong>Evidence request</strong><p>{question}</p></section>}<section className="panel command-changes"><div className="panel-header"><h2>What changed</h2><span className="panel-meta">Snapshot diff</span></div><div className="panel-body flow">{snapshotUnavailable ? <Unavailable title="Snapshot diff" /> : snapshotLoading || snapshotError ? <LoadState loading={snapshotLoading} error={snapshotError} /> : !snapshot?.accepted ? <StateBlock shape="action" title="Posture unavailable" body="No accepted snapshot yet. Posture becomes reviewable after an explicit acceptance." action={{ label: "Open Run Console", href: withQuery("/run-console", { case: caseId }) }} /> : diff?.changed ? <><div className="callout warning">Accepted snapshot differs from the latest accepted execution.</div><ul className="change-list">{diff.source_set_changed && <li>Source set changed.</li>}{(diff.added?.length ?? 0) > 0 && <li>{diff.added?.length} module{diff.added?.length === 1 ? "" : "s"} added.</li>}{(diff.modified?.length ?? 0) > 0 && <li>{diff.modified?.length} module{diff.modified?.length === 1 ? "" : "s"} modified.</li>}{(diff.removed?.length ?? 0) > 0 && <li>{diff.removed?.length} module{diff.removed?.length === 1 ? "" : "s"} removed.</li>}</ul></> : <div className="callout">No material change in the current accepted snapshot.</div>}</div></section><section className="panel command-lens"><div className="panel-header"><h2>Issuer lens</h2><span className="panel-meta">Case scoped</span></div><div className="panel-body flow">{lensUnavailable ? <Unavailable title="Issuer lens" /> : lensLoading || lensError ? <LoadState loading={lensLoading} error={lensError} /> : <><h2>{lens?.issuer || "—"}</h2><p className="muted">{lens?.sector || "—"}</p><p className="mono">Snapshot: {lens?.accepted_snapshot_id || "none accepted"}</p><p className="mono">Source set: {lens?.source_set?.version ? `v${lens.source_set.version}` : "none"}</p></>}</div></section><section className="context-strip command-boundary"><strong>Analyst boundary</strong><p>No system recommendation is shown here. Instrument-specific recommendations are analyst-owned and versioned in Report Studio.</p></section></div>;
+  const conclusion = artifacts.find((item) => item.module_id === "CP-2") || artifacts.find((item) => item.payload?.narrative?.takeaway || item.payload?.summary || item.markdown) || null;
+  const conclusionBlocks = conclusion?.markdown ? markdownBlocks(conclusion.markdown) : [];
+  const conclusionText = conclusion?.payload?.narrative?.takeaway || conclusion?.payload?.summary || conclusionBlocks.find((block) => block.kind === "paragraph")?.text || "";
+  const evidenceCount = artifacts.reduce((total, item) => total + normalizeEvidenceRefs(item.payload?.evidence_refs).length, 0);
+  return <div className="grid credit-screen">
+    {question && <section className="context-strip span-12"><strong>Evidence request</strong><p>{question}</p></section>}
+    <section className="credit-main span-9">
+      {snapshotUnavailable ? <Unavailable title="Credit authority" /> : snapshotLoading || snapshotError ? <LoadState loading={snapshotLoading} error={snapshotError} /> : !snapshot?.accepted ? <StateBlock shape="action" title="Credit state unavailable" body="No accepted snapshot yet. Run analysis, inspect its exact outputs, then accept the snapshot." action={{ label: "Open analysis run", href: withQuery("/run-console", { case: caseId }) }} /> : <>
+        <div className="credit-authority-head"><div><span className="meta-label">{lens?.issuer || "Selected credit"} · accepted record</span><h2>Accepted conclusion and exact module authority</h2></div><span className="status success">Accepted {formatDate(snapshot.accepted.accepted_at)}</span></div>
+        <div className="standing-answer"><span className="meta-label">Current conclusion · {evidenceCount} source reference{evidenceCount === 1 ? "" : "s"}</span>{conclusionText ? <><h2>{conclusionText}</h2>{conclusion?.payload?.narrative?.basis ? <p>{conclusion.payload.narrative.basis}</p> : null}<p className="mono muted">{moduleLabel(conclusion?.module_id || "")} · {conclusion?.digest}</p></> : <Unavailable title="Standing conclusion" context="The accepted snapshot contains no module summary that can be presented as a conclusion." />}</div>
+        <div className="authority-metrics"><div><span className="meta-label">Accepted snapshot</span><strong className="mono">{snapshot.accepted.id}</strong></div><div><span className="meta-label">Source set</span><strong className="mono">v{snapshot.accepted.source_set_version ?? "Unavailable"}</strong></div><div><span className="meta-label">Module outputs</span><strong className="num">{snapshot.accepted.artifacts.length}</strong></div><div><span className="meta-label">Evidence references</span><strong className="num">{evidenceCount}</strong></div></div>
+        <section className="credit-change-section"><div className="section-heading"><h3>What changed</h3><span>Snapshot diff</span></div>{diff?.changed ? <><p className="callout warning">The visible accepted snapshot differs from the latest accepted execution. Navigation does not switch authority.</p><ul className="credit-change-list">{diff.source_set_changed ? <li><strong>Source set changed</strong><span>The latest accepted execution binds a different source set.</span></li> : null}{diff.added?.map((item) => <li key={`added:${item.module_id}`}><strong>{moduleLabel(item.module_id)} added</strong><span className="mono">{item.digest}</span></li>)}{diff.modified?.map((item) => <li key={`modified:${item.module_id}`}><strong>{moduleLabel(item.module_id)} changed</strong><span className="mono">{item.before.slice(0, 12)} → {item.after.slice(0, 12)}</span></li>)}{diff.removed?.map((item) => <li key={`removed:${item.module_id}`}><strong>{moduleLabel(item.module_id)} removed</strong><span className="mono">{item.digest}</span></li>)}</ul></> : <p className="callout">No material module or source-set change is present in the served snapshot diff.</p>}</section>
+        {artifactError ? <StateNote tone="critical" live="alert">{artifactError}</StateNote> : null}
+        <div className="top-actions credit-actions"><Link className="button primary" href={withQuery("/deep-dive", { case: caseId })}>Read accepted analysis</Link><Link className="button" href={withQuery("/run-console", { case: caseId })}>Review latest run</Link></div>
+      </>}
+    </section>
+    <aside className="credit-proof span-3"><div className="meta-label">Proof and gaps</div><h2>Accepted support</h2>{lensUnavailable ? <Unavailable title="Issuer lens" /> : lensLoading || lensError ? <LoadState loading={lensLoading} error={lensError} /> : <dl className="state-facts"><dt>Issuer</dt><dd>{lens?.issuer || "Unavailable"}</dd><dt>Sector</dt><dd>{lens?.sector || "Unavailable"}</dd><dt>Accepted snapshot</dt><dd className="mono">{lens?.accepted_snapshot_id || "None"}</dd><dt>Source set</dt><dd className="mono">{lens?.source_set?.version ? `v${lens.source_set.version}` : "None"}</dd></dl>}<div className="proof-register"><strong className="num">{artifacts.length}</strong><p>Accepted module outputs are directly addressable by artifact id and digest.</p></div><Unavailable title="Binding measure and claim gaps" context="The current API does not serve normalized measure, threshold, assumption and counterfactual fields. No client inference is shown." /></aside>
+    <section className="context-strip span-12"><strong>Analyst boundary</strong><p>Engine output is separated from analyst judgment. Instrument recommendations remain analyst-owned and versioned in Report Studio.</p></section>
+  </div>;
 }
 
 function AdminView() {
-  const [stepUp, setStepUp] = useState(""); const [bundle, setBundle] = useState<{ build_id: string; integrity: { checked: number; mismatches: number } } | null>(null); const [audit, setAudit] = useState<{ action: string; actor: string; at: string }[]>([]); const [message, setMessage] = useState(""); const [pending, setPending] = useState(false); const [unavailable, setUnavailable] = useState(false); const headers = { "x-oidc-step-up": stepUp };
-  const load = async () => {
-    setMessage(""); setPending(true);
-    try {
-      const [nextBundle, nextAudit] = await Promise.all([request<typeof bundle>("/api/admin/bundle", { headers }), request<typeof audit>("/api/admin/audit", { headers })]);
-      setBundle(nextBundle); setAudit(nextAudit); setUnavailable(false);
-    } catch (caught) {
-      // Observed 404: the admin routes are absent on this deployment — the panels
-      // degrade to their unavailable blocks rather than a failed verification.
-      if (isUnavailableRoute(caught)) setUnavailable(true);
-      else setMessage(firstErrorMessage(caught, "Admin verification failed"));
-    } finally { setPending(false); }
-  };
-  return <div className="grid"><section className="panel span-4"><div className="panel-header"><h2>Step-up</h2><span className="eyebrow">ADMIN ONLY</span></div><div className="panel-body"><form onSubmit={(event) => { event.preventDefault(); void load(); }}><div className="field"><label htmlFor="step-up">OIDC step-up token</label><input id="step-up" name="step-up" autoComplete="one-time-code" type="password" value={stepUp} onChange={(event) => setStepUp(event.target.value)} required /></div><button className="button primary" type="submit" disabled={pending}>{pending ? "Verifying…" : "Verify authority"}</button>{message && <StateNote tone="critical" live="alert">{message}</StateNote>}</form></div></section><section className="panel span-8"><div className="panel-header"><h2>Bundle integrity</h2><span className="eyebrow">DEPLOY V</span></div><div className="panel-body">{unavailable ? <Unavailable title="Admin Studio" context="The bundle-integrity route is not served here." /> : bundle ? <><p className="mono">Build {bundle.build_id}</p><p className="status success">{bundle.integrity.checked} files verified · {bundle.integrity.mismatches} mismatches</p></> : <div className="empty">Step up to inspect the signed methodology bundle and audit trail.</div>}</div></section><section className="panel span-12"><div className="panel-header"><h2>Audit trail</h2><span className="eyebrow">IMMUTABLE EVENTS</span></div><div className="panel-body table-wrap" tabIndex={0} role="region" aria-label="Scrollable table">{unavailable ? <Unavailable title="Admin Studio" context="The audit-trail route is not served here." /> : <><table><thead><tr><th scope="col">Time</th><th scope="col">Actor</th><th scope="col">Action</th></tr></thead><tbody>{audit.map((event, index) => <tr key={`${event.at}-${index}`}><td className="mono">{formatDate(event.at)}</td><td>{event.actor}</td><td className="mono">{event.action}</td></tr>)}</tbody></table>{!audit.length && <div className="empty">No audit events loaded.</div>}</>}</div></section></div>;
+  const contracts = [
+    ["Bundle integrity", "Signed build manifest and file verification"],
+    ["Audit trail", "Immutable, exportable actor and action events"],
+    ["Membership", "Identity-to-case role assignments"],
+    ["Step-up", "Server-verified privileged-session state"],
+  ];
+  return <div className="admin-capability">
+    <section className="admin-intro"><span className="flag">UNAVAILABLE</span><div><div className="meta-label">Deployment capability</div><h2>Administrative authority is not served by this application build.</h2><p>No token prompt or simulated audit record is shown. Identity role and case role remain separate server-owned concepts.</p></div></section>
+    <section className="panel"><div className="panel-header"><h2>Required contracts</h2><span className="panel-meta">Server-owned</span></div><div className="panel-body table-wrap" tabIndex={0} role="region" aria-label="Required administrative contracts"><table><thead><tr><th scope="col">Capability</th><th scope="col">Required response</th><th scope="col">State</th></tr></thead><tbody>{contracts.map(([capability, response]) => <tr key={capability}><th scope="row">{capability}</th><td>{response}</td><td><span className="status warning">Not served</span></td></tr>)}</tbody></table></div></section>
+    <section className="context-strip"><strong>Authorization boundary</strong><p>Adding these screens requires authenticated backend routes and auditable policy enforcement. Client-only controls would not create administrative authority.</p></section>
+  </div>;
 }

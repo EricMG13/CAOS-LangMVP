@@ -13,6 +13,22 @@ test("Workspace delegates Model Builder to the extracted component", () => {
   assert.doesNotMatch(workspace, /function WorksheetGrid\(/);
 });
 
+test("accepted-analysis loads and snapshot switches reject stale async completions", () => {
+  const deepDive = workspace.slice(workspace.indexOf("function DeepDive("), workspace.indexOf("const loanColumns"));
+  assert.match(deepDive, /const loadGeneration = useRef\(0\)/);
+  assert.match(deepDive, /const selectedCaseId = selectedCase\?\.id \|\| ""/);
+  assert.match(deepDive, /\}, \[selectedCaseId\]\)/);
+  assert.ok((deepDive.match(/generation !== loadGeneration\.current/g) || []).length >= 4);
+  assert.match(deepDive, /return \(\) => \{ ignore = true; loadGeneration\.current \+= 1; \}/);
+  assert.match(deepDive, /if \(loading\) return [\s\S]*?<LoadState loading \/>/);
+  assert.match(deepDive, /setArtifactError\(firstErrorMessage\(caught, "Unable to switch snapshot"\)\)/);
+  assert.doesNotMatch(deepDive, /setMessage\(firstErrorMessage\(caught, "Unable to switch snapshot"\)\)/);
+});
+
+test("unknown identity roles fail closed before shared write controls are derived", () => {
+  assert.match(workspace, /\["ANALYST", "APPROVER", "ADMIN"\]\.includes\(who\.role\) \? who\.role : "READER"/);
+});
+
 test("extraction preserves the read-only worksheet keyboard and lineage contract", () => {
   assert.match(modelBuilder, /function WorksheetGrid\(/);
   assert.match(modelBuilder, /ArrowUp:[\s\S]*ArrowDown:[\s\S]*ArrowLeft:[\s\S]*ArrowRight:/);
@@ -61,9 +77,11 @@ test("the component exposes the accepted analyst journeys and role gates", () =>
   assert.match(modelBuilder, /role !== "READER"/);
 });
 
-test("readers can run local temporary calculations while shared writes remain gated", () => {
-  assert.doesNotMatch(modelBuilder, /disabled=\{!canWrite \|\| row\.status !== "READY"\}/);
-  assert.doesNotMatch(modelBuilder, /scenario && canWrite/);
+test("readers stay read-only because server calculation routes require write access", () => {
+  assert.match(modelBuilder, /disabled=\{!canWrite \|\| row\.status !== "READY"\}/);
+  assert.match(modelBuilder, /if \(!canWrite \|\| !build \|\| !registry\) return/);
+  assert.match(modelBuilder, /canWrite && scenario/);
+  assert.match(modelBuilder, /Reader mode: assumptions and outputs remain readable/);
   assert.match(modelBuilder, /canWrite && .*Sign Off|canWrite \? "SIGN_OFF"/s);
   // Optional-chained: a revision with no export record must still render its row.
   assert.match(modelBuilder, /canWrite && \(revision\?\.export\?\.status/);
