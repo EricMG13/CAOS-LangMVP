@@ -28,7 +28,19 @@ from ..contracts import canonical_json
 
 
 class ModelInputError(ValueError):
-    pass
+    """Carries the typed blocker code; the message stays host-side.
+
+    Readiness used to collapse every raise here into
+    CANONICAL_MODEL_INPUTS_INVALID, which told an analyst whose accepted
+    authority is simply the wrong pathway that their inputs were corrupt
+    (DECISIONS §9: the code each refusal carries is contract). The code is the
+    only part callers may branch on — messages here interpolate host internals
+    (bundle paths, table ids) and must never reach the wire.
+    """
+
+    def __init__(self, message: str, code: str = "CANONICAL_MODEL_INPUTS_INVALID") -> None:
+        super().__init__(message)
+        self.code = code
 
 
 _T5_HEADERS = {

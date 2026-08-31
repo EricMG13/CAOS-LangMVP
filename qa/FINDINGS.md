@@ -262,6 +262,69 @@ helpers so it can be unit-tested (the component file cannot be imported by
 
 ---
 
+## F-10 · Model Builder dead-ends after an Earnings Update — High
+
+Found by the realistic-scenario pass (`qa/scenarios.py`), not by the suite: no
+test asserted what readiness *says* for a non-FULL_CREDIT accepted authority,
+only that it refuses to queue.
+
+**Where** `caos/server/caos/models/service.py` (`readiness`, `queue_build`) ·
+`caos/server/caos/models/engine.py` (`ModelInputError`)
+
+**Repro** Run EARNINGS_UPDATE at screen depth, accept it, open Model Builder.
+
+**Observed** Status `CANONICAL_MODEL_INPUTS_INVALID`; a warning callout reading
+"Canonical Model Inputs Invalid" above a blank line; no build button and no
+"Open Run Console" link. `POST …/models` → 422 `MODEL_BUILD_INVALID`.
+
+**Expected** The accepted authority is simply the wrong pathway — a
+precondition the product already has a code and a copy line for
+(`ACCEPTED_FULL_CREDIT_REQUIRED`, "Accept a completed Full Credit run before
+building a model"). DECISIONS §9 makes the code each refusal carries part of
+the contract.
+
+**Cause** Two collapses. `_resolve_snapshot` raises a distinct
+`ModelInputError("accepted FULL_CREDIT run required")` for the pathway check —
+its docstring says the check deliberately precedes bundle validation — but
+`readiness` caught `ModelInputError` bare and rewrote every one of them as
+`CANONICAL_MODEL_INPUTS_INVALID`; `queue_build` did the same with
+`MODEL_BUILD_INVALID`. Separately, neither readiness blocker carried a
+`detail`, and `ModelBuilder.tsx` renders `humanizeCode(code)` over
+`blocker.detail` — so the callout was a heading above nothing. The dead end
+follows from the status: the "Open Run Console" link is drawn only on
+`NOT_READY`, the build button only on `READY_TO_BUILD`/`FAILED`.
+
+**Fix** `ModelInputError` carries its code (default
+`CANONICAL_MODEL_INPUTS_INVALID`) and the pathway raise carries
+`ACCEPTED_FULL_CREDIT_REQUIRED`. `readiness` branches on that code alone —
+`NOT_READY` for the wrong pathway, `CANONICAL_MODEL_INPUTS_INVALID` otherwise —
+and pairs each with a written-out detail. `queue_build` refuses the pathway case
+as `MODEL_NOT_READY`, the same code the no-snapshot path already used. Genuine
+input corruption keeps `CANONICAL_MODEL_INPUTS_INVALID` unchanged.
+
+The details are module constants, **not** `str(exc)`. The first cut of this fix
+echoed the exception message, which was itself a defect: `_resolve_snapshot`
+re-raises `ModelInputError`s from `models/engine.py` whose messages interpolate
+host internals — `f"declared authority path is a symlink: {probe}"` carries an
+absolute bundle path, others carry table ids — so any case member could have
+read them off `GET /api/cases/{id}/model`. Caught by the confidence review
+before it left the branch; `test_readiness_details_never_echo_the_exception_text`
+pins it.
+
+**Note** `docs/QUALITY_LEDGER.csv` row F-MODEL-01 had recorded this exact
+observation and passed it as "as expected"; that note is corrected.
+
+**Regression** `test_model_builder_spec.py::test_non_full_credit_authority_reads_as_not_ready_not_as_invalid_inputs`,
+`::test_no_accepted_authority_blocker_carries_a_detail`,
+`::test_readiness_details_never_echo_the_exception_text`,
+`::test_genuinely_invalid_canonical_inputs_still_read_as_invalid` (the first three
+each fail against the code they guard; the fourth holds both ways and keeps the
+split from collapsing the other way).
+
+**Acceptance** `qa/probe.py` — "every readiness blocker carries a detail the
+callout can render" and "no accepted authority reads as corrupt canonical
+inputs".
+
 ## Adversarial review of the fixes (R-*)
 
 Running `adversarial-reviewer` over this session's own diff returned **BLOCK**.

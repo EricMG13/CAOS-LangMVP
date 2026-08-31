@@ -907,6 +907,75 @@ async def test_accepting_non_full_credit_queues_nothing(models, engine, store):
         models.queue_build(case["id"], "analyst")
 
 
+async def test_non_full_credit_authority_reads_as_not_ready_not_as_invalid_inputs(models, engine, store):
+    """Regression: accepting a non-FULL_CREDIT run is a pathway precondition,
+    not input corruption.
+
+    Readiness collapsed every `_resolve_snapshot` refusal into
+    CANONICAL_MODEL_INPUTS_INVALID, so the commonest journey — accept an
+    Earnings Update, open Model Builder — showed an alarming, detail-less
+    callout and no way forward: Model Builder offers "Open Run Console" only on
+    NOT_READY and a build button only on READY_TO_BUILD/FAILED.
+    """
+    case, _source = seed_case_with_source(store)
+    run = await engine.run_scripted_for_tests(case["id"], pathway="EARNINGS_UPDATE")
+    await engine.accept(run["id"], actor="analyst")
+
+    readiness = models.readiness(case["id"])
+    assert readiness["status"] == "NOT_READY", "the wrong pathway must leave the Run Console way out visible"
+    assert [blocker["code"] for blocker in readiness["blockers"]] == ["ACCEPTED_FULL_CREDIT_REQUIRED"]
+    assert readiness["blockers"][0]["detail"], "the callout renders the detail; a blank one tells the analyst nothing"
+
+    with pytest.raises(Exception, match="MODEL_NOT_READY"):
+        models.queue_build(case["id"], "analyst")
+
+
+async def test_no_accepted_authority_blocker_carries_a_detail(models, store):
+    """The same callout renders `detail`; the no-snapshot blocker shipped None."""
+    case, _source = seed_case_with_source(store)
+    readiness = models.readiness(case["id"])
+    assert readiness["status"] == "NOT_READY"
+    assert readiness["blockers"] == [{
+        "code": "ACCEPTED_FULL_CREDIT_REQUIRED",
+        "detail": "Accept a completed Full Credit run before building a model.",
+    }]
+
+
+async def test_readiness_details_never_echo_the_exception_text(models, engine, store, monkeypatch):
+    """The blocker detail is written by the service, never taken from the raise.
+
+    ModelInputError messages interpolate host internals — `engine.py` raises
+    "declared authority path is a symlink: {probe}" with an absolute bundle
+    path, and several others carry table ids — so echoing `str(exc)` onto a
+    route any case member can read would publish them.
+    """
+    from caos.models.engine import ModelInputError
+    from caos.models.service import INPUTS_INVALID_DETAIL
+
+    case, _source = seed_case_with_source(store)
+    run = await engine.run_scripted_for_tests(case["id"])
+    await engine.accept(run["id"], actor="analyst")
+
+    leak = "declared authority path is a symlink: /srv/caos/vendor/secret-bundle"
+    monkeypatch.setattr(models, "_resolve_snapshot",
+                        lambda snapshot: (_ for _ in ()).throw(ModelInputError(leak)))
+    readiness = models.readiness(case["id"])
+    assert readiness["status"] == "CANONICAL_MODEL_INPUTS_INVALID"
+    assert readiness["blockers"] == [{"code": "CANONICAL_MODEL_INPUTS_INVALID",
+                                      "detail": INPUTS_INVALID_DETAIL}]
+    assert "secret-bundle" not in json.dumps(readiness), "host internals never reach the wire"
+
+
+async def test_genuinely_invalid_canonical_inputs_still_read_as_invalid(models, engine, store):
+    """The other half of the split: real input corruption keeps its own code, so
+    the fix above did not turn every refusal into NOT_READY."""
+    case, _source = seed_case_with_source(store)
+    models.force_readiness_for_tests(case["id"], "CANONICAL_MODEL_INPUTS_INVALID")
+    run = await engine.run_scripted_for_tests(case["id"])
+    await engine.accept(run["id"], actor="analyst")
+    assert models.readiness(case["id"])["status"] == "CANONICAL_MODEL_INPUTS_INVALID"
+
+
 async def test_invalid_canonical_inputs_commit_acceptance_but_never_queue(models, engine, store):
     case, _source = seed_case_with_source(store)
     models.force_readiness_for_tests(case["id"], "CANONICAL_MODEL_INPUTS_INVALID")

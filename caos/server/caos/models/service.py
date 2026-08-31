@@ -78,6 +78,21 @@ class ModelCalculationTimeout(ValueError):
         super().__init__("MODEL_CALCULATION_TIMEOUT")
 
 
+# Model Builder renders each readiness blocker as humanizeCode(code) over
+# `detail`; a null detail draws a heading above a blank line. These are written
+# here rather than taken from the exception because ModelInputError messages
+# interpolate host internals (bundle paths, table ids).
+NO_ACCEPTED_AUTHORITY_DETAIL = "Accept a completed Full Credit run before building a model."
+WRONG_PATHWAY_AUTHORITY_DETAIL = (
+    "This case's accepted authority is not a Full Credit run. "
+    "Accept a completed Full Credit run before building a model."
+)
+INPUTS_INVALID_DETAIL = (
+    "The accepted Full Credit artifacts are missing, superseded, or fail "
+    "CP-MODEL validation. Re-run Full Credit and accept it again."
+)
+
+
 class ModelService:
     def __init__(self, *, store: DomainStore, vault_dir: Path, engine: Any) -> None:
         self.store = store
@@ -135,7 +150,8 @@ class ModelService:
         runs = self.engine.runs
         run = runs.get_run(snapshot["run_id"])
         if run is None or run["pathway"] != "FULL_CREDIT":
-            raise ModelInputError("accepted FULL_CREDIT run required")
+            raise ModelInputError("accepted FULL_CREDIT run required",
+                                  code="ACCEPTED_FULL_CREDIT_REQUIRED")
         by_module: dict[str, dict[str, Any]] = {}
         for reference in snapshot["artifacts"]:
             if reference["module_id"] not in CANONICAL_MODULES:
@@ -203,12 +219,26 @@ class ModelService:
         snapshot = self._accepted_snapshot(case_id)
         if snapshot is None:
             return {"status": "NOT_READY", "module_id": "CP-MODEL", "snapshot_id": None,
-                    "blockers": [{"code": "ACCEPTED_FULL_CREDIT_REQUIRED"}]}
+                    "blockers": [{"code": "ACCEPTED_FULL_CREDIT_REQUIRED",
+                                  "detail": NO_ACCEPTED_AUTHORITY_DETAIL}]}
         try:
             resolved = self._resolve_snapshot(snapshot)
-        except (ModelInputError, ValueError):
+        except (ModelInputError, ValueError) as exc:
+            # A wrong-pathway precondition is not input corruption, and the two
+            # need different statuses: only NOT_READY offers Model Builder's
+            # "Open Run Console" way out, so collapsing them dead-ended the
+            # commonest journey (accept an Earnings Update, open Model Builder)
+            # behind an alarming, detail-less callout. Both details are written
+            # here, never taken from the exception: the messages raised below
+            # interpolate bundle paths and table ids.
+            if getattr(exc, "code", None) == "ACCEPTED_FULL_CREDIT_REQUIRED":
+                return {"status": "NOT_READY", "module_id": "CP-MODEL", "snapshot_id": snapshot["id"],
+                        "blockers": [{"code": "ACCEPTED_FULL_CREDIT_REQUIRED",
+                                      "detail": WRONG_PATHWAY_AUTHORITY_DETAIL}]}
             return {"status": "CANONICAL_MODEL_INPUTS_INVALID", "module_id": "CP-MODEL",
-                    "snapshot_id": snapshot["id"], "blockers": [{"code": "CANONICAL_MODEL_INPUTS_INVALID"}]}
+                    "snapshot_id": snapshot["id"],
+                    "blockers": [{"code": "CANONICAL_MODEL_INPUTS_INVALID",
+                                  "detail": INPUTS_INVALID_DETAIL}]}
         build = self.builds.build_for_fingerprint(case_id, resolved["input_fingerprint"])
         return {
             # A queued/building/failed job does not change what the accepted
@@ -245,6 +275,8 @@ class ModelService:
         try:
             resolved = self._resolve_snapshot(snapshot)
         except (ModelInputError, ValueError) as exc:
+            if getattr(exc, "code", None) == "ACCEPTED_FULL_CREDIT_REQUIRED":
+                raise ValueError("MODEL_NOT_READY: accept a completed Full Credit run first") from exc
             raise ValueError("MODEL_BUILD_INVALID: canonical model inputs are invalid") from exc
         registry = self.bundle.assumption_registry
         identity = {

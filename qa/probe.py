@@ -174,11 +174,32 @@ def main() -> None:
     ready = [c for c in cases if c.get("accepted_snapshot_id")]
     check("accepted snapshots seeded", len(ready) >= 3, f"{len(ready)}")
     model_ready = []
+    blocked = []
+    misfiled = []
     for candidate in ready:
         readiness = client.get(f"/api/cases/{candidate['id']}/model", headers=head("ANALYST")).json()
-        if readiness.get("status") not in {"CANONICAL_MODEL_INPUTS_INVALID", "NO_ACCEPTED_SNAPSHOT"}:
-            model_ready.append((candidate["id"], readiness["status"]))
+        status = readiness.get("status")
+        # NOT_READY belongs in the exclusion set: a case whose accepted
+        # authority is the wrong pathway now reports NOT_READY, and counting it
+        # as "reachable" would let AC-MB pass with nothing model-ready at all.
+        if status not in {"CANONICAL_MODEL_INPUTS_INVALID", "NO_ACCEPTED_SNAPSHOT", "NOT_READY"}:
+            model_ready.append((candidate["id"], status))
+        blocked.extend(readiness.get("blockers") or [])
+        # CANONICAL_MODEL_INPUTS_INVALID now means what it says: the accepted
+        # FULL_CREDIT artifacts are missing, mismatched or fail bundle
+        # validation. A healthy deployment never reaches it — a wrong-pathway
+        # authority is a precondition (NOT_READY), not corruption, and only
+        # NOT_READY keeps Model Builder's "Open Run Console" way out on screen.
+        if status == "CANONICAL_MODEL_INPUTS_INVALID":
+            misfiled.append((candidate["id"], readiness.get("blockers")))
     check("AC-MB reachable", bool(model_ready), "no case reaches model readiness")
+    # Every readiness blocker is rendered by Model Builder as
+    # `humanizeCode(code)` over `detail`; a null detail draws a bare heading
+    # above a blank line, which is what a wrong-pathway analyst used to get.
+    check("AC-MB every readiness blocker carries a detail the callout can render",
+          all(item.get("detail") for item in blocked),
+          f"{[item for item in blocked if not item.get('detail')]}")
+    check("AC-MB no accepted authority reads as corrupt canonical inputs", not misfiled, f"{misfiled}")
 
     print(f"\n{checks - len(failures)}/{checks} criteria passed")
     for failure in failures:
