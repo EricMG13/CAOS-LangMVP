@@ -8,10 +8,10 @@ exercised. Findings live in `qa/FINDINGS.md`.
 **How much of this is automated.** `qa/probe.py` runs 40 checks covering the
 HTTP-observable criteria: AC-ROLE-1..4, AC-CASES-3, AC-RUN-5, AC-X-1, AC-X-3,
 AC-X-4, AC-X-7 and the edge-identity rules. `npm run a11y` covers AC-X-5 across
-52 route×viewport combinations and `npm run test:workbench` covers AC-ROUTE-1..4,
-AC-SHELL-1..3, AC-DD-1..2 and AC-X-6. **The rest — every AC-RV-*, AC-MB-1..4,
-AC-RS-1..4, AC-AS-1..3 and AC-SOURCES-1..3 — was verified by hand in this pass
-and has no standing check.** Treat those rows as a manual checklist, not a suite.
+desktop, laptop, and 200% desktop-zoom route combinations; `npm run test:workbench` covers AC-ROUTE-1..4,
+AC-SHELL-1..3, AC-DD-1..2, representative Sources/Model/Report authority and
+recovery paths, and AC-X-6. Criteria not named by a standing check remain a
+manual checklist.
 
 ## 0. The environment under test
 
@@ -61,11 +61,11 @@ the **global role** (from groups) and **case standing** (the `case_members` row)
 
 | Group | Global role | Reads a case | Writes a case | Files a deliverable | Admin Studio |
 |---|---|---|---|---|---|
-| `caos-admin` | ADMIN | member only | member with writer standing | member with APPROVER/ADMIN standing | rail entry shown |
-| `caos-approver` | APPROVER | member only | member with writer standing | member with APPROVER/ADMIN standing | hidden |
-| `caos-analyst` | ANALYST | member only | member with writer standing | member with APPROVER/ADMIN standing | hidden |
-| `caos-reader` | READER | member only | never | never | hidden |
-| none | READER (floor) | member only | never | never | hidden |
+| `caos-admin` | ADMIN | member only | member with writer standing | member with APPROVER/ADMIN standing | unavailable contract screen |
+| `caos-approver` | APPROVER | member only | member with writer standing | member with APPROVER/ADMIN standing | unavailable contract screen |
+| `caos-analyst` | ANALYST | member only | member with writer standing | member with APPROVER/ADMIN standing | unavailable contract screen |
+| `caos-reader` | READER | member only | never | never | unavailable contract screen |
+| none | READER (floor) | member only | never | never | unavailable contract screen |
 
 **AC-ROLE-1** An unknown/absent group set floors to READER, never to a writer.
 **AC-ROLE-2** A client-supplied `x-caos-role` never changes the served role.
@@ -92,16 +92,15 @@ Query parameters that carry state: `case`, `run`, `artifact`, `source`, `q`.
 | Control | Kind | Acceptance criteria |
 |---|---|---|
 | Skip to content | link | first tab stop; moves focus to `#main-content` |
-| Rail: 6 workflow links | links | exactly one carries `aria-current="page"` per route |
+| Rail: 7 workflow links | links | Portfolio, Credit, Sources, Analysis, Market, Model and Report; exactly one carries `aria-current="page"` per route |
 | Rail: tools group | links | shown only for the active workflow; Run Console shows `LIVE` only while the selected case's run is queued/running |
-| Rail: Admin Studio | link | rendered **only** for global role ADMIN |
-| Authority strip | region | shows accepted snapshot + source-set version, or an explicit "No accepted snapshot" / "Authority unavailable" |
+| Rail: Admin | link | visible to every role and opens an honest unavailable contract screen |
+| Authority strip | region | shows credit, accepted snapshot, selected run and source-set identity, or explicit loading/unavailable values |
 | Case `<select>` | input | lists every visible case; changing it re-homes the whole workspace |
-| Sources button | button → drawer | disabled with no case; label carries the live source count |
-| QA status button | button → drawer | disabled with no case |
+| Sources & evidence | link | carries the selected case to the Sources workspace |
 | Command palette | button + `⌘K` + `<dialog>` | opens modal, focus into the search box, Escape closes and returns focus to the trigger |
 | Palette results | listbox | arrow keys move `aria-activedescendant`; Enter activates; an exact `src-…`/`art-…` id offers a direct evidence jump |
-| Context drawer | region | closes on Escape and on navigation |
+| Evidence drawer | dialog | opens only from a verified source in the active case; closes on Escape and navigation |
 | Page error | `role="alert"` | announced, never silently swallowed |
 
 **AC-SHELL-1** No route-level control appears for a role that cannot use it.
@@ -115,20 +114,18 @@ RTL text; palette query matching nothing; palette open while a case switch lands
 
 ### 4.1 Cases (`/cases/`)
 
-Panels: Case register · Create case · Pathway fit · Source intake · Current execution.
+Panels: proposed portfolio-contract notice · Monitored credits · Create case · Pathway fit.
 
 | Control | Kind | Acceptance criteria |
 |---|---|---|
-| Search cases | `type=search` | filters on issuer + name + sector, case-insensitive, live |
-| Snapshot filter | `<select>` all/accepted/unaccepted | composes with search; count reads "N of M" |
-| Select (per row) | button, `aria-pressed` | selects the case; the pressed row is the selected one |
+| Search credits | `type=search` | filters on issuer + name + sector, case-insensitive, live |
+| Authority filter | `<select>` all/accepted/unaccepted | composes with search; count reads "N of M" |
+| Open credit (per row) | link | carries the case to the Credit workflow; the selected row is visually identified |
 | Create case form | name (required), issuer (required), sector | 201 → the new case is prepended, selected, and the form resets |
-| Source intake | `type=file`, accept `.pdf,.xlsx,.json,.txt,.md,.csv` | 201 → source-set version increments |
-| Open Run Console | link | carries `case` and `run` |
 
 **AC-CASES-1** Creating a case with a blank required field is refused by the browser before any request.
 **AC-CASES-2** A create that the server refuses shows the server's message; no phantom row is added.
-**AC-CASES-3** Upload refusals (too large, wrong suffix, empty, malware) surface the typed refusal, and the source set does not version.
+**AC-CASES-3** Source upload refusals are verified on the Sources workflow; the Portfolio surface does not duplicate intake.
 **AC-CASES-4** The page has exactly one page-level primary action.
 
 Edge cases (risk-ranked): oversized file (>25 MB) · disallowed suffix (`.exe`)
@@ -140,11 +137,11 @@ name contains a path separator.
 
 | Control | Kind | Acceptance criteria |
 |---|---|---|
-| Source-set table | table | one row per source; SHA-256 truncated; block count exact |
-| `<details>` per file | disclosure | reveals up to 20 blocks with locators; over 20 says so |
-| Evidence chip | button | opens the drawer bound to that source |
-| Clear selection | button | clears the strip |
-| Add source | file form | as Cases |
+| Search documents | `type=search` | filters filename, source id and digest, case-insensitive and live |
+| Source register | selectable rows | one row per filtered source with filename, stable id, block count and extraction state |
+| Source reader | document blocks | renders up to 40 extracted blocks with locators; over 40 says so |
+| Evidence support | facts + button | exposes full digest and selected-block locator; opens the source-bound evidence drawer |
+| Add governed source | file form | accepts `.pdf,.xlsx,.json,.txt,.md,.csv`; 201 versions the source set |
 | Evidence focus panel | panel (`?artifact=`) | renders the artifact reader with citations |
 
 **AC-SOURCES-1** `?source=<id>` for a source outside the active case set shows a scoped message, never another case's content.
@@ -180,9 +177,10 @@ mid-run · switch case while a run streams.
 
 ### 4.4 Deep-Dive (`/deep-dive/`)
 
-Read-only view of the accepted snapshot plus the visible-vs-latest switch.
+Read-only accepted-analysis reader with module contents, provenance, cited-source
+rail, and the visible-vs-latest switch.
 
-**AC-DD-1** Renders `RunSummary` only — never the compile form or the accept control.
+**AC-DD-1** Renders only artifacts from the visible accepted snapshot — never the compile form or accept control.
 **AC-DD-2** "Switch visible snapshot" appears only when `switch_required` is true and moves the visible authority on success.
 
 ### 4.5 RV Screener (`/rv-screener/`)
@@ -225,7 +223,7 @@ range inverted (from > to) · sort on an all-null column.
 | Export XLSX / Retry export | button | queues; worker renders; download carries the sha256 header |
 | Download exact XLSX | link | binary, `no-store` |
 | Apply Rebase Candidate | button | only when a newer build exists |
-| Views tablist | 3 buttons | worksheets / history / authority |
+| Views tablist | 4 buttons | Model / Assumptions / Sensitivities / History |
 
 **AC-MB-1** An unsigned draft cannot be lost silently: leaving the page, switching case, or using browser history prompts first.
 **AC-MB-2** Sign-off is a CAS: a second sign-off against a stale head is refused with a typed conflict.
@@ -252,12 +250,13 @@ download before export.
 | File exact Frozen version | button | **APPROVER/ADMIN case standing only** |
 | Request changes + comment | button + textarea | comment required; creates a new draft |
 | Restore as new revision | button per revision | never overwrites history |
+| Browser recovery | restore / retry / download / discard | scope- and template-bound; retry preserves the copy's original expected version so a newer shared draft conflicts instead of being overwritten |
 | MD / PDF / XLSX download | links | only after filing |
 | Conflict resolution | 2 buttons | "Retry over current vN" / "Use shared vN" |
 
 **AC-RS-1** An unsaved draft prompts before navigation, case switch or unload.
 **AC-RS-2** Freeze binds the exact draft digest; a concurrent save is refused, not merged.
-**AC-RS-3** Filing is unavailable to a user without case approver standing, and the control is not merely disabled but absent.
+**AC-RS-3** Filing is absent without a global APPROVER/ADMIN role; the server independently requires case approver standing and returns a typed refusal when it is absent.
 **AC-RS-4** Export links are dead until the deliverable is FILED.
 
 Edge cases: two tabs editing one draft · freeze a draft that another user just
@@ -266,9 +265,9 @@ only · 20 001-character narrative.
 
 ### 4.9 Admin Studio (`/admin-studio/`)
 
-**AC-AS-1** Reachable only when the global role is ADMIN.
-**AC-AS-2** The step-up token field is `type=password` and never echoed into a URL.
-**AC-AS-3** Routes absent on this deployment degrade to the unavailable block, not to an error.
+**AC-AS-1** Reachable by every role so capability status can be inspected without implying authority.
+**AC-AS-2** No audit, membership, export or step-up control is rendered while those routes are absent.
+**AC-AS-3** The route renders the unavailable contract and required backend capabilities, not simulated governance or a generic error.
 
 ## 5. Cross-cutting
 

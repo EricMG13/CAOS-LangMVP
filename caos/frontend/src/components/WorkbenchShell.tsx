@@ -6,8 +6,8 @@ import {
   CaseRecord,
   Destination,
   SnapshotView,
+  destinationMeta,
   evidenceKind,
-  formatDate,
   withQuery,
   workflowFor,
   workflows,
@@ -15,19 +15,16 @@ import {
 // The authority lifecycle has one declaration, in the reducer that owns it.
 import type { AuthorityStatus } from "../lib/workspaceAuthority";
 
-export type DrawerState =
-  | { kind: "qa" }
-  | { kind: "sources" }
-  | {
-      kind: "evidence";
-      evidenceId: string;
-      source: {
-        id: string;
-        filename: string;
-        sha256: string;
-        blocks: { block_id: string; locator: Record<string, unknown>; text?: string }[];
-      };
-    };
+export type DrawerState = {
+  kind: "evidence";
+  evidenceId: string;
+  source: {
+    id: string;
+    filename: string;
+    sha256: string;
+    blocks: { block_id: string; locator: Record<string, unknown>; text?: string }[];
+  };
+};
 
 type Props = {
   active: Destination;
@@ -67,6 +64,8 @@ export default function WorkbenchShell({
   children,
 }: Props) {
   const activeWorkflow = workflowFor(active);
+  const meta = destinationMeta[active];
+  const railRef = useRef<HTMLElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const dialogRef = useRef<HTMLDialogElement>(null);
   const drawerRef = useRef<HTMLDialogElement>(null);
@@ -106,6 +105,10 @@ export default function WorkbenchShell({
     const trigger = drawerTriggerRef.current;
     window.requestAnimationFrame(() => trigger?.focus());
   };
+
+  useEffect(() => {
+    railRef.current?.querySelector<HTMLElement>('[aria-current="page"]')?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }, [active]);
 
   useEffect(() => {
     const dialog = drawerRef.current;
@@ -156,52 +159,27 @@ export default function WorkbenchShell({
     case: caseId || undefined,
     run: destination === "Run Console" ? runId || undefined : undefined,
   });
-  const overviewHref = selectedCase ? "/command-center" : "/cases";
   const accepted = authority?.accepted;
-  const authorityPending = authorityStatus === "idle" || authorityStatus === "loading";
-  const acceptedSnapshotIdentity = authorityPending
+  const authorityPending = Boolean(caseId) && (authorityStatus === "idle" || authorityStatus === "loading");
+  const acceptedSnapshotIdentity = !caseId
+    ? "No case selected"
+    : authorityPending
     ? "Loading authority…"
     : authorityStatus === "error"
       ? "Authority unavailable"
       : accepted?.id ?? "No accepted snapshot";
-  const acceptedSourceSetIdentity = authorityPending
+  const acceptedSourceSetIdentity = !caseId
+    ? "Not applicable"
+    : authorityPending
     ? "Loading authority…"
     : authorityStatus === "error"
       ? "Authority unavailable"
       : accepted
         ? accepted.source_set_version == null ? "Version unavailable" : `v${accepted.source_set_version}`
         : "No accepted source set";
-  const drawerTitle = drawer?.kind === "qa"
-    ? "QA details"
-    : drawer?.kind === "sources"
-      ? "Source details"
-      : drawer?.kind === "evidence"
-        ? `Evidence ${drawer.evidenceId}`
-        : "Context";
+  const drawerTitle = drawer ? `Evidence ${drawer.evidenceId}` : "Context";
   let drawerBody: ReactNode = null;
-  if (drawer?.kind === "qa") {
-    drawerBody = <div className="state-block unavailable">
-      <strong>No governed snapshot-level QA summary is available.</strong>
-      <p>Run and artifact status are not substituted for QA. Review module exceptions in Deep-Dive.</p>
-      <Link className="button small" href={withQuery("/run-console", { case: caseId })} onNavigate={closeDrawer}>Open Run Console</Link>
-    </div>;
-  } else if (drawer?.kind === "sources") {
-    drawerBody = authorityPending ? <div className="state-block" role="status">
-      <strong>Loading source authority…</strong>
-      <p>Source count and accepted source-set identity are not shown until the case authority resolves.</p>
-      <Link className="button small" href={withQuery("/sources", { case: caseId })} onNavigate={closeDrawer}>Open Sources</Link>
-    </div> : authorityStatus === "error" ? <div className="state-block unavailable">
-      <strong>Source authority unavailable.</strong>
-      <p>Current source count and accepted source-set identity could not be verified.</p>
-      <Link className="button small" href={withQuery("/sources", { case: caseId })} onNavigate={closeDrawer}>Open Sources</Link>
-    </div> : <div className="state-block">
-      <dl>
-        <dt>Current source count</dt><dd className="mono">{selectedCase?.source_count ?? "Unavailable"}</dd>
-        <dt>Accepted source set</dt><dd className="mono">{acceptedSourceSetIdentity}</dd>
-      </dl>
-      <Link className="button small" href={withQuery("/sources", { case: caseId })} onNavigate={closeDrawer}>Open Sources</Link>
-    </div>;
-  } else if (drawer?.kind === "evidence") {
+  if (drawer) {
     drawerBody = <div className="state-block">
       <dl>
         <dt>Stable ID</dt><dd className="mono">{drawer.evidenceId}</dd>
@@ -231,10 +209,10 @@ export default function WorkbenchShell({
   return <>
     <a className="skip-link" href="#main-content">Skip to content</a>
     <div className="app-shell">
-      <aside className="rail" aria-label="Primary navigation">
-        <Link href={workflowHref(selectedCase ? "/command-center" : "/cases")} className="wordmark">CAOS<small>Credit Agent OS</small></Link>
+      <aside ref={railRef} className="rail" aria-label="Primary navigation">
+        <Link href={workflowHref("/cases")} className="wordmark"><span className="brand-mark" aria-hidden="true">C</span><span>CAOS<small>Credit Agent OS</small></span></Link>
         <nav aria-label="Workflows" className="nav-group">
-          <div className="nav-label">WORKFLOWS</div>
+          <div className="nav-label">Workspace</div>
           {workflows.map((workflow) => {
             // Exactly one rail entry per page carries aria-current="page" and the
             // active fill: the most specific match for the destination — a tool link
@@ -243,17 +221,16 @@ export default function WorkbenchShell({
             const current = workflow.id === activeWorkflow.id
               && !activeWorkflow.tools?.some((tool) => tool.destination === active)
               && active !== "Admin Studio";
-            const href = workflow.id === "overview" ? overviewHref : workflow.href;
             return <Link
               aria-current={current ? "page" : undefined}
               className={`nav-link ${current ? "active" : ""}`}
-              href={workflowHref(href)}
+              href={workflowHref(workflow.href)}
               key={workflow.id}
             >{workflow.label}</Link>;
           })}
         </nav>
         {activeWorkflow.tools?.length ? <nav aria-label={`${activeWorkflow.label} tools`} className="nav-group">
-          <div className="nav-label">TOOLS</div>
+          <div className="nav-label">Analysis tools</div>
           {activeWorkflow.tools.map((tool) => <Link
             aria-current={active === tool.destination ? "page" : undefined}
             className={`nav-link ${active === tool.destination ? "active" : ""}`}
@@ -261,29 +238,31 @@ export default function WorkbenchShell({
             key={tool.destination}
           >{tool.label}{tool.destination === "Run Console" && runIsLive && <span className="shortcut">LIVE<span className="sr-only"> run in progress</span></span>}</Link>)}
         </nav> : null}
-        {role === "ADMIN" && <div className="nav-group"><div className="nav-label">UTILITY</div><Link className={`nav-link ${active === "Admin Studio" ? "active" : ""}`} aria-current={active === "Admin Studio" ? "page" : undefined} href={workflowHref("/admin-studio")}>Admin Studio</Link></div>}
+        <div className="rail-spacer" />
+        <nav className="nav-group governance-nav" aria-label="Governance"><div className="nav-label">Governance</div><Link className={`nav-link ${active === "Admin Studio" ? "active" : ""}`} aria-current={active === "Admin Studio" ? "page" : undefined} href={workflowHref("/admin-studio")}>Admin</Link></nav>
+        <div className="rail-meta"><span>{role === "READER" ? "Reader" : role.toLowerCase().replace(/^./, (value) => value.toUpperCase())}</span><span>{selectedCase ? selectedCase.issuer : "No credit selected"}</span><span>Desktop workbench</span></div>
       </aside>
-      <section className="workspace">
-        <div role="region" className="topbar" aria-label="Accepted authority">
-          <div className="case-context">
-            <span className="eyebrow">CASE</span>
-            <strong>{selectedCase ? `${selectedCase.issuer} / ${selectedCase.name}` : "No case selected"}</strong>
-            {selectedCase && authorityPending && <span className="muted">Loading authority…</span>}
-            {selectedCase && authorityStatus === "error" && <span className="status warning">Authority unavailable</span>}
-            {selectedCase && authorityStatus === "ready" && !accepted && <span className="status warning">No accepted snapshot</span>}
-            {authorityStatus === "ready" && accepted && <><span className="status success">Accepted <span className="optional">{formatDate(accepted.accepted_at)}</span></span><span className="mono">Source set v{accepted.source_set_version ?? "—"}</span></>}
-            {(authority?.switch_required || authority?.diff?.changed) && <span className="status warning">New analysis available</span>}
-          </div>
+      <div className="workspace">
+        <header className="topbar">
+          <div className="topbar-heading"><span className="meta-label">{meta.kicker}</span><h1>{unknownRoute ? "Page not found" : meta.title}</h1></div>
           <div className="top-actions">
+            {selectedCase && active !== "Sources" ? <Link className="button quiet" href={workflowHref("/sources")}>Sources &amp; evidence</Link> : null}
+            <span className="reading-label">Reading: {meta.reading}</span>
             <label className="sr-only" htmlFor="case-select">Select case</label>
             <select id="case-select" aria-label="Select case" value={caseId} onChange={(event) => onCaseChange(event.target.value)}>
               <option value="">Select case</option>
               {cases.map((item) => <option key={item.id} value={item.id}>{item.issuer} — {item.name}</option>)}
             </select>
-            <button className="button small" type="button" disabled={!selectedCase} aria-controls="context-drawer" aria-expanded={drawer?.kind === "sources"} onClick={() => onDrawerChange({ kind: "sources" })}>{!selectedCase ? "Sources" : authorityPending ? "Sources loading" : authorityStatus === "error" || selectedCase.source_count == null ? "Sources unavailable" : `${selectedCase.source_count} ${selectedCase.source_count === 1 ? "source" : "sources"}`}</button>
-            <button className="button small" type="button" disabled={!selectedCase} aria-controls="context-drawer" aria-expanded={drawer?.kind === "qa"} onClick={() => onDrawerChange({ kind: "qa" })}>QA status</button>
             <button ref={triggerRef} className="button small" type="button" aria-label="Open command palette" onClick={openPalette}>Command <span className="shortcut">⌘K</span></button>
           </div>
+        </header>
+        <div role="region" className="authority-strip" aria-label="Visible authority" tabIndex={0}>
+          <span className="authority-dot" aria-hidden="true" />
+          <span><b>Credit:</b> {selectedCase ? selectedCase.issuer : "None selected"}</span>
+          <span><b>Accepted:</b> {acceptedSnapshotIdentity}</span>
+          <span><b>Selected run:</b> {runId ? `${runId}${runIsLive ? " · live" : ""}` : "None"}</span>
+          <span><b>Source set:</b> {acceptedSourceSetIdentity}</span>
+          {(authority?.switch_required || authority?.diff?.changed) && <span className="status warning">Review required</span>}
         </div>
         {/* `tabIndex={-1}` is what makes this landmark a real focus target. Without
             it the skip link moved the scroll and the browser's sequential focus
@@ -292,10 +271,10 @@ export default function WorkbenchShell({
             sends focus when a route change or a governed write destroys the element
             the user was on (WCAG 2.4.3). */}
         <main className={`content${active === "Report Studio" ? " report-content" : ""}`} id="main-content" tabIndex={-1}>
-          <div className="page-title"><h1>{unknownRoute ? "Page not found" : active}</h1>{error && <div className="error" role="alert" aria-live="assertive">{error}</div>}</div>
+          {error && <div className="error global-error" role="alert" aria-live="assertive">{error}</div>}
           {children}
         </main>
-      </section>
+      </div>
     </div>
     <dialog
       ref={dialogRef}
@@ -305,7 +284,7 @@ export default function WorkbenchShell({
       <div className="dialog-body">
         <div className="panel-header"><h2 id="palette-title">Command palette</h2><button type="button" className="button small" onClick={closePalette}>Close</button></div>
         <div className="field">
-          <label htmlFor="command-search">Search commands</label>
+          <label htmlFor="command-search">Search cases, workflows or evidence IDs</label>
           <input
             ref={searchRef}
             id="command-search"
@@ -335,7 +314,6 @@ export default function WorkbenchShell({
           })}</div>}
           {workflowItems.length > 0 && <div role="group" aria-labelledby="palette-workflows-label"><div className="palette-group-label" id="palette-workflows-label">Workflows</div>{workflowItems.map((workflow) => {
             const index = resultIndex++;
-            const href = workflow.id === "overview" ? overviewHref : workflow.href;
             return <Link
               id={`command-result-${index}`}
               role="option"
@@ -343,7 +321,7 @@ export default function WorkbenchShell({
               className="nav-link"
               tabIndex={-1}
               key={workflow.id}
-              href={workflowHref(href)}
+              href={workflowHref(workflow.href)}
               onClick={closePalette}
             >Open {workflow.label}</Link>;
           })}</div>}
@@ -372,7 +350,7 @@ export default function WorkbenchShell({
               onClick={closePalette}
             >Open {exactEvidenceKind} ID in this case</Link>;
           })()}
-          {!resultCount && <p className="muted">No authorized matches</p>}
+          {!resultCount && <p className="muted">No matches</p>}
         </div>
       </div>
     </dialog>

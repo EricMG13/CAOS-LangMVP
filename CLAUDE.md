@@ -133,10 +133,10 @@ engine, the bundle, or the routes.
   `next/dist/build/polyfills/polyfill-nomodule.js`) that every route's HTML
   references. There is no config switch for it and no browser with ES-module
   support fetches it — do not "optimize" it away by deleting build output.
-- The run console has exactly one home. Cases and Deep-Dive render `RunSummary`
-  (status, module progress, a link) and never the compile form or the accept
-  control — that is what keeps `/cases/` to one page-level primary action
-  (`DESIGN.md:348`).
+- The run console has exactly one home. Portfolio links into a credit and
+  Deep-Dive reads accepted artifacts; neither renders the compile form or the
+  accept control. Run progress, compilation and acceptance stay in
+  `/run-console/`.
 - Visual language is established: dark institutional terminal, semantic color
   only, motion only for live state. `DESIGN.md` and `.impeccable.md` govern;
   inherit, don't reinvent.
