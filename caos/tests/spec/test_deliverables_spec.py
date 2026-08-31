@@ -341,6 +341,26 @@ def test_http_stale_draft_put_returns_409_with_current_revision_and_by_id_read_r
 # --- strict schema and template policy --------------------------------------------
 
 
+def test_freeze_round_trips_on_nothing_but_what_the_draft_wire_serves(client, settings, store):
+    """The freeze contract is keyed on `draft_id`, and the draft wire served only
+    `id` (the revision). Every other freeze test builds its request from the
+    service's own revision dict, so nothing noticed that a client reading the wire
+    had no way to name the draft — the workbench sent the revision id and every
+    freeze came back DELIVERABLE_DRAFT_STALE. This test may read only the wire."""
+    svc, case, source, template = http_seed(settings, store)
+    url = f"/api/cases/{case['id']}/deliverables/FULL_CREDIT/draft"
+    saved = client.put(url, json=draft_request(template, source).model_dump(mode="json"),
+                       headers=ANALYST_H).json()["current"]
+
+    frozen = client.post(
+        f"/api/cases/{case['id']}/deliverables/FULL_CREDIT/freeze",
+        json={"draft_id": saved["draft_id"], "draft_version": saved["version"], "draft_digest": saved["digest"]},
+        headers=ANALYST_H,
+    )
+    assert frozen.status_code == 201, frozen.text
+    assert frozen.json()["draft_version"] == saved["version"]
+
+
 def test_strict_schema_rejects_client_supplied_generated_values(client, settings, store):
     svc, case, source, template = http_seed(settings, store)
     body = draft_request(template, source).model_dump(mode="json")

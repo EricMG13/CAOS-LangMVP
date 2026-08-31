@@ -216,6 +216,11 @@ class ModelService:
             "status": "READY" if build and build["status"] == "READY" else "READY_TO_BUILD",
             "module_id": "CP-MODEL",
             "snapshot_id": snapshot["id"],
+            # The wire's own name for the same fact. The route read this key and
+            # the service never produced it, so Model Builder's authority panel
+            # read "Not accepted" beside a build derived from that very snapshot.
+            "accepted_snapshot": {"id": snapshot["id"], "run_id": snapshot["run_id"],
+                                  "digest": snapshot.get("digest")},
             "input_fingerprint": resolved["input_fingerprint"],
             "source_set": resolved["source_set"],
             "requirements": resolved["artifact_inventory"],

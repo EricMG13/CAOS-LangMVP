@@ -54,6 +54,10 @@ FILE_MAP = {
     r"^caos/server/worker\.py": "F-OPS-03, F-MODEL-11",
     r"^caos/server/(pyproject\.toml|requirements)": "F-OPS-09",
     r"^caos/tests/": "the executing suite for every feature",
+    # Same standing as caos/tests: a harness that exercises the surface rather
+    # than a subsystem a feature owns. It drives the production-configured
+    # stack (qa/INVENTORY.md) instead of the in-process app the suite uses.
+    r"^qa/": "the production-configured QA harness for every feature",
     r"^caos/frontend/app/": "F-UI-01, F-UI-13, F-UI-14, F-UI-15",
     r"^caos/frontend/src/": "F-UI-01..12",
     r"^caos/frontend/scripts/a11y-axe": "F-UI-14, F-UI-15",

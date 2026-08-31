@@ -37,6 +37,9 @@ export type CaseRecord = {
   accepted_snapshot_id?: string | null;
   pathway_fit?: { fit: string; message: string };
   current_execution_id?: string | null;
+  // The pathways this deployment's engine will start. Absent on a server
+  // that predates the field, which means "do not narrow the offer".
+  available_pathways?: string[];
   deep_research_available?: boolean;
   deep_research_unavailable_reason?: string | null;
 };
@@ -110,9 +113,13 @@ export function formatDate(value?: string | null) {
   return Number.isNaN(date.valueOf()) ? value : new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(date);
 }
 
-// Source-block locators arrive as small JSON objects; today's ingestion emits
-// `{"line": n}` only. The two positional shapes read as English; every other shape
-// keeps the compact JSON, so an unrecognised locator is shown, never dropped.
+// Source-block locators arrive as small JSON objects. Ingestion emits two shapes:
+// `{"line": n}` while a document is small (`builtin-v1`) and `{"lines": [first,
+// last]}` once `pack_blocks` groups lines to hold the manifest's block count down
+// (`builtin-v2`) — which is every annual report and credit agreement of real size,
+// so the range form is the common case, not the exotic one. Both read as English;
+// every other shape keeps the compact JSON, so an unrecognised locator is shown,
+// never dropped.
 export function formatBlockLocator(locator: unknown): string {
   const json = JSON.stringify(locator) ?? "";
   if (!locator || typeof locator !== "object" || Array.isArray(locator)) return json;
@@ -120,9 +127,15 @@ export function formatBlockLocator(locator: unknown): string {
   if (entries.length !== 1) return json;
   const [key, value] = entries[0];
   const name = key.toLowerCase();
-  const readable = name === "line" || name === "page";
-  const positional = typeof value === "number" ? Number.isFinite(value) : typeof value === "string" && value.trim() !== "";
-  return readable && positional ? `${name} ${value}` : json;
+  const positional = (candidate: unknown) => typeof candidate === "number"
+    ? Number.isFinite(candidate)
+    : typeof candidate === "string" && candidate.trim() !== "";
+  if ((name === "line" || name === "page") && positional(value)) return `${name} ${value}`;
+  if ((name === "lines" || name === "pages") && Array.isArray(value) && value.length === 2 && value.every(positional)) {
+    const [first, last] = value;
+    return String(first) === String(last) ? `${name.slice(0, -1)} ${first}` : `${name} ${first}\u2013${last}`;
+  }
+  return json;
 }
 
 export function destinationFromSlug(slug: string): Destination {

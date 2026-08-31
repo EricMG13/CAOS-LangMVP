@@ -320,6 +320,7 @@ def create_app(*, settings: Settings, store: DomainStore, engine: Any) -> FastAP
         # signal. Denormalize both onto the case row if the register ever gets
         # slow. source_count and pathway_fit deliberately measure different
         # things: membership of the pinned set versus what is available now.
+        from ..engine.runtime import MVP_PATHWAYS
         from ..sources.domain import pathway_fit
 
         current = store.current_source_set(case["id"])
@@ -327,6 +328,10 @@ def create_app(*, settings: Settings, store: DomainStore, engine: Any) -> FastAP
         return {
             **case,
             "source_count": len(current["source_ids"]) if current else 0,
+            # One source of truth for the cut: the same set start_run refuses
+            # against. A pathway added there lights up in the workbench with no
+            # second list to keep in step.
+            "available_pathways": sorted(MVP_PATHWAYS),
             "deep_research_available": False,
             "deep_research_unavailable_reason": "Deep Research is disabled for this deployment.",
             "pathway_fit": {"fit": fit["fit"], "message": fit["message"]},
@@ -752,7 +757,12 @@ def create_app(*, settings: Settings, store: DomainStore, engine: Any) -> FastAP
             "started_at": build.get("started_at"),
             "completed_at": build.get("completed_at"),
             "error": build.get("error"),
-            "export": {"status": export["status"], "error": export.get("error")} if export else None,
+            # NOT_REQUESTED is the export's own "never asked for" state, so serve
+            # it rather than null: a build that has one is the common case (every
+            # build, until someone exports it), and `null` made the workbench
+            # dereference `build.export.status` on nothing and blank the page.
+            "export": {"status": export["status"], "error": export.get("error")} if export
+            else {"status": "NOT_REQUESTED", "error": None},
             "worksheet_schema_version": build.get("worksheet_schema_version"),
             "calculation_runtime": {key: runtime.get(key) for key in RUNTIME_KEYS} if runtime else None,
         }
@@ -763,7 +773,13 @@ def create_app(*, settings: Settings, store: DomainStore, engine: Any) -> FastAP
         return projected
 
     @app.post("/api/cases/{case_id}/models", status_code=202, response_model=wire.ModelQueueResponse)
-    def queue_model(case_id: str, request: Request, body: QueueModelRequest = Body(...)) -> dict[str, Any]:
+    def queue_model(case_id: str, request: Request,
+                    body: QueueModelRequest = Body(default_factory=QueueModelRequest)) -> dict[str, Any]:
+        # "Queue a build for this case" carries no arguments — QueueModelRequest
+        # declares no fields and exists only to forbid undeclared ones. Requiring
+        # it made a body-less POST (what the workbench sends) fail validation with
+        # "Field required" and left Model Builder's primary action dead. Optional
+        # here, still `extra="forbid"` when a body is sent.
         who = identity(request)
         require_case(store, case_id, who, write=True)
         try:
@@ -886,6 +902,7 @@ def create_app(*, settings: Settings, store: DomainStore, engine: Any) -> FastAP
         content = revision["content"]
         return {
             "id": revision["revision_id"],
+            "draft_id": revision["draft_id"],
             "case_id": case_id,
             "pathway": pathway,
             "version": revision["version"],

@@ -1603,6 +1603,51 @@ try {
 
 
   await narrow.close();
+
+  // Reader mode: same subject, same case standing, READER role. Every shared
+  // write the server answers 403 to must be absent from the surface, not offered
+  // and then refused — Model Builder and Report Studio already gated on this,
+  // the shell's own six controls did not.
+  const readerHeaders = process.env.CAOS_EDGE_SECRET
+    ? { ...identityHeaders, "x-forwarded-groups": "caos-reader" }
+    : { "x-caos-role": "READER" };
+  const reader = await browser.newContext({ viewport: { width: 1440, height: 1000 }, extraHTTPHeaders: readerHeaders });
+  const readerPage = await reader.newPage();
+  const absent = async (page, name) => assert.equal(
+    await page.getByRole("button", { name }).count(), 0, `READER was offered "${name}"`);
+
+  await readerPage.goto(`${baseURL}/cases/?case=${caseRecord.id}`, { waitUntil: "networkidle" });
+  assert.equal(await readerPage.evaluate(() => document.querySelector("main")?.textContent?.includes("Reader access")), true,
+    "Cases did not say why the write panels are absent");
+  await absent(readerPage, "Create case");
+  await absent(readerPage, "Upload and version source set");
+  assert.ok(await readerPage.getByRole("row").count() > 1, "READER lost read access to the case register");
+
+  await readerPage.goto(`${baseURL}/sources/?case=${caseRecord.id}`, { waitUntil: "networkidle" });
+  await absent(readerPage, "Upload and version source set");
+  assert.equal(await readerPage.locator("main input[type=file]").count(), 0, "READER was offered a source file input");
+
+  await readerPage.goto(`${baseURL}/run-console/?case=${caseRecord.id}`, { waitUntil: "networkidle" });
+  await absent(readerPage, "Compile and run");
+  await absent(readerPage, "Accept analytical snapshot");
+  assert.equal(await readerPage.locator("#pathway").count(), 0, "READER was offered the compile form");
+
+  await readerPage.goto(`${baseURL}/rv-screener/?case=${caseRecord.id}`, { waitUntil: "networkidle" });
+  await absent(readerPage, "Upload CP-3 workbook");
+
+  // The gate must fail CLOSED. `role` was defaulted to ANALYST, so a reader whose
+  // /api/me never answered kept every write control — the reader assertions above
+  // could not see it, because they only ever ran against a healthy server.
+  await readerPage.route((url) => url.pathname === "/api/me", (route) => route.abort("failed"));
+  await readerPage.goto(`${baseURL}/cases/?case=${caseRecord.id}`, { waitUntil: "networkidle" });
+  await readerPage.waitForTimeout(500);
+  await absent(readerPage, "Create case");
+  await absent(readerPage, "Upload and version source set");
+  assert.equal(await readerPage.locator("main input[type=file]").count(), 0,
+    "an unresolved identity left a write control on the page");
+  assert.equal(await readerPage.evaluate(() => document.querySelector("main")?.textContent?.includes("Confirming your access")), true,
+    "an unresolved identity should say so, not silently look like reader mode");
+  await reader.close();
 } finally {
   await browser.close();
   await api.dispose();

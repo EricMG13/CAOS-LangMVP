@@ -991,6 +991,51 @@ def test_build_authority_order_is_server_assigned_and_unexposed(models, store):
     assert all("authority_order" not in build for build in models.list_builds(case["id"]))
 
 
+async def test_queue_build_accepts_the_body_less_post_the_workbench_sends(client, models, engine, store):
+    """The shipped workbench POSTs this route with no body at all (api.ts sets a
+    JSON content type and nothing else). QueueModelRequest declares no fields, so
+    requiring the body bought no strictness and answered the only client we ship
+    with 422 "Field required" — Model Builder's primary action was dead. Both
+    shapes queue; an undeclared field is still refused (test below)."""
+    case, _run, _snapshot = await _accepted_case(engine, store)
+    queued = models.list_builds(case["id"])
+
+    bodyless = client.post(f"/api/cases/{case['id']}/models", headers=_ANALYST)
+    assert bodyless.status_code == 202, bodyless.text
+    assert bodyless.json()["id"] == queued[0]["id"]
+
+    empty = client.post(f"/api/cases/{case['id']}/models", json={}, headers=_ANALYST)
+    assert empty.status_code == 202
+    assert len(models.list_builds(case["id"])) == 1, "no duplicate build"
+
+
+async def test_readiness_names_the_accepted_snapshot_it_resolved(client, models, engine, store):
+    """The route projected `accepted_snapshot` and the service produced only
+    `snapshot_id`, so every readiness response carried a null there and Model
+    Builder's authority panel said "Not accepted" beside a build derived from
+    that exact snapshot."""
+    case, run, snapshot = await _accepted_case(engine, store)
+
+    served = client.get(f"/api/cases/{case['id']}/model", headers=_ANALYST).json()
+    assert served["accepted_snapshot"]["id"] == snapshot["id"]
+    assert served["accepted_snapshot"]["run_id"] == run["id"]
+    assert served["accepted_snapshot"]["digest"] == snapshot["digest"]
+
+
+async def test_a_build_with_no_export_still_serves_its_export_state(client, models, engine, store):
+    """`export: null` made the workbench dereference `build.export.status` on
+    nothing and blank the whole page. NOT_REQUESTED is the export's own name for
+    "never asked for", so the wire serves that instead of a hole."""
+    case, _run, _snapshot = await _accepted_case(engine, store)
+    build = models.list_builds(case["id"])[0]
+    assert build.get("export") is None, "fixture precondition: nothing has been exported"
+
+    served = client.get(f"/api/cases/{case['id']}/models/{build['id']}", headers=_ANALYST).json()
+    assert served["export"] == {"status": "NOT_REQUESTED", "error": None}
+    readiness = client.get(f"/api/cases/{case['id']}/model", headers=_ANALYST).json()
+    assert readiness["build"]["export"]["status"] == "NOT_REQUESTED"
+
+
 async def test_queue_build_rejects_caller_supplied_authority_fields(client, models, engine, store):
     case, _run, _snapshot = await _accepted_case(engine, store)
     before_builds = models.list_builds(case["id"])
@@ -1135,6 +1180,13 @@ async def test_http_preview_signoff_history_and_stale_head_conflict(client, mode
     signed = signed_response.json()
     assert signed["state"] == "ACTIVE"
     assert signed["export"]["status"] == "QUEUED"
+    # The revision envelope is service-owned (extra="allow"), so its key names are
+    # the only contract a client has. Model Builder read invented `signed_by` /
+    # `signed_at` keys and printed "undefined · —" under every Active Analyst
+    # Model; pin the names it actually serves.
+    assert signed["created_by"] == "analyst", signed.keys()
+    assert signed["created_at"], "a signed revision carries the instant it was signed"
+    assert "signed_by" not in signed and "signed_at" not in signed
     history = client.get(f"/api/cases/{case['id']}/model-revisions", headers=_ANALYST)
     assert history.status_code == 200
     assert history.json()["revisions"] == [signed]

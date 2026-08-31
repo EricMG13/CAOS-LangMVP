@@ -27,6 +27,15 @@ test("a positional block locator reads as English and every other shape keeps it
   assert.equal(formatBlockLocator({ LINE: 4 }), "line 4");
   assert.equal(formatBlockLocator({ page: 12 }), "page 12");
   assert.equal(formatBlockLocator({ PAGE: "12" }), "page 12");
+  // builtin-v2 groups lines once a document is large, which is every real filing.
+  assert.equal(formatBlockLocator({ lines: [1, 95] }), "lines 1\u201395");
+  assert.equal(formatBlockLocator({ LINES: ["96", "179"] }), "lines 96\u2013179");
+  assert.equal(formatBlockLocator({ lines: [7, 7] }), "line 7");
+  assert.equal(formatBlockLocator({ pages: [2, 5] }), "pages 2\u20135");
+  // A range that is not a well-formed pair keeps its JSON rather than inventing one.
+  assert.equal(formatBlockLocator({ lines: [1] }), '{"lines":[1]}');
+  assert.equal(formatBlockLocator({ lines: [1, 2, 3] }), '{"lines":[1,2,3]}');
+  assert.equal(formatBlockLocator({ lines: [1, null] }), '{"lines":[1,null]}');
   // Unknown shapes are shown exactly as they were before, never dropped.
   assert.equal(formatBlockLocator({ sheet: "Summary", row: 4 }), '{"sheet":"Summary","row":4}');
   assert.equal(formatBlockLocator({ offset: 4 }), '{"offset":4}');

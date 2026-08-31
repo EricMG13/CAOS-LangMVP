@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   applicationBuildDelta,
   applyAssumptionValue,
+  formatModelValue,
   applyServerAssumptions,
   assumptionScope,
   mergeRebasedAssumptions,
@@ -161,4 +162,31 @@ test("rebase candidates retain local draft shocks over the server-owned candidat
 
   assert.equal(merged.find((row) => row.case === "BASE" && row.period_id === "FY2025")?.value, 0.12);
   assert.equal(merged.find((row) => row.case === "DOWNSIDE" && row.period_id === "FY2027")?.value, -0.15);
+});
+
+
+test("model outputs read as audited numbers whether the wire sends them as numbers or Decimal strings", () => {
+  // The calculation engine serializes Decimals, so this is the common shape.
+  assert.equal(formatModelValue("136.8800000000000000000000000"), "136.88");
+  assert.equal(formatModelValue("0.20"), "0.2");
+  assert.equal(formatModelValue("-1.5e2"), "-150");
+  assert.equal(formatModelValue(136.88), "136.88");
+  assert.equal(formatModelValue(0), "0");
+  assert.equal(formatModelValue(false), "No");
+  assert.equal(formatModelValue(true), "Yes");
+  // Absent is never a number.
+  assert.equal(formatModelValue(null), "Unavailable");
+  assert.equal(formatModelValue(undefined), "Unavailable");
+  assert.equal(formatModelValue(""), "Unavailable");
+  assert.equal(formatModelValue(Number.NaN), "Unavailable");
+  assert.equal(formatModelValue(Number.POSITIVE_INFINITY), "Unavailable");
+  // A string that is not a number is shown exactly as served, never coerced.
+  assert.equal(formatModelValue("COVENANT_HEADROOM_UNAVAILABLE"), "COVENANT_HEADROOM_UNAVAILABLE");
+  assert.equal(formatModelValue("Infinity"), "Infinity");
+  assert.equal(formatModelValue("12 months"), "12 months");
+  // Outside the range a double reproduces, the served digits survive intact —
+  // rounding these would print a number the server never calculated.
+  assert.equal(formatModelValue("12345678901234567890.5"), "12345678901234567890.5");
+  assert.equal(formatModelValue("1e309"), "1e309");
+  assert.equal(formatModelValue(String(Number.MAX_SAFE_INTEGER)), "9,007,199,254,740,991");
 });
