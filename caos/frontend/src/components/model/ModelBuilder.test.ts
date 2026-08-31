@@ -39,6 +39,21 @@ test("extraction preserves the read-only worksheet keyboard and lineage contract
   assert.doesNotMatch(modelBuilder, /contentEditable|contenteditable/);
 });
 
+test("worksheet rendering consumes the engine tab contract", () => {
+  assert.match(api, /WorksheetTab = \{ id: string; title: string;/);
+  assert.match(modelBuilder, /worksheetColumns\(tab\.max_column\)/);
+  assert.match(modelBuilder, /tab\.title/);
+  assert.doesNotMatch(modelBuilder, /tab\.columns/);
+});
+
+test("worksheet rendering explains locked history, calculations, and forecast inputs", () => {
+  assert.match(modelBuilder, /worksheetCellAuthority\(cell\?\.write_class \?\? null\)/);
+  assert.match(modelBuilder, /data-write-class=\{cell\?\.write_class \|\| "LOCKED"\}/);
+  assert.match(modelBuilder, /Historical and calculated cells are locked/);
+  assert.match(modelBuilder, /Change forward inputs in Assumptions/);
+  assert.doesNotMatch(modelBuilder, /contentEditable|contenteditable/);
+});
+
 test("authoring is registry-driven, browser-memory-only, and identity fenced", () => {
   for (const label of ["Model", "Assumptions", "Sensitivities", "History"]) {
     assert.match(modelBuilder, new RegExp(`label: "${label}"`));

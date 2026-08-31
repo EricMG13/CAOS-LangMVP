@@ -1,6 +1,32 @@
 export type ModelCase = "BASE" | "DOWNSIDE";
 export type AssumptionStatus = "READY" | "UNAVAILABLE" | "NOT_APPLICABLE";
 
+export function worksheetColumns(maxColumn: number): { column: number; letter: string }[] {
+  return Array.from({ length: maxColumn }, (_, index) => {
+    let value = index + 1;
+    let letter = "";
+    while (value > 0) {
+      value -= 1;
+      letter = String.fromCharCode(65 + value % 26) + letter;
+      value = Math.floor(value / 26);
+    }
+    return { column: index + 1, letter };
+  });
+}
+
+export function worksheetCellAuthority(writeClass: string | null) {
+  if (writeClass === "SOURCE" || writeClass === "SNAPSHOT_SOURCE") {
+    return { className: "is-source", label: "Historical source — locked" };
+  }
+  if (writeClass === "FORMULA" || writeClass === "CALCULATED") {
+    return { className: "is-calculated", label: "Calculated formula — locked" };
+  }
+  if (writeClass === "ASSUMPTION") {
+    return { className: "is-assumption", label: "Forecast assumption — edit in Assumptions" };
+  }
+  return { className: "is-locked", label: "Worksheet cell — locked" };
+}
+
 export type AssumptionSourceContext = {
   authority_module: "CP-2G";
   gap_code: string;

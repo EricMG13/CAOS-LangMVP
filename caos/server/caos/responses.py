@@ -298,7 +298,15 @@ class ModelAssumptionRegistryResponse(OpenWireModel):
     pass
 
 
+class ModelWorksheetResponse(OpenWireModel):
+    pass
+
+
 class ModelPreviewResponse(OpenWireModel):
+    pass
+
+
+class ModelRebasePreviewResponse(OpenWireModel):
     pass
 
 
@@ -465,3 +473,7 @@ class ModelScenarioResponse(OpenWireModel):
     draft_generation: int
     scenario: Any
     scenario_digest: str
+
+
+class ModelSensitivityResponse(OpenWireModel):
+    pass

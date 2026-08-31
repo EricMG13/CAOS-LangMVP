@@ -11,10 +11,49 @@ import {
   previewMatchesDraft,
   primaryModelAction,
   sensitivityPeriodRows,
+  worksheetCellAuthority,
+  worksheetColumns,
   type AssumptionDefinition,
   type ModelAssumptionValue,
   type ModelPreview,
 } from "./modelBuilderState.ts";
+
+test("derives spreadsheet columns from the engine's max-column metadata", () => {
+  const columns = worksheetColumns(28);
+
+  assert.deepEqual(columns.slice(0, 2), [
+    { column: 1, letter: "A" },
+    { column: 2, letter: "B" },
+  ]);
+  assert.deepEqual(columns.slice(-3), [
+    { column: 26, letter: "Z" },
+    { column: 27, letter: "AA" },
+    { column: 28, letter: "AB" },
+  ]);
+});
+
+test("worksheet authority keeps history and calculations locked", () => {
+  assert.deepEqual(worksheetCellAuthority("SOURCE"), {
+    className: "is-source",
+    label: "Historical source — locked",
+  });
+  assert.deepEqual(worksheetCellAuthority("SNAPSHOT_SOURCE"), {
+    className: "is-source",
+    label: "Historical source — locked",
+  });
+  assert.deepEqual(worksheetCellAuthority("FORMULA"), {
+    className: "is-calculated",
+    label: "Calculated formula — locked",
+  });
+  assert.deepEqual(worksheetCellAuthority("CALCULATED"), {
+    className: "is-calculated",
+    label: "Calculated formula — locked",
+  });
+  assert.deepEqual(worksheetCellAuthority("ASSUMPTION"), {
+    className: "is-assumption",
+    label: "Forecast assumption — edit in Assumptions",
+  });
+});
 
 const definition: AssumptionDefinition = {
   assumption_id: "operating.revenue_growth.division_1",

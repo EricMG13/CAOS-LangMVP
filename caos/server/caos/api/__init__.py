@@ -33,9 +33,11 @@ from ..contracts import (
     FreezeDeliverableRequest,
     LoanUniverseImportRequest,
     ModelPreviewRequest,
+    ModelRebasePreviewRequest,
     ModelScenarioRequest,
     ModelSignOffRequest,
     NoteRequest,
+    OneWaySensitivityRequest,
     RequestDeliverableChangesRequest,
     StartRunRequest,
     finite_or_none,
@@ -810,6 +812,13 @@ def create_app(*, settings: Settings, store: DomainStore, engine: Any) -> FastAP
             raise HTTPException(status_code=404, detail="model build not found")
         return build
 
+    def visible_revision(case_id: str, revision_id: str, request: Request) -> dict[str, Any]:
+        require_case(store, case_id, identity(request))
+        revision = next((item for item in models().revisions(case_id) if item["id"] == revision_id), None)
+        if revision is None:
+            raise HTTPException(status_code=404, detail="model revision not found")
+        return revision
+
     @app.get("/api/cases/{case_id}/model", response_model=wire.ModelReadinessResponse,
              response_model_exclude_unset=True)
     def model_readiness(case_id: str, request: Request) -> dict[str, Any]:
@@ -841,26 +850,52 @@ def create_app(*, settings: Settings, store: DomainStore, engine: Any) -> FastAP
         except ValueError as exc:
             raise model_error(exc) from exc
 
+    @app.get("/api/cases/{case_id}/models/{build_id}/worksheet", response_model=wire.ModelWorksheetResponse)
+    def model_worksheet(case_id: str, build_id: str, request: Request) -> dict[str, Any]:
+        build = visible_build(case_id, build_id, request)
+        worksheet = models().worksheet(build_id)
+        if worksheet is None:
+            raise HTTPException(status_code=409, detail={"code": "MODEL_WORKSHEET_NOT_READY"})
+        return {
+            "build_id": build_id,
+            "input_fingerprint": build["input_fingerprint"],
+            "payload_digest": build["payload_digest"],
+            "qa": build["qa"],
+            "payload": worksheet,
+        }
+
     @app.get("/api/cases/{case_id}/models/{build_id}", response_model=wire.ModelBuildResponse,
              response_model_exclude_unset=True)
     def get_model(case_id: str, build_id: str, request: Request) -> dict[str, Any]:
         return _wire_build(visible_build(case_id, build_id, request))
 
-    @app.get("/api/cases/{case_id}/models/{build_id}/download")
-    def download_model(case_id: str, build_id: str, request: Request):
-        from fastapi.responses import Response as _Response
-
+    @app.post("/api/cases/{case_id}/models/{build_id}/export", status_code=202,
+              response_model=wire.ModelBuildResponse, response_model_exclude_unset=True)
+    def queue_model_export(case_id: str, build_id: str, request: Request) -> dict[str, Any]:
+        who = identity(request)
+        require_case(store, case_id, who, write=True)
         visible_build(case_id, build_id, request)
         try:
-            content, sha256 = models().download(case_id, build_id)
+            return _wire_build(models().queue_export(build_id, who.subject))
+        except ValueError as exc:
+            raise model_error(exc) from exc
+
+    def model_download_response(case_id: str, target_id: str) -> Response:
+        try:
+            content, sha256 = models().download(case_id, target_id)
         except ValueError as exc:
             code = str(exc).split(":", 1)[0]
             raise HTTPException(status_code=409, detail=code) from exc
-        return _Response(
+        return Response(
             content=content,
             media_type=XLSX_MEDIA_TYPE,
             headers={"cache-control": "no-store", "x-caos-sha256": sha256},
         )
+
+    @app.get("/api/cases/{case_id}/models/{build_id}/download")
+    def download_model(case_id: str, build_id: str, request: Request):
+        visible_build(case_id, build_id, request)
+        return model_download_response(case_id, build_id)
 
     @app.post("/api/cases/{case_id}/models/previews", response_model=wire.ModelPreviewResponse)
     def model_preview(case_id: str, request: Request, body: ModelPreviewRequest = Body(...)) -> dict[str, Any]:
@@ -880,6 +915,16 @@ def create_app(*, settings: Settings, store: DomainStore, engine: Any) -> FastAP
         except ValueError as exc:
             raise model_error(exc) from exc
 
+    @app.post("/api/cases/{case_id}/model-revisions/rebase-preview",
+              response_model=wire.ModelRebasePreviewResponse)
+    def model_rebase_preview(case_id: str, request: Request,
+                             body: ModelRebasePreviewRequest = Body(...)) -> dict[str, Any]:
+        require_case(store, case_id, identity(request), write=True)
+        try:
+            return models().rebase_preview(case_id, body)
+        except ValueError as exc:
+            raise model_error(exc) from exc
+
     @app.post("/api/cases/{case_id}/models/scenarios", response_model=wire.ModelScenarioResponse)
     def model_scenario(case_id: str, request: Request, body: ModelScenarioRequest = Body(...)) -> dict[str, Any]:
         require_case(store, case_id, identity(request), write=True)
@@ -888,10 +933,36 @@ def create_app(*, settings: Settings, store: DomainStore, engine: Any) -> FastAP
         except ValueError as exc:
             raise model_error(exc) from exc
 
+    @app.post("/api/cases/{case_id}/models/sensitivities/one-way",
+              response_model=wire.ModelSensitivityResponse)
+    def model_one_way(case_id: str, request: Request,
+                      body: OneWaySensitivityRequest = Body(...)) -> dict[str, Any]:
+        require_case(store, case_id, identity(request), write=True)
+        try:
+            return models().one_way(case_id, body)
+        except ValueError as exc:
+            raise model_error(exc) from exc
+
     @app.get("/api/cases/{case_id}/model-revisions", response_model=wire.ModelRevisionListResponse)
     def model_revisions(case_id: str, request: Request) -> dict[str, Any]:
         require_case(store, case_id, identity(request))
         return {"revisions": models().revisions(case_id)}
+
+    @app.post("/api/cases/{case_id}/model-revisions/{revision_id}/export", status_code=202,
+              response_model=wire.ModelRevisionResponse)
+    def queue_model_revision_export(case_id: str, revision_id: str, request: Request) -> dict[str, Any]:
+        who = identity(request)
+        require_case(store, case_id, who, write=True)
+        visible_revision(case_id, revision_id, request)
+        try:
+            return models().queue_export(revision_id, who.subject)
+        except ValueError as exc:
+            raise model_error(exc) from exc
+
+    @app.get("/api/cases/{case_id}/model-revisions/{revision_id}/download")
+    def download_model_revision(case_id: str, revision_id: str, request: Request):
+        visible_revision(case_id, revision_id, request)
+        return model_download_response(case_id, revision_id)
 
     # -- deliverables --------------------------------------------------------
 

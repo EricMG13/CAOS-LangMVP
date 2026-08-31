@@ -48,7 +48,7 @@ export type ModelBuild = { id: string; case_id: string; accepted_run_id: string;
 export type ModelReadiness = { status: "NOT_READY" | "READY_TO_BUILD" | ModelBuild["status"]; module_id: "CP-MODEL"; accepted_snapshot: { id: string; run_id: string; digest?: string } | null; source_set: { id: string; version: number; digest: string } | null; requirements: { module_id: string; status: string; digest?: string }[]; blockers: { code: string; detail: string }[]; build: ModelBuild | null };
 export type ModelInventory = { readiness: ModelReadiness; builds: ModelBuild[] };
 export type WorksheetCell = { address: string; row: number; column: number; value: string | number | boolean | null; value_type: "formula" | "boolean" | "number" | "date" | "text"; formula: string | null; semantic_id: string | null; owner: string | null; write_class: string | null; period_id: string | null; source_refs: string | null; number_format: string; style: { bold: boolean; italic: boolean; fill: string | null; align: string | null; wrap: boolean } };
-export type WorksheetTab = { id: string; name: string; max_row: number; max_column: number; freeze_panes: string; merged_cells: string[]; columns: { column: number; letter: string; width?: number; hidden: boolean }[]; cells: WorksheetCell[] };
+export type WorksheetTab = { id: string; title: string; max_row: number; max_column: number; cells: WorksheetCell[] };
 export type WorksheetResponse = { build_id: string; input_fingerprint: string; payload_digest: string; qa: ModelBuild["qa"]; payload: { schema_version: string; identity: { issuer_id: string; issuer_name: string; analysis_date: string }; tabs: WorksheetTab[] } };
 
 export function assumptionRegistryPath(caseId: string, buildId: string) {

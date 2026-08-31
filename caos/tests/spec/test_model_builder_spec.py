@@ -1266,6 +1266,122 @@ async def test_http_preview_signoff_history_and_stale_head_conflict(client, mode
     assert conflict.json()["detail"]["current"]["id"] == signed["id"], "the conflict carries the head to rebase on"
 
 
+async def test_http_worksheet_route_serves_the_ready_build_payload(client, models, engine, store):
+    case, build = await _built_case(models, engine, store)
+
+    response = client.get(
+        f"/api/cases/{case['id']}/models/{build['id']}/worksheet",
+        headers=_ANALYST,
+    )
+
+    assert response.status_code == 200
+    worksheet = response.json()
+    assert worksheet["payload"]["schema_version"] == "caos.model.worksheet.v1"
+    assert worksheet["build_id"] == build["id"]
+
+
+async def test_http_one_way_route_calculates_without_persisting(client, models, engine, store):
+    case, build = await _built_case(models, engine, store)
+    registry = models.assumption_registry(case["id"], build["id"])
+    available = next(
+        row for row in registry["defaults"]
+        if row["status"] == "READY" and row["case"] == "BASE"
+    )
+    definition = next(
+        row for row in registry["definitions"]
+        if row["assumption_id"] == available["assumption_id"]
+    )
+    step = float(definition["sensitivity_default"]["step"])
+
+    response = client.post(
+        f"/api/cases/{case['id']}/models/sensitivities/one-way",
+        json=_one_way_request(
+            registry,
+            build["id"],
+            available,
+            minimum=float(available["value"]),
+            maximum=float(available["value"]) + step,
+            step=step,
+        ).model_dump(mode="json"),
+        headers=_ANALYST,
+    )
+
+    assert response.status_code == 200
+    assert response.json()["build_id"] == build["id"]
+    assert len(response.json()["points"]) == 2
+    assert models.revisions(case["id"]) == []
+
+
+async def test_http_rebase_preview_route_preserves_the_signed_source(client, models, engine, store):
+    case, build = await _built_case(models, engine, store)
+    registry = models.assumption_registry(case["id"], build["id"])
+    preview = models.preview(case["id"], _preview_request(registry, build["id"]))
+    signed = models.sign_off(
+        case["id"],
+        _sign_off_request(registry, build["id"], preview),
+    )
+
+    response = client.post(
+        f"/api/cases/{case['id']}/model-revisions/rebase-preview",
+        json={"revision_id": signed["id"], "build_id": build["id"], "draft_generation": 6},
+        headers=_ANALYST,
+    )
+
+    assert response.status_code == 200
+    result = response.json()
+    assert result["source_revision_id"] == signed["id"]
+    assert result["build_id"] == build["id"]
+    assert result["invalidated"] == []
+    assert result["preview"]["draft_generation"] == 6
+
+
+async def test_http_build_export_route_queues_the_exact_ready_build(client, models, engine, store):
+    case, build = await _built_case(models, engine, store)
+
+    response = client.post(
+        f"/api/cases/{case['id']}/models/{build['id']}/export",
+        headers=_ANALYST,
+    )
+
+    assert response.status_code == 202
+    assert response.json()["id"] == build["id"]
+    assert response.json()["export"]["status"] == "QUEUED"
+
+
+async def test_http_revision_export_route_queues_the_exact_signed_revision(client, models, engine, store):
+    case, build = await _built_case(models, engine, store)
+    registry = models.assumption_registry(case["id"], build["id"])
+    preview = models.preview(case["id"], _preview_request(registry, build["id"]))
+    signed = models.sign_off(case["id"], _sign_off_request(registry, build["id"], preview))
+
+    response = client.post(
+        f"/api/cases/{case['id']}/model-revisions/{signed['id']}/export",
+        headers=_ANALYST,
+    )
+
+    assert response.status_code == 202
+    assert response.json()["id"] == signed["id"]
+    assert response.json()["export"]["status"] == "QUEUED"
+
+
+async def test_http_revision_download_serves_the_verified_export(client, models, engine, store):
+    case, build = await _built_case(models, engine, store)
+    registry = models.assumption_registry(case["id"], build["id"])
+    preview = models.preview(case["id"], _preview_request(registry, build["id"]))
+    signed = models.sign_off(case["id"], _sign_off_request(registry, build["id"], preview))
+    exported = models.run_export_for_tests(signed["id"])
+
+    response = client.get(
+        f"/api/cases/{case['id']}/model-revisions/{signed['id']}/download",
+        headers=_ANALYST,
+    )
+
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    assert response.headers["x-caos-sha256"] == exported["export"]["sha256"]
+    assert hashlib.sha256(response.content).hexdigest() == exported["export"]["sha256"]
+
+
 async def test_sign_off_cas_is_append_only_with_separate_head_and_monotonic_order(models, engine, store):
     """Rows 100+167 merged (one guarantee): the revision ledger is an append-only,
     CAS-guarded chain — head is a separate pointer, numbers are unique-monotonic per

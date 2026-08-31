@@ -335,6 +335,7 @@ a.dag-node:hover strong, a.dag-node:focus-visible strong { text-decoration: unde
 .worksheet-tabs { display: flex; gap: 0; overflow-x: auto; border-bottom: 1px solid var(--caos-border); background: var(--caos-bg); scrollbar-width: thin; }
 .worksheet-tab { flex: 0 0 auto; border: 0; border-right: 1px solid var(--caos-border); border-bottom: 2px solid transparent; background: transparent; color: var(--caos-muted); padding: var(--space-sm) var(--space-lg); cursor: pointer; font-size: 10px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
 .worksheet-tab[aria-selected="true"] { border-bottom-color: var(--caos-accent); background: var(--caos-elevated); color: var(--caos-text); }
+.worksheet-authority-note { position: sticky; left: 0; z-index: 1; width: fit-content; min-width: 100%; margin: 0; border-bottom: 1px solid var(--caos-border); background: var(--caos-elevated); padding: var(--space-sm) var(--space-lg); color: var(--caos-muted); font-size: 11px; }
 .worksheet-scroll { max-height: min(680px, calc(100dvh - 250px)); overflow: auto; overscroll-behavior: contain; background: var(--caos-bg); scrollbar-color: var(--caos-border) transparent; }
 .worksheet-grid { width: max-content; min-width: 100%; table-layout: fixed; border-collapse: separate; border-spacing: 0; font: 10px/1.3 var(--font-mono), ui-monospace, monospace; font-variant-numeric: tabular-nums; }
 .worksheet-grid tbody > tr { content-visibility: visible; contain-intrinsic-block-size: auto; }
@@ -344,6 +345,9 @@ a.dag-node:hover strong, a.dag-node:focus-visible strong { text-decoration: unde
 .worksheet-grid thead th:first-child { left: 0; z-index: 4; width: 42px; }
 .worksheet-row-number { width: 42px; }
 .worksheet-cell { background: var(--caos-panel); color: var(--caos-text); }
+.worksheet-cell.is-source { border-left: 2px solid var(--caos-muted); }
+.worksheet-cell.is-calculated { border-bottom-style: double; }
+.worksheet-cell.is-assumption { border-bottom-style: dashed; }
 .worksheet-cell.num { text-align: right; }
 .worksheet-cell.is-bold { font-weight: 750; }
 .worksheet-cell.is-italic { font-style: italic; }
