@@ -27,7 +27,7 @@ from ..methodology.canonical import (
     require_qa_passed,
     validate_citations,
 )
-from ..storage.runs import RunStore, StoreConflict
+from ..storage.runs import TERMINAL, RunStore, StoreConflict
 from ..storage.store import DomainStore, source_sets as domain_source_sets
 from . import state as state_mod
 from .authority import compile_module_prompts
@@ -155,6 +155,22 @@ class Engine:
     def _current_build_id(self) -> str:
         return self._build_override or self.bundle.build_id
 
+    async def _delete_terminal_thread(self, run_id: str) -> None:
+        run = self.runs.get_run(run_id)
+        if run is not None and run["status"] in TERMINAL:
+            await (await self._ensure_saver()).adelete_thread(run_id)
+
+    async def _reap_terminal_threads(self) -> None:
+        saver = await self._ensure_saver()
+        # Intermediate writes commit independently, so a crash can leave a
+        # thread in either table; the native deletion API clears both.
+        async with saver.lock, saver.conn.execute(
+            "SELECT thread_id FROM checkpoints UNION SELECT thread_id FROM writes"
+        ) as cursor:
+            thread_ids = [thread_id async for thread_id, in cursor]
+        for thread_id in thread_ids:
+            await self._delete_terminal_thread(thread_id)
+
     async def _graph(self, pathway: str, depth: str):
         key = (self._loop_key(), pathway, depth)
         if key not in self._graphs:
@@ -209,19 +225,19 @@ class Engine:
         # §10.3: single writer per thread, enforced on every drive entry point
         # (start, resume, wait, recovery, test hooks) — never assumed.
         async with self._thread_locks.setdefault((self._loop_key(), run_id), asyncio.Lock()):
-            if self.runs.get_run(run_id)["status"] in {"succeeded", "failed"}:
+            if self.runs.get_run(run_id)["status"] in TERMINAL:
+                await self._delete_terminal_thread(run_id)
                 return None
             self._active_invocations += 1
             try:
                 return await graph.ainvoke(input_value, self._config(run_id), durability="sync", **kwargs)
-            except ModuleFailure as exc:
-                self.runs.finalize_failure(run_id, exc.code, exc.module_id)
-                return None
             except AgentError as exc:
-                self.runs.finalize_failure(run_id, exc.code, None)
+                module_id = exc.module_id if isinstance(exc, ModuleFailure) else None
+                self.runs.finalize_failure(run_id, exc.code, module_id)
                 return None
             finally:
                 self._active_invocations -= 1
+                await self._delete_terminal_thread(run_id)
 
     # -- graph nodes -------------------------------------------------------
 
@@ -682,19 +698,17 @@ class Engine:
     async def recover(self) -> None:
         """Startup recovery (§10.5): skip threads parked at an interrupt,
         re-admit crashed mid-run threads."""
+        await self._reap_terminal_threads()
         for run in self.runs.non_terminal_runs():
             graph = await self._graph(run["pathway"], run["depth"])
             graph_state = await graph.aget_state(self._config(run["id"]))
             if any(task.interrupts for task in graph_state.tasks):
                 continue
             self._raw_schema_check(run["id"])
-            if graph_state.created_at is None:
-                # Crashed between create_run and the first checkpoint: re-admit
-                # through the graph from a fresh initial state (§10.5/§10.9 —
-                # capacity self-heals, no orphaned queued slots).
-                await self._drive(run["id"], self._initial_state(run))
-            else:
-                await self._drive(run["id"], None)
+            # Crashed between create_run and the first checkpoint: re-admit
+            # from a fresh initial state; otherwise resume the durable thread.
+            input_value = self._initial_state(run) if graph_state.created_at is None else None
+            await self._drive(run["id"], input_value)
 
     def active_execution_count(self) -> int:
         return self._active_invocations

@@ -6,9 +6,19 @@ and the re-hosted CP-DR finalization rows; DECISIONS.md §§10–12.
 
 from __future__ import annotations
 
+import sqlite3
+
 import pytest
 
 from spec_helpers import seed_case_with_source, start_full_credit_run
+
+
+def _checkpoint_rows(path, thread_id: str) -> int:
+    with sqlite3.connect(path) as conn:
+        return sum(
+            conn.execute(f"SELECT count(*) FROM {table} WHERE thread_id = ?", (thread_id,)).fetchone()[0]
+            for table in ("checkpoints", "writes")
+        )
 
 
 # --- the offered cut is the startable cut ----------------------------------------
@@ -268,6 +278,53 @@ async def test_interrupt_paused_threads_are_skipped_by_recovery_and_hold_no_admi
     await revived.recover()
     assert revived.get_run(run["id"])["status"] == "paused", "recovery must not poke parked threads"
     assert revived.active_execution_count() == 0, "paused threads hold no admission slot"
+
+
+async def test_terminal_run_deletes_checkpoints_after_domain_audit_is_durable(tmp_path, settings, store, provider):
+    from caos.engine.runtime import Engine
+
+    checkpoint_path = tmp_path / "ck.db"
+    engine = Engine.create(settings=settings, store=store, checkpoint_path=checkpoint_path, provider=provider)
+    case, _source, run = await start_full_credit_run(engine, store, depth="screen")
+    assert _checkpoint_rows(checkpoint_path, run["id"]) > 0
+
+    await engine.wait(run["id"])
+
+    assert _checkpoint_rows(checkpoint_path, run["id"]) == 0
+    assert engine.artifacts_for_run(run["id"]), "domain artifacts survive checkpoint cleanup"
+    assert engine.events_after(run["id"], 0)[-1]["event"] == "run.succeeded", \
+        "the durable audit trail survives checkpoint cleanup"
+
+
+async def test_recovery_deletes_stranded_terminal_checkpoint_but_keeps_parked_threads(
+    tmp_path, settings, store, provider,
+):
+    from caos.engine.runtime import Engine
+
+    checkpoint_path = tmp_path / "ck.db"
+    engine = Engine.create(settings=settings, store=store, checkpoint_path=checkpoint_path, provider=provider)
+    terminal_case = store.create_case("Terminal", "Issuer", "Services", "analyst")
+    terminal = await engine.start_run(
+        case_id=terminal_case["id"], pathway="FULL_CREDIT", depth="screen", actor="analyst",
+    )
+    parked_case = store.create_case("Parked", "Issuer", "Services", "analyst")
+    parked = await engine.start_run(
+        case_id=parked_case["id"], pathway="FULL_CREDIT", depth="screen", actor="analyst",
+    )
+    engine.runs.finalize_failure(terminal["id"], "AGENT_OUTPUT_INVALID", None)
+    assert _checkpoint_rows(checkpoint_path, terminal["id"]) > 0
+    assert _checkpoint_rows(checkpoint_path, parked["id"]) > 0
+    with sqlite3.connect(checkpoint_path) as conn:
+        conn.execute("DELETE FROM checkpoints WHERE thread_id = ?", (terminal["id"],))
+        assert conn.execute(
+            "SELECT count(*) FROM writes WHERE thread_id = ?", (terminal["id"],),
+        ).fetchone()[0] > 0, "a crash may strand intermediate writes without their checkpoint"
+
+    revived = Engine.create(settings=settings, store=store, checkpoint_path=checkpoint_path, provider=provider)
+    await revived.recover()
+
+    assert _checkpoint_rows(checkpoint_path, terminal["id"]) == 0
+    assert _checkpoint_rows(checkpoint_path, parked["id"]) > 0, "parked runs still need their resume state"
 
 
 # --- events (contractual: atomic state+event, exactly-once terminals, ordering) ---
