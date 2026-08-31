@@ -34,7 +34,14 @@ class IdentityResponse(WireModel):
 
 
 class HealthResponse(WireModel):
-    status: str
+    """Liveness *and* readiness on one route. The booleans name which subsystem
+    is down and nothing more — /api/health is the only unauthenticated route, so
+    it never serves a path, a DSN, a build id, or an exception message."""
+
+    status: Literal["ok", "degraded"]
+    store: bool
+    bundle: bool
+    checkpointer: bool
 
 
 class CasePathwayFitResponse(WireModel):

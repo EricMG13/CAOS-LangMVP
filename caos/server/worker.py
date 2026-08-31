@@ -10,19 +10,25 @@ CAS on the build row, so a concurrent duplicate worker loses the race cleanly.
 
 from __future__ import annotations
 
+import logging
 import os
 import sys
 import time
-import traceback
 from pathlib import Path
 
 from caos.config import Settings
 from caos.engine.runtime import Engine
 from caos.models.service import ModelService
+from caos.observability import configure_logging, log_event
 from caos.storage.store import DomainStore
 
 EXPORT_FAILED = {"status": "FAILED", "error": {"code": "MODEL_EXPORT_FAILED",
                                                "detail": "The XLSX export did not complete."}}
+
+
+def _failure(exc: Exception) -> str:
+    """Exception class only: messages may quote document-derived model input."""
+    return type(exc).__name__
 
 
 def run_pending(service: ModelService) -> int:
@@ -35,8 +41,9 @@ def run_pending(service: ModelService) -> int:
         dispatched = (service.build(build_id) or {}).get("input_fingerprint")
         try:
             service.run_build(build_id)
-        except Exception:
-            traceback.print_exc()
+        except Exception as exc:
+            log_event("worker.job_failed", level=logging.ERROR, kind="build", build_id=build_id,
+                      detail=_failure(exc))
             service.builds.update_build(build_id, expected_status=("QUEUED", "BUILDING"),
                                         expected_input_fingerprint=dispatched,
                                         status="FAILED",
@@ -45,8 +52,9 @@ def run_pending(service: ModelService) -> int:
     for target_id in work["exports"]:
         try:
             service.run_export(target_id)
-        except Exception:
-            traceback.print_exc()
+        except Exception as exc:
+            log_event("worker.job_failed", level=logging.ERROR, kind="export", target_id=target_id,
+                      detail=_failure(exc))
             # Exports go QUEUED -> READY|FAILED with no intermediate state, so
             # binding to QUEUED means a dead pass can only fail the job it took:
             # never a published export, never one requeued under it.
@@ -60,6 +68,7 @@ def run_pending(service: ModelService) -> int:
 def main() -> None:
     settings = Settings.from_env()
     settings.validate_runtime()
+    configure_logging(settings)
     data = Path(os.getenv("CAOS_DATA_DIR", str(settings.storage_dir))).resolve()
     data.mkdir(parents=True, exist_ok=True)
     store = DomainStore.from_url(settings.database_url or f"sqlite:///{data / 'caos.db'}")

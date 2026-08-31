@@ -13,6 +13,7 @@ import asyncio
 import contextlib
 import json
 import sqlite3
+import threading
 import time
 from pathlib import Path
 from typing import Any
@@ -27,6 +28,7 @@ from ..methodology.canonical import (
     require_qa_passed,
     validate_citations,
 )
+from ..observability import log_event, run_context
 from ..storage.runs import TERMINAL, RunStore, StoreConflict
 from ..storage.store import DomainStore, source_sets as domain_source_sets
 from . import state as state_mod
@@ -45,6 +47,13 @@ from .provider import AgentError, ProviderRequest
 
 
 MVP_PATHWAYS = {"FULL_CREDIT", "EARNINGS_UPDATE", "COVENANT_REFINANCING", "RELATIVE_VALUE"}
+
+# /api/health is unauthenticated (oauth2-proxy `skip_auth_routes`) AND exempt
+# from the per-subject rate ceiling, so its cost is an anonymous caller's to
+# spend. Verifying the bundle hashes 307 files (~12 ms); this bounds that to
+# once per window while still re-probing continuously — a readiness answer that
+# is at most five seconds stale is still a readiness answer.
+READINESS_TTL_SECONDS = 5.0
 
 
 class EngineError(RuntimeError):
@@ -65,6 +74,16 @@ class ModuleFailure(AgentError):
 
 class SimulatedCrash(BaseException):
     """Test-only crash injection; BaseException so nothing 'handles' it."""
+
+
+def _probe(check: Any) -> bool:
+    """A readiness probe reports; it never raises. Why it failed belongs in the
+    operator's logs, not on an unauthenticated wire (see api.health)."""
+    try:
+        check()
+    except Exception:
+        return False
+    return True
 
 
 class Engine:
@@ -91,6 +110,8 @@ class Engine:
         self._slots = ProviderSlots(PROVIDER_CONCURRENCY_SLOTS)
         self._model_service: Any = None
         self._scripted_runs: set[str] = set()
+        self._readiness: tuple[float, dict[str, bool]] | None = None
+        self._readiness_lock = threading.Lock()
 
     def enable_auto_continue(self) -> None:
         """The serving entrypoint owns execution: start/resume stop at the plan
@@ -253,8 +274,13 @@ class Engine:
         current = self.store.current_source_set(run["case_id"])
         while not current or not current.get("source_ids"):
             ticket = self.runs.pause_run(run_id, "SOURCE_SET_EMPTY")
+            log_event("gate.interrupt", run_id=run_id, reason="SOURCE_SET_EMPTY", interrupt_id=ticket)
             interrupt({"reason": "SOURCE_SET_EMPTY", "ticket": ticket})
             current = self.store.current_source_set(run["case_id"])
+        if run["status"] == "paused":
+            # The node re-runs from the top on resume, so a run that entered
+            # this invocation paused is a run whose gate has just cleared.
+            log_event("gate.resolved", run_id=run_id, reason="SOURCE_SET_EMPTY")
         plan = self.bundle.compile(
             run["pathway"], Depth(run["depth"]), current["id"],
             focus_questions=run.get("focus_questions") or [],
@@ -392,7 +418,12 @@ class Engine:
                 # deterministic path.
                 payload, markdown, qa_status = self._scripted_output(run_id, plan, module_id, fingerprint, upstream)
             elif mode == "agent" and self.settings.agent_execution_enabled and run_id not in self._scripted_runs:
-                result = await self._execute_agent(run_id, plan, module_id, source_set, live_sources, fingerprint, upstream)
+                # The provider loop reports its own calls but is handed no
+                # identity at all, and the ledger knows the run without the
+                # module. Both get the pair from a ContextVar scoped to this
+                # node, rather than threading arguments through either.
+                with run_context(run_id=run_id, module_id=module_id):
+                    result = await self._execute_agent(run_id, plan, module_id, source_set, live_sources, fingerprint, upstream)
                 payload, markdown, qa_status = result["payload"], result["markdown"], result["qa_status"]
             else:
                 universe = (self._pinned_loan_universe(plan, self.runs.get_run(run_id)["case_id"])
@@ -416,10 +447,16 @@ class Engine:
             raise
         except ModuleFailure as exc:
             # First terminal failure wins the run error (CAS in the store);
-            # racing sibling failures in the same superstep no-op (§12.9).
+            # racing sibling failures in the same superstep no-op (§12.9) — so
+            # the log, unlike run.failed, carries every module's refusal, not
+            # only the one that won the CAS.
+            log_event("refusal", run_id=run_id, module_id=exc.module_id, code=exc.code)
             self.runs.finalize_failure(run_id, exc.code, exc.module_id)
             raise
         except (AgentError, StoreConflict) as exc:
+            # The code only. Never str(exc): a validation failure quotes the
+            # model's own output, which is document-derived.
+            log_event("refusal", run_id=run_id, module_id=module_id, code=exc.code)
             self.runs.finalize_failure(run_id, exc.code, module_id)
             raise ModuleFailure(exc.code, module_id) from exc
 
@@ -606,6 +643,7 @@ class Engine:
             finally:
                 self._charge_active_if_metered(run_id, self._clock() - started)
         except (AgentError, StoreConflict) as exc:
+            log_event("refusal", run_id=run_id, module_id=None, code=exc.code)
             self.runs.finalize_failure(run_id, exc.code, None)
             raise ModuleFailure(exc.code, None) from exc
         self.runs.finalize_success(run_id)
@@ -699,16 +737,74 @@ class Engine:
         """Startup recovery (§10.5): skip threads parked at an interrupt,
         re-admit crashed mid-run threads."""
         await self._reap_terminal_threads()
-        for run in self.runs.non_terminal_runs():
+        pending = self.runs.non_terminal_runs()
+        log_event("recovery.started", runs=len(pending))
+        for run in pending:
             graph = await self._graph(run["pathway"], run["depth"])
             graph_state = await graph.aget_state(self._config(run["id"]))
             if any(task.interrupts for task in graph_state.tasks):
+                log_event("recovery.run", run_id=run["id"], action="skipped_interrupt")
                 continue
             self._raw_schema_check(run["id"])
-            # Crashed between create_run and the first checkpoint: re-admit
-            # from a fresh initial state; otherwise resume the durable thread.
-            input_value = self._initial_state(run) if graph_state.created_at is None else None
-            await self._drive(run["id"], input_value)
+            if graph_state.created_at is None:
+                # Crashed between create_run and the first checkpoint: re-admit
+                # through the graph from a fresh initial state (§10.5/§10.9 —
+                # capacity self-heals, no orphaned queued slots).
+                log_event("recovery.run", run_id=run["id"], action="readmitted")
+                await self._drive(run["id"], self._initial_state(run))
+            else:
+                log_event("recovery.run", run_id=run["id"], action="resumed")
+                await self._drive(run["id"], None)
+
+    def readiness(self) -> dict[str, bool]:
+        """What has to hold before this instance should take traffic: the domain
+        store answers, the vendored bundle still hashes to its own manifest
+        (invariant 4), and the checkpoint database can take a write lock
+        (invariant 6's durability). Every probe really runs — a readiness answer
+        assembled from startup state is a decoration — but at most once per
+        READINESS_TTL_SECONDS, because this route answers anonymous callers."""
+        with self._readiness_lock:
+            now = self._clock()
+            if self._readiness is not None and now - self._readiness[0] < READINESS_TTL_SECONDS:
+                return dict(self._readiness[1])
+            checks = {
+                "store": _probe(self._probe_store),
+                "bundle": _probe(self.bundle.verify),
+                "checkpointer": _probe(self._probe_checkpointer),
+            }
+            self._readiness = (now, checks)
+            return dict(checks)
+
+    def _probe_store(self) -> None:
+        with self.store.engine.connect() as conn:
+            conn.exec_driver_sql("SELECT 1")
+
+    def _probe_checkpointer(self) -> None:
+        # Use the real saver setup for an empty database, then prove both its
+        # schema and its ability to acquire a write lock. A short-lived writer
+        # gets 250 ms to finish; a lock held longer fails readiness closed.
+        from langgraph.checkpoint.sqlite import SqliteSaver
+
+        conn = sqlite3.connect(str(self.checkpoint_path), timeout=0.25)
+        try:
+            tables = {
+                row[0]
+                for row in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")
+            }
+            if not {"checkpoints", "writes"} <= tables:
+                SqliteSaver(conn).setup()
+            conn.execute(
+                "SELECT thread_id, checkpoint_ns, checkpoint_id, parent_checkpoint_id, "
+                "type, checkpoint, metadata FROM checkpoints LIMIT 0"
+            )
+            conn.execute(
+                "SELECT thread_id, checkpoint_ns, checkpoint_id, task_id, idx, channel, "
+                "type, value FROM writes LIMIT 0"
+            )
+            conn.execute("BEGIN IMMEDIATE")
+            conn.rollback()
+        finally:
+            conn.close()
 
     def active_execution_count(self) -> int:
         return self._active_invocations

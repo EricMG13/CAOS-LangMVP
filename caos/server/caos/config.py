@@ -118,6 +118,8 @@ class Settings:
             )
 
     def validate_runtime(self) -> None:
+        if self.environment not in {"development", "production"}:
+            raise RuntimeError("ENVIRONMENT must be development or production")
         if self.environment == "production":
             if not self.database_url.startswith(("postgresql://", "postgresql+psycopg://")):
                 raise RuntimeError("production requires a PostgreSQL DATABASE_URL")

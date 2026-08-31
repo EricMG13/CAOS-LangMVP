@@ -16,6 +16,7 @@ from typing import Any
 import sqlalchemy as sa
 
 from ..contracts import digest
+from ..observability import log_event
 from .store import new_id, now_iso
 
 run_metadata = sa.MetaData()
@@ -137,6 +138,16 @@ class RunStore:
             sa.select(sa.func.coalesce(sa.func.max(run_events.c.seq), 0) + 1).where(run_events.c.run_id == run_id)
         ).scalar_one()
         conn.execute(run_events.insert().values(run_id=run_id, seq=next_seq, event=event, at=now_iso(), data=data))
+        # Every durable run/node transition passes through here and nowhere
+        # else, so one line here is the whole "which run is stuck" answer.
+        # `data` is host-owned identifiers only — never anything a document
+        # produced. Merged as a dict rather than **kwargs so a future event
+        # carrying its own `run_id` cannot raise TypeError and take the state
+        # transition down with it: logging never breaks a run. It does ride
+        # inside the caller's transaction, so a failing commit leaves one line
+        # describing a transition that rolled back — the run dies in the same
+        # breath, and the single seam is worth that much drift.
+        log_event(event, **{**data, "run_id": run_id, "seq": next_seq})
 
     def events_after(self, run_id: str, after_seq: int) -> list[dict[str, Any]]:
         with self.engine.connect() as conn:
@@ -431,6 +442,8 @@ class RunStore:
             if retry:
                 if inflight != request_digest:
                     raise StoreConflict("AGENT_AUTHORITY_MISMATCH", "provider retry request changed")
+                log_event("budget.reserved", run_id=run_id, request_digest=request_digest,
+                          retry=True, used=used)
                 return
             if inflight:
                 raise StoreConflict("AGENT_BUDGET_EXCEEDED", "unresolved in-flight request")
@@ -442,6 +455,8 @@ class RunStore:
             conn.execute(sa.update(run_budgets).where(run_budgets.c.run_id == run_id).values(
                 used=used, inflight_request_digest=request_digest,
             ))
+            log_event("budget.reserved", run_id=run_id, request_digest=request_digest, retry=False,
+                      input_tokens=input_tokens, output_tokens=output_tokens, used=used)
 
     def reconcile_provider(self, run_id: str, request_digest: str, reserved_input: int, reserved_output: int,
                            actual_input: int, actual_output: int) -> None:
@@ -455,6 +470,9 @@ class RunStore:
             conn.execute(sa.update(run_budgets).where(run_budgets.c.run_id == run_id).values(
                 used=used, inflight_request_digest=None,
             ))
+        # `used` after the true-up is the whole "what has it spent" answer.
+        log_event("budget.reconciled", run_id=run_id, request_digest=request_digest,
+                  input_tokens=actual_input, output_tokens=actual_output, used=used)
         # The correction commits BEFORE the refusal. Raising inside the
         # transaction rolled the true-up back on the one path where it matters:
         # the ledger kept showing the reservation instead of the tokens the

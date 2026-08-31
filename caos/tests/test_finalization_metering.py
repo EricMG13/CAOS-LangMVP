@@ -56,9 +56,9 @@ def test_every_step_in_the_node_sequence_is_wrapped_by_the_timed_bracket():
     bracket_bodies = []
     for node in ast.walk(tree):
         if isinstance(node, ast.Try) and any(
-            isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Call)
-            and getattr(stmt.value.func, "id", None) == "timed"
-            for stmt in node.finalbody
+            isinstance(candidate, ast.Call)
+            and getattr(candidate.func, "id", None) == "timed"
+            for stmt in node.finalbody for candidate in ast.walk(stmt)
         ):
             bracket_bodies.append("\n".join(
                 ast.get_source_segment(source, stmt) or "" for stmt in node.body

@@ -66,6 +66,13 @@ Standing rules that back them:
 - **Auth edge.** Dev trusts `x-caos-role`; production derives role from OIDC
   groups only — client role headers never escalate (`identity.py`). Unknown
   runs and unauthorized runs return the same 404.
+- **Readiness.** `GET /api/health` serves liveness *and* readiness on one strict
+  model: `{status, store, bundle, checkpointer}`, 200 when all hold and 503
+  otherwise. The probes really run (store `SELECT 1`, full bundle integrity
+  verification, the real LangGraph checkpoint schema plus a bounded write-lock
+  acquisition) but at most once per `READINESS_TTL_SECONDS` — the route skips
+  both oauth2-proxy auth and the rate ceiling, so its cost is an anonymous
+  caller's to spend.
 
 ## Where the graph lives
 
@@ -86,6 +93,16 @@ Standing rules that back them:
   thin SSE tail of `run_events` (Last-Event-ID resume; stream closes once a
   terminal run is fully delivered). The frontend never reads event payloads —
   event names trigger a RunRecord refetch.
+- `observability.py` — structured JSON logs on stdout (stdlib only). Seven log
+  points and no debug channel: run/node transitions (all of them via
+  `RunStore._emit`), typed refusals, provider call start/finish, budget
+  reserve/reconcile, the gate interrupt, startup recovery, worker job failures.
+  **Never log source text, evidence block text, module output, prompts, or
+  anything else a document produced** — log the typed code, never `str(exc)`
+  from either process. The worker records exception classes only. Every string,
+  including nested mapping keys, is redacted and truncated to `MAX_STRING`;
+  `spec/test_observability_spec.py` enforces the ban with a sentinel document
+  driven through real ingestion and a real agent node.
 
 ## How to add or upgrade a module
 
@@ -135,8 +152,8 @@ engine, the bundle, or the routes.
   `caos/server/worker.py` (polls the store for QUEUED model builds/exports and
   executes them; the only process with LibreOffice, so XLSX rendering lives
   here and nowhere else). `worker.py --once` runs a single pass.
-- Suite: `python -m pytest caos/tests -q` — fully green (556 passed, 12 skipped
-  without the real-issuer corpus; the corpus tests run once it is downloaded).
+- Suite: `python -m pytest caos/tests -q` — fully green (611 passed with the
+  real-issuer corpus downloaded; 12 corpus tests skip without it).
   Spec tests (`caos/tests/spec/`) are the contractual surface —
   they pin invariants and wire shapes; `test_injection_spec.py` pins the
   behavioural half of the prompt-injection defence: adversarial documents in
