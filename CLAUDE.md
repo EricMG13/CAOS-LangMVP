@@ -259,3 +259,32 @@ engine, the bundle, or the routes.
   costs 17 ms per read, so a run's ~80 reads cost about 1.4 s. Fine at current
   volumes, wrong if evidence reads become hot — the fix is a blocks table keyed
   by (source_id, block_id), not a smaller ceiling.
+- The deliverable surface declares six pathway templates and the engine runs
+  four. `PATHWAY_TEMPLATES` in `deliverables/service.py` and Report Studio's own
+  `pathwayOptions` both carry Distressed & Restructuring and Deep Research, and
+  the draft route serves a template for either, while `start_run` refuses both
+  as `PATHWAY_NOT_AVAILABLE` (`MVP_PATHWAYS` in `engine/runtime.py`). The
+  compile form is honest — `CaseResponse.available_pathways` serves that same
+  cut and `Workspace.tsx` offers nothing outside it — but Report Studio's select
+  is a second list that reads no cut at all, so a draft opens against a template
+  no run can ever produce the analysis for. Harmless today: a dead-end draft,
+  not a wrong answer. Closing it means Report Studio reading the served cut, not
+  a third copy of it.
+- The QA harness under `qa/` runs only by hand. It is the only thing that drives
+  the shipped static export against a production-configured server — PostgreSQL,
+  an OIDC-shaped edge identity (`qa/edge_proxy.py`), clamd, a worker — and
+  nothing invokes it: no CI job, no npm script, and `qa/env.sh`, `qa/probe.py`
+  and `qa/scenarios.py` are referenced only by each other and by
+  `docs/QUALITY_LEDGER.csv`. CI's own suite runs in process against SQLite and
+  the browser job boots `run.py` on its dev defaults, so drift between the wire
+  and the client that consumes it — the class of defect this harness was written
+  to find — is caught only when someone remembers to stand the stack up.
+- The `cancelled` sweep is not backfilled. `finalize_failure` now moves every
+  still-`running` node row to `cancelled` inside the failing transaction
+  (`storage/runs.py`), but rows written before that landed keep `running` on a
+  terminal record, and `Engine.recover` iterates `non_terminal_runs()` only, so
+  nothing will ever reconcile them — the run console renders those modules as
+  live work for the life of the record. There is no migration runner (every
+  store calls `metadata.create_all`), so correcting existing rows would be a
+  hand-written one-off. Harmless while databases are disposable; it bites the
+  first deployment carried across that commit with failed runs in its history.
