@@ -135,8 +135,10 @@ engine, the bundle, or the routes.
   `caos/server/worker.py` (polls the store for QUEUED model builds/exports and
   executes them; the only process with LibreOffice, so XLSX rendering lives
   here and nowhere else). `worker.py --once` runs a single pass.
-- Suite: `python -m pytest caos/tests -q` — fully green (556 passed, 12 skipped
-  without the real-issuer corpus; the corpus tests run once it is downloaded).
+- Suite: `python -m pytest caos/tests -q` — fully green (592 passed, 2 optional
+  PostgreSQL integration tests skipped in the default invocation, with the
+  30-document real-issuer corpus downloaded on 2026-08-31). Both PostgreSQL
+  tests also pass against the local PostgreSQL 17 QA container.
   Spec tests (`caos/tests/spec/`) are the contractual surface —
   they pin invariants and wire shapes; `test_injection_spec.py` pins the
   behavioural half of the prompt-injection defence: adversarial documents in
@@ -156,18 +158,15 @@ engine, the bundle, or the routes.
   `npm run build`; browser checks against the combined app on `:8000`:
   `npm run a11y` and `npm run test:workbench` (both green).
 - Real-issuer corpus (`caos/tests/test_corpus_pathways.py`, marker
-  `corpus_run`): real annual reports, EDGAR complete submissions and XBRL
-  company facts, pinned by URL in `caos/tests/corpus/sources.txt` and fetched
-  by `caos/tests/corpus/fetch.sh` (needs `SEC_USER_AGENT`; `documents/` is
-  gitignored). Without the corpus the tests skip. Default is a smoke subset;
-  `CORPUS_FULL=1` classifies every document and runs every live route. Add a
-  document by appending a `<name> <url>` line — nothing else changes. CI fetches
-  it on one matrix leg and the nightly runs it with `CORPUS_FULL=1`, both
-  cached on the hash of `sources.txt` and both best-effort: a download failure
-  skips the corpus tests instead of failing the build, and only a complete fetch
-  is cached. Both need the `SEC_USER_AGENT` repo variable set to a contact with
-  an email in it — EDGAR answers 403 to a user agent carrying only a name or a
-  URL — and warn in the run log when it is unset.
+  `corpus_run`): one 30-document Carnival Corporation leveraged-credit case,
+  acquired from the issuer's investor-relations site and pinned by SHA-256 in
+  `caos/tests/corpus/sources.txt`. `fetch.sh` only acquires test fixtures; every
+  application interaction uploads those retained bytes through the public
+  multipart source route. `documents/` is gitignored. Default runs the cheaper
+  classification subset and Full Credit at both depths; `CORPUS_FULL=1`
+  classifies every document and runs every executable route. CI and nightly
+  hard-fail when a required fixture cannot be acquired and cache only a complete
+  fetch.
 - Lint: `ruff check --config ruff.toml caos/server caos/tests --exclude
   caos/server/caos/methodology/vendor`.
 - Dependencies: `caos/server/pyproject.toml` is the single source of truth.
@@ -264,9 +263,8 @@ engine, the bundle, or the routes.
   than `MAX_BLOCK_CHARS` instead of refusing it. A 300-page annual report is
   ~145 blocks rather than 7,119, and three 12 MB credit agreements still pin one
   run inside `MAX_MANIFEST_BLOCKS`. What is still refused: extracted text over
-  `MAX_SOURCE_TEXT` (12 MB) and uploads over `max_source_bytes` (25 MB) — an
-  EDGAR *complete submission package* hits both, which is correct; the unit CAOS
-  ingests is a document, not a filing bundle.
+  `MAX_SOURCE_TEXT` (12 MB) and uploads over `max_source_bytes` (25 MB). The unit
+  CAOS ingests is one user-provided document, not a multi-document container.
 - `npm run test:production-inventory` does not pass against this build and never
   could: `caos/frontend/scripts/production-inventory.mjs` walks
   `GET /api/cases/{id}/runs` (only POST is served) and `/api/cases/{id}/members`

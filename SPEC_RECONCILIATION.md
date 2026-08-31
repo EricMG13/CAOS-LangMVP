@@ -179,7 +179,7 @@ docstrings, DECISIONS.md §§6/2/12, code comments); no other enumeration exists
 | 1 | Runs execute only against the pinned, immutable source set — supplied-only evidence, web discovery structurally banned, withdrawal checked live | `spec/test_runs_spec.py::test_withdrawing_pinned_source_mid_run_fails_the_run_closed` (pin placement: `…::test_gate_exit_pins_exact_current_source_set_and_later_uploads_do_not_move_it`) | green |
 | 2 | Every `read_evidence` is validated at the host boundary (case, pin, withdrawal, block identity) and fails closed with a typed refusal, no text returned | `spec/test_evidence_spec.py::test_read_outside_pinned_source_set_fails_closed` | green (fixture glue repaired with user sign-off 2026-08-27) |
 | 3 | The host owns identity: provider-claimed frontmatter never survives; checkpointed digests are expectations re-verified against the store, never authority | `spec/test_modules_spec.py::test_host_owns_identity_and_discards_provider_frontmatter` | green |
-| 4 | Methodology authority is the verified vendored bundle — integrity checked on the bytes at use; a run pinned to one build never executes under another | `spec/test_modules_spec.py::test_verify_at_use_rejects_bytes_that_mismatch_the_pinned_manifest` (build pin: `…::test_run_pins_build_id_and_refuses_execution_under_a_different_bundle`) | green |
+| 4 | Methodology authority is the verified vendored bundle — integrity checked on the bytes at use; a run pinned to one build never executes under another; the vendored release is never edited | `spec/test_modules_spec.py::test_vendored_bundle_is_the_approved_unmodified_release` + `…::test_verify_at_use_rejects_bytes_that_mismatch_the_pinned_manifest` (build pin: `…::test_run_pins_build_id_and_refuses_execution_under_a_different_bundle`) | green |
 | 5 | Every gate where execution waits on a human is a digest-bound interrupt; approval binds the exact reviewed content | `spec/test_deliverables_spec.py::test_approval_binds_exact_preview_digest_and_fingerprint_mismatch_leaves_frozen_retryable` | green |
 | 6 | Execution is durable and exactly-once: resume from last checkpoint, never restart; a crash in the commit gap yields one artifact, one charge, one terminal | `spec/test_runs_spec.py::test_worker_killed_mid_run_resumes_from_last_checkpoint_not_restart` (crash gap: `…::test_crash_between_store_commit_and_checkpoint_write_yields_one_artifact_one_charge`) | green |
 | 7 | Model calculation is pure and finite — non-finite values and zero denominators refused, forecast values driver-sourced | `spec/test_model_builder_spec.py::test_finite_guards_reject_non_finite_and_zero_denominators` | green |
@@ -503,3 +503,32 @@ if they ever do.
 
 Suite state after this pass: **552 passed, 12 skipped** (the skips are the
 real-issuer corpus tests).
+
+## User-uploaded issuer corpus qualification (2026-08-31)
+
+The former mixed-source fixture list was replaced by one coherent Carnival
+Corporation case containing 30 issuer-hosted PDFs: FY2023–FY2025 annual reports,
+quarterly actuals, management guidance and forecasts, and an executed term-loan
+agreement package. Every retained byte is SHA-256-pinned in `sources.txt`.
+`fetch.sh` rejects an unapproved host, a non-PDF response, a missing document,
+or a digest mismatch; neither the application nor pytest retrieves evidence.
+Tests upload the retained files through `POST /api/cases/{case_id}/sources`, the
+same multipart route used by a user.
+
+Collected results:
+
+- all 30 documents were admitted and produced extractable evidence blocks;
+- `CORPUS_FULL=1` passed 34 tests, including all four executable pathways at
+  Screen and Full depth, and typed refusal without pinning for the two route
+  families whose engine graphs do not yet exist;
+- the full backend suite passed 592 tests with the corpus present (the two
+  optional PostgreSQL integration tests also passed in a separate configured run);
+- the host-control provider remains scripted. These results do not prove live
+  model interpretation, complete source use, CP-MODEL construction, browser
+  display, deliverable generation, or external publication.
+
+The pack is therefore a valid performing-credit ingestion/host-control baseline,
+not the all-pathway enterprise qualification corpus. Relative Value still needs
+time-aligned lender/market marks, Distressed needs a real restructuring pack,
+Deep Research needs question-specific answer keys, and every positive route cell
+still needs the protected live-provider/model/deliverable journey.

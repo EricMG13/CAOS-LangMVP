@@ -670,10 +670,11 @@ Stated so nothing above is read as stronger than it is.
   were not examined for customer or personal data. They are described as
   read-only reference material. A pre-distribution sweep should cover them.
 - **The test corpus is real third-party documents.** `caos/tests/corpus/documents/`
-  is gitignored (`caos/tests/corpus/.gitignore`) and fetched from EDGAR by
-  `fetch.sh`. Not customer data, but it is real issuer material sitting on
-  developer machines and CI runners, and it is outside every control described
-  above.
+  is gitignored (`caos/tests/corpus/.gitignore`) and acquired from the issuer's
+  investor-relations site by `fetch.sh`, then uploaded through the public source
+  route during tests. Not customer data, but it is real issuer material sitting
+  on developer machines and CI runners, and it is outside every control
+  described above.
 - **Docker's default logging driver** is asserted from the absence of a
   `logging:` block in `docker-compose.yml` and the daemon's documented default,
   not from an inspected running daemon. If the deployment host sets a non-default

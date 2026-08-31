@@ -56,7 +56,7 @@ When `identifier_hint = auto`, the resolver applies pattern matching before quer
 | `^[A-Z]{2}[A-Z0-9]{10}$` | isin | US91831AAB26 | CGS |
 | `^[A-Z]{1,5}$` (no spaces) | ticker | VEEAM | Bloomberg FIGI |
 | Contains "Project" or known deal prefix | deal_code | Project Tuple | LCD/PitchBook |
-| All other strings | name | Veeam Software | CP-0 -> GLEIF -> EDGAR |
+| All other strings | name | Veeam Software | CP-0 -> uploaded registry evidence |
 
 If pattern is ambiguous (e.g., 9-char alphanumeric that could be CUSIP or short name), resolver queries both CUSIP and name paths in parallel and selects highest-confidence result.
 
@@ -76,7 +76,7 @@ If pattern is ambiguous (e.g., 9-char alphanumeric that could be CUSIP or short 
               +--------------------+---------------------+
               |                    |                      |
      +--------v------+   +--------v-------+   +----------v---------+
-     |  CP-0 Registry |   | GLEIF / CGS    |   | EDGAR / CH / LCD   |
+     |  CP-0 Registry |   | Case metadata  |   | Uploaded evidence   |
      |  (Priority 1)  |   | (Priority 2-3) |   | (Priority 5-7)     |
      +--------+------+   +--------+-------+   +----------+---------+
               |                    |                      |
@@ -123,7 +123,7 @@ Each source query returns zero or more CandidateMatch objects:
   "required": ["candidate_id", "source", "matched_field", "matched_value", "raw_confidence"],
   "properties": {
     "candidate_id":    { "type": "string", "description": "Unique candidate identifier within this resolver run." },
-    "source":          { "type": "string", "enum": ["CP-0", "GLEIF", "CGS", "FIGI", "EDGAR", "CH", "LCD", "PITCHBOOK"] },
+    "source":          { "type": "string", "enum": ["CP-0", "CASE_METADATA", "UPLOAD"] },
     "matched_field":   { "type": "string", "description": "Which field matched: legal_name, lei, cusip, isin, ticker, deal_name, cik, company_number." },
     "matched_value":   { "type": "string", "description": "The value that matched in the source." },
     "raw_confidence":  { "type": "number", "minimum": 0, "maximum": 1, "description": "Source-level match confidence." },
@@ -219,9 +219,9 @@ After the primary entity is resolved, the resolver builds the corporate chain:
 | Step | Source | Output |
 |---|---|---|
 | 1. Ultimate parent | GLEIF relationship data / deal docs | UBO / fund entity |
-| 2. Intermediate holdcos | GLEIF / EDGAR / deal docs | HoldCo chain |
+| 2. Intermediate holdcos | Uploaded deal and legal documents | HoldCo chain |
 | 3. Borrower identification | LCD / deal docs / CP-0 | Credit entity designation |
-| 4. Operating entities | GLEIF / EDGAR / Companies House | OpCo list |
+| 4. Operating entities | Uploaded entity and legal documents | OpCo list |
 | 5. Acquired entities | LCD / PitchBook / news | Subsidiary list with acquisition dates |
 
 **Chain object:**
@@ -278,7 +278,7 @@ Every resolution attempt is logged:
   "raw_identifier": "Veeam",
   "identifier_hint": "auto",
   "detected_type": "name",
-  "sources_queried": ["CP-0", "GLEIF", "CGS", "EDGAR", "LCD"],
+  "sources_queried": ["CP-0", "CASE_METADATA", "UPLOAD"],
   "candidates_found": 3,
   "candidates": [ "...CandidateMatch objects..." ],
   "selected_candidate": "CPMON-VEEAM-001",
