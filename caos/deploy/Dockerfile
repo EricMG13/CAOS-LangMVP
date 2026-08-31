@@ -12,7 +12,11 @@ RUN apt-get update \
     && apt-get upgrade -y \
     && rm -rf /var/lib/apt/lists/*
 COPY caos/server/requirements.txt ./requirements.txt
-RUN pip install --no-cache-dir -r requirements.txt \
+# --require-hashes: requirements.txt is a fully-pinned, hashed lock compiled from
+# pyproject.toml. pip refuses the install if any requirement lacks a hash or if a
+# downloaded artifact does not match, so a compromised re-release of an
+# already-pinned version cannot enter the image.
+RUN pip install --no-cache-dir --require-hashes -r requirements.txt \
     && rm -rf /usr/local/lib/python3.14/site-packages/pip \
         /usr/local/lib/python3.14/site-packages/pip-*.dist-info \
         /usr/local/bin/pip /usr/local/bin/pip3 /usr/local/bin/pip3.14

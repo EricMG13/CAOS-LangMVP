@@ -135,7 +135,7 @@ engine, the bundle, or the routes.
   `caos/server/worker.py` (polls the store for QUEUED model builds/exports and
   executes them; the only process with LibreOffice, so XLSX rendering lives
   here and nowhere else). `worker.py --once` runs a single pass.
-- Suite: `python -m pytest caos/tests -q` — fully green (550 passed, 12 skipped
+- Suite: `python -m pytest caos/tests -q` — fully green (554 passed, 12 skipped
   without the real-issuer corpus; the corpus tests run once it is downloaded).
   Spec tests (`caos/tests/spec/`) are the contractual surface —
   they pin invariants and wire shapes; `test_injection_spec.py` pins the
@@ -170,6 +170,19 @@ engine, the bundle, or the routes.
   URL — and warn in the run log when it is unset.
 - Lint: `ruff check --config ruff.toml caos/server caos/tests --exclude
   caos/server/caos/methodology/vendor`.
+- Dependencies: `caos/server/pyproject.toml` is the single source of truth.
+  `requirements.txt` and `requirements-dev.txt` are **generated** locks — fully
+  pinned, transitively complete, and hashed — and the Docker image and CI both
+  install them with `--require-hashes`, so a compromised re-release of an
+  already-pinned version cannot enter a build. After changing a dependency,
+  regenerate both with the command in each file's own header; forgetting to
+  turns `caos/tests/test_dependency_pins.py` red rather than surfacing at
+  deploy time. The cost is real and deliberate: the old `>=` floors meant every
+  image rebuild silently pulled the newest starlette/uvicorn/sqlalchemy,
+  security fixes included. Frozen pins stop that, so the locks go stale until
+  someone recompiles — pip-audit (`security` job) and Trivy (`image` job) are
+  what turn that staleness into a red build instead of silence. Recompiling is
+  the response to a red gate, not an optional hygiene chore.
 
 ## Known gaps (honest ledger)
 
@@ -191,11 +204,25 @@ engine, the bundle, or the routes.
   `restore_drill.sh` now encrypt with `age`, but neither `age` nor a running
   Compose stack exists in the dev worktree, so only their syntax is checked.
   Drill a real backup/restore pair before relying on either.
-- The Dockerfile still installs `libreoffice-calc` and its apt dependencies
-  unversioned. The base images are digest-pinned, so the build is reproducible
-  to the layer boundary but not through apt.
-- `caos/server/requirements.txt` pins versions, not hashes. pip-audit gates
-  known CVEs; nothing gates a compromised release of a pinned version.
+- The Dockerfile installs `libreoffice-calc` and its 167 apt dependencies
+  unversioned. This is an **accepted** gap, not an oversight, and the reason is
+  narrower than it looks: apt is not unauthenticated. The `InRelease` file is
+  signed by the Debian archive key and carries the SHA256 of every `Packages`
+  index, which carries the SHA256 of every `.deb` — so the tamper-evidence
+  property `--require-hashes` buys for pip is already present here. What is
+  missing is *date* reproducibility: two builds a month apart get different
+  point releases (125 MB across 167 files, per architecture). The alternatives
+  cost more than they close. Pinning `snapshot.debian.org` freezes the archive
+  at a timestamp, which also freezes `apt-get upgrade -y` — the image stops
+  receiving Debian security updates until someone bumps the snapshot, turning a
+  live patch path into a manual chore, and it makes every build depend on a
+  host that is slow and periodically unavailable. Vendoring the `.debs` means
+  125 MB per architecture in the repo, re-vendored on every security update.
+  Exact `=version` pins without a snapshot break the build within weeks, when
+  Debian's mirrors drop the superseded point release. Trivy's fixable
+  HIGH/CRITICAL gate on the built image (`ci.yml`, `image` job) is what actually
+  observes what shipped. Promoting this to `docs/DECISIONS.md` is a call for the
+  decision owner, not a documentation chore.
 - Exports have no claim at all — two workers would both render the same export.
   Only the failure fallback is CAS-bound. Harmless today (single worker,
   content-addressed output), wrong under a second worker.
@@ -210,8 +237,6 @@ engine, the bundle, or the routes.
 - Run checkpoints are SQLite on the data volume even under a Postgres domain
   store (`run.py` notes this); the postgres checkpoint saver is pinned in
   requirements but not wired in the engine. Single app instance only.
-- `caos/server/requirements.txt` mirrors `pyproject.toml` dependencies by
-  hand — change them together.
 - Source-set version allocation now locks the case row before it reads the
   current version (`storage/store.py::_next_source_set`), so two concurrent
   ingests into one case cannot both mint the same version. The lock is a no-op

@@ -1,3 +1,8 @@
+# This file is the single source of truth for server dependencies.
+# caos/server/requirements{,-dev}.txt are COMPILED from it with hashes — after
+# any change here, regenerate both (the command is in each file's header) or
+# caos/tests/test_dependency_pins.py goes red.
+
 [project]
 name = "caos-server"
 version = "0.1.0"
@@ -8,7 +13,12 @@ dependencies = [
     "langgraph==1.2.11",
     "langgraph-checkpoint-sqlite==3.1.1",
     "langgraph-checkpoint-postgres==3.1.2",
-    # See requirements.txt: the pq implementation is not transitive.
+    # psycopg's pure-Python wrapper arrives transitively via
+    # langgraph-checkpoint-postgres, but WITHOUT an implementation: no
+    # psycopg_binary, no psycopg_c, and the slim base has no libpq.
+    # `postgresql+psycopg://` then dies on import with "no pq wrapper available"
+    # — the production app could not reach PostgreSQL at all. Pinned explicitly
+    # so the driver is a declared dependency rather than a transitive accident.
     "psycopg[binary]==3.3.4",
     "langchain-anthropic==1.6.1",
     "fastapi==0.139.*",

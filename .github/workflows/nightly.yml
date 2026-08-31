@@ -31,7 +31,7 @@ jobs:
           cache-dependency-path: caos/frontend/package-lock.json
       - name: Install dependencies
         run: |
-          pip install -r caos/server/requirements-dev.txt
+          pip install --require-hashes -r caos/server/requirements-dev.txt
           npm ci --prefix caos/frontend
       - name: Restore the real-issuer corpus
         id: corpus
