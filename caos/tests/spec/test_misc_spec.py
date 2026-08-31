@@ -104,16 +104,15 @@ def test_edge_scrubs_every_identity_header_the_app_trusts():
     scrubbed = {name.lower() for name in re.findall(
         r"request_header\s+-(\S+)", (deploy / "Caddyfile").read_text())}
     trusted = {name.lower() for name in re.findall(
-        r'headers\.get\(\s*"([a-z0-9-]+)"', (server / "identity.py").read_text())}
+        r'_trusted_header\(\s*request,\s*"([a-z0-9-]+)"',
+        (server / "identity.py").read_text())}
 
-    # x-caos-role is the one header production never reads (the role comes from
-    # OIDC groups), so it is deliberately outside the scrub set. Anything else
-    # new must be scrubbed or explicitly added here as a considered decision.
-    production_trusted = trusted - {"x-caos-role"}
-    assert production_trusted, "identity.py header parse found nothing — the regex has drifted"
-    assert production_trusted <= scrubbed, (
+    # x-caos-role bypasses _trusted_header because production never reads it;
+    # anything added through that helper must also be scrubbed at the edge.
+    assert trusted, "identity.py trusted-header parse found nothing — the regex has drifted"
+    assert trusted <= scrubbed, (
         f"identity headers trusted by the app but not stripped at the edge: "
-        f"{sorted(production_trusted - scrubbed)}"
+        f"{sorted(trusted - scrubbed)}"
     )
 
 
@@ -154,6 +153,107 @@ def test_client_role_header_cannot_escalate_in_production(tmp_path, store, engin
         with pytest.raises(HTTPException) as refused:
             edge(wrong)
         assert refused.value.status_code == 401, wrong
+
+
+@pytest.mark.parametrize("environment", ["Production", "PRODUCTION", "prod", "staging", ""])
+def test_unknown_environment_names_fail_closed_before_identity_mode_is_chosen(environment):
+    """A misspelled production environment must not silently select the dev
+    identity mode, where x-caos-role is intentionally trusted."""
+    from fastapi import HTTPException
+    from starlette.requests import Request
+
+    from caos.config import Settings
+    from caos.identity import identity_from_request
+
+    settings = Settings(environment=environment)
+    with pytest.raises(RuntimeError, match="ENVIRONMENT"):
+        settings.validate_runtime()
+    request = Request({
+        "type": "http", "method": "GET", "path": "/api/me",
+        "query_string": b"", "headers": [(b"x-caos-role", b"ADMIN")],
+    })
+    with pytest.raises(HTTPException) as refused:
+        identity_from_request(request, settings)
+    assert refused.value.status_code == 401
+
+
+@pytest.mark.parametrize("duplicate", ["edge", "user", "email", "groups"])
+def test_production_rejects_duplicate_trusted_identity_headers(duplicate):
+    """oauth2-proxy replaces these headers, so duplicates mean the trusted
+    edge was bypassed or an intermediary changed the request."""
+    from fastapi import HTTPException
+    from starlette.requests import Request
+
+    from caos.config import Settings
+    from caos.identity import identity_from_request
+
+    secret = "e" * 40
+    headers = [
+        (b"x-edge-authorization", secret.encode()),
+        (b"x-forwarded-user", b"reader"),
+        (b"x-forwarded-email", b"reader@example.com"),
+        (b"x-forwarded-groups", b"caos-reader"),
+    ]
+    additions = {
+        "edge": (b"x-edge-authorization", b"wrong"),
+        "user": (b"x-forwarded-user", b"admin"),
+        "email": (b"x-forwarded-email", b"admin@example.com"),
+        "groups": (b"x-forwarded-groups", b"caos-admin"),
+    }
+    headers.append(additions[duplicate])
+    request = Request({
+        "type": "http", "method": "GET", "path": "/api/me",
+        "query_string": b"", "headers": headers,
+    })
+    settings = Settings(environment="production", edge_proxy_secret=secret)
+
+    with pytest.raises(HTTPException) as refused:
+        identity_from_request(request, settings)
+    assert refused.value.status_code == 401
+
+
+def test_unknown_and_foreign_runs_have_the_same_404_envelope_and_lookup_class(
+    client, engine, store, monkeypatch,
+):
+    """The public response already matches; the lookup trace pins the timing
+    class so an existing foreign run cannot be distinguished structurally."""
+    foreign_case = store.create_case("Foreign", "Issuer", "Sector", "owner")
+    foreign_run = engine.runs.create_run(
+        foreign_case["id"], "FULL_CREDIT", "screen", "owner"
+    )
+
+    calls: list[str] = []
+    get_run = engine.get_run
+    get_case = store.get_case
+    is_member = store.is_member
+
+    def traced_run(run_id):
+        calls.append("run")
+        return get_run(run_id)
+
+    def traced_case(case_id):
+        calls.append("case")
+        return get_case(case_id)
+
+    def traced_member(case_id, actor, roles=None):
+        calls.append("member")
+        return is_member(case_id, actor, roles=roles)
+
+    monkeypatch.setattr(engine, "get_run", traced_run)
+    monkeypatch.setattr(store, "get_case", traced_case)
+    monkeypatch.setattr(store, "is_member", traced_member)
+
+    headers = {"x-forwarded-user": "intruder"}
+    unknown = client.get("/api/runs/run-does-not-exist", headers=headers)
+    unknown_trace = tuple(calls)
+    calls.clear()
+    foreign = client.get(f"/api/runs/{foreign_run['id']}", headers=headers)
+    foreign_trace = tuple(calls)
+
+    assert (unknown.status_code, unknown.json(), dict(unknown.headers)) == (
+        foreign.status_code, foreign.json(), dict(foreign.headers)
+    )
+    assert unknown_trace == foreign_trace == ("run", "case", "member")
 
 
 def test_case_response_carries_the_pathway_fit_signal(client, store):

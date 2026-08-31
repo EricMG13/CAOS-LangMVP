@@ -393,3 +393,146 @@ than one.
 
 Suite state after the addition: **570 passed** (the real-issuer corpus is
 downloaded in this worktree; without it 12 corpus tests skip).
+
+## Observability suite (2026-08-31)
+
+Until this date the server had no logging, no metrics and no tracing — verified,
+not assumed: `grep "import logging\|logger\."` over `caos/server` (excluding the
+vendored venv under `caos/`) returned nothing. Three operational questions had no
+answer short of attaching a debugger to production: **which run is stuck, what
+did it refuse, what has it spent.**
+
+`caos/server/caos/observability.py` answers them with stdlib logging and a JSON
+formatter — no dependency, no framework, no debug channel. Seven log points and
+nothing else:
+
+| Point | Seam | Events |
+|---|---|---|
+| run + node state transitions | `storage/runs.py::RunStore._emit` | `run.created`, `run.running`, `run.paused`, `node.running`, `node.succeeded`, `run.succeeded`, `run.failed` |
+| typed refusals | `engine/runtime.py` module + finalize handlers | `refusal` (code + module_id) |
+| provider calls | `engine/loop.py` | `provider.call.start`, `provider.call.finish` |
+| budget ledger | `storage/runs.py::reserve_provider` / `reconcile_provider` | `budget.reserved`, `budget.reconciled` |
+| gate interrupt | `engine/runtime.py::_gate_node` | `gate.interrupt`, `gate.resolved` |
+| startup recovery | `engine/runtime.py::recover` | `recovery.started`, `recovery.run` |
+| worker job failure | `worker.py` | `worker.job_failed` |
+
+`_emit` is the whole first row because every durable transition already passes
+through it and nothing else does. `refusal` is logged at the module boundary
+rather than read off `run.failed`, because `finalize_failure` is a CAS: racing
+sibling failures in one superstep no-op, so the run row records only the refusal
+that won. The log records all of them.
+
+### The ban, and its test
+
+**No document-derived text may ever reach a log line.** Source text, evidence
+block text, module output and compiled prompts are attacker-controlled, and a log
+sink sits outside every boundary the ten invariants defend. Two mechanisms:
+
+1. **Call-site discipline.** Host-owned scalars only. Refusals log the taxonomy
+   code and never `str(exc)` — a validation failure quotes the model's own output.
+2. **A structural bound.** Every string on a line is redacted, then truncated to
+   `MAX_STRING` (200). A slip costs a couple of hundred characters, not a document.
+
+`caos/tests/spec/test_observability_spec.py` (26 tests) drives a real ingestion
+and a real agent module over a document carrying a unique sentence, captures every
+record any logger emits, renders each through the production formatter, and
+asserts the sentence is absent. Anti-vacuity is asserted in the same test: the log
+must be non-empty, the run must have succeeded, and the sentinel must have reached
+the model — a host that never read the evidence cannot pass by doing less.
+
+### Anti-vacuity ledger
+
+| # | Check deleted / defect injected | Test that turns red | Notes |
+|---|---|---|---|
+| 1 | `log_event("evidence.read", rows=[r["text"] …])` added to `engine/evidence.py` | `test_no_document_text_ever_reaches_a_log_line` | the leak the suite exists to catch |
+| 2 | `log_event("provider.call.start", …)` moved ahead of `slots.acquire_or_deny()` | `test_a_denied_provider_slot_logs_no_call_that_never_happened` | measured out of process (see below) |
+| 3 | the refusal `log_event` removed from `_run_module` | `test_a_refused_read_logs_its_typed_code_and_none_of_the_document` | |
+| 4 | `_clean`'s non-string branch left bypassing the bound | `test_every_logged_string_is_bounded_so_no_field_can_become_a_content_channel` | |
+| 5 | `HealthResponse` left as `{status}` | `spec/test_http_contracts_spec.py::test_health_serves_the_pinned_readiness_key_set` | |
+| 6 | a timeout/retry left with only the successful call's finish line | `test_a_retry_closes_every_started_provider_attempt` | every started attempt terminates |
+| 7 | nested mapping keys bypassed `_clean` | `test_registered_secrets_are_redacted_from_nested_dictionary_keys` | registered secret reproduced in a key |
+| 8 | worker failure logged `str(exc)` | `test_worker_failure_logs_the_exception_type_but_never_its_message` | document sentinel reproduced through the formatter |
+| 9 | checkpointer probe tested only generic SQLite writability | `test_a_malformed_checkpoint_schema_is_not_ready` | readiness was true while a saver write failed |
+
+Row 2 is the measured one. In-process the two orderings are *behaviourally*
+identical — a standalone driver over `run_agent_module` with a never-released slot
+raises `AGENT_BUDGET_EXCEEDED` in 0.000 s with zero provider calls either way — so
+this is a log-correctness defect, not a control-flow one: the pre-fix order emits
+one `provider.call.start` line for a call that never happened, and `start` with no
+`finish` is exactly the shape an operator greps for to find a hung run. Verified
+by capturing the formatter's output around that driver (1 line before the fix, 0
+after) rather than through pytest, whose run does not terminate on this particular
+failure for reasons that are in the reporting layer, not the engine.
+
+### Readiness
+
+`GET /api/health` was liveness only. It now serves `{status, store, bundle,
+checkpointer}` on the same strict `HealthResponse`, 200 when all three hold and
+503 otherwise, with the key set pinned in `test_http_contracts_spec.py` beside the
+nine case families. The probes are real: `SELECT 1` on the domain store, the full
+bundle integrity verification (invariant 4), and the actual LangGraph SQLite
+schema followed by a `BEGIN IMMEDIATE`/rollback. An empty checkpoint database is
+initialized through `SqliteSaver.setup`; a malformed schema fails closed; and a
+competing writer gets 250 ms to release its lock before the instance reports
+degraded.
+
+Bounded to one probe per `READINESS_TTL_SECONDS` (5.0): the route skips
+oauth2-proxy auth (`skip_auth_routes`) *and* the per-subject rate ceiling, so
+hashing 307 bundle files (~12 ms) per anonymous request would be a lever. An app
+assembled as `create_app(..., engine=None)` reports degraded rather than 500 —
+that assembly is real, in the auth-edge tests.
+
+### Secret redaction
+
+`register_secrets` takes the exact values from `Settings` at `configure_logging`
+time; a regex backstops keys nobody registered (`sk-…`, bearer tokens, DSN
+userinfo), and mapping keys pass through the same cleaner as values. Exception
+messages never reach a line: `worker.py::_failure` emits the exception class only,
+replacing two `traceback.print_exc()` calls that printed raw tracebacks to stderr.
+
+### Metrics and tracing: skipped
+
+Not added. The seven log points answer all three questions as structured fields —
+`node.running` without a following `node.succeeded` names the stuck node,
+`refusal` carries the typed code, `budget.reconciled` carries the running `used`
+totals. What would force metrics: more than one app instance (the log is
+per-process, and `RequestCeilings` already counts in-process), or a need for rate
+and percentile questions — "p95 provider latency", "refusals per hour by code" —
+which are aggregations a log tail cannot answer. What would force tracing: a
+second service in the request path. Neither exists today.
+
+## Identity boundary audit (2026-08-31)
+
+The requested ASVS 5.0 authentication/session/access-control audit uses the
+current ASVS chapter numbers V6/V7/V8 (the requested V2/V3/V4 names are the
+ASVS 4.x numbering for those domains).
+
+- **Authentication boundary:** production accepts roles only from
+  `X-Forwarded-Groups` after a constant-time edge-secret check. Environment
+  selection now allowlists exactly `development` and `production` both at
+  startup and inside `identity_from_request`; casing or an alias can no longer
+  select development behavior. Duplicate edge, subject, email, or groups
+  headers fail with 401. Header names remain correctly case-insensitive.
+  Caddy strips all four trusted headers, oauth2-proxy v7.15.4 replaces its user
+  headers, and `skip_auth_strip_headers = true` is now explicit rather than an
+  upstream default the deployment silently depends on.
+- **Access control:** `run_sec_audit.py` derives the live route table and checks
+  all 42 non-public API operations at the ASGI gate. It also drives all 34
+  case-scoped operations with a foreign case, every case-scoped write with a
+  valid body as a stored READER, run IDs, and the model-build query ID. The only
+  public path remains `GET /api/health`. Unknown and foreign runs now execute
+  the same `run -> case -> membership` lookup class and return identical status,
+  JSON body, and headers.
+- **Internal bypass boundary:** the app port is not published and a direct
+  internal request without `EDGE_PROXY_SECRET` gets 401. A process holding that
+  secret can assert forwarded identity headers; this is the deliberate trusted
+  edge boundary, not a cryptographically signed per-user assertion. Caddy,
+  oauth2-proxy, and the worker are therefore inside the deployment trust zone
+  (the worker already has database and vault authority).
+- **Session management limitation:** the proxy config pins Secure, HttpOnly,
+  SameSite=Lax cookies and a seven-day expiry, but it does not configure
+  `cookie_refresh` or establish an idle timeout, and the repository does not
+  state the IdP access/refresh-token lifetimes. ASVS session-lifetime and
+  renewal alignment therefore remain unproven. No refresh interval was guessed;
+  set it only after the IdP policy is known, with cookie expiry no longer than
+  the effective refresh-token/session lifetime.

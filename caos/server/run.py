@@ -18,6 +18,7 @@ from fastapi import FastAPI
 from caos.api import create_app
 from caos.config import Settings
 from caos.engine.runtime import Engine
+from caos.observability import configure_logging
 from caos.storage.store import DomainStore
 
 
@@ -40,6 +41,7 @@ def build(settings: Settings, data: Path) -> tuple[FastAPI, Engine]:
     """Assemble the combined app: store, engine (auto-continue on), API, and the
     static export when one is present (./static in the image, ../frontend/out
     after `npm run build`). API routes are registered first, so they win."""
+    configure_logging(settings)  # JSON on stdout; registers the secrets to redact
     data.mkdir(parents=True, exist_ok=True)
     store = DomainStore.from_url(settings.database_url or f"sqlite:///{data / 'caos.db'}")
     provider = build_provider(settings)

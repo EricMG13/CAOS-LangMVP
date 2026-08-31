@@ -14,6 +14,7 @@ import inspect
 import json
 from typing import Any, Callable
 
+from ..observability import log_event
 from .budget import PROVIDER_TIMEOUT_SECONDS, REPAIR_TEXT_LIMIT
 from .provider import AgentError, ProviderMessage, ProviderRequest
 
@@ -177,32 +178,63 @@ async def run_agent_module(
             before_create()  # test crash-injection point: inflight persisted, no create yet
 
         response: ProviderMessage | None = None
+        usage: dict[str, int] | None = None
         while response is None:
             # Remaining wall clock is checked before a slot is held so an
             # exhausted budget can never leak a concurrency slot.
             timeout = min(PROVIDER_TIMEOUT_SECONDS, remaining_seconds()) if remaining_seconds else PROVIDER_TIMEOUT_SECONDS
             slots.acquire_or_deny()
+            attempt_is_retry = retry_used
+            # After the slot, never before: a denied slot is not a call, and a
+            # start line with no finish has to mean a call that is still out.
+            # Run id and module id ride the ambient run_context (runtime.py).
+            log_event("provider.call.start", request_digest=request_digest, retry=attempt_is_retry,
+                      counted_input_tokens=counted, max_output_tokens=max_tokens, timeout=timeout)
             started = now()
+            outcome = "error"
+            finish_fields: dict[str, Any] = {}
             try:
                 async with asyncio.timeout(timeout):
                     response = await _call(provider.create_message, dataclasses.replace(request, timeout=timeout))
+                usage = validate_usage(
+                    dataclasses.asdict(response.usage)
+                    if dataclasses.is_dataclass(response.usage)
+                    else response.usage
+                )
+                outcome = "succeeded"
+                finish_fields = {
+                    "request_id": response.request_id,
+                    "input_tokens": usage["input_tokens"],
+                    "output_tokens": usage["output_tokens"],
+                    "stop_reason": response.stop_reason,
+                }
             except (TimeoutError, asyncio.TimeoutError) as exc:
+                outcome = "timeout"
                 if retry_used:
                     raise AgentError("AGENT_PROVIDER_TIMEOUT", "provider timed out twice") from exc
                 retry_used = True
                 record("provider_retry", operation="create")
                 reserve(request_digest, counted, max_tokens, True)  # byte-identical, budget-free
             except AgentError as exc:
+                outcome = "timeout" if exc.code == "AGENT_PROVIDER_TIMEOUT" else exc.code
                 if exc.code != "AGENT_PROVIDER_TIMEOUT" or retry_used:
                     raise
                 retry_used = True
                 record("provider_retry", operation="create")
                 reserve(request_digest, counted, max_tokens, True)
+            except Exception as exc:
+                outcome = type(exc).__name__
+                raise
             finally:
-                slots.release()
-                timed(started)
+                try:
+                    log_event("provider.call.finish", request_digest=request_digest,
+                              retry=attempt_is_retry, outcome=outcome, **finish_fields)
+                finally:
+                    slots.release()
+                    timed(started)
 
-        usage = validate_usage(dataclasses.asdict(response.usage) if dataclasses.is_dataclass(response.usage) else response.usage)
+        if usage is None:  # defensive: a response cannot leave the loop without validated usage
+            raise AgentError("AGENT_OUTPUT_INVALID", "provider usage is absent or unreadable")
         reconcile(request_digest, counted, max_tokens, usage["input_tokens"], usage["output_tokens"])
         record(
             "generation",

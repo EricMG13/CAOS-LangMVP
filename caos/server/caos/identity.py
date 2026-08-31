@@ -43,25 +43,37 @@ def _edge_bytes(value: str | None) -> bytes:
     return (value or "").encode("utf-8", "surrogateescape")
 
 
+def _trusted_header(request: Request, name: str, *, production: bool) -> str | None:
+    values = request.headers.getlist(name)
+    if production and len(values) > 1:
+        raise HTTPException(status_code=401, detail="trusted edge identity required")
+    return values[0] if values else None
+
+
 def identity_from_request(request: Request, settings: Settings) -> Identity:
-    if settings.environment == "production" and not hmac.compare_digest(
-        _edge_bytes(request.headers.get("x-edge-authorization")),
+    if settings.environment not in {"development", "production"}:
+        raise HTTPException(status_code=401, detail="trusted edge identity required")
+    production = settings.environment == "production"
+    edge_authorization = _trusted_header(
+        request, "x-edge-authorization", production=production
+    )
+    subject_header = _trusted_header(request, "x-forwarded-user", production=production)
+    email_header = _trusted_header(request, "x-forwarded-email", production=production)
+    groups_header = _trusted_header(request, "x-forwarded-groups", production=production)
+    if production and not hmac.compare_digest(
+        _edge_bytes(edge_authorization),
         _edge_bytes(settings.edge_proxy_secret),
     ):
         raise HTTPException(status_code=401, detail="trusted edge identity required")
-    subject = request.headers.get("x-forwarded-user") or request.headers.get(
-        "x-forwarded-email"
-    )
-    email = request.headers.get("x-forwarded-email") or subject
-    groups = tuple(
-        filter(None, (request.headers.get("x-forwarded-groups") or "").split(","))
-    )
+    subject = subject_header or email_header
+    email = email_header or subject
+    groups = tuple(filter(None, (groups_header or "").split(",")))
     role = (
         _role_from_groups(groups)
-        if settings.environment == "production"
+        if production
         else request.headers.get("x-caos-role", "ANALYST").upper()
     )
-    if settings.environment == "production" and not subject:
+    if production and not subject:
         raise HTTPException(status_code=401, detail="OIDC identity required")
     if not subject:
         # Dev default matches the seeded-case actor so headerless local calls
@@ -76,7 +88,8 @@ def require_case(
     store: DomainStore, case_id: str, identity: Identity, write: bool = False
 ) -> dict:
     case = store.get_case(case_id)
-    if not case or not store.is_member(case_id, identity.subject):
+    member = store.is_member(case_id, identity.subject)
+    if not case or not member:
         raise HTTPException(status_code=404, detail="case not found")
     writer_roles = {"ANALYST", "APPROVER", "ADMIN"}
     if write and (

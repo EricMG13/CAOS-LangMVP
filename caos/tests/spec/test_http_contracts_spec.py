@@ -52,6 +52,16 @@ _SOURCE_SET_KEYS = {
     "created_at": None,
 }
 
+# /api/health is the only unauthenticated route, so its key set is pinned as
+# tightly as the case families: readiness may name which subsystem is down and
+# nothing else — never a path, a DSN, a version, or an exception message.
+_HEALTH_KEYS = {
+    "status": None,
+    "store": None,
+    "bundle": None,
+    "checkpointer": None,
+}
+
 KEY_SETS = {
     "case": {
         "id": None,
@@ -374,6 +384,22 @@ async def test_family_models_reject_an_injected_unknown_top_level_key(payloads, 
     model = getattr(_responses(), MODEL_NAMES[family])
     with pytest.raises(ValidationError):
         model.model_validate({**payloads[family], "forged_extra_key": True})
+
+
+def test_health_serves_the_pinned_readiness_key_set(client):
+    payload = client.get("/api/health").json()
+    _assert_key_sets(payload, _HEALTH_KEYS)
+    assert _round_trips(_responses().HealthResponse, payload)
+
+
+def test_health_model_rejects_an_injected_unknown_top_level_key():
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError):
+        _responses().HealthResponse.model_validate(
+            {"status": "ok", "store": True, "bundle": True, "checkpointer": True,
+             "checkpoint_path": "/data/checkpoints.db"}
+        )
 
 
 # --- calculation-runtime identity (methodology provenance on the wire) ------------

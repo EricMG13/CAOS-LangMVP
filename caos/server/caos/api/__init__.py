@@ -306,8 +306,18 @@ def create_app(*, settings: Settings, store: DomainStore, engine: Any) -> FastAP
         return identity_from_request(request, settings)
 
     @app.get("/api/health", response_model=wire.HealthResponse)
-    def health() -> dict[str, Any]:
-        return {"status": "ok"}
+    def health(response: Response) -> dict[str, Any]:
+        # Liveness is "this answered at all"; readiness is the three booleans.
+        # 503 when any subsystem is down, so a probe can stop routing to an
+        # instance whose bundle no longer verifies instead of reading a body.
+        # `create_app(..., engine=None)` is a real assembly (auth-edge tests);
+        # an app with no engine is honestly not ready, never a 500 on the one
+        # route that answers before authentication.
+        checks = engine.readiness() if engine is not None else dict.fromkeys(
+            ("store", "bundle", "checkpointer"), False)
+        if not all(checks.values()):
+            response.status_code = 503
+        return {"status": "ok" if all(checks.values()) else "degraded", **checks}
 
     @app.get("/api/me", response_model=wire.IdentityResponse)
     def me(request: Request) -> dict[str, Any]:
@@ -567,14 +577,14 @@ def create_app(*, settings: Settings, store: DomainStore, engine: Any) -> FastAP
         """One uniform 404 for unknown runs AND runs in cases the caller cannot
         see — the detail string must not become a run-existence oracle."""
         run = engine.get_run(run_id) if engine is not None else None
-        if run is None:
-            raise HTTPException(status_code=404, detail="run not found")
         try:
-            require_case(store, run["case_id"], who, write=write)
+            require_case(store, run["case_id"] if run is not None else "", who, write=write)
         except HTTPException as exc:
             if exc.status_code == 404:
                 raise HTTPException(status_code=404, detail="run not found") from None
             raise
+        if run is None:
+            raise HTTPException(status_code=404, detail="run not found")
         return run
 
     @app.get("/api/runs/{run_id}", response_model=wire.CanonicalRunResponse, response_model_exclude_unset=True)
