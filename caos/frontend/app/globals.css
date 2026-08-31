@@ -7,7 +7,7 @@
   --caos-elevated: #181d28;
   --caos-subtle: #202632;
   --caos-border: #242b38;
-  --caos-border-strong: #3b4557;
+  --caos-border-strong: #606b7e;
   --caos-text: #e9edf4;
   --caos-muted: #99a3b4;
   --caos-accent: #8b93f8;
@@ -164,10 +164,10 @@ caption { color: var(--caos-muted); font-size: 10px; font-weight: 600; letter-sp
 /* Severity is shape + hue, never hue alone: success is a disc, warning a
    triangle, critical a rounded square, idle a flat dot. */
 .status { display: inline-flex; align-items: center; gap: 6px; font-weight: 700; }
-.status::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--caos-muted); }
-.status.success::before { background: var(--caos-success); }
+.status::before, .status.idle::before { content: ""; width: 8px; height: 3px; border-radius: var(--radius-pill); background: var(--caos-muted); }
+.status.success::before { width: 7px; height: 7px; border-radius: 50%; background: var(--caos-success); }
 .status.warning::before { width: 0; height: 0; border-radius: 0; border-left: 4.5px solid transparent; border-right: 4.5px solid transparent; border-bottom: 8px solid var(--caos-warning); background: transparent; }
-.status.critical::before { border-radius: 2px; background: var(--caos-critical); }
+.status.critical::before { width: 7px; height: 7px; border-radius: 2px; background: var(--caos-critical); }
 .status.success { color: var(--caos-success); } .status.warning { color: var(--caos-warning); } .status.critical { color: var(--caos-critical); }
 .status.idle { color: var(--caos-muted); }
 .callout { border: 1px solid color-mix(in srgb, var(--caos-accent) 55%, var(--caos-border)); border-radius: var(--radius-lg); padding: var(--space-md); background: color-mix(in srgb, var(--caos-accent) 6%, var(--caos-elevated)); }
@@ -175,8 +175,8 @@ caption { color: var(--caos-muted); font-size: 10px; font-weight: 600; letter-sp
 /* Tiles stretch to a common height so a module whose registry carries no name —
    its tile renders one line shorter — does not leave the row ragged. */
 .dag { display: flex; flex-wrap: wrap; gap: 8px; align-items: stretch; }
-.dag-node { border: 1px solid var(--caos-border); border-left-width: 3px; border-radius: var(--radius-md); padding: var(--space-sm); min-width: 120px; max-width: 200px; background: var(--caos-bg); }
-.dag-node.succeeded { border-left-color: var(--caos-success); } .dag-node.running { border-left-color: var(--caos-accent); } .dag-node.failed { border-left-color: var(--caos-critical); }
+.dag-node { border: 1px solid var(--caos-border); border-radius: var(--radius-md); padding: var(--space-sm); min-width: 120px; max-width: 200px; background: var(--caos-bg); }
+.dag-node.succeeded { border-color: var(--caos-success); } .dag-node.running { border-color: var(--caos-accent); } .dag-node.failed { border-color: var(--caos-critical); }
 .chart { min-height: 160px; display: grid; align-content: end; gap: 9px; }
 .chart-bars { height: 118px; display: flex; align-items: end; gap: 16px; border-bottom: 1px solid var(--caos-border); padding: 0 16px; }
 .bar { width: 36px; background: var(--caos-accent); min-height: 4px; }
@@ -218,6 +218,8 @@ caption { color: var(--caos-muted); font-size: 10px; font-weight: 600; letter-sp
 .paper .status.warning::before { border-bottom-color: var(--caos-paper-warning); }
 .paper .status.critical { color: var(--caos-paper-critical); }
 .paper .status.critical::before { background: var(--caos-paper-critical); }
+.paper .status.idle { color: var(--caos-paper-meta); }
+.paper .status.idle::before { background: var(--caos-paper-meta); }
 .skip-link { position: fixed; left: 8px; top: 8px; transform: translateY(-150%); z-index: 4; border-radius: var(--radius-md); background: var(--caos-elevated); padding: 8px; }
 .skip-link:focus { transform: translateY(0); }
 dialog { border: 1px solid var(--caos-border-strong); border-radius: var(--radius-xl); background: var(--caos-panel); color: var(--caos-text); padding: 0; box-shadow: var(--shadow-modal); overscroll-behavior: contain; }
