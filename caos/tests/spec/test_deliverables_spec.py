@@ -825,6 +825,69 @@ def test_downgraded_global_reader_loses_filing_authority_despite_case_standing(c
 # --- freeze and rendered exports --------------------------------------------------
 
 
+def test_canonical_document_is_the_only_cross_format_export_source(service, store):
+    case, source, _ = seed_ready_case(service, store)
+    governed_tail = "END-OF-GOVERNED-NARRATIVE"
+    unicode_marker = "“Downside”—£95m"
+    long_narrative = f"Committee-ready analysis {unicode_marker} {'x' * 140} {governed_tail}"
+    model = seed_model(service, case, outputs={
+        "BASE": {"FY2027": {"total_leverage": 3.8}},
+        "DOWNSIDE": {"FY2027": {"total_leverage": 5.1}},
+    })
+    template = service.templates()["FULL_CREDIT"]
+    revision = service.save_draft(
+        case["id"], "FULL_CREDIT",
+        draft_request(
+            template,
+            blocks=required_blocks(template, source, narrative_text=long_narrative),
+            model_selection=revision_selection(model),
+        ),
+        actor="analyst",
+    )
+    frozen = service.freeze(case["id"], freeze_request(revision), actor="analyst")
+    payload = copy.deepcopy(frozen["payload"])
+    expected_titles = [section["title"] for section in payload["content"]["document_sections"]]
+    assert payload["renderer"]["version"] == "caos.deliverable-renderer.v2"
+
+    # Canonical sections are sufficient: no renderer may fall back to the old
+    # generated/block projections once the versioned document exists.
+    payload["content"].pop("blocks")
+    payload["content"].pop("generated_blocks")
+    model_section = next(section for section in payload["content"]["document_sections"] if section["section_id"] == "base_downside_model")
+    model_section["items"][1][0]["rows"].append(["BASE / FY2028 / total_leverage", "1e309"])
+    from caos.publishing.renderers import render_frozen_export
+
+    markdown = render_frozen_export(payload, "md").decode("utf-8")
+    markdown_titles = [line[3:] for line in markdown.splitlines() if line.startswith("## ")]
+    assert markdown_titles == expected_titles
+
+    from pypdf import PdfReader
+
+    pdf = render_frozen_export(payload, "pdf")
+    pdf_text = "\n".join(page.extract_text() or "" for page in PdfReader(io.BytesIO(pdf)).pages)
+    pdf_titles = [line[3:] for line in pdf_text.splitlines() if line.startswith("## ")]
+    assert pdf_titles == expected_titles
+
+    from openpyxl import load_workbook
+
+    workbook = load_workbook(io.BytesIO(render_frozen_export(payload, "xlsx")))
+    reviewed = workbook["Reviewed Deliverable"]
+    xlsx_titles = [row[2].value for row in reviewed.iter_rows() if row[0].value == "SECTION"]
+    assert xlsx_titles == expected_titles
+    assert "FY2027" in markdown and "FY2027" in pdf_text
+    assert governed_tail in markdown and governed_tail in pdf_text
+    assert unicode_marker in markdown and unicode_marker in pdf_text
+    assert any(cell.value == "BASE / FY2027 / total_leverage" for row in reviewed.iter_rows() for cell in row)
+    assert any(cell.value == 3.8 for row in reviewed.iter_rows() for cell in row)
+    assert any(cell.value == "1e309" for row in reviewed.iter_rows() for cell in row)
+    assert any(unicode_marker in str(cell.value) for row in reviewed.iter_rows() for cell in row)
+    evidence = list(workbook["Evidence Register"].iter_rows(values_only=True))
+    assert evidence[:2] == [
+        ("Source", "Blocks", "Claim"),
+        (source["id"], "b00001", "Pinned evidence line supports the opinion."),
+    ]
+
+
 @pytest.mark.parametrize("pathway", SIX_PATHWAYS)
 def test_each_pathway_frozen_payload_renders_substantive_md_pdf_xlsx(service, store, pathway):
     case, source, revision, frozen = freeze_min(service, store, pathway)

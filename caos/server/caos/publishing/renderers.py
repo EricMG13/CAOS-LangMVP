@@ -10,6 +10,9 @@ payload; analyst text with a formula prefix is neutralized to a literal.
 from __future__ import annotations
 
 import io
+import math
+import re
+import textwrap
 import zlib
 from decimal import Decimal
 from typing import Any
@@ -41,8 +44,71 @@ def _flatten(value: Any, prefix: str = "") -> list[tuple[str, Any]]:
     return items
 
 
+def _document_sections(payload: dict[str, Any]) -> list[dict[str, Any]] | None:
+    return payload["content"].get("document_sections")
+
+
+def _walk_sections(
+    sections: list[dict[str, Any]], depth: int = 0,
+):
+    for section in sections:
+        yield section, depth
+        if section["kind"] == "columns":
+            for column in section["items"]:
+                yield from _walk_sections(column, depth + 1)
+
+
+def _section_rows(section: dict[str, Any]) -> list[list[str]]:
+    if section["kind"] == "table":
+        return [section["columns"], *section["rows"]]
+    if section["kind"] == "profile":
+        return [[row["label"], row["value"]] for row in section["rows"]]
+    if section["kind"] == "list":
+        return [[item] for item in section["items"]]
+    if section["kind"] == "chart":
+        return [section["accessible_columns"], *section["accessible_rows"]]
+    if section["kind"] == "text":
+        return [[section["body"]]]
+    return []
+
+
+def _document_text_lines(payload: dict[str, Any], sections: list[dict[str, Any]]) -> list[str]:
+    def markdown_row(row: list[str]) -> str:
+        return "| " + " | ".join(str(cell).replace("|", r"\|") for cell in row) + " |"
+
+    lines = [f"{payload['pathway']} Deliverable", ""]
+    for section, depth in _walk_sections(sections):
+        lines.append(f"{'#' * min(2 + depth, 6)} {section['title']}")
+        rows = _section_rows(section)
+        if section["kind"] in {"table", "chart"} and rows:
+            lines.append(markdown_row(rows[0]))
+            lines.append("| " + " | ".join("---" for _ in rows[0]) + " |")
+            lines.extend(markdown_row(row) for row in rows[1:])
+        elif section["kind"] == "profile":
+            lines.extend(f"- {label}: {value}" for label, value in rows)
+        elif section["kind"] == "list":
+            lines.extend(f"- {row[0]}" for row in rows)
+        else:
+            lines.extend(row[0] for row in rows)
+        if section.get("note"):
+            lines.append(section["note"])
+        lines.append("")
+    lines.extend([
+        "# Revision Record",
+        f"- Draft version: {payload['draft']['version']}",
+        f"- Draft digest: {payload['draft']['digest']}",
+        f"- Preview digest: {payload['preview_digest']}",
+        f"- Input fingerprint: {payload['input_fingerprint']}",
+        f"- Methodology build: {payload['methodology']['build_id']}",
+    ])
+    return lines
+
+
 def _text_lines(payload: dict[str, Any]) -> list[str]:
     """The shared textual projection of a frozen payload (md and pdf bodies)."""
+    sections = _document_sections(payload)
+    if sections is not None:
+        return _document_text_lines(payload, sections)
     lines = [f"{payload['pathway']} Deliverable", ""]
     model = payload.get("model")
     if model:
@@ -90,11 +156,13 @@ def render_frozen_pdf(payload: dict[str, Any]) -> bytes:
     Tj operators — structurally a PDF with extractable text."""
     pages_of_lines: list[list[str]] = []
     current: list[str] = []
-    for line in _text_lines(payload):
-        current.append(line[:110])
-        if len(current) >= 48:
-            pages_of_lines.append(current)
-            current = []
+    for raw_line in _text_lines(payload):
+        for physical_line in raw_line.splitlines() or [""]:
+            for line in textwrap.wrap(physical_line, width=110, break_on_hyphens=False) or [""]:
+                current.append(line)
+                if len(current) >= 48:
+                    pages_of_lines.append(current)
+                    current = []
     if current or not pages_of_lines:
         pages_of_lines.append(current or [""])
 
@@ -104,14 +172,16 @@ def render_frozen_pdf(payload: dict[str, Any]) -> bytes:
         objects.append(obj)
         return len(objects)
 
-    font = add(b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>")
+    # ponytail: built-in WinAnsi covers committee Latin typography; embed a
+    # Unicode font only if non-Latin scripts become a publication requirement.
+    font = add(b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>")
     content_ids = []
     for lines in pages_of_lines:
         body = "BT /F1 10 Tf 54 756 Td 14 TL\n"
         for line in lines:
             body += f"({_pdf_escape(line)}) Tj T*\n"
         body += "ET"
-        stream = zlib.compress(body.encode("latin-1", "replace"))
+        stream = zlib.compress(body.encode("cp1252", "replace"))
         content_ids.append(add(
             b"<< /Length " + str(len(stream)).encode() + b" /Filter /FlateDecode >>\nstream\n" + stream + b"\nendstream"
         ))
@@ -157,6 +227,59 @@ def _safe_cell(value: Any) -> Any:
     return text
 
 
+_PLAIN_NUMBER = re.compile(r"[+-]?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?")
+
+
+def _document_cell(value: str, *, model_value: bool) -> Any:
+    if model_value and _PLAIN_NUMBER.fullmatch(value):
+        number = float(value)
+        if math.isfinite(number):
+            return number if any(character in value for character in ".eE") else int(value)
+    return _safe_cell(value)
+
+
+def _append_document_section(sheet: Any, section: dict[str, Any], depth: int = 0) -> None:
+    kind = section["kind"]
+    section_id = section["section_id"]
+    sheet.append([
+        "SECTION" if depth == 0 else "SUBSECTION",
+        _safe_cell(section_id),
+        _safe_cell(section["title"]),
+        _safe_cell(section["page"]),
+        _safe_cell(section["origin"]["kind"]),
+    ])
+    if kind == "columns":
+        for column in section["items"]:
+            for item in column:
+                _append_document_section(sheet, item, depth + 1)
+        return
+
+    rows = _section_rows(section)
+    if kind in {"table", "chart"} and rows:
+        sheet.append(["HEADER", section_id, *(_safe_cell(value) for value in rows[0])])
+        model_owned = section["origin"]["kind"] == "MODEL"
+        for row in rows[1:]:
+            sheet.append([
+                "ROW",
+                section_id,
+                *(
+                    _document_cell(value, model_value=model_owned and index > 0)
+                    for index, value in enumerate(row)
+                ),
+            ])
+    elif kind == "profile":
+        for label, value in rows:
+            sheet.append(["ROW", section_id, _safe_cell(label), _safe_cell(value)])
+    elif kind == "list":
+        for row in rows:
+            sheet.append(["ITEM", section_id, _safe_cell(row[0])])
+    elif rows:
+        sheet.append(["CONTENT", section_id, _safe_cell(rows[0][0])])
+    note = section.get("note")
+    if note:
+        sheet.append(["NOTE", section_id, _safe_cell(note)])
+
+
 def render_frozen_xlsx(payload: dict[str, Any]) -> bytes:
     from openpyxl import Workbook
 
@@ -172,25 +295,35 @@ def render_frozen_xlsx(payload: dict[str, Any]) -> bytes:
         cover.append([_safe_cell(value) for value in row])
 
     reviewed = workbook.create_sheet("Reviewed Deliverable")
-    reviewed.append(["Block", "Kind", "Content"])
-    for block in payload["content"]["blocks"]:
-        text = block.get("text") or ""
-        reviewed.append([_safe_cell(block["slot_id"]), _safe_cell(block["kind"]), _safe_cell(text)])
-        if block["kind"] in {"GENERATED_METRIC", "SCENARIO_EXHIBIT"}:
-            values = block.get("values") or (block.get("scenario") or {}).get("outputs") or {}
-            for key, value in _flatten(values):
-                # Generated model numbers stay typed numbers, never text.
-                reviewed.append([_safe_cell(f"{block['slot_id']}::{key}"), "MODEL_VALUE",
-                                 float(value) if isinstance(value, (int, float)) and not isinstance(value, bool) else _safe_cell(value)])
-
     register = workbook.create_sheet("Evidence Register")
-    register.append(["Claim", "Source", "Blocks"])
-    for block in payload["content"]["blocks"]:
-        for citation in block.get("citations") or []:
-            register.append([
-                _safe_cell(citation["claim"]), _safe_cell(citation["source_id"]),
-                _safe_cell(", ".join(citation["block_ids"])),
-            ])
+    sections = _document_sections(payload)
+    if sections is not None:
+        register.append(["Source", "Blocks", "Claim"])
+        reviewed.append(["Record", "Section ID", "Title / field", "Content", "Authority"])
+        for section in sections:
+            _append_document_section(reviewed, section)
+        for section, _depth in _walk_sections(sections):
+            if section["kind"] == "table" and section["title"] == "Evidence Register":
+                for row in section["rows"]:
+                    register.append([_safe_cell(value) for value in row])
+    else:
+        register.append(["Claim", "Source", "Blocks"])
+        reviewed.append(["Block", "Kind", "Content"])
+        for block in payload["content"]["blocks"]:
+            text = block.get("text") or ""
+            reviewed.append([_safe_cell(block["slot_id"]), _safe_cell(block["kind"]), _safe_cell(text)])
+            if block["kind"] in {"GENERATED_METRIC", "SCENARIO_EXHIBIT"}:
+                values = block.get("values") or (block.get("scenario") or {}).get("outputs") or {}
+                for key, value in _flatten(values):
+                    # Generated model numbers stay typed numbers, never text.
+                    reviewed.append([_safe_cell(f"{block['slot_id']}::{key}"), "MODEL_VALUE",
+                                     float(value) if isinstance(value, (int, float)) and not isinstance(value, bool) else _safe_cell(value)])
+        for block in payload["content"]["blocks"]:
+            for citation in block.get("citations") or []:
+                register.append([
+                    _safe_cell(citation["claim"]), _safe_cell(citation["source_id"]),
+                    _safe_cell(", ".join(citation["block_ids"])),
+                ])
 
     record = workbook.create_sheet("Revision Record")
     for row in (
@@ -217,7 +350,6 @@ def _deterministic_zip(content: bytes) -> bytes:
     """Re-pack an xlsx with sorted entries, fixed zip metadata, and pinned
     document timestamps — openpyxl stamps entry mtimes AND rewrites
     docProps/core.xml created/modified from the wall clock at save time."""
-    import re
     import zipfile
 
     source = zipfile.ZipFile(io.BytesIO(content))

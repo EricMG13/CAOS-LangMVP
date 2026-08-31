@@ -576,7 +576,7 @@ class DeliverableService:
             },
             "evidence": self._frozen_evidence(case_id, revision["content"]["blocks"]),
             "methodology": {"build_id": build_id},
-            "renderer": {"version": "caos.deliverable-renderer.v1"},
+            "renderer": {"version": "caos.deliverable-renderer.v2"},
             "input_fingerprint": input_fingerprint,
         }
         payload["preview_digest"] = digest({key: value for key, value in payload.items() if key != "preview_digest"})
