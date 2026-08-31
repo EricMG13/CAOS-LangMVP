@@ -26,6 +26,7 @@ from ..contracts import (
     ModelRebasePreviewRequest,
     ModelScenarioRequest,
     ModelSignOffRequest,
+    ModelTornadoRequest,
     OneWaySensitivityRequest,
     digest,
 )
@@ -45,6 +46,12 @@ MAX_EFFECTIVE_ASSUMPTIONS = 256
 MAX_SENSITIVITY_POINTS = 41
 MAX_CALCULATION_SECONDS = 30.0
 MAX_ERROR_DETAIL_CHARS = 2_000
+LEGACY_TORNADO_DRIVERS = (
+    (("operating.consolidated_revenue_growth", "operating.revenue_growth.division_1"), "Revenue growth", "0.025"),
+    (("operating.adjusted_ebitda_margin",), "EBITDA margin", "0.015"),
+    (("rates.base_rate",), "Interest rate", "0.01"),
+    (("cash_flow.capex_pct_revenue",), "Capex % revenue", "0.01"),
+)
 # ponytail: the per-build caches hold a whole resolved snapshot (six canonical
 # documents plus the assumption rows), and this service lives as long as the
 # process. Work is newest-build-first, so a handful of entries covers every
@@ -593,6 +600,7 @@ class ModelService:
         model, calculations = self._calculate(build, rows, deadline)
         normalized = _with_default_context(self._apply_evolution(build["id"], _assumption_rows(model)), defaults)
         outputs = _annual_outputs(calculations)
+        worksheet = self.bundle.serialize_workbook(model, calculations)["payload"]
         baseline = parent["outputs"] if parent is not None else default_outputs
         envelope = {
             "case_id": case_id,
@@ -609,6 +617,7 @@ class ModelService:
             "assumptions_digest": digest(normalized),
             "outputs": outputs,
             "outputs_digest": digest(outputs),
+            "worksheet": worksheet,
             "deltas": _output_deltas(baseline, outputs),
         }
         envelope["preview_digest"] = digest(envelope)
@@ -655,7 +664,7 @@ class ModelService:
                 "case_id", "build_id", "snapshot_id", "build_input_fingerprint", "build_payload_digest",
                 "registry_version", "registry_digest", "calculation_contract_version",
                 "effective_assumptions", "assumptions_digest", "outputs", "outputs_digest",
-                "preview_digest", "parent_revision_id",
+                "worksheet", "preview_digest", "parent_revision_id",
             )}
             record["note"] = request.note
             current = self.builds.current_build(case_id)
@@ -693,6 +702,72 @@ class ModelService:
         return outputs
 
     # -- transient calculations ---------------------------------------------
+
+    def tornado(self, case_id: str, request: ModelTornadoRequest) -> dict[str, Any]:
+        deadline = self._new_deadline()
+        build = self._require_current(case_id, request.build_id)
+        self._validate_registry(request.registry_version, request.registry_digest)
+        parent = self._parent(case_id, request.parent_revision_id)
+        if parent is not None and parent.get("build_id") != request.build_id:
+            raise ValueError("MODEL_REVISION_STALE")
+        if not request.output_period_id.startswith(f"{request.case}::"):
+            raise ValueError("MODEL_TORNADO_OUTPUT_INVALID")
+
+        working = [item.model_dump() for item in request.assumptions]
+        _model, baseline_calculations = self._calculate(build, working, deadline)
+        baseline_outputs = _annual_outputs(baseline_calculations)
+        baseline = baseline_outputs.get(request.case, {}).get(request.output_period_id, {}).get(request.output_id)
+        if baseline is None:
+            raise ValueError("MODEL_TORNADO_OUTPUT_INVALID")
+
+        definitions = {item["assumption_id"]: item for item in self.bundle.assumption_registry["definitions"]}
+        ready_indices: dict[str, list[int]] = {}
+        for index, row in enumerate(working):
+            if row["case"] == request.case and row["status"] == "READY":
+                ready_indices.setdefault(row["assumption_id"], []).append(index)
+        bars: list[dict[str, Any]] = []
+        for choices, label, configured_swing in LEGACY_TORNADO_DRIVERS:
+            assumption_id = next((item for item in choices if item in ready_indices), None)
+            if assumption_id is None:
+                continue
+            definition = definitions[assumption_id]
+            swing = Decimal(configured_swing) * Decimal(str(request.intensity))
+            selected = ready_indices[assumption_id]
+            low_rows, high_rows = copy.deepcopy(working), copy.deepcopy(working)
+            hard_min, hard_max = Decimal(str(definition["hard_min"])), Decimal(str(definition["hard_max"]))
+            for index in selected:
+                value = Decimal(str(working[index]["value"]))
+                low_rows[index]["value"] = float(max(hard_min, value - swing))
+                high_rows[index]["value"] = float(min(hard_max, value + swing))
+            _low_model, low_calculations = self._calculate(build, low_rows, deadline)
+            _high_model, high_calculations = self._calculate(build, high_rows, deadline)
+            low = _annual_outputs(low_calculations)[request.case][request.output_period_id][request.output_id]
+            high = _annual_outputs(high_calculations)[request.case][request.output_period_id][request.output_id]
+            if low is None or high is None:
+                continue
+            bars.append({
+                "assumption_id": assumption_id,
+                "label": label,
+                "unit": definition["unit"],
+                "swing": format(swing, "f"),
+                "low": low,
+                "high": high,
+            })
+        bars.sort(key=lambda bar: (-abs(Decimal(bar["high"]) - Decimal(bar["low"])), bar["assumption_id"]))
+        return {
+            "case_id": case_id,
+            "build_id": request.build_id,
+            "parent_revision_id": request.parent_revision_id,
+            "registry_version": request.registry_version,
+            "registry_digest": request.registry_digest,
+            "draft_generation": request.draft_generation,
+            "case": request.case,
+            "output_period_id": request.output_period_id,
+            "output_id": request.output_id,
+            "intensity": request.intensity,
+            "baseline": baseline,
+            "bars": bars,
+        }
 
     def scenario(self, case_id: str, request: ModelScenarioRequest) -> dict[str, Any]:
         deadline = self._new_deadline()

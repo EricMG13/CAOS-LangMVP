@@ -280,6 +280,23 @@ def _one_way_request(registry, build_id, available, *, minimum, maximum, step, o
     })
 
 
+def _tornado_request(registry, build_id, assumptions, *, output_period_id, output_id="net_leverage", generation=5):
+    from caos.contracts import ModelTornadoRequest
+
+    return ModelTornadoRequest.model_validate({
+        "build_id": build_id,
+        "parent_revision_id": None,
+        "registry_version": registry["version"],
+        "registry_digest": registry["digest"],
+        "assumptions": assumptions,
+        "draft_generation": generation,
+        "case": "BASE",
+        "output_period_id": output_period_id,
+        "output_id": output_id,
+        "intensity": 1,
+    })
+
+
 def _shifted_defaults(registry, delta: float = 0.001):
     rows = copy.deepcopy(registry["defaults"])
     target = next(row for row in rows if row["status"] == "READY" and row["case"] == "BASE")
@@ -1146,12 +1163,25 @@ async def test_preview_and_signoff_share_exact_calculation_and_previews_persist_
     assert preview["draft_generation"] == 7 and preview["build_id"] == build["id"]
     assert preview["assumptions_digest"] == _digest(registry["defaults"])
     assert preview["outputs_digest"] == _digest(preview["outputs"])
+    assert preview["worksheet"]["schema_version"] == "caos.model.worksheet.v1"
+    application_sources = {
+        (tab["id"], cell["address"]): cell["value"]
+        for tab in build["payload"]["tabs"] for cell in tab["cells"]
+        if cell.get("write_class") == "SOURCE"
+    }
+    preview_sources = {
+        (tab["id"], cell["address"]): cell["value"]
+        for tab in preview["worksheet"]["tabs"] for cell in tab["cells"]
+        if cell.get("write_class") == "SOURCE"
+    }
+    assert application_sources and preview_sources == application_sources, "document-derived history is immutable"
     assert models.revisions(case["id"]) == [], "previews persist nothing"
     assert store.audit_trail() == before_audit
 
     signed = models.sign_off(case["id"], _sign_off_request(registry, build["id"], preview, generation=7))
     assert signed["preview_digest"] == preview["preview_digest"]
     assert signed["outputs"] == preview["outputs"], "what you previewed is what you signed"
+    assert signed["worksheet"] == preview["worksheet"], "the signed version is the exact worksheet previewed"
     assert signed["export"]["status"] == "QUEUED"
     assert len(models.revisions(case["id"])) == 1
 
@@ -1199,11 +1229,40 @@ async def test_scenario_and_one_way_are_transient_with_registry_guardrails(model
     assert store.audit_trail() == before_audit
 
 
+async def test_tornado_is_ranked_and_centred_on_the_complete_working_forecast(models, engine, store):
+    case, build = await _built_case(models, engine, store)
+    registry = models.assumption_registry(case["id"], build["id"])
+    assumptions = copy.deepcopy(registry["defaults"])
+    for row in assumptions:
+        if row["assumption_id"] == "operating.adjusted_ebitda_margin" and row["case"] == "BASE" and row["status"] == "READY":
+            row["value"] = float(row["value"]) + 0.01
+    preview = models.preview(
+        case["id"], _preview_request(registry, build["id"], assumptions=assumptions, generation=5),
+    )
+    output_period_id = sorted(preview["outputs"]["BASE"])[-1]
+    before_audit = store.audit_trail()
+
+    tornado = models.tornado(
+        case["id"],
+        _tornado_request(registry, build["id"], assumptions, output_period_id=output_period_id),
+    )
+
+    assert tornado["baseline"] == preview["outputs"]["BASE"][output_period_id]["net_leverage"]
+    assert tornado["draft_generation"] == 5
+    assert tornado["bars"]
+    assert all({"assumption_id", "label", "unit", "swing", "low", "high"} <= set(bar) for bar in tornado["bars"])
+    magnitudes = [abs(Decimal(bar["high"]) - Decimal(bar["low"])) for bar in tornado["bars"]]
+    assert magnitudes == sorted(magnitudes, reverse=True)
+    assert models.revisions(case["id"]) == []
+    assert store.audit_trail() == before_audit
+
+
 async def test_calculations_share_one_aggregate_deadline_without_persistence(models, engine, store):
     case, build = await _built_case(models, engine, store)
     registry = models.assumption_registry(case["id"], build["id"])
     available = next(row for row in registry["defaults"] if row["status"] == "READY" and row["case"] == "BASE")
     step = float(next(d for d in registry["definitions"] if d["assumption_id"] == available["assumption_id"])["sensitivity_default"]["step"])
+    output_period_id = sorted(models.default_outputs(case["id"], build["id"])["BASE"])[-1]
     before_audit = store.audit_trail()
     models.exceed_calculation_deadline_for_tests()
 
@@ -1217,6 +1276,11 @@ async def test_calculations_share_one_aggregate_deadline_without_persistence(mod
     with pytest.raises(Exception, match="MODEL_CALCULATION_TIMEOUT"):
         models.one_way(case["id"], _one_way_request(
             registry, build["id"], available, minimum=float(available["value"]), maximum=float(available["value"]) + step, step=step,
+        ))
+    with pytest.raises(Exception, match="MODEL_CALCULATION_TIMEOUT"):
+        models.tornado(case["id"], _tornado_request(
+            registry, build["id"], registry["defaults"],
+            output_period_id=output_period_id,
         ))
     assert models.revisions(case["id"]) == []
     assert store.audit_trail() == before_audit
@@ -1310,6 +1374,25 @@ async def test_http_one_way_route_calculates_without_persisting(client, models, 
     assert response.json()["build_id"] == build["id"]
     assert len(response.json()["points"]) == 2
     assert models.revisions(case["id"]) == []
+
+
+async def test_http_tornado_route_uses_the_complete_working_forecast(client, models, engine, store):
+    case, build = await _built_case(models, engine, store)
+    registry = models.assumption_registry(case["id"], build["id"])
+    preview = models.preview(case["id"], _preview_request(registry, build["id"]))
+    output_period_id = sorted(preview["outputs"]["BASE"])[-1]
+
+    response = client.post(
+        f"/api/cases/{case['id']}/models/tornado",
+        json=_tornado_request(
+            registry, build["id"], registry["defaults"], output_period_id=output_period_id,
+        ).model_dump(mode="json"),
+        headers=_ANALYST,
+    )
+
+    assert response.status_code == 200
+    assert response.json()["baseline"] == preview["outputs"]["BASE"][output_period_id]["net_leverage"]
+    assert response.json()["bars"]
 
 
 async def test_http_rebase_preview_route_preserves_the_signed_source(client, models, engine, store):

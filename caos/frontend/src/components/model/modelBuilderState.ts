@@ -1,3 +1,5 @@
+import type { WorksheetResponse } from "../../lib/api";
+
 export type ModelCase = "BASE" | "DOWNSIDE";
 export type AssumptionStatus = "READY" | "UNAVAILABLE" | "NOT_APPLICABLE";
 
@@ -78,6 +80,8 @@ export type AssumptionRegistry = {
   defaults: WireAssumptionValue[];
 };
 
+export type WorksheetPayload = WorksheetResponse["payload"];
+
 export type ModelPreview = {
   case_id: string;
   build_id: string;
@@ -93,6 +97,7 @@ export type ModelPreview = {
   assumptions_digest: string;
   outputs: Record<string, unknown>;
   outputs_digest: string;
+  worksheet: WorksheetPayload;
   deltas: Record<string, unknown>;
   preview_digest: string;
 };

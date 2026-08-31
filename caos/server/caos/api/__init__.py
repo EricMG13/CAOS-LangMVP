@@ -36,6 +36,7 @@ from ..contracts import (
     ModelRebasePreviewRequest,
     ModelScenarioRequest,
     ModelSignOffRequest,
+    ModelTornadoRequest,
     NoteRequest,
     OneWaySensitivityRequest,
     RequestDeliverableChangesRequest,
@@ -930,6 +931,14 @@ def create_app(*, settings: Settings, store: DomainStore, engine: Any) -> FastAP
         require_case(store, case_id, identity(request), write=True)
         try:
             return models().scenario(case_id, body)
+        except ValueError as exc:
+            raise model_error(exc) from exc
+
+    @app.post("/api/cases/{case_id}/models/tornado", response_model=wire.ModelTornadoResponse)
+    def model_tornado(case_id: str, request: Request, body: ModelTornadoRequest = Body(...)) -> dict[str, Any]:
+        require_case(store, case_id, identity(request), write=True)
+        try:
+            return models().tornado(case_id, body)
         except ValueError as exc:
             raise model_error(exc) from exc
 

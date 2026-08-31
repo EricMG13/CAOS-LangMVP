@@ -1,0 +1,189 @@
+.workspace {
+  display: grid;
+  grid-template-columns: minmax(250px, .75fr) minmax(480px, 2fr) minmax(280px, .85fr);
+  min-width: 0;
+  overflow: hidden;
+}
+
+.assumptions,
+.model,
+.tornado {
+  min-width: 0;
+  max-height: calc(100dvh - 190px);
+  overflow: auto;
+}
+
+.assumptions,
+.tornado {
+  padding: var(--space-lg);
+  background: var(--caos-elevated);
+}
+
+.assumptions { border-right: 1px solid var(--caos-border); }
+.tornado { border-left: 1px solid var(--caos-border); }
+.model { background: var(--caos-bg); }
+
+.sectionHeader {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: var(--space-md);
+  padding: var(--space-md) var(--space-lg);
+  border-bottom: 1px solid var(--caos-border);
+}
+
+.assumptions > .sectionHeader,
+.tornado > .sectionHeader { padding: 0 0 var(--space-md); }
+.sectionHeader h3, .sectionHeader p { margin: 0; }
+
+.caseSwitch,
+.intensity {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  margin: var(--space-md) 0;
+}
+
+.intensity > span {
+  margin-right: auto;
+  color: var(--caos-muted);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.driverList { display: grid; gap: var(--space-sm); }
+
+.driver {
+  min-width: 0;
+  margin: 0;
+  border: 1px solid var(--caos-border);
+  padding: var(--space-sm);
+}
+
+.driver legend {
+  display: flex;
+  width: 100%;
+  justify-content: space-between;
+  gap: var(--space-sm);
+  padding: 0 var(--space-xs);
+  color: var(--caos-text);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.driver legend small { color: var(--caos-muted); font-weight: 500; }
+
+.forecastValues {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-xs);
+}
+
+.forecastValues label,
+.control,
+.signOff label {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  color: var(--caos-muted);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+
+.forecastValues small { overflow: hidden; color: var(--caos-muted); font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+
+.scrubber,
+.control select,
+.signOff textarea {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid var(--caos-border-strong);
+  border-radius: 0;
+  background: var(--caos-bg);
+  color: var(--caos-text);
+  padding: 7px 8px;
+  font: 600 11px/1.2 var(--font-mono), ui-monospace, monospace;
+}
+
+.scrubber:not(:disabled) { cursor: ew-resize; touch-action: none; }
+.scrubber:disabled { color: var(--caos-muted); cursor: not-allowed; }
+
+.signOff {
+  display: grid;
+  gap: var(--space-xs);
+  margin-top: var(--space-lg);
+  border-top: 1px solid var(--caos-border);
+  padding-top: var(--space-lg);
+}
+
+.signOff textarea { min-height: 90px; resize: vertical; }
+
+.lineage {
+  border-top: 1px solid var(--caos-border);
+  padding: var(--space-md) var(--space-lg);
+  background: var(--caos-elevated);
+}
+
+.lineage h3 { margin: 0 0 var(--space-sm); font-size: 12px; }
+
+.tornadoChart { display: grid; gap: var(--space-md); margin-top: var(--space-lg); }
+
+.tornadoRow {
+  display: grid;
+  grid-template-columns: minmax(88px, 1fr) 54px minmax(90px, 1.5fr) 54px;
+  align-items: center;
+  gap: var(--space-xs);
+  font-size: 10px;
+}
+
+.tornadoTrack { position: relative; height: 14px; background: var(--caos-bg); }
+
+.tornadoBar {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  min-width: 2px;
+  background: var(--caos-accent);
+}
+
+.tornadoBase {
+  position: absolute;
+  top: -2px;
+  bottom: -2px;
+  width: 1px;
+  background: var(--caos-text);
+}
+
+.versions details { padding: var(--space-lg); }
+.versions summary { cursor: pointer; font-weight: 700; }
+
+.rebase {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr) auto;
+  align-items: end;
+  gap: var(--space-lg);
+  margin-top: var(--space-lg);
+  border-top: 1px solid var(--caos-border);
+  padding-top: var(--space-lg);
+}
+
+.rebase h4, .rebase p { margin: 0; }
+
+@media (max-width: 1180px) {
+  .workspace { grid-template-columns: minmax(240px, .8fr) minmax(460px, 2fr); }
+  .tornado { grid-column: 1 / -1; max-height: none; border-top: 1px solid var(--caos-border); border-left: 0; }
+}
+
+@media (max-width: 780px) {
+  .workspace { grid-template-columns: 1fr; }
+  .assumptions, .model, .tornado { max-height: none; border: 0; border-bottom: 1px solid var(--caos-border); }
+  .rebase { grid-template-columns: 1fr; }
+}
+
+@media (pointer: coarse) {
+  .scrubber { min-height: 44px; }
+}

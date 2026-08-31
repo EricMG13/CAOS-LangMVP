@@ -488,5 +488,9 @@ class ModelScenarioResponse(OpenWireModel):
     scenario_digest: str
 
 
+class ModelTornadoResponse(OpenWireModel):
+    pass
+
+
 class ModelSensitivityResponse(OpenWireModel):
     pass

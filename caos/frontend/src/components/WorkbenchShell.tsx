@@ -6,6 +6,7 @@ import {
   CaseRecord,
   Destination,
   SnapshotView,
+  WorkflowId,
   destinationMeta,
   evidenceKind,
   withQuery,
@@ -31,6 +32,7 @@ type Props = {
   authority: SnapshotView | null;
   authorityStatus: AuthorityStatus;
   cases: CaseRecord[];
+  casesLoading: boolean;
   caseId: string;
   drawer: DrawerState | null;
   error: string;
@@ -46,11 +48,40 @@ type Props = {
   children: ReactNode;
 };
 
+// The small SVG marks DESIGN.md assigns to navigation chips. Each glyph names
+// its destination the way the desk already does — a register, a pulse, stacked
+// sources, a reader, comparison bars, a worksheet grid, a filed page, a shield
+// for governance — and every one is aria-hidden: the link's accessible name
+// stays exactly its label, so the rail reads identically to a screen reader.
+const glyphProps = {
+  viewBox: "0 0 16 16",
+  width: 13,
+  height: 13,
+  fill: "none",
+  stroke: "currentColor",
+  strokeWidth: 1.5,
+  strokeLinecap: "round",
+  strokeLinejoin: "round",
+  "aria-hidden": true,
+  focusable: false,
+} as const;
+
+const workflowGlyphs: Record<WorkflowId, ReactNode> = {
+  portfolio: <svg {...glyphProps}><rect x="2" y="2.75" width="12" height="10.5" /><path d="M2 6h12M2 9.5h12M6 6v7.25" /></svg>,
+  credit: <svg {...glyphProps}><path d="M1.5 8h3l2-4.5 3 9 2-4.5h3" /></svg>,
+  sources: <svg {...glyphProps}><path d="M8 2 14 5 8 8 2 5Z" /><path d="m2 8.25 6 3 6-3" /><path d="m2 11.5 6 3 6-3" /></svg>,
+  analysis: <svg {...glyphProps}><rect x="3" y="2" width="10" height="12" /><path d="M5.5 5h5M5.5 8h5M5.5 11h3" /></svg>,
+  market: <svg {...glyphProps}><path d="M2 13.5h12" /><path d="M4.5 13.5V9M8 13.5V5M11.5 13.5V7.5" /></svg>,
+  model: <svg {...glyphProps}><rect x="2" y="2" width="12" height="12" /><path d="M2 6.5h12M6.5 6.5V14" /></svg>,
+  report: <svg {...glyphProps}><path d="M4 1.5h5.5L13 5v9.5H4Z" /><path d="M9.5 1.5V5H13" /></svg>,
+};
+
 export default function WorkbenchShell({
   active,
   authority,
   authorityStatus,
   cases,
+  casesLoading,
   caseId,
   drawer,
   error,
@@ -226,7 +257,7 @@ export default function WorkbenchShell({
               className={`nav-link ${current ? "active" : ""}`}
               href={workflowHref(workflow.href)}
               key={workflow.id}
-            >{workflow.label}</Link>;
+            ><span className="nav-glyph" aria-hidden="true">{workflowGlyphs[workflow.id]}</span><span className="nav-text">{workflow.label}</span></Link>;
           })}
         </nav>
         {activeWorkflow.tools?.length ? <nav aria-label={`${activeWorkflow.label} tools`} className="nav-group">
@@ -239,7 +270,7 @@ export default function WorkbenchShell({
           >{tool.label}{tool.destination === "Run Console" && runIsLive && <span className="shortcut">LIVE<span className="sr-only"> run in progress</span></span>}</Link>)}
         </nav> : null}
         <div className="rail-spacer" />
-        <nav className="nav-group governance-nav" aria-label="Governance"><div className="nav-label">Governance</div><Link className={`nav-link ${active === "Admin Studio" ? "active" : ""}`} aria-current={active === "Admin Studio" ? "page" : undefined} href={workflowHref("/admin-studio")}>Admin</Link></nav>
+        <nav className="nav-group governance-nav" aria-label="Governance"><div className="nav-label">Governance</div><Link className={`nav-link ${active === "Admin Studio" ? "active" : ""}`} aria-current={active === "Admin Studio" ? "page" : undefined} href={workflowHref("/admin-studio")}><span className="nav-glyph" aria-hidden="true"><svg {...glyphProps}><path d="M8 1.5 13.5 3.5V8c0 3.5-2.5 5.5-5.5 6.5C5 13.5 2.5 11.5 2.5 8V3.5Z" /></svg></span><span className="nav-text">Admin</span></Link></nav>
         <div className="rail-meta"><span>{role === "READER" ? "Reader" : role.toLowerCase().replace(/^./, (value) => value.toUpperCase())}</span><span>{selectedCase ? selectedCase.issuer : "No credit selected"}</span><span>Desktop workbench</span></div>
       </aside>
       <div className="workspace">
@@ -250,7 +281,10 @@ export default function WorkbenchShell({
             <span className="reading-label">Reading: {meta.reading}</span>
             <label className="sr-only" htmlFor="case-select">Select case</label>
             <select id="case-select" aria-label="Select case" value={caseId} onChange={(event) => onCaseChange(event.target.value)}>
-              <option value="">Select case</option>
+              {/* The placeholder names its own state: while the register is still
+                  in flight the control says so instead of offering a selection
+                  that does not exist yet. */}
+              <option value="">{casesLoading && !cases.length ? "Loading cases…" : "Select case"}</option>
               {cases.map((item) => <option key={item.id} value={item.id}>{item.issuer} — {item.name}</option>)}
             </select>
             <button ref={triggerRef} className="button small" type="button" aria-label="Open command palette" onClick={openPalette}>Command <span className="shortcut">⌘K</span></button>
@@ -351,6 +385,13 @@ export default function WorkbenchShell({
             >Open {exactEvidenceKind} ID in this case</Link>;
           })()}
           {!resultCount && <p className="muted">No matches</p>}
+        </div>
+        {/* Keyboard affordances the palette already supports, made visible. Purely
+            decorative (aria-hidden): the combobox behaviour is unchanged. */}
+        <div className="palette-hint" aria-hidden="true">
+          <span><kbd>↑</kbd><kbd>↓</kbd> Navigate</span>
+          <span><kbd>↵</kbd> Open</span>
+          <span><kbd>Esc</kbd> Close</span>
         </div>
       </div>
     </dialog>

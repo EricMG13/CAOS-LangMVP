@@ -732,6 +732,7 @@ export default function Workspace({ destination, children }: { destination?: Des
       authority={authority}
       authorityStatus={authorityStatus}
       cases={cases}
+      casesLoading={casesLoading}
       caseId={caseId}
       drawer={drawer}
       error={error}

@@ -318,6 +318,20 @@ class ModelPreviewRequest(StrictModel):
     draft_generation: int = Field(default=0, ge=0, le=2_147_483_647)
 
 
+class ModelTornadoRequest(ModelPreviewRequest):
+    case: Literal["BASE", "DOWNSIDE"] = "BASE"
+    output_period_id: str = Field(pattern=r"^(BASE|DOWNSIDE)::FY[0-9]{4}$")
+    output_id: str = Field(default="net_leverage", min_length=1, max_length=120)
+    intensity: float = Field(default=1, gt=0, le=2)
+
+    @field_validator("intensity")
+    @classmethod
+    def finite_intensity(cls, value: float) -> float:
+        checked = finite_or_none(value)
+        assert checked is not None
+        return checked
+
+
 class ModelSignOffRequest(ModelPreviewRequest):
     preview_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     expected_head_revision_id: str | None = Field(default=None, max_length=120)
