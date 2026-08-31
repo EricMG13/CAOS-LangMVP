@@ -21,7 +21,7 @@ dependencies = [
     # so the driver is a declared dependency rather than a transitive accident.
     "psycopg[binary]==3.3.4",
     "langchain-anthropic==1.6.1",
-    "fastapi==0.139.*",
+    "fastapi>=0.139,<0.142",
     # Direct import in api/__init__.py (also a transitive fastapi dep, but that
     # floor is 0.46 — GZipMiddleware's exclude_content_types needs 1.x).
     "starlette>=1.6",
