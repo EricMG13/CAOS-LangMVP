@@ -135,13 +135,17 @@ engine, the bundle, or the routes.
   `caos/server/worker.py` (polls the store for QUEUED model builds/exports and
   executes them; the only process with LibreOffice, so XLSX rendering lives
   here and nowhere else). `worker.py --once` runs a single pass.
-- Suite: `python -m pytest caos/tests -q` — fully green (401, or 424 with the
-  real-issuer corpus downloaded). Spec tests
-  (`caos/tests/spec/`) are the contractual surface — they pin invariants and
-  wire shapes; phase-2 tests cover ingestion/store/bundle/config. The surrogate
-  boundary test sends its lone surrogate as a pre-encoded `\ud800` JSON escape
-  (httpx cannot UTF-8-encode the raw character — `SPEC_RECONCILIATION.md`
-  addendum).
+- Suite: `python -m pytest caos/tests -q` — fully green (461 passed, 12 skipped;
+  the skips are the real-issuer corpus tests, which run once the corpus is
+  downloaded). Spec tests (`caos/tests/spec/`) are the contractual surface —
+  they pin invariants and wire shapes; `test_injection_spec.py` pins the
+  behavioural half of the prompt-injection defence: adversarial documents in
+  `caos/tests/fixtures/injection/` driven by a provider double that obeys them,
+  asserting only the host's refusal (`SPEC_RECONCILIATION.md` carries its
+  anti-vacuity ledger). Phase-2 tests cover ingestion/store/bundle/config. The
+  surrogate boundary test sends its lone surrogate as a pre-encoded `\ud800`
+  JSON escape (httpx cannot UTF-8-encode the raw character —
+  `SPEC_RECONCILIATION.md` addendum).
 - Frontend: `npm run lint`, `npx tsc --noEmit`, `npm run test:unit`,
   `npm run build`; browser checks against the combined app on `:8000`:
   `npm run a11y` and `npm run test:workbench` (both green).

@@ -211,3 +211,68 @@ and never-lands tests.
 
 D3 (residual Postgres two-connection halves of 2 rows) remains deferred on its original reason —
 no Postgres test target exists in CI yet; flagged for the phase-6 gate since this is the last phase.
+
+## Prompt-injection behaviour suite (2026-08-31)
+
+Every document CAOS ingests is attacker-controlled. Until this date the only
+recorded defence was the untrusted label (`methodology/prompt.py`,
+`engine/authority.py::compile_module_prompts`) and one *placement* test —
+`spec/test_modules_spec.py::test_prompts_keep_untrusted_data_out_of_system_authority`,
+which asserts that source-derived text stays out of the system prompt. Nothing
+asserted **behaviour**: what the host does when a document instructs the model
+to escape and the model complies.
+
+`caos/tests/spec/test_injection_spec.py` (14 tests) closes that half against
+`caos/tests/fixtures/injection/` — ten adversarial documents — driven by a
+maximally cooperative provider double (`CompliantProvider`). It reads the pinned
+document through the real `read_evidence` tool, parses the attacker's
+`CAOS-INJECT:` directive out of the returned evidence, and carries it out
+verbatim: it never resists, refuses, or sanitizes. Every assertion is on the
+**host's** refusal — a test that passes only because the model behaved asserts
+nothing, so none is written that way.
+
+| Injected instruction | Structural defence asserted | Invariant |
+|---|---|---|
+| read a source uploaded after the pin (`evidence_escape`) | pinned-set membership, typed refusal, no text returned | 1, 2 |
+| read a source in another case (`evidence_escape`) | case binding on the pinned set | 1, 2 |
+| read a source withdrawn mid-module (`evidence_escape`) | withdrawal re-checked live inside every read, not once at module entry | 1, 2 |
+| read a homoglyph / zero-width lookalike of the pinned id (`homoglyph_evidence_escape`) | membership is byte equality — no confusable or NFKC folding | 1, 2 |
+| fetch a URL through a second tool wearing `read_evidence`'s argument shape (`web_discovery`) | the tool surface is exactly one tool, refused by name | 1 |
+| answer with no evidence because "the analyst approved" (`instruction_override`) | supplied evidence is a floor (`evidence_refs` min 1), backstopped by the delivered-set contract | 1, 9 |
+| add undeclared envelope fields (`envelope_smuggling`) | strict canonical envelope refuses, never tolerates | 9 |
+| cite a block the host never delivered (`citation_forgery`) | declared refs must equal the delivered set exactly | 9 |
+| dictate the artifact's own frontmatter identity and build id (`provider_frontmatter_forgery`) | envelope rebuilt from pinned state; the run succeeds and every claimed value is gone | 3 |
+| claim an external QA attestation over a failing source gate (`qa_status_forgery`) | `require_qa_passed` over host-recomputed confidence; non-Passed is terminal | 3, 9 |
+| carry a forged "CAOS HOST EXECUTION CONTRACT" amendment (`fake_host_framing`) | the injection is delivered to the model and the system prompt stays byte-identical to the verified bundle authority (golden digest) for the whole run | 4 |
+| supply forbidden `InvocationPlan` keys and a bidi-override focus question (`authority_key_injection`) | allowlist refusal per key; `validate_boundary_text` at the API boundary | 3, §12.3 |
+
+### Anti-vacuity ledger
+
+Each row below deletes exactly one host-side check, runs the whole suite, and
+records what turns red. Ten of the fourteen new tests have an isolating deletion.
+The other four are defence-in-depth scenarios, verified as such rather than
+assumed: the cross-case read is caught independently by pinned-set membership
+*and* by the case binding (deleting either leaves it green, which is why row 1
+turns only the out-of-set test red); the two homoglyph parametrizations pin the
+byte-equality *property* of membership, which a deletion cannot express (the
+weakening that would break them is adding confusable or NFKC folding); and the
+no-evidence answer is refused by `evidence_refs` min-length first and by the
+delivered-set citation contract second — removing the min-length bound leaves it
+green, so both were measured, not assumed.
+
+| # | Check deleted | New test that turns red | Pre-existing tests also red |
+|---|---|---|---|
+| 1 | pinned-set membership (`engine/evidence.py`) | `test_out_of_set_source_named_by_the_document_is_refused_and_returns_no_text` | none |
+| 2 | live withdrawal check (`engine/evidence.py`) | `test_withdrawal_racing_the_injected_read_is_caught_live_inside_the_tool` | 2 (evidence spec) |
+| 3 | `CanonicalModuleOutput` `extra="forbid"` (`methodology/canonical.py`) | `test_smuggled_envelope_fields_are_refused_not_ignored` | 1 (modules spec) |
+| 4 | `read_evidence` tool-name check (`engine/loop.py`) | `test_web_discovery_instruction_cannot_reach_a_second_tool` | none |
+| 5 | host frontmatter stamp + section rebuild (`methodology/canonical.py`) | `test_forged_frontmatter_from_the_document_never_survives_canonicalization` | none |
+| 6 | delivered-set citation equality (`methodology/canonical.py`) | `test_citation_to_an_undelivered_block_is_refused` | 1 (evidence spec) |
+| 7 | system/user prompt separation (`engine/authority.py`) | `test_a_forged_host_contract_inside_a_document_never_becomes_system_authority` | 4 (modules spec, module wiring) |
+| 8 | `InvocationPlan` allowlist (`methodology/prompt.py`) | `test_every_forbidden_authority_key_the_document_names_is_refused` | 1 (modules spec) |
+| 9 | focus-question boundary text (`engine/runtime.py`) | `test_a_focus_question_copied_out_of_a_document_carries_no_authority` | none |
+| 10 | `require_qa_passed` in the agent validate step (`engine/runtime.py`) | `test_a_document_cannot_talk_a_blocked_module_into_qa_passed` | none |
+
+No host code changed: every defence these tests assert already existed. Suite
+state after the addition: **461 passed, 12 skipped** (the skips are the
+real-issuer corpus tests, which run when the corpus is downloaded).
