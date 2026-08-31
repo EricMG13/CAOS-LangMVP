@@ -249,6 +249,7 @@ def test_worker_entrypoint_holds_the_worker_lock_while_polling(monkeypatch, tmp_
     tracker = _LockTracker()
     settings = _settings(tmp_path)
     monkeypatch.setattr(worker.Settings, "from_env", classmethod(lambda cls: settings))
+    monkeypatch.setattr(worker, "configure_logging", lambda _settings: None, raising=False)
     monkeypatch.setattr(worker.DomainStore, "from_url", classmethod(lambda cls, _url: tracker))
     monkeypatch.setattr(worker.Engine, "create", classmethod(lambda cls, **_kwargs: object()))
     monkeypatch.setattr(worker, "ModelService", lambda **_kwargs: object())
