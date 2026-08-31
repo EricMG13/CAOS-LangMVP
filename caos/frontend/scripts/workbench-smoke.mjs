@@ -500,6 +500,17 @@ try {
   await page.getByRole("button", { name: "Compile and run" }).focus();
   await page.keyboard.press("Enter");
   await page.getByRole("heading", { name: "Proposed research plan" }).waitFor();
+  // A governed action disables its own control while the request is in flight, and a
+  // disabled element hands focus to <body> — which strands the keyboard and throws a
+  // screen reader to the top of the document (WCAG 2.4.3). Workspace repairs that
+  // once the action settles; these two assertions are what fail if the repair goes.
+  await assert.doesNotReject(() => page.getByRole("button", { name: "Compile and run" }).evaluate((element) => {
+    if (document.activeElement === document.body) throw new Error("compiling a route left focus on <body>");
+    if (document.activeElement !== element) throw new Error(`focus settled on ${document.activeElement?.tagName} instead of the compile control`);
+  }), "compile did not restore focus to its own control");
+  // WCAG 4.1.3: the outcome of a governed write reaches assistive tech or it reaches
+  // nobody — the DOM simply changing is not a status message.
+  await page.getByRole("status").getByText("Route compiled. Execution started.", { exact: true }).waitFor();
   assert.deepEqual(researchBriefPayload, {
     pathway: "DEEP_RESEARCH",
     depth: "full",
@@ -545,7 +556,13 @@ try {
   const approveResearchPlan = page.getByRole("button", { name: "Approve research plan" });
   await approveResearchPlan.focus();
   await page.keyboard.press("Enter");
-  await page.getByRole("status").getByText("queued", { exact: true }).waitFor();
+  // The badge's accessible text now carries its subject: a polite live region that
+  // announced a bare "queued" left a screen reader with a status and nothing to
+  // attach it to. The visible chip is still the single word.
+  await page.getByRole("status").getByText("Run status: queued", { exact: true }).waitFor();
+  assert.equal(await page.locator(".panel-header .status").first().evaluate((element) => element.lastChild?.textContent), "queued", "the visible run status chip is no longer the bare status word");
+  await page.getByRole("status").getByText("Research plan approved. Execution resumes against the approved plan hash.", { exact: true }).waitFor();
+  assert.equal(await page.evaluate(() => document.activeElement === document.body), false, "approving the research plan left focus on <body>");
   assert.deepEqual(approvalPayload, { plan_hash: researchPlanHash });
   assert.ok(caseDetailFixtureHits > 0, "pending-plan case detail fixture was not exercised");
   assert.ok(startFixtureHits > 0, "pending-plan start fixture was not exercised");
@@ -677,6 +694,19 @@ try {
   await page.goto(`${baseURL}/run-console/?case=${caseRecord.id}&run=${nextRun.id}`, { waitUntil: "networkidle" });
   await page.getByText("Accepted — visible authority", { exact: true }).waitFor();
   assert.equal(await page.getByRole("button", { name: "Accept analytical snapshot" }).count(), 0, "an accepted run still offers a live acceptance action");
+
+  // Module progress lives in the DAG tiles, which are not a live region: without this
+  // sentence a screen reader learns only that the DOM changed (WCAG 4.1.3).
+  await page.getByRole("status").getByText(/^\d+ of \d+ modules? complete\./).waitFor();
+  // WCAG 2.4.1: <main> needs tabindex="-1" or the skip link moves the scroll position
+  // and the browser's focus starting point while leaving activeElement on <body>.
+  await page.evaluate(() => document.body.focus());
+  await page.keyboard.press("Tab");
+  await assert.doesNotReject(() => page.getByRole("link", { name: "Skip to content" }).evaluate((element) => {
+    if (document.activeElement !== element) throw new Error("the skip link is not the first tab stop");
+  }));
+  await page.keyboard.press("Enter");
+  assert.equal(await page.evaluate(() => document.activeElement?.id), "main-content", "the skip link did not move focus into the main landmark");
 
   const qaTrigger = page.getByRole("button", { name: "QA status", exact: true });
   await qaTrigger.click();

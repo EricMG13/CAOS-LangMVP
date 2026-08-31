@@ -259,7 +259,7 @@ export default function WorkbenchShell({
             className={`nav-link ${active === tool.destination ? "active" : ""}`}
             href={workflowHref(tool.href, tool.destination)}
             key={tool.destination}
-          >{tool.label}{tool.destination === "Run Console" && runIsLive && <span className="shortcut" aria-hidden="true">LIVE</span>}</Link>)}
+          >{tool.label}{tool.destination === "Run Console" && runIsLive && <span className="shortcut">LIVE<span className="sr-only"> run in progress</span></span>}</Link>)}
         </nav> : null}
         {role === "ADMIN" && <div className="nav-group"><div className="nav-label">UTILITY</div><Link className={`nav-link ${active === "Admin Studio" ? "active" : ""}`} aria-current={active === "Admin Studio" ? "page" : undefined} href={workflowHref("/admin-studio")}>Admin Studio</Link></div>}
       </aside>
@@ -285,7 +285,13 @@ export default function WorkbenchShell({
             <button ref={triggerRef} className="button small" type="button" aria-label="Open command palette" onClick={openPalette}>Command <span className="shortcut">⌘K</span></button>
           </div>
         </div>
-        <main className={`content${active === "Report Studio" ? " report-content" : ""}`} id="main-content">
+        {/* `tabIndex={-1}` is what makes this landmark a real focus target. Without
+            it the skip link moved the scroll and the browser's sequential focus
+            starting point but left `document.activeElement` on <body>, so a screen
+            reader never entered the content (WCAG 2.4.1); it is also where Workspace
+            sends focus when a route change or a governed write destroys the element
+            the user was on (WCAG 2.4.3). */}
+        <main className={`content${active === "Report Studio" ? " report-content" : ""}`} id="main-content" tabIndex={-1}>
           <div className="page-title"><h1>{unknownRoute ? "Page not found" : active}</h1>{error && <div className="error" role="alert" aria-live="assertive">{error}</div>}</div>
           {children}
         </main>

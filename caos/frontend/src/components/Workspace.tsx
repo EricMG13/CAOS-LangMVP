@@ -65,6 +65,10 @@ export default function Workspace({ destination, children }: { destination?: Des
   const [runLoading, setRunLoading] = useState(false);
   const [runError, setRunError] = useState("");
   const [error, setError] = useState("");
+  // The outcome of a governed write, announced politely and only to assistive tech:
+  // a sighted analyst already sees the new source row, the selected case or the
+  // accepted-authority line, but nothing in the DOM said so out loud (WCAG 4.1.3).
+  const [notice, setNotice] = useState("");
   const [pendingAction, setPendingAction] = useState("");
   // READER until the server says otherwise, plus a `roleResolved` flag so the
   // shell can tell "still asking" from "asked, and you may not". Defaulting to a
@@ -97,6 +101,8 @@ export default function Workspace({ destination, children }: { destination?: Des
   const historyGuardRearmRef = useRef(false);
   const suppressNextModelHistoryPopRef = useRef(false);
   const modelHistoryPopFenceTimerRef = useRef<number | null>(null);
+  const focusedBeforeRef = useRef<HTMLElement | null>(null);
+  const lastDestinationRef = useRef(active);
   const selectedCase = useMemo(() => cases.find((item) => item.id === caseId) || null, [cases, caseId]);
   const caseIsAuthorized = selectedCase !== null;
 
@@ -388,6 +394,60 @@ export default function Workspace({ destination, children }: { destination?: Des
     document.title = `CAOS — ${active}`;
   }, [active]);
 
+  // Last element the user actually focused. Read by the repair effect below, which
+  // cannot observe it itself: by the time an effect runs the element is already
+  // disabled or unmounted and `document.activeElement` has fallen back to <body>.
+  useEffect(() => {
+    const remember = (event: FocusEvent) => {
+      if (event.target instanceof HTMLElement && event.target !== document.body) focusedBeforeRef.current = event.target;
+    };
+    document.addEventListener("focusin", remember);
+    return () => document.removeEventListener("focusin", remember);
+  }, []);
+
+  // WCAG 2.4.3. Three things in this workspace destroy the focused element: a
+  // governed action disables its own control for the length of the request, a case
+  // change re-keys the whole destination subtree, and a client-side route change
+  // replaces it outright. Every one of them drops focus to <body>, which strands a
+  // keyboard user mid-journey and throws a screen reader back to the top of the
+  // document — measured at create-case, upload, compile, accept and open-artifact.
+  // Repair it: a navigation lands on the main landmark, an in-place action goes back
+  // to the control the analyst was on, and a control that did not survive its own
+  // action falls back to the landmark rather than to nothing. A page that has never
+  // held focus is left alone — <body> is the correct starting point for a fresh load.
+  useEffect(() => {
+    // This assignment stays ABOVE the guards on purpose. The ref tracks where the
+    // workspace is, not where a repair last happened, so it must advance even on the
+    // runs that decline to repair. Move it below and a route change the user made
+    // with the mouse — focus never lost, so nothing to repair — leaves the ref stale,
+    // and the next in-place action reads `navigated` as true and throws focus to the
+    // landmark instead of returning it to the control.
+    const navigated = lastDestinationRef.current !== active;
+    lastDestinationRef.current = active;
+    const previous = focusedBeforeRef.current;
+    // Wait for the action to settle. Repairing mid-flight would land on the landmark
+    // every time, because the control the analyst pressed is still disabled and
+    // cannot take focus back yet.
+    if (pendingAction) return;
+    // Never repair underneath an open modal. Today every modal here focuses something
+    // inside itself on open, so `previous` is in the dialog and the restore below
+    // wins — but that is an invariant of three call sites, not a guarantee. If one
+    // ever opens without taking focus, the landmark fallback would put focus on
+    // inert content behind the backdrop, which is worse than the loss it repairs.
+    if (document.querySelector("dialog[open]")) return;
+    if (!previous || document.activeElement !== document.body) return;
+    const frame = window.requestAnimationFrame(() => {
+      if (document.activeElement !== document.body) return;
+      // Still connected is not the same as still focusable: accept confirms from
+      // inside a <dialog> that this very action closes, and `focus()` on a control
+      // in a closed dialog is a silent no-op. Land on the landmark whenever the
+      // restore did not take, rather than trusting it to have worked.
+      if (!navigated && previous.isConnected) previous.focus();
+      if (document.activeElement === document.body) document.getElementById("main-content")?.focus();
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [active, caseId, runId, pendingAction, run?.status, run?.error?.code]);
+
   useEffect(() => {
     if (!hydrated) return;
     const url = new URL(window.location.href);
@@ -428,7 +488,7 @@ export default function Workspace({ destination, children }: { destination?: Des
   }, [caseId, run?.case_id, run?.id, runId, runSettled]);
 
   const createCase = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault(); setError("");
+    event.preventDefault(); setError(""); setNotice("");
     const formElement = event.currentTarget;
     const form = new FormData(formElement);
     const context = requestContext(authorityRef.current);
@@ -440,6 +500,7 @@ export default function Workspace({ destination, children }: { destination?: Des
       setCases((previous) => [created, ...previous]);
       dispatchAuthority({ type: "requestSucceeded", context, scope: "create-case" });
       setPendingAction("");
+      setNotice(`Case created: ${created.issuer} / ${created.name}. It is now the selected case.`);
       selectCase(created.id); formElement.reset();
     } catch (caught) {
       if (!matchesAuthority(authorityRef.current, context)) return;
@@ -451,7 +512,7 @@ export default function Workspace({ destination, children }: { destination?: Des
   };
 
   const upload = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault(); if (!caseId) return; setError("");
+    event.preventDefault(); if (!caseId) return; setError(""); setNotice("");
     const formElement = event.currentTarget;
     const form = new FormData(formElement);
     const context = requestContext(authorityRef.current);
@@ -461,7 +522,7 @@ export default function Workspace({ destination, children }: { destination?: Des
       if (!matchesAuthority(authorityRef.current, context)) return;
       dispatchAuthority({ type: "requestSucceeded", context, scope: "upload" });
       await refreshCase(caseId);
-      if (matchesAuthority(authorityRef.current, context)) formElement.reset();
+      if (matchesAuthority(authorityRef.current, context)) { setNotice("Source uploaded. The case source set is versioned."); formElement.reset(); }
     } catch (caught) {
       if (!matchesAuthority(authorityRef.current, context)) return;
       setError(firstErrorMessage(caught, "Unable to upload source"));
@@ -472,7 +533,7 @@ export default function Workspace({ destination, children }: { destination?: Des
   };
 
   const startRun = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault(); if (!caseId) return; setError("");
+    event.preventDefault(); if (!caseId) return; setError(""); setNotice("");
     const form = new FormData(event.currentTarget);
     const pathway = String(form.get("pathway") || "");
     const depth = String(form.get("depth") || "");
@@ -506,6 +567,7 @@ export default function Workspace({ destination, children }: { destination?: Des
         return;
       }
       setRun(created);
+      setNotice("Route compiled. Execution started.");
       dispatchAuthority({ type: "requestSucceeded", context, scope: "start-run" });
       setPendingAction((current) => current === "start-run" ? "" : current);
       dispatchAuthority({ type: "selectRun", caseId: expectedCaseId, runId: created.id });
@@ -529,7 +591,7 @@ export default function Workspace({ destination, children }: { destination?: Des
   };
 
   const confirmAccept = async () => {
-    setAcceptPrompt(false);
+    setAcceptPrompt(false); setNotice("");
     if (!runId || !run || run.id !== runId || run.case_id !== caseId) {
       setRunError("Only a run bound to the selected case can be accepted.");
       return;
@@ -541,6 +603,9 @@ export default function Workspace({ destination, children }: { destination?: Des
       if (!matchesAuthority(authorityRef.current, context)) return;
       dispatchAuthority({ type: "snapshotAccepted", context, snapshotId: accepted.id });
       setLocalAccepted({ runId, snapshotId: accepted.id });
+      // The id itself is announced by the accepted-authority line this unblocks; naming
+      // it twice makes a screen reader read twenty characters of hash for no gain.
+      setNotice("Snapshot accepted. It is the visible authority for this case.");
       await refreshCase(caseId); await refreshRun(runId);
     } catch (caught) {
       if (!matchesAuthority(authorityRef.current, context)) return;
@@ -560,12 +625,13 @@ export default function Workspace({ destination, children }: { destination?: Des
       return;
     }
     const context = requestContext(authorityRef.current);
-    setError("");
+    setError(""); setNotice("");
     setPendingAction("resume-run");
     try {
       const resumed = await request<RunRecord>(`/api/runs/${runId}/resume`, { method: "POST" });
       if (!matchesAuthority(authorityRef.current, context)) return;
       setRun(resumed);
+      setNotice(`Run resumed. Status ${resumed.status}.`);
       dispatchAuthority({ type: "requestSucceeded", context, scope: "resume-run" });
       await refreshRun(runId);
     } catch (caught) {
@@ -584,11 +650,12 @@ export default function Workspace({ destination, children }: { destination?: Des
     const expectedCaseId = context.caseId;
     const expectedRunId = context.runId;
     if (!expectedCaseId || !expectedRunId) return;
-    setError("");
+    setError(""); setNotice("");
     setPendingAction("approve-research-plan");
     try {
       await request(`/api/runs/${expectedRunId}/research-plan/approve`, { method: "POST", body: JSON.stringify({ plan_hash: planHash }) });
       if (!matchesAuthority(authorityRef.current, context)) return;
+      setNotice("Research plan approved. Execution resumes against the approved plan hash.");
       dispatchAuthority({ type: "requestSucceeded", context, scope: "research-plan" });
       await refreshRun(expectedRunId);
     } catch (caught) {
@@ -670,6 +737,7 @@ export default function Workspace({ destination, children }: { destination?: Des
       selectedCase={selectedCase}
       unknownRoute={!routeIsKnown}
     >
+      <p className="sr-only" role="status">{notice}</p>
       <div key={`${active}:${caseId}`}>{routeIsKnown ? <>{renderDestination()}{children}</> : children}</div>
     </WorkbenchShell>
     <AcceptDialog open={acceptPrompt} run={run} replaces={authority?.accepted ?? null} pending={pendingAction === "accept-run"} onConfirm={confirmAccept} onClose={() => setAcceptPrompt(false)} />
@@ -814,8 +882,21 @@ function ArtifactDataTable({ value, label, maxRows = 80 }: { value: unknown; lab
   </div>;
 }
 
+// The visible chip stays one word, which is what the desk reads; the sr-only prefix
+// is what stops a screen reader announcing a bare "succeeded" with no subject.
 function RunStatusBadge({ run }: { run: RunRecord | null }) {
-  return <span role="status" aria-live="polite" aria-atomic="true" className={run ? `status ${run.status === "succeeded" ? "success" : run.status === "failed" ? "critical" : "warning"}` : "sr-only"}>{run?.error?.code === "PLAN_APPROVAL_REQUIRED" ? "Pending approval" : run?.status || ""}</span>;
+  return <span role="status" aria-live="polite" aria-atomic="true" className={run ? `status ${run.status === "succeeded" ? "success" : run.status === "failed" ? "critical" : "warning"}` : "sr-only"}>{run ? <span className="sr-only">Run status: </span> : null}{run?.error?.code === "PLAN_APPROVAL_REQUIRED" ? "Pending approval" : run?.status || ""}</span>;
+}
+
+// Module progress is what actually changes while a run executes, and it lives in the
+// DAG tiles and the module list — neither of which is a live region, so a screen
+// reader learned only that the DOM had changed (WCAG 4.1.3). This carries the same
+// progress those tiles show, politely and without touching the visual language.
+function RunProgressAnnouncer({ run }: { run: RunRecord | null }) {
+  const total = run?.nodes.length ?? 0;
+  const complete = run?.nodes.filter((node) => node.status === "succeeded").length ?? 0;
+  const running = run?.nodes.find((node) => node.status === "running");
+  return <p className="sr-only" role="status">{run ? `${complete} of ${total} ${total === 1 ? "module" : "modules"} complete.${running ? ` ${moduleLabel(running.module_id)} running.` : ""}` : ""}</p>;
 }
 
 // The acceptance ceremony: a digest-bound <dialog> stating exactly what becomes the
@@ -882,6 +963,7 @@ function RunStatus({ writeAccess, caseId, run, runLoading, runError, acceptRun, 
   // `flow` here, not on the caller: the acceptance control must never abut the
   // route it accepts, whichever panel body this block is mounted in.
   return <div className="flow">
+    <RunProgressAnnouncer run={run} />
     <div className="dag">{run.nodes.map((node, index) => <div className="dag-step" key={node.id}>{index > 0 && <span className="dag-edge" aria-hidden="true">→</span>}{node.artifact_id ? <Link className={`dag-node ${node.status}`} href={withQuery("/sources/", { case: caseId, artifact: node.artifact_id })}><ModuleIdentity moduleId={node.module_id} /><div className="muted">{node.status}</div><span className="dag-node-open">Open output</span></Link> : <div className={`dag-node ${node.status}`}><ModuleIdentity moduleId={node.module_id} /><div className="muted">{node.status}</div></div>}</div>)}</div>
     {run.status === "failed" && run.error && <StateNote tone="critical" live="alert" code={run.error.code}>{run.error.message || "Run exception"}</StateNote>}
     {run.status === "succeeded" && (acceptedSnapshotId
@@ -907,6 +989,7 @@ function RunSummary({ caseId, run, runLoading, runError, acceptedSnapshotId }: {
     <div className="panel-body flow">
       {run ? <>
         <p className="muted">{complete} of {total} {total === 1 ? "module" : "modules"} complete · <span className="mono">{run.id}</span></p>
+        <RunProgressAnnouncer run={run} />
         <ul className="run-summary-modules">{run.nodes.map((node) => <li key={node.id}><span>{moduleLabel(node.module_id)}</span><span className={`status ${node.status === "succeeded" ? "success" : node.status === "failed" ? "critical" : node.status === "running" ? "warning" : ""}`}>{node.status}</span></li>)}</ul>
         {run.status === "failed" && run.error && <StateNote tone="critical" live="alert" code={run.error.code}>{run.error.message || "Run exception"}</StateNote>}
         {run.status === "paused" && <StateNote tone="warning" live="status" code={run.error?.code || "RUN_PAUSED"}>{run.error?.message || "Run paused."} Resolve it in Run Console.</StateNote>}
