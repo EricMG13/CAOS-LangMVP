@@ -33,7 +33,9 @@ from ..contracts import (
 )
 from ..publishing.renderers import render_frozen_export
 from ..storage.deliverables import DeliverableStore, DeliverableVersionConflict  # noqa: F401 — conflict re-raised to callers
+from ..storage.runs import RunStore
 from ..storage.store import DomainStore, new_id
+from .document import DOCUMENT_SCHEMA_VERSION, compose_document
 from .graph import canonical_approval_hash, filing_thread_id, validate_approval_hash
 
 PATHWAY_TEMPLATES = (
@@ -150,9 +152,18 @@ class DeliverableService:
         if needs_model and identity is None:
             raise ValueError("MODEL_REQUIRED: model-dependent blocks need a selected model")
         stored = [self._enrich_block(case_id, block, model, identity, selection) for block in blocks]
+        document_sections = compose_document(
+            pathway=pathway,
+            template=template,
+            blocks=stored,
+            artifacts=self._accepted_artifacts(case_id),
+            model=model,
+        )
         content = {
             "template_id": template["template_id"],
             "template_version": template["template_version"],
+            "document_schema_version": DOCUMENT_SCHEMA_VERSION,
+            "document_sections": document_sections,
             "model_selection": selection.model_dump(mode="json") if selection else None,
             "model_identity": identity,
             "blocks": stored,
@@ -448,6 +459,38 @@ class DeliverableService:
         build = (self.models.readiness(case_id) or {}).get("build") if self.models is not None else None
         return {"case_id": case_id, "snapshot_id": snapshot_id, "build_id": (build or {}).get("id") or "unbuilt"}
 
+    def _accepted_artifacts(self, case_id: str) -> dict[str, dict[str, Any]]:
+        authority = self._authority_for(case_id)
+        if authority is None:
+            return {}
+        artifacts: dict[str, dict[str, Any]] = {"__authority__": {"id": authority["snapshot_id"]}}
+        runs = self.engine.runs if self.engine is not None else RunStore(self.store.engine)
+        snapshot = runs.get_snapshot(authority["snapshot_id"])
+        if snapshot is None:
+            return artifacts
+        snapshot_preimage = {
+            key: value
+            for key, value in snapshot.items()
+            if key not in {"digest", "id", "previous_snapshot_id"}
+        }
+        if snapshot["case_id"] != case_id or digest(snapshot_preimage) != snapshot["digest"]:
+            raise ValueError("DELIVERABLE_COMPOSITION_REQUIRED_VALUE_MISSING:accepted_snapshot")
+        for reference in snapshot["artifacts"]:
+            artifact = runs.get_artifact(reference["id"])
+            if (
+                artifact is None
+                or artifact.get("case_id") != case_id
+                or artifact.get("module_id") != reference.get("module_id")
+                or artifact.get("digest") != reference.get("digest")
+                or digest(artifact.get("payload")) != artifact.get("digest")
+            ):
+                raise ValueError(
+                    "DELIVERABLE_COMPOSITION_REQUIRED_VALUE_MISSING:"
+                    f"artifact.{reference.get('module_id', 'unknown')}"
+                )
+            artifacts[artifact["module_id"]] = artifact
+        return artifacts
+
     def _frozen_evidence(self, case_id: str, blocks: list[dict[str, Any]]) -> list[dict[str, Any]]:
         rows: dict[str, dict[str, Any]] = {}
         for block in blocks:
@@ -472,6 +515,7 @@ class DeliverableService:
         source_set = self.store.current_source_set(case_id) or {"id": None, "version": 0}
         identity = revision["content"].get("model_identity")
         model_payload = None
+        document_model = None
         if identity is not None:
             record = (
                 self.records.model_by_revision(case_id, identity["revision_id"])
@@ -486,12 +530,25 @@ class DeliverableService:
                 stored_selection = revision["content"]["model_selection"]
                 selection_model = AnalystRevisionSelection if stored_selection["kind"] == "ANALYST_REVISION" else ApplicationBuildSelection
                 record = self._resolve_selection(case_id, selection_model.model_validate(stored_selection))
+            document_model = record
             model_payload = {
                 **identity,
                 "outputs": record["outputs"],
                 "effective_assumptions": record["assumptions"],
                 "application_build": {"payload": record["build_payload"], "qa": record["build_qa"]},
             }
+        expected_sections = compose_document(
+            pathway=pathway,
+            template=_template(pathway),
+            blocks=revision["content"]["blocks"],
+            artifacts=self._accepted_artifacts(case_id),
+            model=document_model,
+        )
+        if (
+            revision["content"].get("document_schema_version") != DOCUMENT_SCHEMA_VERSION
+            or revision["content"].get("document_sections") != expected_sections
+        ):
+            raise ValueError("DELIVERABLE_COMPOSITION_MISMATCH: draft document no longer matches pinned inputs")
         build_id = identity["build_id"] if identity else authority["build_id"]
         frozen_authority = {
             "snapshot_id": authority["snapshot_id"],

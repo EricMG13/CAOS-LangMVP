@@ -274,6 +274,99 @@ def test_saved_revision_digest_is_digest_of_content_and_order_violation_appends_
     assert service.workspace(case["id"], "FULL_CREDIT")["draft"]["version"] == 1, "nothing appended on order violation"
 
 
+def test_full_credit_draft_composes_one_governed_decision_document(service, store):
+    case, source, _ = seed_ready_case(service, store)
+    model = seed_model(service, case, outputs={
+        "BASE": {"FY2027": {"total_leverage": 3.8, "accessible_liquidity": 210.0}},
+        "DOWNSIDE": {"FY2027": {"total_leverage": 5.1, "accessible_liquidity": 95.0}},
+    })
+    template = service.templates()["FULL_CREDIT"]
+
+    revision = service.save_draft(
+        case["id"],
+        "FULL_CREDIT",
+        draft_request(template, source, model_selection=revision_selection(model)),
+        actor="analyst",
+    )
+
+    content = revision["content"]
+    sections = content["document_sections"]
+    assert content["document_schema_version"] == "caos.deliverable.document.v1"
+    assert [section["section_id"] for section in sections] == [
+        "credit_snapshot",
+        "recommendation",
+        "thesis_variant",
+        "business_industry",
+        "capital_structure",
+        "base_downside_model",
+        "liquidity_covenants",
+        "risks_catalysts_falsifiers",
+        "monitoring",
+        "evidence_register",
+    ]
+    assert sections[0]["origin"]["kind"] == "ARTIFACT"
+    assert sections[1]["editable"] is True
+    assert sections[5]["editable"] is False
+    model_table = sections[5]["items"][1][0]
+    assert model_table["origin"]["kind"] == "MODEL"
+    assert ["BASE / FY2027 / total_leverage", "3.8"] in model_table["rows"]
+
+
+def test_draft_request_rejects_client_supplied_document_sections(client, settings, store):
+    _svc, case, source, template = http_seed(settings, store)
+    body = draft_request(template, source).model_dump(mode="json")
+    body["document_sections"] = [{"section_id": "forged", "body": "client content"}]
+
+    response = client.put(
+        f"/api/cases/{case['id']}/deliverables/FULL_CREDIT/draft",
+        json=body,
+        headers=ANALYST_H,
+    )
+
+    assert response.status_code == 422
+    assert _svc.workspace(case["id"], "FULL_CREDIT")["draft"] is None
+
+
+def test_freeze_recomposes_and_rejects_document_authority_drift(service, store):
+    case, _source, revision, _frozen = freeze_min(service, store)
+    service.supersede_accepted_authority_for_tests(case["id"])
+
+    with pytest.raises(Exception, match="DELIVERABLE_COMPOSITION_MISMATCH"):
+        service.freeze(case["id"], freeze_request(revision), actor="analyst")
+
+    assert len(service.workspace(case["id"], "FULL_CREDIT")["frozen"]) == 1
+
+
+def test_composition_verifies_accepted_artifact_bytes_before_saving(settings, store, engine, tmp_path):
+    import asyncio
+
+    service = make_service(store, tmp_path / "deliverable-vault", engine=engine)
+    case, source = seed_case_with_source(store)
+
+    async def accepted_run():
+        run = await engine.run_scripted_for_tests(case["id"])
+        await engine.accept(run["id"], actor="analyst")
+        return run
+
+    run = asyncio.run(accepted_run())
+    template = service.templates()["FULL_CREDIT"]
+    first = service.save_draft(
+        case["id"], "FULL_CREDIT", draft_request(template, source), actor="analyst",
+    )
+    profile = first["content"]["document_sections"][0]["items"][0][0]
+    assert "CP-1" in {row["label"] for row in profile["rows"]}
+
+    engine.forge_node_artifact_for_tests(run["id"], module_id="CP-1", digest="0" * 64)
+    with pytest.raises(Exception, match="DELIVERABLE_COMPOSITION_REQUIRED_VALUE_MISSING:artifact.CP-1"):
+        service.save_draft(
+            case["id"],
+            "FULL_CREDIT",
+            draft_request(template, source, expected_version=1),
+            actor="analyst",
+        )
+    assert service.workspace(case["id"], "FULL_CREDIT")["draft"]["version"] == 1
+
+
 def test_stale_expected_version_is_atomic_cas_conflict_carrying_current_head(service, store):
     case, source, template, revision = save_min_draft(service, store)
 

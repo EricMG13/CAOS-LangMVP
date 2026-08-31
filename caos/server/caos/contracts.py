@@ -496,6 +496,99 @@ CanonicalDeliverableBlock = Annotated[
 ]
 
 
+class DocumentOrigin(StrictModel):
+    kind: Literal["ARTIFACT", "MODEL", "ANALYST", "SYSTEM"]
+    authority_id: IdentifierItem
+    block_ids: list[IdentifierItem] = Field(default_factory=list, max_length=500)
+
+
+class DocumentSection(StrictModel):
+    section_id: IdentifierItem
+    title: BoundaryText = Field(min_length=1, max_length=240)
+    page: BoundaryText = Field(min_length=1, max_length=120)
+    editable: bool
+    origin: DocumentOrigin
+
+    @model_validator(mode="after")
+    def editable_sections_are_analyst_owned(self) -> DocumentSection:
+        if self.editable and self.origin.kind != "ANALYST":
+            raise ValueError("editable document sections must be analyst-owned")
+        return self
+
+
+class DocumentTextSection(DocumentSection):
+    kind: Literal["text"]
+    body: BoundaryText = Field(min_length=1, max_length=20_000)
+
+
+class DocumentProfileRow(StrictModel):
+    label: BoundaryText = Field(min_length=1, max_length=240)
+    value: BoundaryText = Field(min_length=1, max_length=20_000)
+
+
+class DocumentProfileSection(DocumentSection):
+    kind: Literal["profile"]
+    rows: list[DocumentProfileRow] = Field(min_length=1, max_length=100)
+
+
+class DocumentTableSection(DocumentSection):
+    kind: Literal["table"]
+    columns: list[BoundaryText] = Field(min_length=1, max_length=40)
+    rows: list[list[BoundaryText]] = Field(max_length=500)
+    note: BoundaryText | None = Field(default=None, max_length=20_000)
+
+    @model_validator(mode="after")
+    def rows_match_columns(self) -> DocumentTableSection:
+        if any(len(row) != len(self.columns) for row in self.rows):
+            raise ValueError("document table rows must match the declared column count")
+        return self
+
+
+class DocumentListSection(DocumentSection):
+    kind: Literal["list"]
+    items: list[BoundaryText] = Field(min_length=1, max_length=200)
+
+
+class DocumentChartSection(DocumentSection):
+    kind: Literal["chart"]
+    recipe: dict[str, Any]
+    accessible_columns: list[BoundaryText] = Field(min_length=1, max_length=40)
+    accessible_rows: list[list[BoundaryText]] = Field(max_length=500)
+
+    @model_validator(mode="after")
+    def accessible_rows_match_columns(self) -> DocumentChartSection:
+        if any(len(row) != len(self.accessible_columns) for row in self.accessible_rows):
+            raise ValueError("document chart rows must match the accessible column count")
+        return self
+
+
+DocumentLeafSection = Annotated[
+    DocumentTextSection
+    | DocumentProfileSection
+    | DocumentTableSection
+    | DocumentListSection
+    | DocumentChartSection,
+    Field(discriminator="kind"),
+]
+
+
+class DocumentColumnsSection(DocumentSection):
+    kind: Literal["columns"]
+    items: list[list[DocumentLeafSection]] = Field(min_length=2, max_length=3)
+
+    @model_validator(mode="after")
+    def columns_are_not_empty(self) -> DocumentColumnsSection:
+        if any(not column for column in self.items):
+            raise ValueError("document columns must each contain a section")
+        return self
+
+
+CanonicalDocumentSection = Annotated[
+    DocumentLeafSection | DocumentColumnsSection,
+    Field(discriminator="kind"),
+]
+
+
 class DeliverableDraftRequest(StrictModel):
     expected_version: int = Field(ge=0)
     template_id: str = Field(min_length=1, max_length=160)

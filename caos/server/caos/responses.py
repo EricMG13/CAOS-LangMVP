@@ -12,6 +12,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict
 
+from .contracts import CanonicalDocumentSection
+
 
 class WireModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -422,6 +424,17 @@ class RVWorkspaceResponse(WireModel):
     universe: RVUniverseVersionResponse | None
 
 
+class DeliverableContentResponse(OpenWireModel):
+    template_id: str
+    template_version: str
+    document_schema_version: str | None = None
+    document_sections: list[CanonicalDocumentSection] | None = None
+    model_selection: Any | None
+    model_identity: Any | None
+    blocks: list[Any]
+    generated_blocks: dict[str, Any]
+
+
 class DeliverableRevisionResponse(WireModel):
     id: str
     # The draft this revision belongs to. FreezeDeliverableRequest is keyed on it,
@@ -436,7 +449,7 @@ class DeliverableRevisionResponse(WireModel):
     template_id: str
     template_version: str
     digest: str
-    content: Any
+    content: DeliverableContentResponse
 
 
 class ModelEligibilityResponse(WireModel):
