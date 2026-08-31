@@ -1,3 +1,7 @@
+# SINGLE-INSTANCE ONLY: never scale `app` or `worker` above 1. Each service
+# holds a PostgreSQL advisory lock and refuses a duplicate replica: checkpoints
+# stay SQLite (the Postgres saver is unwired), request ceilings are in-process,
+# and exports have no claim.
 services:
   db:
     image: postgres:17-alpine@sha256:18cfe3ef5e6815560c98237d6216d1e5119702fb0f3894c8785dd58b8bbe5d73
