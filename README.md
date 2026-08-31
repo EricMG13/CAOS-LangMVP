@@ -6,6 +6,13 @@ evidence: runs execute a static module DAG against a pinned, immutable source
 set; results become content-addressed artifacts, accepted snapshots, analyst
 models, and filed deliverables — each transition audited and digest-bound.
 
+The MVP release target is **enterprise-testing readiness**, not production
+readiness. The candidate must prove the controlled document-to-analysis-to-
+publication journey and its full machine audit trail inside a declared
+enterprise test environment. It does not claim high availability, horizontal
+scaling, production service levels, or unrestricted external deployment. See
+`ENTERPRISE_TESTING_READINESS.md` for the binding gate.
+
 The run engine executes the vendored `deploy_v` methodology bundle on LangGraph
 with durable SQLite/Postgres checkpoints. Four pathways are in the MVP cut
 (Full Credit, Earnings Update, Covenant & Refinancing, Relative Value) at two
@@ -21,6 +28,8 @@ without any model API key.
 | `caos/tests/` | Phase-2 unit tests + the contractual spec suite (`spec/`) |
 | `caos/deploy/` | Dockerfile, compose, Caddy/oauth2-proxy edge, backup/restore drills |
 | `docs/DECISIONS.md` | The binding migration decision record (§§1–13) |
+| `ENTERPRISE_TESTING_READINESS.md` | Enterprise test scope, exhaustive validation matrix, simulations, review gates, and exit criteria |
+| `ENTERPRISE_READINESS_PLAN.md` | Ordered implementation plan for closing the enterprise-test blockers and proving gates G0–G9 |
 | `SPEC_RECONCILIATION.md` | Invariant-to-test table and CONTRACTUAL-row reconciliation |
 | `CONTEXT.md` | Ubiquitous language for models and deliverables |
 | `Modular OS/` | Methodology reference material (read-only) |

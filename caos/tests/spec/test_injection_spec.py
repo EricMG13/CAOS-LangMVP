@@ -560,3 +560,148 @@ async def test_a_focus_question_copied_out_of_a_document_carries_no_authority(bu
     for request in provider.create_requests:
         assert "system_prompt" not in request.system
         assert clean not in request.system
+
+
+# --- the non-agentic surface: a workbook the host itself lifts into an artifact ---
+#
+# CP-3 is a DETERMINISTIC module: it takes the case's loan universe straight into
+# a `SYSTEM_ANALYSIS` artifact (`authority: SYSTEM_ANALYSIS`, `confidence.band:
+# SYSTEM`, `qa_status: Passed`) whose rows never pass through `read_evidence` and
+# carry no block locator or `untrusted_data` flag. So this is the one document
+# channel that needs no model cooperation at all: if the host reads the universe
+# outside the run's pin, the document is inside the run whatever the model does.
+
+
+def rv_workbook_bytes(borrower: str) -> bytes:
+    """The smallest workbook `parse_loan_workbook` accepts: one sector sheet, the
+    template header row at row 5, one 25-column row, and the trailing index marker."""
+    import io
+    from datetime import date
+
+    from openpyxl import Workbook
+
+    from caos.artifacts.loan_universe import HEADERS
+
+    workbook = Workbook()
+    workbook.remove(workbook.active)
+    sheet = workbook.create_sheet("IT Services")
+    sheet["B1"] = "Date"
+    sheet["B2"] = date(2026, 8, 24)
+    for column, header in enumerate(HEADERS, start=1):
+        sheet.cell(row=5, column=column, value=header)
+    values = [
+        "Access CIG", borrower, "Records management services.", "Business Services",
+        "Records Management", "Private", "BLS202439", "BBG01WMCP303", "B1",
+        "1L Gtd. Sr. Secd", "B3 / B", 1475, 400, date(2030, 8, 19), 88, 90,
+        0.5, 0.5, 1, -2, -4.13, 1, -7.5, 11.2, 851,
+    ]
+    for column, value in enumerate(values, start=1):
+        sheet.cell(row=6, column=column, value=value)
+    sheet.cell(row=8, column=1, value="Index Statistics")
+    output = io.BytesIO()
+    workbook.save(output)
+    workbook.close()
+    return output.getvalue()
+
+
+def ingest_workbook(store, settings, case_id: str, borrower: str) -> dict[str, Any]:
+    """A real vaulted xlsx source — the importer re-reads the vault bytes."""
+    from caos.sources.domain import Vault, extract_blocks
+
+    content = rv_workbook_bytes(borrower)
+    sha = hashlib.sha256(content).hexdigest()
+    return store.ingest({
+        "case_id": case_id, "filename": "REF_CP-3_Sector_RV.xlsx",
+        "media_type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "bytes": len(content), "sha256": sha,
+        "vault_path": Vault(settings).put(content, sha),
+        "blocks": extract_blocks("REF_CP-3_Sector_RV.xlsx", content), "withdrawn": False,
+    }, "analyst")
+
+
+def import_universe(store, case_id: str, source_id: str) -> dict[str, Any]:
+    from caos.artifacts.loan_universe import import_loan_source
+
+    record, _ = import_loan_source(store, case_id, source_id, "analyst")
+    assert record["status"] == "ACTIVE"
+    return record
+
+
+async def finish_scripted(engine, run_id: str) -> None:
+    """Drive a started run to its terminal state on the scripted seam, which
+    leaves every non-canonical node — CP-3 included — on its real path."""
+    engine._scripted_runs.add(run_id)
+    try:
+        await engine.wait(run_id)
+    finally:
+        engine._scripted_runs.discard(run_id)
+
+
+def cp3_universe(engine, run_id: str) -> dict[str, Any] | None:
+    artifact = next((item for item in engine.artifacts_for_run(run_id)
+                     if item["module_id"] == "CP-3"), None)
+    assert artifact is not None, "the RELATIVE_VALUE full route must reach CP-3"
+    return artifact["payload"].get("inputs", {}).get("loan_universe")
+
+
+async def test_a_workbook_imported_after_the_pin_cannot_bind_itself_to_the_run(
+    build_engine, store, settings
+):
+    """Invariant 1, without the model's help.
+
+    The run pins a source set at gate exit that contains no workbook. A workbook
+    uploaded and imported afterwards becomes the case's ACTIVE loan universe —
+    and CP-3 must not see it, because it is not in the pinned set. Host check:
+    the universe CP-3 binds is pinned at gate exit, not read live off the case.
+    """
+    case = store.create_case("Northwind", "Northwind Holdings", "Services", "analyst")
+    ingest_document(store, case["id"], "Northwind pinned narrative line.")
+
+    engine = build_engine(None)
+    run = await engine.start_run(case_id=case["id"], pathway="RELATIVE_VALUE",
+                                 depth="full", actor="analyst")
+
+    workbook = ingest_workbook(store, settings, case["id"], "MARKER-POSTPIN Holdings")
+    import_universe(store, case["id"], workbook["id"])
+    await finish_scripted(engine, run["id"])
+
+    assert engine.get_run(run["id"])["status"] == "succeeded"
+    assert cp3_universe(engine, run["id"]) is None, \
+        "a universe outside the pinned source set is not this run's evidence"
+    assert "MARKER-POSTPIN" not in engine.serialize_everything_for_tests(run["id"])
+
+
+async def test_a_superseding_workbook_cannot_swap_what_the_pinned_run_binds(
+    build_engine, store, settings
+):
+    """The second half: once a universe IS pinned, a later import cannot replace it.
+
+    Importing a second workbook supersedes the first case-wide. A run pinned to
+    the first must still bind the first — otherwise the rows a CP-3 artifact
+    carries are a live case read, and replay from the same pins is not equivalent
+    (invariant 10).
+    """
+    case = store.create_case("Northwind", "Northwind Holdings", "Services", "analyst")
+    ingest_document(store, case["id"], "Northwind pinned narrative line.")
+    pinned_workbook = ingest_workbook(store, settings, case["id"], "MARKER-PINNED Holdings")
+    pinned_universe = import_universe(store, case["id"], pinned_workbook["id"])
+
+    engine = build_engine(None)
+    run = await engine.start_run(case_id=case["id"], pathway="RELATIVE_VALUE",
+                                 depth="full", actor="analyst")
+
+    later = ingest_workbook(store, settings, case["id"], "MARKER-SUPERSEDING Holdings")
+    superseding = import_universe(store, case["id"], later["id"])
+    assert superseding["universe_digest"] != pinned_universe["universe_digest"]
+    assert store.active_loan_universe(case["id"])["id"] == superseding["id"], \
+        "the case really did move on"
+    await finish_scripted(engine, run["id"])
+
+    assert engine.get_run(run["id"])["status"] == "succeeded"
+    bound = cp3_universe(engine, run["id"])
+    assert bound is not None and bound["identity"] == {
+        "id": pinned_universe["id"],
+        "universe_digest": pinned_universe["universe_digest"],
+        "source_id": pinned_workbook["id"],
+    }, "CP-3 binds the universe the run pinned, not the one the case now shows"
+    assert "MARKER-SUPERSEDING" not in engine.serialize_everything_for_tests(run["id"])

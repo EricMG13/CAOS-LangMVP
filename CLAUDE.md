@@ -135,7 +135,7 @@ engine, the bundle, or the routes.
   `caos/server/worker.py` (polls the store for QUEUED model builds/exports and
   executes them; the only process with LibreOffice, so XLSX rendering lives
   here and nowhere else). `worker.py --once` runs a single pass.
-- Suite: `python -m pytest caos/tests -q` — fully green (554 passed, 12 skipped
+- Suite: `python -m pytest caos/tests -q` — fully green (556 passed, 12 skipped
   without the real-issuer corpus; the corpus tests run once it is downloaded).
   Spec tests (`caos/tests/spec/`) are the contractual surface —
   they pin invariants and wire shapes; `test_injection_spec.py` pins the
@@ -279,6 +279,15 @@ engine, the bundle, or the routes.
   would pass while scanning nothing. The step now asserts bandit's JSON report
   carries no parse errors and covers the server, so a naive version bump fails
   loudly instead of silently.
+- Loan-workbook cell text is not `BoundaryText`. `artifacts/loan_universe.py::_text`
+  strips and bounds at 32 KB but does not run the control-byte / bidi-override /
+  NFC checks, so a borrower name carrying U+202E rides the CP-3 artifact and the
+  API response into a rendered deliverable. It cannot mint two lineages —
+  `universe_digest` is content-addressed over exactly the stored bytes and
+  `instrument_key` is the uppercased FIGI/Bloomberg id — so this is a render
+  defect, not an identity one. Closing it changes what the importer accepts
+  (rejected rows become structured findings), which is a wire-visible contract
+  change; `SPEC_RECONCILIATION.md` carries the analysis.
 - Blocks live in one JSON column on the source row, so `read_evidence` parses
   every block of a source on each call. Measured at the ceiling: a 10 MB source
   costs 17 ms per read, so a run's ~80 reads cost about 1.4 s. Fine at current

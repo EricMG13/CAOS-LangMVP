@@ -115,6 +115,21 @@ FORBIDDEN_PACKAGE_PATHS = (
 )
 
 
+UNIVERSE_DIGEST_FIELDS = (
+    "source_id", "source_sha256", "template_version", "importer_version",
+    "workbook_date", "rows",
+)
+
+
+def universe_digest(record: dict[str, Any]) -> str:
+    """§12.1 digest-preimage meta-rule: the exact pinned projection, implemented
+    once and shared by the importer that writes it and every later verifier that
+    re-derives it from the stored record (§11.2 — a checkpointed digest is an
+    expectation, never the authority). Every field is JSON-native as stored, so
+    the round trip through the store is byte-identical."""
+    return digest({key: record[key] for key in UNIVERSE_DIGEST_FIELDS})
+
+
 class LoanWorkbookValidationError(ValueError):
     def __init__(self, findings: list[dict[str, Any]]) -> None:
         super().__init__("RV_WORKBOOK_INVALID")
@@ -678,7 +693,7 @@ def parse_loan_workbook(
         return {
             **canonical,
             "row_count": len(ordered_rows),
-            "universe_digest": digest(canonical),
+            "universe_digest": universe_digest(canonical),
         }
     finally:
         workbook.close()
