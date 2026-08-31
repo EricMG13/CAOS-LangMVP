@@ -1,5 +1,13 @@
 import type { ReactNode } from "react";
 
+import {
+  groupDocumentPages,
+  type DocumentChartSection,
+  type DocumentLeafSection,
+  type DocumentSection,
+  type DocumentTableSection,
+} from "./documentTypes";
+
 export type EvidenceCitation = { source_id: string; block_ids: string[]; claim: string };
 export type NarrativeBlock = { kind: "NARRATIVE"; block_id: string; slot_id: string; text: string; content_mode: "EVIDENCE" | "ANALYST_JUDGMENT"; citations: EvidenceCitation[] };
 export type EvidenceRegisterBlock = { kind: "EVIDENCE_REGISTER"; block_id: string; slot_id: string; citations: EvidenceCitation[] };
@@ -19,16 +27,15 @@ export type FrozenPayload = {
   draft: { id: string; version: number; digest: string };
   template: { title: string; template_id: string; template_version: string };
   authority: { accepted_snapshot_id?: string | null; accepted_snapshot_digest?: string | null; source_set_id?: string | null; source_set_digest?: string | null };
-  model: (Record<string, unknown> & {
-    outputs?: Record<string, unknown>;
-    effective_assumptions?: Record<string, unknown>[];
-    assumption_gaps?: Record<string, unknown>[];
-    debt?: Record<string, unknown>;
-    warnings?: Record<string, unknown>;
-    application_build?: { payload?: Record<string, unknown>; qa?: Record<string, unknown>; calculation_runtime?: Record<string, unknown>; export?: Record<string, unknown> | null };
-    model_export?: Record<string, unknown> | null;
-  }) | null;
-  content: { model_selection: Record<string, unknown> | null; model_identity?: Record<string, unknown> | null; blocks: DeliverableBlock[]; generated_blocks: Record<string, unknown> };
+  model: Record<string, unknown> | null;
+  content: {
+    model_selection: Record<string, unknown> | null;
+    model_identity?: Record<string, unknown> | null;
+    blocks: DeliverableBlock[];
+    generated_blocks: Record<string, unknown>;
+    document_schema_version?: string | null;
+    document_sections?: DocumentSection[] | null;
+  };
   evidence: { source_id?: string; sha256?: string; block_ids?: string[]; withdrawn?: boolean }[];
   methodology: Record<string, unknown>;
   renderer: Record<string, unknown>;
@@ -36,80 +43,69 @@ export type FrozenPayload = {
   preview_digest: string;
 };
 
-function displayValue(value: unknown): string {
-  if (value === null || value === undefined || value === "") return "Unavailable";
-  if (typeof value === "number") return Number.isFinite(value) ? new Intl.NumberFormat(undefined, { maximumFractionDigits: 20 }).format(value) : "Unavailable";
-  if (typeof value === "boolean") return value ? "Yes" : "No";
-  return String(value);
+function SectionHeading({ section }: { section: DocumentSection }) {
+  const authority = section.editable && section.origin.kind === "ANALYST"
+    ? "Analyst judgment"
+    : `Locked · ${section.origin.kind.toLowerCase()}`;
+  return <h3 className="rd-h">
+    <span>{section.title}</span>
+    <span className="rd-h-sub" title={`Authority ${section.origin.authority_id}`}>{authority}</span>
+  </h3>;
 }
 
-function flatten(value: unknown, prefix = ""): { label: string; value: unknown }[] {
-  if (!value || typeof value !== "object") return [{ label: prefix || "Value", value }];
-  if (Array.isArray(value)) return value.flatMap((item, index) => flatten(item, `${prefix || "Item"} / ${index + 1}`));
-  return Object.entries(value as Record<string, unknown>).flatMap(([key, item]) => {
-    const label = prefix ? `${prefix} / ${key}` : key;
-    return item && typeof item === "object" ? flatten(item, label) : [{ label, value: item }];
-  });
-}
-
-function DataTable({ value, label, maxRows = 80 }: { value: unknown; label: string; maxRows?: number | null }) {
-  const flattened = flatten(value);
-  const rows = maxRows === null ? flattened : flattened.slice(0, maxRows);
-  if (!rows.length) return <p className="paper-muted">No server-generated values are available.</p>;
-  return <div className="table-wrap report-generated-table" tabIndex={0} role="region" aria-label={label}>
-    <table><thead><tr><th scope="col">Field</th><th scope="col">Value</th></tr></thead><tbody>{rows.map((row) => <tr key={row.label}><th scope="row">{row.label}</th><td className="num">{displayValue(row.value)}</td></tr>)}</tbody></table>
+function DocumentTableBody({ columns, rows, title }: { columns: string[]; rows: string[][]; title: string }) {
+  return <div className="rd-table-wrap" role="region" aria-label={`${title} table`} tabIndex={0}>
+    <table className="rd-table">
+      <caption className="visually-hidden">{title}</caption>
+      <thead><tr>{columns.map((column, index) => <th key={`${column}:${index}`} scope="col">{column}</th>)}</tr></thead>
+      <tbody>{rows.map((row, rowIndex) => <tr key={rowIndex}>{row.map((cell, cellIndex) => cellIndex === 0
+        ? <th key={cellIndex} scope="row">{cell}</th>
+        : <td key={cellIndex}>{cell}</td>)}</tr>)}</tbody>
+    </table>
   </div>;
 }
 
-function CitationList({ citations }: { citations: EvidenceCitation[] }) {
-  if (!citations.length) return null;
-  return <ol className="report-citations" aria-label="Evidence citations">{citations.map((citation, index) => <li key={`${citation.source_id}:${citation.block_ids.join(":")}:${index}`}><span>{citation.claim}</span><code>{citation.source_id} · {citation.block_ids.join(", ")}</code></li>)}</ol>;
-}
-
-function sectionTitle(block: DeliverableBlock, templateBlocks: TemplateBlock[]): string {
-  return templateBlocks.find((item) => item.block_id === block.block_id)?.title
-    || (block.kind === "SCENARIO_EXHIBIT" ? block.title : block.kind.replaceAll("_", " "));
-}
-
-function FrozenEnvelope({ payload }: { payload: FrozenPayload }) {
-  const model = payload.model;
-  const applicationBuild = model?.application_build;
-  const modelIdentity = model ? Object.fromEntries(Object.entries(model).filter(([key]) => ![
-    "outputs", "effective_assumptions", "assumption_gaps", "debt", "warnings", "application_build",
-  ].includes(key))) : null;
-  return <div className="frozen-authority-envelope" aria-label="Exact frozen authority record">
-    <section className="deliverable-paper-section">
-      <h3>Frozen authority</h3>
-      <DataTable label="Frozen authority identities" maxRows={null} value={{ schema_version: payload.schema_version, case_id: payload.case_id, pathway: payload.pathway, accepted: payload.authority, draft: payload.draft, input_fingerprint: payload.input_fingerprint, preview_digest: payload.preview_digest }} />
-    </section>
-    <section className="deliverable-paper-section">
-      <h3>Evidence authority</h3>
-      <DataTable label="Frozen evidence authority" maxRows={null} value={payload.evidence} />
-    </section>
-    {model ? <>
-      <section className="deliverable-paper-section"><h3>Model authority record</h3><DataTable label="Frozen model identity and export" maxRows={null} value={modelIdentity} /></section>
-      <section className="deliverable-paper-section"><h3>Base / Downside Model Analysis</h3><DataTable label="Frozen Base and Downside outputs" maxRows={null} value={model.outputs || {}} /></section>
-      <section className="deliverable-paper-section"><h3>Effective Assumptions</h3><DataTable label="Frozen effective assumptions" maxRows={null} value={model.effective_assumptions || []} /></section>
-      <section className="deliverable-paper-section"><h3>Debt Schedule</h3><DataTable label="Frozen debt outputs" maxRows={null} value={model.debt || {}} /></section>
-      <section className="deliverable-paper-section"><h3>Model Gaps and Warnings</h3><DataTable label="Frozen model gaps and warnings" maxRows={null} value={{ assumption_gaps: model.assumption_gaps || [], warnings: model.warnings || {} }} /></section>
-      <section className="deliverable-paper-section"><h3>Application Model Build authority</h3><DataTable label="Frozen application build QA runtime and export" maxRows={null} value={{ qa: applicationBuild?.qa || {}, calculation_runtime: applicationBuild?.calculation_runtime || {}, export: applicationBuild?.export || null, model_export: model.model_export || null }} />{applicationBuild?.payload ? <details><summary>Application Model Build payload</summary><DataTable label="Frozen application model payload" maxRows={null} value={applicationBuild.payload} /></details> : null}</section>
-    </> : <section className="deliverable-paper-section"><h3>Model authority record</h3><p className="paper-muted">No model authority is included for this pathway.</p></section>}
-    <section className="deliverable-paper-section"><h3>Methodology, template, and renderer identities</h3><DataTable label="Frozen methodology template and renderer identities" maxRows={null} value={{ template: payload.template, methodology: payload.methodology, renderer: payload.renderer }} /></section>
-    <section className="deliverable-paper-section"><h3>Revision Record</h3><DataTable label="Frozen revision record" maxRows={null} value={{ draft: payload.draft, input_fingerprint: payload.input_fingerprint, preview_digest: payload.preview_digest }} /></section>
-  </div>;
-}
-
-function renderBlock(block: DeliverableBlock, templateBlocks: TemplateBlock[], generated: Record<string, unknown>): ReactNode {
-  const title = sectionTitle(block, templateBlocks);
-  if (block.kind === "NARRATIVE") return <section className="deliverable-paper-section" key={block.block_id} data-block-id={block.block_id}>
-    <div className="deliverable-paper-heading"><h3>{title}</h3><span>{block.content_mode === "ANALYST_JUDGMENT" ? "Analyst judgment" : "Evidence-bound"}</span></div>
-    <p>{block.text || "Not yet drafted."}</p><CitationList citations={block.citations} />
+function DocumentTable({ section }: { section: DocumentTableSection }) {
+  return <section className="rd-sec" data-section-id={section.section_id}>
+    <SectionHeading section={section} />
+    <DocumentTableBody columns={section.columns} rows={section.rows} title={section.title} />
+    {section.note ? <p className="rd-note">{section.note}</p> : null}
   </section>;
-  if (block.kind === "EVIDENCE_REGISTER") return <section className="deliverable-paper-section" key={block.block_id} data-block-id={block.block_id}><h3>{title}</h3>{block.citations.length ? <CitationList citations={block.citations} /> : <p className="paper-muted">No citations attached.</p>}</section>;
-  if (block.kind === "LIMITATIONS") return <section className="deliverable-paper-section" key={block.block_id} data-block-id={block.block_id}><h3>{title}</h3><p>{block.text}</p><CitationList citations={block.citations} /></section>;
-  if (block.kind === "SCENARIO_EXHIBIT") return <section className="deliverable-paper-section" key={block.block_id} data-block-id={block.block_id}><div className="deliverable-paper-heading"><h3>{title}</h3><span>Server-calculated</span></div><p className="mono paper-digest">Scenario {block.scenario_digest}</p><DataTable label={`${title} scenario values`} value={block.scenario.outputs} /></section>;
-  if (block.kind === "GENERATED_CHART") return <section className="deliverable-paper-section" key={block.block_id} data-block-id={block.block_id}><div className="deliverable-paper-heading"><h3>{title}</h3><span>Read only</span></div><DataTable label={`${title} accessible chart data`} value={generated[block.block_id]} /></section>;
-  return <section className="deliverable-paper-section" key={block.block_id} data-block-id={block.block_id}><div className="deliverable-paper-heading"><h3>{title}</h3><span>Read only · server generated</span></div><DataTable label={`${title} generated values`} value={generated[block.block_id]} /></section>;
+}
+
+function DocumentChart({ section }: { section: DocumentChartSection }) {
+  return <section className="rd-sec" data-section-id={section.section_id}>
+    <SectionHeading section={section} />
+    <p className="rd-chart-label">Chart exhibit · authoritative data table</p>
+    <DocumentTableBody columns={section.accessible_columns} rows={section.accessible_rows} title={`${section.title} chart data`} />
+  </section>;
+}
+
+function DocumentLeaf({ section }: { section: DocumentLeafSection }): ReactNode {
+  if (section.kind === "table") return <DocumentTable section={section} />;
+  if (section.kind === "chart") return <DocumentChart section={section} />;
+
+  let body: ReactNode;
+  if (section.kind === "profile") {
+    body = <dl className="rd-profile">{section.rows.map((row, index) => <div className="rd-prow" key={`${row.label}:${index}`}><dt className="rd-plbl">{row.label}</dt><dd>{row.value}</dd></div>)}</dl>;
+  } else if (section.kind === "list") {
+    body = <ul className="rd-list">{section.items.map((item, index) => <li key={index}>{item}</li>)}</ul>;
+  } else {
+    body = <p className="rd-body">{section.body}</p>;
+  }
+
+  return <section className="rd-sec" data-section-id={section.section_id}>
+    <SectionHeading section={section} />
+    {body}
+  </section>;
+}
+
+function DocumentSectionView({ section }: { section: DocumentSection }) {
+  if (section.kind !== "columns") return <DocumentLeaf section={section} />;
+  return <section className="rd-sec" data-section-id={section.section_id}>
+    <SectionHeading section={section} />
+    <div className={`rd-cols rd-cols-${section.items.length}`}>{section.items.map((column, index) => <div className="rd-col" key={index}>{column.map((item) => <DocumentLeaf section={item} key={item.section_id} />)}</div>)}</div>
+  </section>;
 }
 
 export default function DeliverableDocument({
@@ -119,11 +115,7 @@ export default function DeliverableDocument({
   status,
   version,
   digest,
-  blocks,
-  templateBlocks,
-  generated,
-  frozen = false,
-  frozenPayload = null,
+  sections,
 }: {
   title: string;
   issuer: string;
@@ -131,15 +123,18 @@ export default function DeliverableDocument({
   status: string;
   version?: number;
   digest?: string;
-  blocks: DeliverableBlock[];
-  templateBlocks: TemplateBlock[];
-  generated: Record<string, unknown>;
-  frozen?: boolean;
-  frozenPayload?: FrozenPayload | null;
+  sections: DocumentSection[];
 }) {
-  return <article className="paper report-paper deliverable-document" aria-label={`${frozen ? "Frozen" : "Draft"} Deliverable preview`}>
-    <header className="report-paper-header"><div><span className="paper-kicker">CAOS · {pathwayLabel}</span><h2>{issuer || title}</h2><p>{title}</p></div><div className="paper-authority"><span className={`status ${status === "FILED" ? "success" : status === "FROZEN" ? "warning" : "idle"}`}>{status}</span>{version ? <span className="mono">v{version}</span> : null}</div></header>
-    {digest ? <p className="paper-digest mono">Exact identity {digest}</p> : null}
-    <div className="report-paper-body">{frozenPayload ? <FrozenEnvelope payload={frozenPayload} /> : null}{blocks.map((block) => renderBlock(block, templateBlocks, generated))}</div>
+  const pages = groupDocumentPages(sections);
+  return <article className="paper report-paper deliverable-document rd-paper" aria-label={`${status} Deliverable preview`}>
+    {pages.length ? pages.map((page, pageIndex) => <section className="rd-page-container" aria-labelledby={`document-page-${pageIndex}`} key={page.name}>
+      <header className="rd-mast">
+        <span className="rd-mast-brand"><span className="rd-mark" aria-hidden="true">C</span><span>CAOS · {pathwayLabel} · {page.name}</span></span>
+        <span className="rd-mast-meta">{status} · PAGE {pageIndex + 1} OF {pages.length}</span>
+      </header>
+      {pageIndex === 0 ? <><h2 className="rd-title" id={`document-page-${pageIndex}`}>{issuer || title}</h2><p className="rd-subtitle">{title}{version ? ` · Draft v${version}` : ""}</p>{digest ? <p className="rd-identity mono" title={digest}>Exact identity · {digest}</p> : null}</> : <h2 className="visually-hidden" id={`document-page-${pageIndex}`}>{page.name}</h2>}
+      <div className="rd-secs">{page.sections.map((section) => <DocumentSectionView section={section} key={section.section_id} />)}</div>
+      <footer className="rd-foot"><span>Generated by CAOS · governed document</span><span>Internal committee use only</span></footer>
+    </section>) : <p className="rd-empty">Complete the required analyst sections to compose the governed document.</p>}
   </article>;
 }

@@ -5,6 +5,8 @@ import test from "node:test";
 const workspace = readFileSync(new URL("../Workspace.tsx", import.meta.url), "utf8");
 const studio = readFileSync(new URL("./ReportStudio.tsx", import.meta.url), "utf8");
 const document = readFileSync(new URL("./DeliverableDocument.tsx", import.meta.url), "utf8");
+const documentTypes = readFileSync(new URL("./documentTypes.ts", import.meta.url), "utf8");
+const styles = readFileSync(new URL("../../../app/globals.css", import.meta.url), "utf8");
 
 test("Workspace delegates Report Studio to the structured component", () => {
   assert.match(workspace, /import ReportStudio from "\.\/report\/ReportStudio";/);
@@ -28,9 +30,12 @@ test("authoring uses the six server templates and shared append-only draft route
 });
 
 test("the structured document is safe and keeps generated content read-only", () => {
-  assert.match(document, /GENERATED_METRIC/);
-  assert.match(document, /SCENARIO_EXHIBIT/);
-  assert.match(document, /ANALYST_JUDGMENT/);
+  assert.match(document, /DocumentTableSection/);
+  assert.match(document, /DocumentChartSection/);
+  assert.match(document, /scope="row"/);
+  assert.match(document, /scope="col"/);
+  assert.match(document, /Locked ·/);
+  assert.match(documentTypes, /section\.editable && section\.origin\.kind === "ANALYST"/);
   assert.doesNotMatch(document, /dangerouslySetInnerHTML|contentEditable|contenteditable/);
   assert.doesNotMatch(studio, /eval\(|Function\(/);
   assert.doesNotMatch(studio, /sessionStorage/);
@@ -122,18 +127,20 @@ test("one lifecycle lock disables every draft-mutating authoring control", () =>
   assert.match(studio, /disabled=\{!canWrite \|\| lifecycleBusy \|\| draftIsUnsaved/);
 });
 
-test("Frozen review accepts the complete immutable authority and model envelope", () => {
+test("Draft and Frozen review render the same canonical governed document", () => {
   assert.match(studio, /payload: FrozenPayload/);
-  for (const field of ["authority", "model", "evidence", "methodology", "renderer", "input_fingerprint", "preview_digest"]) {
-    assert.match(document, new RegExp(`${field}:`));
-  }
-  assert.match(studio, /frozenPayload=\{selectedFrozen\?\.payload/);
-  assert.match(document, /Base \/ Downside Model Analysis/);
-  assert.match(document, /Effective Assumptions/);
-  assert.match(document, /Model Gaps and Warnings/);
-  assert.match(document, /Frozen authority/);
-  assert.match(document, /Revision Record/);
-  assert.match(document, /maximumFractionDigits: 20/);
+  assert.match(studio, /document_schema_version\?: string/);
+  assert.match(studio, /document_sections\?: DocumentSection\[\]/);
+  assert.match(studio, /selectedFrozen\.payload\.content\.document_sections/);
+  assert.match(studio, /: overlayAnalystText\(savedSections, blocks\)/);
+  assert.match(studio, /sections=\{previewSections\}/);
+  assert.match(document, /groupDocumentPages\(sections\)/);
+  assert.doesNotMatch(document, /FrozenEnvelope|flatten\(|application_build/);
+});
+
+test("paper columns collapse at the paper boundary before text is crushed", () => {
+  assert.match(styles, /\.report-paper \{[^}]*container-type: inline-size/);
+  assert.match(styles, /@container \(max-width: 660px\)[\s\S]*?\.rd-cols-2[\s\S]*?grid-template-columns: 1fr/);
 });
 
 test("Workspace owns and retires at most one shared draft-history sentinel", () => {

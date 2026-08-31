@@ -11,6 +11,7 @@ import DeliverableDocument, {
   type NarrativeBlock,
   type TemplateBlock,
 } from "./DeliverableDocument";
+import { draftTextSections, overlayAnalystText, type DocumentSection } from "./documentTypes";
 import { parseReportRecovery, reportRecoveryKey, type RecoveryModelSelection, type ReportRecovery } from "./reportRecovery";
 
 const apiBase = process.env.NEXT_PUBLIC_API_URL || "";
@@ -35,7 +36,7 @@ type ModelEligibility = {
   fallback_acknowledgement_required: boolean;
   default_model_selection: ModelSelection | null;
 };
-type DraftRevision = { id: string; draft_id: string; case_id: string; pathway: Pathway; version: number; author: string; created_at: string; template_id: string; template_version: string; digest: string; content: { template_id: string; template_version: string; model_selection: ModelSelection | null; model_identity?: Record<string, unknown> | null; blocks: DeliverableBlock[]; generated_blocks: Record<string, unknown> } };
+type DraftRevision = { id: string; draft_id: string; case_id: string; pathway: Pathway; version: number; author: string; created_at: string; template_id: string; template_version: string; digest: string; content: { template_id: string; template_version: string; document_schema_version?: string | null; document_sections?: DocumentSection[] | null; model_selection: ModelSelection | null; model_identity?: Record<string, unknown> | null; blocks: DeliverableBlock[]; generated_blocks: Record<string, unknown> } };
 type ExportMetadata = { format: "md" | "pdf" | "xlsx"; sha256: string; size: number };
 type FrozenDeliverable = { id: string; case_id: string; pathway: Pathway; draft_version: number; status: "FROZEN" | "FILED" | "SUPERSEDED" | "CHANGES_REQUESTED"; frozen_by: string; frozen_at: string; approved_by: string | null; approved_at: string | null; superseded_by_id: string | null; change_request: { comment?: string; requested_by?: string; requested_at?: string } | null; digest: string; preview_digest: string; input_fingerprint: string; payload: FrozenPayload; exports: Partial<Record<"md" | "pdf" | "xlsx", ExportMetadata>> };
 type WorkspaceResponse = { template: DeliverableTemplate; current: DraftRevision | null; history: DraftRevision[]; frozen_history: FrozenDeliverable[]; model_eligibility: ModelEligibility };
@@ -476,9 +477,10 @@ export default function ReportStudio({ caseId, role, selectedCase, onDraftStateC
 
   if (loading || loadError || !workspace) return <div className="panel"><div className="panel-body"><LoadState loading={loading} error={loadError} title="Unable to load Report Studio." onRetry={() => void load()} /></div></div>;
 
-  const frozenBlocks = selectedFrozen?.payload.content.blocks || [];
-  const previewBlocks = selectedFrozen ? frozenBlocks : blocksForSave(blocks);
-  const previewGenerated = selectedFrozen?.payload.content.generated_blocks || workspace.current?.content.generated_blocks || {};
+  const savedSections = workspace.current?.content.document_sections || draftTextSections(blocks, workspace.template.blocks);
+  const previewSections = selectedFrozen
+    ? selectedFrozen.payload.content.document_sections || draftTextSections(selectedFrozen.payload.content.blocks, workspace.template.blocks)
+    : overlayAnalystText(savedSections, blocks);
   const modelStale = !modelSelectionIsCurrent(modelSelection, workspace.model_eligibility);
   const requiredModelMissing = workspace.template.model_requirement === "REQUIRED" && modelSelection === null;
   const freezeReady = canWrite && Boolean(workspace.current) && !draftIsUnsaved && saveState.kind === "SAVED" && workspace.current?.version === persistedVersion && !modelStale && !requiredModelMissing;
@@ -515,6 +517,6 @@ export default function ReportStudio({ caseId, role, selectedCase, onDraftStateC
       </div>
     </section>
 
-    <section className="report-proof-stage" aria-label="Deliverable paper preview" tabIndex={0}><DeliverableDocument title={selectedFrozen?.payload.template.title || workspace.template.title} issuer={selectedCase ? `${selectedCase.issuer} — ${selectedCase.name}` : workspace.template.title} pathwayLabel={pathwayLabel} status={selectedFrozen?.status || (draftIsUnsaved ? "UNSAVED" : "DRAFT")} version={selectedFrozen?.draft_version || workspace.current?.version} digest={selectedFrozen?.digest || (draftIsUnsaved ? undefined : workspace.current?.digest)} blocks={previewBlocks} templateBlocks={workspace.template.blocks} generated={previewGenerated} frozen={Boolean(selectedFrozen)} frozenPayload={selectedFrozen?.payload || null} /></section>
+    <section className="report-proof-stage" aria-label="Deliverable paper preview" tabIndex={0}><DeliverableDocument title={selectedFrozen?.payload.template.title || workspace.template.title} issuer={selectedCase ? `${selectedCase.issuer} — ${selectedCase.name}` : workspace.template.title} pathwayLabel={pathwayLabel} status={selectedFrozen?.status || (draftIsUnsaved ? "UNSAVED" : "DRAFT")} version={selectedFrozen?.draft_version || workspace.current?.version} digest={selectedFrozen?.digest || (draftIsUnsaved ? undefined : workspace.current?.digest)} sections={previewSections} /></section>
   </div>;
 }
