@@ -125,8 +125,9 @@ This is a delta plan, not a rebuild. Preserve proven controls and target the rem
 | Current evidence | Plan response |
 |---|---|
 | Strict wire/OpenAPI contracts, 33 evidence-refusal shapes, strong ingestion atomicity, deterministic finite calculations, append-only draft/model revisions, freeze/file separation, exact stored downloads, crash/resume seams, and Chromium accessibility coverage already exist | Reuse and extend them; do not create replacement frameworks or duplicate lifecycles |
-| Current collection is 570 Python tests; the latest local run was 558 passed, 12 skipped, with 689 warnings. Frontend unit tests were 68 passed; Ruff and the 42-route security audit passed | Treat these only as a development baseline. Remove required skips and resource warnings, install from the clean lock, and rerun every gate on the candidate |
-| Ledger validation currently fails because `LICENSE` maps to no feature; historical ledger state includes one waiver and one not-run item | Fix coverage and prohibit historical, waived, skipped, or not-run evidence from satisfying a candidate gate |
+| The current merged G4/G7 backend run is 630 passed and 2 optional PostgreSQL tests skipped in the default invocation with the 30-document corpus present; both PostgreSQL tests pass separately against PostgreSQL 17. The 34-cell full corpus matrix, Ruff, methodology consistency, and the 42-route security audit also pass. Frontend evidence remains the prior 68-unit-test baseline | Treat these only as development evidence. Remove the dependency warning, rerun every frontend/browser gate, and execute the protected live-model, stress, publication, and reconstruction gates on one candidate |
+| One digest-pinned 30-document Carnival pack now covers FY2023–FY2025 annual, quarterly, guidance/forecast, and executed term-loan materials; all 30 upload and extract, and the four implemented pathways pass both depths with `CorpusProvider` | Keep it as the performing-credit host-control baseline. It is not enough for all-pathway qualification: add answer-key metadata, lender/market data for Relative Value, a genuine stressed/restructuring pack for Distressed, a question-specific pack for Deep Research, and live-provider/model/deliverable/browser proof |
+| Ledger validation previously failed because `LICENSE` mapped to no feature; it now excludes that non-product file, and the former corpus waiver has current host-control evidence | Keep historical, waived, skipped, or not-run evidence from satisfying a candidate gate |
 | The engine runs four pathways while UI/contracts expose six | Implement and qualify Distressed and Deep Research so all six surfaces become truthful; until that work lands, they must remain visibly unavailable rather than falsely runnable |
 | `AGENT_EXECUTION_ENABLED=false` can currently emit generic deterministic `COMPLETE` summaries | Remove this false-success path first. Preserve deterministic screen execution only when it is source-grounded and contract-valid; otherwise return a typed refusal |
 | OpenRouter's default is documented as unable to complete CP-1, its token estimate lacks maximum-shape proof, and current attempt metadata can report the Anthropic model | Keep OpenRouter development-only for the initial enterprise profile. Qualify one exact binding and record its actual immutable identity everywhere |
@@ -297,9 +298,31 @@ Close false-success, attribution, and governed-write defects before producing mo
 
 Build the versioned evidence packs, source-completeness contract, route contracts, answer keys, and reusable harness needed to qualify all six pathways. Run final live qualification only after intake, model, opinion, renderer, publication, and audit contracts are frozen.
 
+### Current corpus coverage decision — 2026-08-31
+
+The SHA-256-pinned Carnival baseline is sourced from the issuer's [financial
+results archive](https://www.carnivalcorp.com/investors/financial-information/financial-report-archive/).
+Its 2024 Q2 report is a 579-page combined quarterly/legal package containing
+executed term-loan repricing amendments and full agreement text. It is a strong
+performing-credit host-control pack, but it cannot qualify every pathway by
+itself.
+
+| Pathway | Current source-material status | Required next pack/evidence |
+|---|---|---|
+| Full Credit | Annual, every Q1–Q3 filing, every Q1–Q4 management update, forecasts, debt and legal materials present | Add analyst answer keys, source-disposition/use lineage, live provider, model, deliverable and browser assertions |
+| Earnings Update | Three complete annual/quarterly/update cycles present | Add actual-versus-guidance and forecast-revision answer keys plus metamorphic period tests |
+| Covenant & Refinancing | Executed term-loan agreements, amendments, debt disclosures and maturity/guidance material present | Add covenant clause/capacity answer keys and independently reviewed expected results |
+| Relative Value | Issuer evidence is present but current loan prices, spreads, yields and comparable instruments are not issuer documents | Add a separately licensed, time-aligned user-uploaded loan-universe/market-marks pack; do not fabricate issuer-sourced marks |
+| Distressed & Restructuring | Carnival is not a complete restructuring/LME qualification case and the engine route is unavailable | Build a separate 20–30 document stressed case from official materials such as [Lumen's annual reports](https://ir.lumen.com/financials/annual-reports/default.aspx), [transaction support agreement](https://ir.lumen.com/news/news-details/2023/Lumen-Announces-Broad-Agreement-With-Creditors-That-Will-Provide-The-Company-with-Significant-Flexibility-to-Execute-Its-Transformation-Strategy/default.aspx), [completed TSA transactions](https://ir.lumen.com/news/news-details/2024/Lumen-Technologies-Completes-TSA-Transactions-Enabling-Transformation-Strategy/default.aspx), and [exchange offers](https://ir.lumen.com/news/news-details/2024/Lumen-Announces-Exchange-Offers-for-Unsecured-Notes-of-Lumen-and-Level-3/default.aspx), then implement the route |
+| Deep Research | A generic issuer pack cannot prove an arbitrary research question and the engine route is unavailable | Add question-specific positive/negative packs with approved research briefs, answer keys, forbidden conclusions and time-bounded external evidence, then implement the route |
+
+No public issuer-only corpus can prove Relative Value without separate market
+data, and no source pack can prove a route whose runtime graph does not execute.
+Those are product/input gaps, not corpus-count problems.
+
 ### Implement
 
-1. Replace the URL-only corpus list with one versioned manifest covering C01–C22. Include complete multi-period packs with audited annual reports, every relevant quarterly/interim report, management and lender forecasts, forecast revisions, restatements, debt/covenant documents, presentations, and market data. Record retained filename, provenance, licence/classification, SHA-256, document type, reporting/forecast period, supersession status, expected facts, conflicts, forbidden conclusions, route expectation, and analyst-approved answer-key version.
+1. Extend the digest-pinned Carnival baseline into one versioned manifest covering C01–C22. Include complete multi-period packs with audited annual reports, every relevant quarterly/interim report, management and lender forecasts, forecast revisions, restatements, debt/covenant documents, presentations, and market data. Record retained filename, provenance, licence/classification, SHA-256, document type, reporting/forecast period, supersession status, expected facts, conflicts, forbidden conclusions, route expectation, and analyst-approved answer-key version.
 2. For every supplied file, create a governed disposition: `used`, `superseded`, `conflicting`, `out_of_scope`, or `insufficient`. Every `used` file must reach evidence/model lineage; every other disposition needs a bounded auditable reason. Source-set membership alone is not proof of use.
 3. Reconcile annual, quarterly/interim, LTM, management/lender forecast, analyst base, and analyst downside periods by issuer perimeter, fiscal calendar, as-of date, currency, units, accounting definition, and restatement precedence. Preserve reported actuals, external forecasts, and analyst scenarios as distinct authorities.
 4. Keep network retrieval outside pytest. Make the fetch step verify every digest. Candidate qualification must hard-fail on missing or mismatched required bytes.

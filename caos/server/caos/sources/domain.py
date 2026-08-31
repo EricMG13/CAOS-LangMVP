@@ -24,9 +24,9 @@ MAX_ZIP_ENTRIES = 2000
 MAX_ZIP_RATIO = 100
 MAX_ZIP_UNCOMPRESSED = 100_000_000
 # A real annual report, credit agreement or lender presentation is 0.5-3 MB of
-# extracted text; 12 MB leaves headroom without admitting an EDGAR complete
-# submission package, which is a bundle of uuencoded exhibits rather than a
-# document. The 25 MB route ceiling still bounds what is read off the wire.
+# extracted text; 12 MB leaves headroom without admitting a container that
+# bundles many unrelated exhibits rather than one document. The 25 MB route
+# ceiling still bounds what is read off the wire.
 MAX_SOURCE_TEXT = 12_000_000
 # A block is the quotable unit and one row of every module's source manifest,
 # so both its size and its count are bounded. A line longer than MAX_BLOCK_CHARS

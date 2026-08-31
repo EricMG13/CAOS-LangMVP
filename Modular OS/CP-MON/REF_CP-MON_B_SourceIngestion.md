@@ -1,2 +1,2 @@
 # REF_CP-MON_B — Source Ingestion
-Run connectors in parallel using issuer aliases. Sources: SEC EDGAR, FCA RNS, Companies House, S&P, Moody's, Fitch, Bloomberg, ICE BofA, Markit CDS, equity feeds, Reuters, Bloomberg News, FT, trade press, issuer IR, LCD/PitchBook, PACER/RECAP, restructuring trackers. Connector states: HEALTHY, DEGRADED, OPEN, RECOVERED. Output RawSignalQueue.
+Read only the case's user-uploaded, immutable source set. Classify each uploaded document, preserve its source digest and evidence locators, and output RawSignalQueue. If required current information is absent, report the gap and request another upload; do not run an external acquisition connector.

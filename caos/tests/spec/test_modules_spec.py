@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import shutil
 
 import pytest
@@ -42,6 +43,28 @@ def test_cp2a_declares_the_derived_cp2b_projection():
 
 
 # --- methodology integrity (invariant 4; §12.6–7) ---------------------------------
+
+
+def test_vendored_bundle_is_the_approved_unmodified_release(settings):
+    """Pin every shipped byte independently of the bundle's self-authored manifests."""
+    root = settings.deploy_v_root
+    digest = hashlib.sha256()
+    paths = sorted(
+        (
+            path for path in root.rglob("*")
+            if path.is_file() and "__pycache__" not in path.parts and path.suffix != ".pyc"
+        ),
+        key=lambda path: path.relative_to(root).as_posix(),
+    )
+    for path in paths:
+        relative = path.relative_to(root).as_posix().encode()
+        data = path.read_bytes()
+        digest.update(len(relative).to_bytes(4, "big"))
+        digest.update(relative)
+        digest.update(len(data).to_bytes(8, "big"))
+        digest.update(data)
+    assert len(paths) == 319
+    assert digest.hexdigest() == "341a80b714ffb85a7f3d769e007e8a930eac055e6cd7af9128a4a334fab5e9e4"
 
 
 def test_authority_assembly_matches_golden_digests():

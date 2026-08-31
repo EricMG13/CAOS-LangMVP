@@ -30,12 +30,13 @@ API = ROOT / "caos" / "server" / "caos" / "api" / "__init__.py"
 # Checked-in but not the product: agent skills, review notes, design history.
 EXCLUDED_PREFIXES = (".agents/", ".claude/", ".github/skills/", ".github/hooks/",
                      "notes/", "DESIGN-IS-2026-08-27/", ".agent-reviews/", ".impeccable/")
-EXCLUDED_FILES = {".gitattributes", ".gitignore", ".fallowrc.json", ".gitleaks.toml",
+EXCLUDED_FILES = {".gitattributes", ".gitignore", ".fallowrc.json", ".gitleaks.toml", "LICENSE",
                   "caos/tests/corpus/.gitignore"}
 
 FILE_MAP = {
     r"^caos/server/caos/api/": "F-CASE-*, F-SRC-*, F-RUN-*, F-MODEL-*, F-DELIV-*, F-SEC-01..06",
     r"^caos/server/caos/identity\.py": "F-AUTH-01..06",
+    r"^caos/server/caos/observability\.py": "F-OPS-12",
     r"^caos/server/caos/config\.py": "F-CFG-01, F-CFG-02",
     r"^caos/server/caos/(contracts|responses)\.py": "F-SEC-07, F-SEC-08",
     r"^caos/server/caos/sources/": "F-SRC-01..14",

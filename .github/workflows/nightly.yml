@@ -42,24 +42,13 @@ jobs:
           restore-keys: corpus-
       - name: Fetch the real-issuer corpus
         id: fetch
-        # Best effort: the documents come from the SEC and from issuer sites, so
-        # a fetch failure leaves the corpus tests skipping with a reason rather
-        # than turning an unrelated change red. fetch.sh re-downloads only what a
-        # restored cache is missing.
-        continue-on-error: true
-        env:
-          SEC_USER_AGENT: ${{ vars.SEC_USER_AGENT }}
-        run: |
-          if [ -z "${SEC_USER_AGENT}" ]; then
-            echo "::warning::SEC_USER_AGENT repo variable is unset, so the real-issuer corpus tests will skip. Set it to a contact EDGAR accepts, e.g. 'Jane Analyst jane@example.com' — EDGAR answers 403 to a user agent without an email-shaped contact."
-            exit 1
-          fi
-          caos/tests/corpus/fetch.sh
+        # A missing required byte is a failed qualification, never a silent skip.
+        run: caos/tests/corpus/fetch.sh
       - name: Save the real-issuer corpus
         # Only a complete fetch is cached. A partial one stored under the
         # sources.txt key would be restored forever and never retried, silently
         # disabling the corpus tests for the documents it is missing.
-        if: steps.fetch.outcome == 'success' && steps.corpus.outputs.cache-hit != 'true'
+        if: steps.corpus.outputs.cache-hit != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: caos/tests/corpus/documents
