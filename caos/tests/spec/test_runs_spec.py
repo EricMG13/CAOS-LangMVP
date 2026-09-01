@@ -286,6 +286,288 @@ async def test_engine_close_drains_foreign_loop_saver_initialization(
         assert finished.is_set()
 
 
+async def test_engine_close_foreign_drain_timeout_preserves_retry_and_waiters(
+    tmp_path, settings, store, monkeypatch,
+):
+    import caos.engine.runtime as runtime
+
+    engine = runtime.Engine.create(settings=settings, store=store, checkpoint_path=tmp_path / "timeout.db")
+    ready = threading.Event()
+    cancelled = threading.Event()
+    stopped = threading.Event()
+    owned = {}
+
+    def own_initialization() -> None:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+
+        async def pending() -> None:
+            try:
+                await asyncio.Event().wait()
+            finally:
+                cancelled.set()
+
+        def prepare() -> None:
+            task = loop.create_task(pending())
+            owned["task"] = task
+            engine._saver_initializations.add(task)
+            ready.set()
+
+        loop.call_soon(prepare)
+        try:
+            loop.run_forever()
+        finally:
+            loop.close()
+            stopped.set()
+
+    owner = threading.Thread(target=own_initialization)
+    owner.start()
+    try:
+        await asyncio.to_thread(ready.wait)
+        monkeypatch.setattr(runtime, "CLOSE_DRAIN_TIMEOUT_SECONDS", 0.0)
+        first = asyncio.create_task(engine.aclose())
+        second = asyncio.create_task(engine.aclose())
+        first_error, second_error = await asyncio.gather(first, second, return_exceptions=True)
+
+        assert isinstance(first_error, RuntimeError)
+        assert isinstance(second_error, RuntimeError)
+        assert "timed out" in str(first_error)
+        assert "timed out" in str(second_error)
+        assert engine._closed is False
+        assert owned["task"] in engine._saver_initializations
+
+        owner_loop = owned["task"].get_loop()
+        owner_loop.call_soon_threadsafe(owned["task"].cancel)
+        await asyncio.to_thread(cancelled.wait)
+        monkeypatch.setattr(runtime, "CLOSE_DRAIN_TIMEOUT_SECONDS", 5.0)
+        await engine.aclose()
+    finally:
+        owner_loop = owned.get("task") and owned["task"].get_loop()
+        if owner_loop is not None and owner_loop.is_running():
+            owner_loop.call_soon_threadsafe(owner_loop.stop)
+        await asyncio.to_thread(owner.join)
+        assert stopped.is_set()
+
+
+async def test_engine_close_propagates_foreign_waiter_creation_failure(
+    tmp_path, settings, store, monkeypatch,
+):
+    from caos.engine.runtime import Engine
+
+    engine = Engine.create(settings=settings, store=store, checkpoint_path=tmp_path / "waiter-failure.db")
+    ready = threading.Event()
+    cancelled = threading.Event()
+    stopped = threading.Event()
+    owned = {}
+
+    def own_initialization() -> None:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+
+        async def pending() -> None:
+            try:
+                await asyncio.Event().wait()
+            finally:
+                cancelled.set()
+
+        def prepare() -> None:
+            task = loop.create_task(pending())
+            owned["task"] = task
+            engine._saver_initializations.add(task)
+            ready.set()
+
+        loop.call_soon(prepare)
+        try:
+            loop.run_forever()
+        finally:
+            loop.close()
+            stopped.set()
+
+    owner = threading.Thread(target=own_initialization)
+    owner.start()
+    try:
+        await asyncio.to_thread(ready.wait)
+        owner_loop = owned["task"].get_loop()
+        real_create_task = owner_loop.create_task
+
+        def fail_create_task(coro, *args, **kwargs):
+            coro.close()
+            raise RuntimeError("foreign waiter creation failed")
+
+        monkeypatch.setattr(owner_loop, "create_task", fail_create_task)
+        with pytest.raises(RuntimeError, match="foreign waiter creation failed"):
+            await engine.aclose()
+
+        assert engine._closed is False
+        assert owned["task"] in engine._saver_initializations
+        monkeypatch.setattr(owner_loop, "create_task", real_create_task)
+        owner_loop.call_soon_threadsafe(owned["task"].cancel)
+        await asyncio.to_thread(cancelled.wait)
+        await engine.aclose()
+    finally:
+        owner_loop = owned.get("task") and owned["task"].get_loop()
+        if owner_loop is not None and owner_loop.is_running():
+            owner_loop.call_soon_threadsafe(owner_loop.stop)
+        await asyncio.to_thread(owner.join)
+        assert stopped.is_set()
+
+
+async def test_engine_close_timeout_survives_stopped_owner_waiter_cleanup(
+    tmp_path, settings, store, monkeypatch,
+):
+    import caos.engine.runtime as runtime
+
+    engine = runtime.Engine.create(settings=settings, store=store, checkpoint_path=tmp_path / "timeout-cleanup.db")
+    ready = threading.Event()
+    waiter_started = threading.Event()
+    cancelled = threading.Event()
+    stopped = threading.Event()
+    owned = {}
+
+    def own_initialization() -> None:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+
+        async def pending() -> None:
+            try:
+                await asyncio.Event().wait()
+            finally:
+                cancelled.set()
+
+        def prepare() -> None:
+            task = loop.create_task(pending())
+            owned["task"] = task
+            engine._saver_initializations.add(task)
+            ready.set()
+
+        loop.call_soon(prepare)
+        try:
+            loop.run_forever()
+        finally:
+            loop.close()
+            stopped.set()
+
+    class ForcedTimeout:
+        async def __aenter__(self):
+            await asyncio.to_thread(waiter_started.wait)
+            raise TimeoutError
+
+        async def __aexit__(self, *_args):
+            return False
+
+    async def wait_for_task(task):
+        waiter_started.set()
+        await asyncio.gather(task, return_exceptions=True)
+
+    owner = threading.Thread(target=own_initialization)
+    owner.start()
+    try:
+        await asyncio.to_thread(ready.wait)
+        owner_loop = owned["task"].get_loop()
+        real_submit = owner_loop.call_soon_threadsafe
+
+        def fail_waiter_cancel(callback, *args, **kwargs):
+            if getattr(callback, "__name__", "") == "cancel":
+                raise RuntimeError("owner loop stopped")
+            return real_submit(callback, *args, **kwargs)
+
+        monkeypatch.setattr(engine, "_wait_for_task", wait_for_task)
+        monkeypatch.setattr(runtime.asyncio, "timeout", lambda _seconds: ForcedTimeout())
+        monkeypatch.setattr(owner_loop, "call_soon_threadsafe", fail_waiter_cancel)
+        with pytest.raises(RuntimeError, match="timed out draining foreign-loop tasks"):
+            await engine.aclose()
+
+        assert engine._closed is False
+        assert owned["task"] in engine._saver_initializations
+        monkeypatch.setattr(owner_loop, "call_soon_threadsafe", real_submit)
+        owner_loop.call_soon_threadsafe(owned["task"].cancel)
+        await asyncio.to_thread(cancelled.wait)
+        monkeypatch.undo()
+        await engine.aclose()
+    finally:
+        owner_loop = owned.get("task") and owned["task"].get_loop()
+        if owner_loop is not None and owner_loop.is_running():
+            owner_loop.call_soon_threadsafe(owner_loop.stop)
+        await asyncio.to_thread(owner.join)
+        assert stopped.is_set()
+
+
+async def test_engine_close_refuses_owner_loop_stopped_during_waiter_handoff(
+    tmp_path, settings, store, monkeypatch,
+):
+    from caos.engine.runtime import Engine
+
+    engine = Engine.create(settings=settings, store=store, checkpoint_path=tmp_path / "stopped-loop.db")
+    ready = threading.Event()
+    stopped = threading.Event()
+    resume = threading.Event()
+    finished = threading.Event()
+    owned = {}
+
+    def own_continuation() -> None:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+
+        async def pending() -> None:
+            await asyncio.Event().wait()
+
+        def prepare() -> None:
+            task = loop.create_task(pending())
+            owned["task"] = task
+            engine._continuations.add(task)
+            ready.set()
+
+        loop.call_soon(prepare)
+        loop.run_forever()
+        stopped.set()
+        resume.wait()
+        try:
+            loop.run_until_complete(asyncio.gather(owned["task"], return_exceptions=True))
+        finally:
+            loop.close()
+            finished.set()
+
+    owner = threading.Thread(target=own_continuation)
+    owner.start()
+    try:
+        await asyncio.to_thread(ready.wait)
+        owner_loop = owned["task"].get_loop()
+        real_submit = owner_loop.call_soon_threadsafe
+
+        def stop_before_waiter(callback, *args, **kwargs):
+            if getattr(callback, "__name__", "") != "wait_on_owner":
+                return real_submit(callback, *args, **kwargs)
+            real_submit(owner_loop.stop)
+            assert stopped.wait()
+            return real_submit(callback, *args, **kwargs)
+
+        real_wrap = asyncio.wrap_future
+
+        def resume_if_old_waiter(future, *args, **kwargs):
+            resume.set()
+            return real_wrap(future, *args, **kwargs)
+
+        monkeypatch.setattr(owner_loop, "call_soon_threadsafe", stop_before_waiter)
+        monkeypatch.setattr(asyncio, "wrap_future", resume_if_old_waiter)
+        with pytest.raises(RuntimeError, match="runnable owner loop"):
+            await engine.aclose()
+
+        assert engine._closed is False
+        assert owned["task"] in engine._continuations
+        owner_loop.call_soon_threadsafe(owned["task"].cancel)
+        resume.set()
+        await asyncio.to_thread(owner.join)
+        await engine.aclose()
+    finally:
+        task = owned.get("task")
+        if task is not None and not task.done() and not task.get_loop().is_closed():
+            task.get_loop().call_soon_threadsafe(task.cancel)
+        resume.set()
+        if owner.is_alive():
+            await asyncio.to_thread(owner.join)
+        assert finished.is_set()
+
+
 # --- the offered cut is the startable cut ----------------------------------------
 
 

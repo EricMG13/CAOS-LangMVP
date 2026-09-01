@@ -10,6 +10,7 @@ workflows/domain.py or http.py.
 from __future__ import annotations
 
 import asyncio
+import concurrent.futures
 import contextlib
 import json
 import sqlite3
@@ -47,6 +48,7 @@ from .provider import AgentError, ProviderRequest
 
 
 MVP_PATHWAYS = {"FULL_CREDIT", "EARNINGS_UPDATE", "COVENANT_REFINANCING", "RELATIVE_VALUE"}
+CLOSE_DRAIN_TIMEOUT_SECONDS = 5.0
 
 # /api/health is unauthenticated (oauth2-proxy `skip_auth_routes`) AND exempt
 # from the per-subject rate ceiling, so its cost is an anonymous caller's to
@@ -265,7 +267,8 @@ class Engine:
         """Wait for tasks on the loop that owns each task, cancelling when asked."""
         loop = asyncio.get_running_loop()
         local: list[asyncio.Task[Any]] = []
-        foreign: list[asyncio.Future[Any]] = []
+        foreign: list[tuple[asyncio.AbstractEventLoop, concurrent.futures.Future[None],
+                            concurrent.futures.Future[asyncio.Task[None]]]] = []
         for task in tasks:
             if task.done():
                 continue
@@ -275,25 +278,81 @@ class Engine:
                     task.cancel()
                 local.append(task)
                 continue
-            if (
-                owner.is_closed()
-                or not owner.is_running()
-                or getattr(owner, "_thread_id", None) == threading.get_ident()
-            ):
+            if not self._owner_loop_runnable(owner, loop):
                 raise RuntimeError("cannot close a task without a runnable owner loop")
             if cancel:
                 owner.call_soon_threadsafe(task.cancel)
-            foreign.append(asyncio.wrap_future(
-                asyncio.run_coroutine_threadsafe(self._wait_for_task(task), owner)
-            ))
+            bridge: concurrent.futures.Future[None] = concurrent.futures.Future()
+            waiter_ref: concurrent.futures.Future[asyncio.Task[None]] = concurrent.futures.Future()
+
+            def wait_on_owner(task: asyncio.Task[Any] = task, owner: asyncio.AbstractEventLoop = owner,
+                              bridge: concurrent.futures.Future[None] = bridge,
+                              waiter_ref: concurrent.futures.Future[asyncio.Task[None]] = waiter_ref) -> None:
+                if bridge.done():
+                    return
+                try:
+                    waiter = owner.create_task(self._wait_for_task(task))
+                except BaseException as exc:
+                    waiter_ref.set_exception(exc)
+                    bridge.set_exception(exc)
+                    return
+                waiter_ref.set_result(waiter)
+
+                def finish_waiter(done: asyncio.Task[None], bridge: concurrent.futures.Future[None] = bridge) -> None:
+                    if bridge.done():
+                        return
+                    try:
+                        done.result()
+                    except BaseException as exc:
+                        bridge.set_exception(exc)
+                    else:
+                        bridge.set_result(None)
+
+                waiter.add_done_callback(finish_waiter)
+
+            owner.call_soon_threadsafe(wait_on_owner)
+            if not self._owner_loop_runnable(owner, loop):
+                if waiter_ref.done() and not waiter_ref.cancelled():
+                    try:
+                        owner.call_soon_threadsafe(waiter_ref.result().cancel)
+                    except BaseException:
+                        pass
+                raise RuntimeError("cannot close a task without a runnable owner loop")
+            foreign.append((owner, bridge, waiter_ref))
         if local:
             await asyncio.gather(*local, return_exceptions=True)
         if foreign:
-            await asyncio.gather(*foreign, return_exceptions=True)
+            try:
+                async with asyncio.timeout(CLOSE_DRAIN_TIMEOUT_SECONDS):
+                    results = await asyncio.gather(
+                        *(asyncio.wrap_future(bridge) for _owner, bridge, _waiter in foreign),
+                        return_exceptions=True,
+                    )
+            except TimeoutError as exc:
+                for owner, bridge, waiter_ref in foreign:
+                    bridge.cancel()
+                    try:
+                        if waiter_ref.done() and not waiter_ref.cancelled():
+                            owner.call_soon_threadsafe(waiter_ref.result().cancel)
+                    except BaseException:
+                        pass
+                raise RuntimeError("engine close timed out draining foreign-loop tasks") from exc
+            first_error = next((result for result in results if isinstance(result, BaseException)), None)
+            if first_error is not None:
+                raise first_error
 
     @staticmethod
     async def _wait_for_task(task: asyncio.Task[Any]) -> None:
         await asyncio.gather(task, return_exceptions=True)
+
+    @staticmethod
+    def _owner_loop_runnable(owner: asyncio.AbstractEventLoop, caller: asyncio.AbstractEventLoop) -> bool:
+        return not (
+            owner.is_closed()
+            or not owner.is_running()
+            or getattr(owner, "_thread_id", None) == threading.get_ident()
+            or getattr(owner, "_stopping", False)
+        )
 
     @staticmethod
     def _finish_close_waiter(waiter: asyncio.Future[None], error: BaseException | None) -> None:

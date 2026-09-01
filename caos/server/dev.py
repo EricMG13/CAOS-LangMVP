@@ -10,7 +10,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from run import build, serve
+from run import build, serve, shutdown
 
 from caos.config import Settings
 
@@ -18,7 +18,15 @@ from caos.config import Settings
 def main() -> None:
     settings = Settings.from_env()
     app, engine = build(settings, Path(os.getenv("CAOS_DATA_DIR", ".dev-data")).resolve())
-    serve(app, engine, host="127.0.0.1", port=settings.port)
+    try:
+        serve(app, engine, host="127.0.0.1", port=settings.port)
+    except BaseException:
+        try:
+            shutdown(engine)
+        except BaseException:
+            pass
+        raise
+    shutdown(engine)
 
 
 if __name__ == "__main__":

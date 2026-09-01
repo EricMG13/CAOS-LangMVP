@@ -387,6 +387,103 @@ def test_app_entrypoint_closes_store_when_provider_shutdown_fails(monkeypatch, t
     assert events[-2:] == ["provider.close", "store.close"]
 
 
+def test_app_entrypoint_preserves_service_failure_through_all_cleanup_failures(monkeypatch, tmp_path):
+    events = []
+
+    class Store(_LockTracker):
+        def close(self) -> None:
+            events.append("store.close")
+            raise RuntimeError("store close failed")
+
+    class Provider:
+        async def aclose(self) -> None:
+            events.append("provider.close")
+            raise RuntimeError("provider close failed")
+
+    class Engine:
+        def __init__(self) -> None:
+            self.store = Store()
+            self.provider = Provider()
+
+        async def aclose(self) -> None:
+            events.append("engine.close")
+            raise RuntimeError("engine close failed")
+
+    settings = _settings(tmp_path)
+    engine = Engine()
+    monkeypatch.setattr(run.Settings, "from_env", classmethod(lambda cls: settings))
+    monkeypatch.setattr(run, "build", lambda _settings, _data: (object(), engine))
+    monkeypatch.setattr(run, "serve", lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("serve failed")))
+
+    with pytest.raises(RuntimeError, match="serve failed"):
+        run.main()
+
+    assert events[-3:] == ["engine.close", "provider.close", "store.close"]
+
+
+def test_app_entrypoint_preserves_engine_shutdown_failure(monkeypatch, tmp_path):
+    events = []
+
+    class Store(_LockTracker):
+        def close(self) -> None:
+            events.append("store.close")
+            raise RuntimeError("store close failed")
+
+    class Provider:
+        async def aclose(self) -> None:
+            events.append("provider.close")
+            raise RuntimeError("provider close failed")
+
+    class Engine:
+        def __init__(self) -> None:
+            self.store = Store()
+            self.provider = Provider()
+
+        async def aclose(self) -> None:
+            events.append("engine.close")
+            raise RuntimeError("engine close failed")
+
+    settings = _settings(tmp_path)
+    engine = Engine()
+    monkeypatch.setattr(run.Settings, "from_env", classmethod(lambda cls: settings))
+    monkeypatch.setattr(run, "build", lambda _settings, _data: (object(), engine))
+    monkeypatch.setattr(run, "serve", lambda *_args, **_kwargs: None)
+
+    with pytest.raises(RuntimeError, match="engine close failed"):
+        run.main()
+
+    assert events[-3:] == ["engine.close", "provider.close", "store.close"]
+
+
+def test_worker_entrypoint_preserves_poll_failure_through_cleanup_failures(monkeypatch, tmp_path):
+    events = []
+
+    class Store(_LockTracker):
+        def close(self) -> None:
+            events.append("store.close")
+            raise RuntimeError("store close failed")
+
+    class Engine:
+        async def aclose(self) -> None:
+            events.append("engine.close")
+            raise RuntimeError("engine close failed")
+
+    settings = _settings(tmp_path)
+    store = Store()
+    monkeypatch.setattr(worker.Settings, "from_env", classmethod(lambda cls: settings))
+    monkeypatch.setattr(worker, "configure_logging", lambda _settings: None)
+    monkeypatch.setattr(worker.DomainStore, "from_url", classmethod(lambda cls, _url: store))
+    monkeypatch.setattr(worker.Engine, "create", classmethod(lambda cls, **_kwargs: Engine()))
+    monkeypatch.setattr(worker, "ModelService", lambda **_kwargs: object())
+    monkeypatch.setattr(worker, "run_pending", lambda _service: (_ for _ in ()).throw(RuntimeError("poll failed")))
+    monkeypatch.setattr(sys, "argv", ["worker.py", "--once"])
+
+    with pytest.raises(RuntimeError, match="poll failed"):
+        worker.main()
+
+    assert events[-2:] == ["engine.close", "store.close"]
+
+
 def test_app_build_rolls_back_owned_store_and_provider_on_construction_failure(monkeypatch, tmp_path):
     events = []
 

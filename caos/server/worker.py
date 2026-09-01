@@ -87,15 +87,30 @@ def main() -> None:
                 processed = run_pending(service)
                 if once:
                     print({"processed": processed})
-                    return
+                    break
                 if not processed:
                     time.sleep(poll_seconds)
-    finally:
+    except BaseException:
         try:
             if engine is not None:
                 asyncio.run(engine.aclose())
-        finally:
+        except BaseException:
+            pass
+        try:
             store.close()
+        except BaseException:
+            pass
+        raise
+    try:
+        if engine is not None:
+            asyncio.run(engine.aclose())
+    except BaseException:
+        try:
+            store.close()
+        except BaseException:
+            pass
+        raise
+    store.close()
 
 
 if __name__ == "__main__":

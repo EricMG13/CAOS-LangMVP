@@ -34,6 +34,13 @@ class AnthropicProvider:
             default_request_timeout=PROVIDER_TIMEOUT_SECONDS,
         )
         self.model = model
+        self._closed = False
+
+    async def aclose(self) -> None:
+        if self._closed:
+            return
+        await self.chat._async_client.close()
+        self._closed = True
 
     def _payload(self, request: ProviderRequest) -> dict[str, Any]:
         from .provider import READ_EVIDENCE_TOOL

@@ -86,14 +86,32 @@ def serve(app: FastAPI, engine: Engine, *, host: str, port: int) -> None:
 
 
 async def _close_owned(engine: Engine | None, provider: object | None = None) -> None:
+    resource_provider = provider if provider is not None else getattr(engine, "provider", None)
+    close_provider = getattr(resource_provider, "aclose", None)
     try:
         if engine is not None:
             await engine.aclose()
-    finally:
-        resource_provider = provider if provider is not None else getattr(engine, "provider", None)
-        close_provider = getattr(resource_provider, "aclose", None)
+    except BaseException:
         if callable(close_provider):
-            await close_provider()
+            try:
+                await close_provider()
+            except BaseException:
+                pass
+        raise
+    if callable(close_provider):
+        await close_provider()
+
+
+def shutdown(engine: Engine) -> None:
+    try:
+        asyncio.run(_close_owned(engine))
+    except BaseException:
+        try:
+            engine.store.close()
+        except BaseException:
+            pass
+        raise
+    engine.store.close()
 
 
 def main() -> None:
@@ -104,11 +122,13 @@ def main() -> None:
     try:
         with engine.store.single_instance("app"):
             serve(app, engine, host=os.getenv("HOST", "0.0.0.0"), port=settings.port)
-    finally:
+    except BaseException:
         try:
-            asyncio.run(_close_owned(engine))
-        finally:
-            engine.store.close()
+            shutdown(engine)
+        except BaseException:
+            pass
+        raise
+    shutdown(engine)
 
 
 if __name__ == "__main__":
