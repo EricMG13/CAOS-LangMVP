@@ -536,6 +536,7 @@ try {
   await page.getByRole("status").getByText("Run status: queued", { exact: true }).waitFor();
   assert.equal(await page.locator(".panel-header .status").first().evaluate((element) => element.lastChild?.textContent), "queued", "the visible run status chip is no longer the bare status word");
   await page.getByRole("status").getByText("Research plan approved. Execution resumes against the approved plan hash.", { exact: true }).waitFor();
+  await page.waitForFunction(() => document.activeElement !== document.body);
   assert.equal(await page.evaluate(() => document.activeElement === document.body), false, "approving the research plan left focus on <body>");
   assert.deepEqual(approvalPayload, { plan_hash: researchPlanHash });
   assert.ok(caseDetailFixtureHits > 0, "pending-plan case detail fixture was not exercised");
