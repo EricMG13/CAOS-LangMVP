@@ -47,13 +47,15 @@ async def test_engine_close_cancels_pending_work_closes_savers_once_and_borrows_
 
         async def pending_continuation():
             try:
+                started.set()
                 await asyncio.Event().wait()
             finally:
                 cancelled.set()
 
+        started = asyncio.Event()
         pending = asyncio.create_task(pending_continuation())
         engine._continuations.add(pending)
-        await asyncio.sleep(0)
+        await started.wait()
 
         await engine.aclose()
         await engine.aclose()
@@ -119,8 +121,14 @@ async def test_engine_close_serializes_concurrent_callers(tmp_path, settings, st
     second = None
     try:
         await entered.wait()
-        second = asyncio.create_task(engine.aclose())
-        await asyncio.sleep(0)
+        second_started = asyncio.Event()
+
+        async def close_second():
+            second_started.set()
+            await engine.aclose()
+
+        second = asyncio.create_task(close_second())
+        await second_started.wait()
         release.set()
         await asyncio.gather(first, second)
 
@@ -153,8 +161,14 @@ async def test_engine_close_catches_a_saver_initializing_concurrently(
     closing = None
     try:
         await entered.wait()
-        closing = asyncio.create_task(engine.aclose())
-        await asyncio.sleep(0)
+        close_started = asyncio.Event()
+
+        async def close_engine():
+            close_started.set()
+            await engine.aclose()
+
+        closing = asyncio.create_task(close_engine())
+        await close_started.wait()
         assert not closing.done(), "close must wait for an in-flight saver initialization"
         release.set()
         await closing
