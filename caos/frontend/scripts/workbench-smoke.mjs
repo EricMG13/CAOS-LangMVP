@@ -993,13 +993,13 @@ try {
   await page.getByText("Model versions", { exact: true }).click();
   assert.equal(await page.getByRole("region", { name: "Model versions" }).locator("tbody tr").count(), 2, "application and signed versions were not rendered as one model history");
   assert.equal(await page.locator("fieldset").count(), 23, "Model Builder did not render the full methodology-owned registry");
-  const firstAssumption = page.getByLabel("Revenue growth, FY2025, BASE");
+  const firstAssumption = page.getByLabel("Revenue growth, FY2025, BASE", { exact: true });
   await firstAssumption.fill("0.04");
   await firstAssumption.press("Enter");
   await page.getByText(/Forecast recalculated\. Historical accounts remain locked/).waitFor();
   assert.equal(previewPosts, 1, "forecast edit did not automatically calculate one preview");
   await page.getByRole("group", { name: /Net leverage tornado for BASE/ }).waitFor();
-  const secondAssumption = page.getByLabel("Revenue growth, FY2026, BASE");
+  const secondAssumption = page.getByLabel("Revenue growth, FY2026, BASE", { exact: true });
   await firstAssumption.fill("3");
   await firstAssumption.press("Enter");
   assert.equal(await firstAssumption.inputValue(), "0.04", "rejected out-of-bounds edit did not revert the controlled input");
