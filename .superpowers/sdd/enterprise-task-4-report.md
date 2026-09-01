@@ -257,6 +257,24 @@ Verified fine: bridge failure propagation, retained retry state, strict Resource
 
 Still open: PostgreSQL advisory-lock integration remains blocked by absent `CAOS_TEST_POSTGRES_URL`; the third-party Starlette deprecation remains. No independent approval is claimed.
 
+## Continuation and dual-client correction
+
+Implementation commit: `24016e4`. Independent approval remains pending.
+
+- Continuation creation and registration now happen under the lifecycle lock. Once close begins no continuation task is created; a task registered before close is in the close snapshot. Completion removes itself under that lock and retrieves its exception, logging only the host run id and exception class.
+- `CLOSE_DRAIN_TIMEOUT_SECONDS` now bounds all task draining, including same-loop tasks. A timeout keeps source tasks registered and leaves `_closed` false for retry.
+- `AnthropicProvider.aclose()` closes both ChatAnthropic clients (`_async_client` and `_client`), attempts both on failure, preserves the first failure, and marks success only after both close.
+
+Focused warning-strict command:
+
+`/private/tmp/caos-enterprise-baseline-20260901/bin/python -m pytest caos/tests/test_anthropic_provider.py caos/tests/spec/test_runs_spec.py -q -W error::RuntimeWarning -W error::pytest.PytestUnraisableExceptionWarning -W error::ResourceWarning`
+
+Result: `38 passed, 1` existing third-party Starlette deprecation. Ruff on changed files and `git diff --check` passed before commit. No suppression, sleep, dependency, garbage-collection proof, or rewrite tournament was added.
+
+## Confidence review — continuation and dual-client correction
+
+Least confident about: continuation scheduling racing shutdown, local cancellation suppression defeating the drain bound, and partial Anthropic client shutdown. Investigated the lifecycle lock transition, full local/foreign wait set, installed client shape, and production-shaped two-client retry test. Confirmed and fixed all three. Still open: unavailable PostgreSQL integration and the third-party Starlette deprecation; no independent approval is claimed.
+
 ## Files
 
 Product lifecycle:
