@@ -9,8 +9,13 @@ const states = readFileSync(new URL("../components/states.tsx", import.meta.url)
 const modelBuilder = readFileSync(new URL("../components/model/ModelBuilder.tsx", import.meta.url), "utf8");
 const deliverableDocument = readFileSync(new URL("../components/report/DeliverableDocument.tsx", import.meta.url), "utf8");
 const reportStudio = readFileSync(new URL("../components/report/ReportStudio.tsx", import.meta.url), "utf8");
+const layout = readFileSync(new URL("../../app/layout.tsx", import.meta.url), "utf8");
 const styles = readFileSync(new URL("../../app/globals.css", import.meta.url), "utf8");
 const smoke = readFileSync(new URL("../../scripts/workbench-smoke.mjs", import.meta.url), "utf8");
+
+test("shipped font configuration has no Google-hosted dependency", () => {
+  assert.doesNotMatch(`${layout}\n${styles}`, /next\/font\/google|fonts\.googleapis\.com|fonts\.gstatic\.com/);
+});
 
 test("approved workspace labels preserve the existing routes", () => {
   assert.deepEqual(workflows.map(({ label, href }) => [label, href]), [

@@ -27,6 +27,12 @@ test("the builder exposes one model with the application build as its saved star
   assert.doesNotMatch(modelBuilder, /label: "Sensitivities"|Multi-Driver Scenario|Apply to Draft/);
 });
 
+test("queued build feedback waits for a current authority refresh", () => {
+  const buildFlow = modelBuilder.slice(modelBuilder.indexOf("const buildModel"), modelBuilder.indexOf("const signOff"));
+  assert.match(buildFlow, /const refreshed = await refresh\(undefined, false\);\s*if \(!refreshed\) return;\s*setPending\(""\);\s*setMessage\(status === "FAILED" \? "Model rebuild queued\." : "Model build queued\."\)/);
+  assert.match(modelBuilder, /if \(generation !== requestGeneration\.current \|\| expectedCaseId !== caseId\) return false;/);
+});
+
 test("model builder headings lead directly without decorative eyebrow stacks", () => {
   assert.doesNotMatch(modelBuilder, /className="eyebrow"/);
   assert.match(modelBuilder, /id="forecast-assumptions-heading">Forecast assumptions<\/h3>/);

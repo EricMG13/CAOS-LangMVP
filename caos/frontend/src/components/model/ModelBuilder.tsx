@@ -348,7 +348,7 @@ export default function ModelBuilder({
   const canWrite = role !== "READER";
 
   const refresh = useCallback(async (signal?: AbortSignal, showLoading = true) => {
-    if (!caseId) return;
+    if (!caseId) return false;
     const expectedCaseId = caseId;
     const generation = ++requestGeneration.current;
     if (showLoading) setLoading(true);
@@ -380,7 +380,7 @@ export default function ModelBuilder({
         nextRevisions = revisionResponse.revisions;
         nextWorksheet = worksheetResponse;
       }
-      if (generation !== requestGeneration.current || expectedCaseId !== caseId) return;
+      if (generation !== requestGeneration.current || expectedCaseId !== caseId) return false;
       const nextActive = nextRevisions.find((item) => item.state === "ACTIVE" && item.build_id === nextBuild?.id) || null;
       const nextAuthorityKey = nextBuild && nextRegistry ? [expectedCaseId, nextBuild.id, nextBuild.input_fingerprint, nextBuild.payload_digest || "", nextRegistry.digest, nextActive?.id || ""].join("|") : `${expectedCaseId}|${nextInventory.readiness.status}`;
       if (nextAuthorityKey !== authorityKey.current) {
@@ -420,10 +420,12 @@ export default function ModelBuilder({
       setRegistry(nextRegistry);
       setRevisions(nextRevisions);
       setLoadedCaseId(expectedCaseId);
+      return true;
     } catch (caught) {
-      if (generation !== requestGeneration.current || caught instanceof DOMException && caught.name === "AbortError") return;
+      if (generation !== requestGeneration.current || caught instanceof DOMException && caught.name === "AbortError") return false;
       setLoadError(firstErrorMessage(caught, "Unable to load Model Builder"));
       setLoadedCaseId(expectedCaseId);
+      return false;
     } finally {
       if (generation === requestGeneration.current) setLoading(false);
     }
@@ -602,7 +604,7 @@ export default function ModelBuilder({
   const buildModel = async () => {
     const action = ++actionGeneration.current;
     setPending("build"); setMessage("");
-    try { await request(`/api/cases/${caseId}/models`, { method: "POST" }); if (action !== actionGeneration.current) return; setMessage(status === "FAILED" ? "Model rebuild queued." : "Model build queued."); await refresh(undefined, false); }
+    try { await request(`/api/cases/${caseId}/models`, { method: "POST" }); if (action !== actionGeneration.current) return; const refreshed = await refresh(undefined, false); if (!refreshed) return; setPending(""); setMessage(status === "FAILED" ? "Model rebuild queued." : "Model build queued."); }
     catch (caught) { if (action === actionGeneration.current) setMessage(firstErrorMessage(caught, "Unable to queue model build")); }
     finally { if (action === actionGeneration.current) setPending(""); }
   };
