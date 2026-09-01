@@ -176,6 +176,7 @@ caption { color: var(--caos-muted); font-size: 10px; font-weight: 600; letter-sp
    its tile renders one line shorter — does not leave the row ragged. */
 .dag { display: flex; flex-wrap: wrap; gap: 8px; align-items: stretch; }
 .dag-node { border: 1px solid var(--caos-border); border-radius: var(--radius-md); padding: var(--space-sm); min-width: 120px; max-width: 200px; background: var(--caos-bg); }
+.dag-node .status { vertical-align: top; }
 .chart { min-height: 160px; display: grid; align-content: end; gap: 9px; }
 .chart-bars { height: 118px; display: flex; align-items: end; gap: 16px; border-bottom: 1px solid var(--caos-border); padding: 0 16px; }
 .bar { width: 36px; background: var(--caos-accent); min-height: 4px; }
