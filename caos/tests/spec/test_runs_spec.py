@@ -183,6 +183,108 @@ async def test_engine_close_catches_a_saver_initializing_concurrently(
         await engine.aclose()
 
 
+async def test_continuation_registration_is_atomic_with_close(tmp_path, settings, store, monkeypatch):
+    from caos.engine.runtime import Engine
+
+    engine = Engine.create(settings=settings, store=store, checkpoint_path=tmp_path / "continuation-race.db")
+    engine.enable_auto_continue()
+    monkeypatch.setattr(engine.runs, "get_run", lambda _run_id: {"status": "running"})
+    cancelled = asyncio.Event()
+    drain_entered = asyncio.Event()
+    release_drain = asyncio.Event()
+
+    async def pending(_run_id):
+        try:
+            await asyncio.Event().wait()
+        finally:
+            cancelled.set()
+
+    real_drain = engine._drain_tasks
+
+    async def held_drain(tasks, *, cancel=False):
+        drain_entered.set()
+        await release_drain.wait()
+        await real_drain(tasks, cancel=cancel)
+
+    monkeypatch.setattr(engine, "wait", pending)
+    monkeypatch.setattr(engine, "_drain_tasks", held_drain)
+    engine._schedule_continuation("before-close")
+    registered = set(engine._continuations)
+    closing = asyncio.create_task(engine.aclose())
+    await drain_entered.wait()
+    engine._schedule_continuation("late")
+    assert engine._continuations == registered
+    release_drain.set()
+    await closing
+    assert cancelled.is_set()
+    assert engine._continuations == set()
+
+
+async def test_continuation_failure_is_consumed_and_logged_safely(tmp_path, settings, store, monkeypatch):
+    import caos.engine.runtime as runtime
+
+    engine = runtime.Engine.create(settings=settings, store=store, checkpoint_path=tmp_path / "continuation-failure.db")
+    engine.enable_auto_continue()
+    monkeypatch.setattr(engine.runs, "get_run", lambda _run_id: {"status": "running"})
+    logged = asyncio.Event()
+    records = []
+    unhandled = []
+    loop = asyncio.get_running_loop()
+    previous_handler = loop.get_exception_handler()
+
+    async def failing(_run_id):
+        raise ValueError("document text must not be logged")
+
+    def record(*args, **kwargs):
+        records.append((args, kwargs))
+        logged.set()
+
+    monkeypatch.setattr(engine, "wait", failing)
+    monkeypatch.setattr(runtime, "log_event", record)
+    loop.set_exception_handler(lambda _loop, context: unhandled.append(context))
+    try:
+        engine._schedule_continuation("run-safe")
+        await logged.wait()
+    finally:
+        loop.set_exception_handler(previous_handler)
+
+    assert unhandled == []
+    assert records == [(("engine.continuation_failed",), {
+        "level": runtime.logging.ERROR, "run_id": "run-safe", "detail": "ValueError",
+    })]
+
+
+async def test_same_loop_continuation_timeout_is_retryable(tmp_path, settings, store, monkeypatch):
+    import caos.engine.runtime as runtime
+
+    engine = runtime.Engine.create(settings=settings, store=store, checkpoint_path=tmp_path / "local-timeout.db")
+    started = asyncio.Event()
+    cancelled = asyncio.Event()
+    release = asyncio.Event()
+
+    async def suppress_cancel():
+        started.set()
+        try:
+            await asyncio.Event().wait()
+        except asyncio.CancelledError:
+            cancelled.set()
+            await release.wait()
+
+    task = asyncio.create_task(suppress_cancel())
+    engine._continuations.add(task)
+    await started.wait()
+    monkeypatch.setattr(runtime, "CLOSE_DRAIN_TIMEOUT_SECONDS", 0.0)
+    first = asyncio.create_task(engine.aclose())
+    second = asyncio.create_task(engine.aclose())
+    errors = await asyncio.gather(first, second, return_exceptions=True)
+    assert all(isinstance(error, RuntimeError) and "timed out draining tasks" in str(error) for error in errors)
+    assert cancelled.is_set() and engine._closed is False and task in engine._continuations
+    release.set()
+    await task
+    monkeypatch.setattr(runtime, "CLOSE_DRAIN_TIMEOUT_SECONDS", 5.0)
+    await engine.aclose()
+
+
 async def test_engine_close_drains_foreign_loop_continuation(tmp_path, settings, store):
     from caos.engine.runtime import Engine
 

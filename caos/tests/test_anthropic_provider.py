@@ -43,3 +43,14 @@ async def test_anthropic_provider_closes_both_sdk_clients_once_and_retries_failu
 
     assert async_client.attempts == 2
     assert sync_client.attempts == 2
+
+
+async def test_anthropic_provider_closes_both_real_sdk_clients():
+    provider = AnthropicProvider("inert-test-key", "claude-sonnet-4-6")
+
+    assert provider.chat._async_client.is_closed() is False
+    assert provider.chat._client.is_closed() is False
+    await provider.aclose()
+
+    assert provider.chat._async_client.is_closed() is True
+    assert provider.chat._client.is_closed() is True
