@@ -121,6 +121,7 @@ export default function Workspace({ destination, children }: { destination?: Des
   const historyEntrySequenceRef = useRef(0);
   const lastHistoryEntryRef = useRef<{ id: string; href: string } | null>(null);
   const focusedBeforeRef = useRef<HTMLElement | null>(null);
+  const previousFocusedRef = useRef<HTMLElement | null>(null);
   const lastDestinationRef = useRef(active);
   const selectedCase = useMemo(() => cases.find((item) => item.id === caseId) || null, [cases, caseId]);
   const caseIsAuthorized = selectedCase !== null;
@@ -202,9 +203,14 @@ export default function Workspace({ destination, children }: { destination?: Des
     if (!baseId) { modelHistoryGuardRef.current = false; return; }
     beginHistoryTraversal("retire", baseId, () => window.history.back(), () => {
       const current = (window.history.state || {}) as DraftHistoryState;
+      if (modelDraftDirtyRef.current || reportDraftDirtyRef.current) {
+        modelHistoryGuardRef.current = false;
+        armOwnedHistoryGuard(modelDraftDirtyRef.current ? "model" : "report");
+        return;
+      }
       modelHistoryGuardRef.current = Boolean(current.caosModelDraftGuard || current.caosReportDraftGuard);
     });
-  }, [beginHistoryTraversal]);
+  }, [armOwnedHistoryGuard, beginHistoryTraversal]);
 
   const releaseCleanDraftGuard = useCallback(() => {
     if (confirmedAuthoritySyncRef.current) return;
@@ -269,12 +275,14 @@ export default function Workspace({ destination, children }: { destination?: Des
   const draftDiscardDetail = useCallback((action: string) => {
     const drafts = modelDraftDirtyRef.current && reportDraftDirtyRef.current
       ? "the unsigned Model Builder Draft Revision and unsaved Report Studio changes"
-      : modelDraftDirtyRef.current ? "the unsigned Model Builder Draft Revision" : "the unsaved Report Studio changes";
+      : modelDraftDirtyRef.current ? "the unsigned Model Builder Draft Revision" : reportDraftDirtyRef.current ? "the unsaved Report Studio changes" : "unsaved draft changes";
     return `Discard ${drafts} ${action}?`;
   }, []);
 
   const requestDraftDiscard = useCallback<RequestDraftDiscard>((detail, confirm, cancel, trigger) => {
-    if (!modelDraftDirtyRef.current && !reportDraftDirtyRef.current) { confirm(); return true; }
+    const state = (typeof window !== "undefined" ? window.history.state : null) as DraftHistoryState | null;
+    const guarded = modelHistoryGuardRef.current || Boolean(state?.caosModelDraftGuard || state?.caosReportDraftGuard);
+    if (!modelDraftDirtyRef.current && !reportDraftDirtyRef.current && !guarded) { confirm(); return true; }
     if (discardPromptRef.current) { cancel?.(); return false; }
     const active = document.activeElement;
     const next = { detail, confirm, cancel, trigger: trigger || (active instanceof HTMLElement && active !== document.body ? active : focusedBeforeRef.current) };
@@ -485,10 +493,13 @@ export default function Workspace({ destination, children }: { destination?: Des
       if (activeTraversal) {
         const observation = observeDraftHistoryPop(activeTraversal, event.state);
         historyTraversalRef.current = observation.active;
-        if (observation.matched && observation.active) settleObservedHistory(observation.active);
-        return;
+        if (observation.matched) {
+          if (observation.active) settleObservedHistory(observation.active);
+          return;
+        }
+        finishHistoryTraversal(activeTraversal.token);
       }
-      if (!modelDraftDirtyRef.current && !reportDraftDirtyRef.current) return;
+      if (!modelDraftDirtyRef.current && !reportDraftDirtyRef.current && !modelHistoryGuardRef.current) return;
       event.stopImmediatePropagation();
       const restoreHistoryGuard = () => {
         if (!modelHistoryGuardRef.current) return;
@@ -505,7 +516,11 @@ export default function Workspace({ destination, children }: { destination?: Des
         modelHistoryGuardRef.current = false;
         armOwnedHistoryGuard(modelDraftDirtyRef.current ? "model" : "report");
       };
-      requestDraftDiscard(draftDiscardDetail("and use browser history"), startConfirmedHistoryTraversal, restoreHistoryGuard);
+      const active = document.activeElement;
+      const trigger = active instanceof HTMLElement && active !== document.body
+        ? active === focusedBeforeRef.current ? active : previousFocusedRef.current || focusedBeforeRef.current
+        : focusedBeforeRef.current || previousFocusedRef.current;
+      requestDraftDiscard(draftDiscardDetail("and use browser history"), startConfirmedHistoryTraversal, restoreHistoryGuard, trigger);
     };
     const guardUnload = (event: BeforeUnloadEvent) => {
       protectDirtyDraftUnload(event, modelDraftDirtyRef.current || reportDraftDirtyRef.current);
@@ -526,7 +541,7 @@ export default function Workspace({ destination, children }: { destination?: Des
     return () => { controller.abort(); window.clearTimeout(timer); if (historyTraversalFenceRef.current) window.clearTimeout(historyTraversalFenceRef.current.timer); if (historyRearmFrameRef.current !== null) window.cancelAnimationFrame(historyRearmFrameRef.current); historyTraversalRef.current = null; historyTraversalFenceRef.current = null; historyRearmFrameRef.current = null; document.removeEventListener("click", guardDraftNavigation, true); window.removeEventListener("popstate", guardBrowserHistory, true); window.removeEventListener("beforeunload", guardUnload); };
     // The selected case is intentionally not a fetch dependency.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [armOwnedHistoryGuard, beginHistoryTraversal, draftDiscardDetail, reconcileHistoryWithoutPop, requestDraftDiscard, settleObservedHistory]);
+  }, [armOwnedHistoryGuard, beginHistoryTraversal, draftDiscardDetail, finishHistoryTraversal, reconcileHistoryWithoutPop, requestDraftDiscard, settleObservedHistory]);
 
   useEffect(() => {
     if (!hydrated) return;
@@ -585,7 +600,10 @@ export default function Workspace({ destination, children }: { destination?: Des
   // disabled or unmounted and `document.activeElement` has fallen back to <body>.
   useEffect(() => {
     const remember = (event: FocusEvent) => {
-      if (event.target instanceof HTMLElement && event.target !== document.body) focusedBeforeRef.current = event.target;
+      if (event.target instanceof HTMLElement && event.target !== document.body && event.target !== focusedBeforeRef.current) {
+        previousFocusedRef.current = focusedBeforeRef.current;
+        focusedBeforeRef.current = event.target;
+      }
     };
     document.addEventListener("focusin", remember);
     return () => document.removeEventListener("focusin", remember);
@@ -1112,6 +1130,15 @@ function AcceptDialog({ open, run, replaces, pending, onConfirm, onClose }: { op
   useEffect(() => {
     const dialog = dialogRef.current;
     if (!dialog) return;
+    const cancel = (event: Event) => { event.preventDefault(); dialog.close(); };
+    const escape = (event: KeyboardEvent) => { if (event.key === "Escape") { event.preventDefault(); dialog.close(); } };
+    dialog.addEventListener("cancel", cancel);
+    dialog.addEventListener("keydown", escape);
+    return () => { dialog.removeEventListener("cancel", cancel); dialog.removeEventListener("keydown", escape); };
+  }, []);
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    if (!dialog) return;
     if (!open) {
       if (dialog.open) dialog.close();
       return;
@@ -1157,6 +1184,32 @@ function DraftDiscardDialog({ open, detail, trigger, onConfirm, onClose }: { ope
   const dialogRef = useRef<HTMLDialogElement>(null);
   const headingRef = useRef<HTMLHeadingElement>(null);
   const triggerRef = useRef<HTMLElement | null>(null);
+  const dismiss = useCallback(() => {
+    const trigger = triggerRef.current;
+    onClose();
+    dialogRef.current?.close();
+    const restore = (attempt = 0) => {
+      if (trigger?.isConnected) { trigger.focus(); return; }
+      if (trigger?.id) {
+        const replacement = document.getElementById(trigger.id);
+        if (replacement) { replacement.focus(); return; }
+      }
+      const label = trigger?.getAttribute("aria-label");
+      if (label) {
+        const replacement = [...document.querySelectorAll<HTMLElement>("[aria-label]")].find((element) => element.getAttribute("aria-label") === label);
+        if (replacement) { replacement.focus(); return; }
+      }
+      if (attempt < 10) window.setTimeout(() => restore(attempt + 1), 50);
+    };
+    window.setTimeout(restore, 0);
+  }, [onClose]);
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    if (!dialog) return;
+    const cancel = (event: Event) => { event.preventDefault(); dismiss(); };
+    dialog.addEventListener("cancel", cancel);
+    return () => dialog.removeEventListener("cancel", cancel);
+  }, [dismiss]);
   useEffect(() => {
     const dialog = dialogRef.current;
     if (!dialog) return;
@@ -1171,19 +1224,14 @@ function DraftDiscardDialog({ open, detail, trigger, onConfirm, onClose }: { ope
     const frame = window.requestAnimationFrame(() => headingRef.current?.focus());
     return () => window.cancelAnimationFrame(frame);
   }, [open, trigger]);
-  const close = () => {
-    onClose();
-    const trigger = triggerRef.current;
-    window.requestAnimationFrame(() => trigger?.focus());
-  };
-  return <dialog ref={dialogRef} aria-labelledby="discard-dialog-title" onClose={close}>
+  return <dialog ref={dialogRef} aria-labelledby="discard-dialog-title">
     <div className="dialog-body">
       <div className="panel-header"><h2 id="discard-dialog-title" ref={headingRef} tabIndex={-1}>Discard draft changes?</h2></div>
       <p>{detail}</p>
       <p className="muted">This removes only local, uncommitted changes. Saved and signed versions remain unchanged.</p>
       <div className="top-actions">
         <button className="button primary" type="button" onClick={onConfirm}>Discard changes</button>
-        <button className="button small" type="button" onClick={() => dialogRef.current?.close()}>Keep editing</button>
+        <button className="button small" type="button" onClick={dismiss}>Keep editing</button>
       </div>
     </div>
   </dialog>;

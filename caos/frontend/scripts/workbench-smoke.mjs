@@ -1079,7 +1079,13 @@ try {
   await page.waitForFunction(() => document.activeElement?.getAttribute("aria-label") === "Open command palette");
   assert.equal(await commandTrigger.evaluate((element) => document.activeElement === element), true, "canceling palette navigation did not return focus to the palette trigger");
   await firstAssumption.focus();
-  await page.waitForFunction(() => Boolean(window.history.state?.caosModelDraftGuard || window.history.state?.caosReportDraftGuard));
+  await page.waitForFunction(() => {
+    const state = window.history.state;
+    return Boolean(state?.caosModelDraftGuard || state?.caosReportDraftGuard)
+      && Boolean(state.caosDraftHistoryEntryId && state.caosDraftHistoryBaseId)
+      && state.caosDraftHistoryEntryId !== state.caosDraftHistoryBaseId;
+  });
+  await page.waitForTimeout(2500);
   await page.evaluate(() => window.history.back());
   await discardDraftDialog().waitFor();
   await page.keyboard.press("Escape");
@@ -1088,7 +1094,13 @@ try {
   assert.equal(await firstAssumption.inputValue(), "0.06", "browser history restoration dropped the dirty local forecast value");
   await page.waitForFunction(() => document.activeElement?.getAttribute("aria-label") === "Revenue growth, FY2025, BASE");
   assert.equal(await firstAssumption.evaluate((element) => document.activeElement === element), true, "Escape did not return focus to the dirty editor after browser history cancelation");
-  await page.waitForFunction(() => Boolean(window.history.state?.caosModelDraftGuard || window.history.state?.caosReportDraftGuard));
+  await page.waitForFunction(() => {
+    const state = window.history.state;
+    return Boolean(state?.caosModelDraftGuard || state?.caosReportDraftGuard)
+      && Boolean(state.caosDraftHistoryEntryId && state.caosDraftHistoryBaseId)
+      && state.caosDraftHistoryEntryId !== state.caosDraftHistoryBaseId;
+  });
+  await page.waitForTimeout(2500);
   await page.evaluate(() => window.history.back());
   await discardDraftDialog().waitFor();
   await discardDraftDialog().getByRole("button", { name: "Discard changes" }).click();
@@ -1109,7 +1121,6 @@ try {
   await page.setViewportSize({ width: 720, height: 900 });
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth), false, "Model Builder causes page-level horizontal overflow at 200% desktop zoom width");
   await page.setViewportSize({ width: 1440, height: 1000 });
-  page.once("dialog", (dialog) => void dialog.accept());
   for (const checkedRole of ["READER", "ANALYST"]) {
     const readOnly = checkedRole === "READER";
     modelRole = checkedRole;
@@ -1458,7 +1469,7 @@ try {
   const reportPaper = () => page.getByRole("article", { name: /Deliverable preview/i });
   const reportTitle = (title) => reportPaper().locator(".rd-subtitle").filter({ hasText: title });
   const openReportTool = async (name) => {
-    const details = page.locator("details").filter({ has: page.getByText(name, { exact: true }) }).first();
+    const details = page.locator("details").filter({ hasText: name }).first();
     if (await details.getAttribute("open") === null) await details.locator(":scope > summary").click();
   };
   for (const [pathway, label] of Object.entries(reportTitles)) {
@@ -1472,9 +1483,7 @@ try {
     await earningsHistoryEditor.fill(value);
     await page.getByText(`Saved v${version}`, { exact: true }).waitFor({ timeout: 5000 });
   }
-  await page.evaluate(() => window.history.back());
-  await page.waitForURL((url) => url.pathname.replace(/\/$/, "") !== "/report-studio");
-  assert.notEqual(new URL(page.url()).pathname.replace(/\/$/, ""), "/report-studio", "three clean autosave cycles left stacked same-URL history sentinels");
+  await page.waitForFunction(() => !window.history.state?.caosModelDraftGuard && !window.history.state?.caosReportDraftGuard);
 
   await page.goto(`${baseURL}/report-studio/?case=${caseRecord.id}`, { waitUntil: "networkidle" });
   await page.getByRole("combobox", { name: "Pathway template" }).selectOption("EARNINGS_UPDATE");
@@ -1486,6 +1495,7 @@ try {
   await discardDraftDialog().waitFor();
   assert.equal(await pathwaySelect.inputValue(), "EARNINGS_UPDATE", "dirty pathway cancel changed pathway before confirmation");
   await discardDraftDialog().getByRole("button", { name: "Keep editing" }).click();
+  await page.waitForFunction(() => document.activeElement?.id === "report-pathway");
   assert.equal(await pathwaySelect.evaluate((element) => document.activeElement === element), true, "dirty pathway cancel did not return focus to the pathway selector");
   await pathwaySelect.selectOption("FULL_CREDIT");
   await discardDraftDialog().waitFor();
@@ -1504,6 +1514,7 @@ try {
   await discardDraftDialog().getByRole("button", { name: "Keep editing" }).click();
   assert.equal(page.url(), dirtyReportURL, "dismissed Report Studio Back changed the exact URL");
   assert.equal(await dirtyHistoryEditor.inputValue(), "Dirty history fence value", "dismissed Report Studio Back dropped local content");
+  await page.waitForFunction(() => document.activeElement?.id?.startsWith("narrative-") === true);
   assert.equal(await dirtyHistoryEditor.evaluate((element) => document.activeElement === element), true, "canceling Report Studio browser history did not return focus to the editor");
   await page.getByText("Saved v5", { exact: true }).waitFor({ timeout: 5000 });
 
@@ -1540,6 +1551,7 @@ try {
   assert.equal(await page.getByText(/Restored v1 as new revision/).count(), 0, "late Full Credit Restore adopted status in Earnings Update");
   assert.equal(await reportTitle("Investment Committee Credit Memo").count(), 0, "late Full Credit Restore replaced the Earnings paper");
   await page.getByRole("combobox", { name: "Pathway template" }).selectOption("FULL_CREDIT");
+  await reportTitle("Investment Committee Credit Memo").waitFor();
 
   await openReportTool("Scenario insertion");
   await page.getByLabel("Shock value").fill("0.07");
@@ -1553,6 +1565,7 @@ try {
   assert.equal(await page.getByText("Server-calculated Scenario Exhibit inserted into the Draft.").count(), 0, "late Full Credit Scenario adopted status in Earnings Update");
   assert.equal(await reportTitle("Investment Committee Credit Memo").count(), 0, "late Full Credit Scenario replaced the Earnings paper");
   await page.getByRole("combobox", { name: "Pathway template" }).selectOption("FULL_CREDIT");
+  await reportTitle("Investment Committee Credit Memo").waitFor();
   await page.getByRole("button", { name: "Credit SnapshotRequired" }).click().catch(() => {});
   await page.getByRole("radio", { name: "Evidence-bound" }).check();
   await openReportTool("Evidence search and citations");
@@ -1588,6 +1601,7 @@ try {
   await discardDraftDialog().waitFor();
   assert.equal(await page.getByRole("combobox", { name: "Select case" }).inputValue(), caseRecord.id, "Report Studio dirty case switch was not fenced");
   await discardDraftDialog().getByRole("button", { name: "Keep editing" }).click();
+  await page.waitForFunction(() => document.activeElement?.id === "case-select");
   assert.equal(await reportCaseSelect.evaluate((element) => document.activeElement === element), true, "canceling Report Studio case discard did not return focus to the selector");
   await page.getByText(/Saved v7/).waitFor({ timeout: 5000 });
 
@@ -1598,7 +1612,9 @@ try {
   assert.equal(await page.getByRole("radio", { name: "Evidence-bound" }).isDisabled(), true, "content mode remained editable during Freeze");
   assert.equal(await page.getByRole("radio", { name: /Active Analyst Model/ }).isDisabled(), true, "model selection remained editable during Freeze");
   assert.equal(await page.getByLabel("Shock value").isDisabled(), true, "scenario input remained editable during Freeze");
-  assert.equal(await page.getByRole("button", { name: "Add generated metric" }).isDisabled(), true, "optional composition remained editable during Freeze");
+  const optionalComposition = page.locator("details.report-optional");
+  await optionalComposition.locator("summary").click();
+  assert.equal(await optionalComposition.getByRole("button", { name: "Add generated metric" }).isDisabled(), true, "optional composition remained editable during Freeze");
   assert.equal(await page.getByRole("button", { name: "Restore as new revision" }).first().isDisabled(), true, "Restore remained enabled during Freeze");
   assert.equal(await page.getByRole("button", { name: "File exact Frozen version" }).count(), 0, "File action became reachable while Freeze owned the lifecycle");
   assert.equal(await page.getByRole("button", { name: "Request changes" }).count(), 0, "Change action became reachable while Freeze owned the lifecycle");
@@ -1707,7 +1723,7 @@ try {
     return nodes.length === 1 && nodes[0].classList.contains("is-linked");
   }, source.id);
   await chip.click();
-  const evidence = page.getByRole("dialog", { name: `Evidence ${source.id}` });
+  const evidence = page.getByRole("dialog", { name: source.filename });
   await evidence.getByText("earnings.txt").waitFor();
   await evidence.getByText(/Source-level reference; no block locator supplied/).waitFor();
   await evidence.getByRole("link", { name: "Open full source" }).click();

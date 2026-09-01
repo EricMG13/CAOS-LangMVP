@@ -133,6 +133,14 @@ export default function WorkbenchShell({
 
   const closePalette = () => dialogRef.current?.close();
 
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    if (!dialog) return;
+    const cancel = (event: Event) => { event.preventDefault(); dialog.close(); };
+    dialog.addEventListener("cancel", cancel);
+    return () => dialog.removeEventListener("cancel", cancel);
+  }, []);
+
   const closeDrawer = () => {
     onDrawerChange(null);
     const trigger = drawerTriggerRef.current;
@@ -146,16 +154,18 @@ export default function WorkbenchShell({
   useEffect(() => {
     const dialog = drawerRef.current;
     if (!dialog) return;
+    const cancel = (event: Event) => { event.preventDefault(); dialog.close(); };
+    dialog.addEventListener("cancel", cancel);
     if (!drawer) {
       if (dialog.open) dialog.close();
-      return;
+      return () => dialog.removeEventListener("cancel", cancel);
     }
     if (!dialog.open) {
       drawerTriggerRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
       dialog.showModal();
     }
     const frame = window.requestAnimationFrame(() => drawerHeadingRef.current?.focus());
-    return () => window.cancelAnimationFrame(frame);
+    return () => { dialog.removeEventListener("cancel", cancel); window.cancelAnimationFrame(frame); };
   }, [drawer]);
 
   useEffect(() => {

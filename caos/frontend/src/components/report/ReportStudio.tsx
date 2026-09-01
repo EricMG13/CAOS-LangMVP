@@ -156,7 +156,7 @@ function clearBrowserRecovery(caseId: string, pathway: Pathway) {
   catch { return false; }
 }
 
-export default function ReportStudio({ caseId, role, selectedCase, onDraftStateChange, requestDraftDiscard }: { caseId: string; role: string; selectedCase: CaseRecord | null; onDraftStateChange: (dirty: boolean) => void; requestDraftDiscard: (detail: string, confirm: () => void) => boolean }) {
+export default function ReportStudio({ caseId, role, selectedCase, onDraftStateChange, requestDraftDiscard }: { caseId: string; role: string; selectedCase: CaseRecord | null; onDraftStateChange: (dirty: boolean) => void; requestDraftDiscard: (detail: string, confirm: () => void, cancel?: () => void, trigger?: HTMLElement | null) => boolean }) {
   const [pathway, setPathway] = useState<Pathway>("FULL_CREDIT");
   const [workspace, setWorkspace] = useState<WorkspaceResponse | null>(null);
   const [blocks, setBlocks] = useState<DeliverableBlock[]>([]);
@@ -472,14 +472,14 @@ export default function ReportStudio({ caseId, role, selectedCase, onDraftStateC
     finally { finishLifecycle(token); }
   };
 
-  const switchPathway = (next: Pathway) => {
+  const switchPathway = (next: Pathway, trigger?: HTMLElement | null) => {
     if (next === pathway) return;
     const change = () => {
       invalidateLifecycle(`${caseId}\u0000${next}`);
       onDraftStateChange(false); setPathway(next);
     };
     if (unsavedDraft.current || ["DIRTY", "SAVING", "INCOMPLETE", "ERROR"].includes(saveState.kind)) {
-      requestDraftDiscard("Discard the unsaved Report Studio changes before changing pathway?", change);
+      requestDraftDiscard("Discard the unsaved Report Studio changes before changing pathway?", change, undefined, trigger);
     } else change();
   };
 
@@ -507,7 +507,7 @@ export default function ReportStudio({ caseId, role, selectedCase, onDraftStateC
     <aside className="panel report-outline" aria-label="Deliverable composition">
       <div className="panel-header"><h2>Structure</h2><span className="panel-meta">{workspace.template.template_version}</span></div>
       <div className="panel-body report-rail-scroll">
-        <div className="field"><label htmlFor="report-pathway">Pathway template</label><select id="report-pathway" value={pathway} onChange={(event) => switchPathway(event.target.value as Pathway)}>{pathwayOptions.map(([id, label]) => <option key={id} value={id}>{label}</option>)}</select></div>
+        <div className="field"><label htmlFor="report-pathway">Pathway template</label><select id="report-pathway" value={pathway} onChange={(event) => switchPathway(event.target.value as Pathway, event.currentTarget)}>{pathwayOptions.map(([id, label]) => <option key={id} value={id}>{label}</option>)}</select></div>
         <nav className="report-section-nav" aria-label="Deliverable sections">{blocks.map((block, index) => <button key={block.block_id} type="button" className={selectedBlockId === block.block_id ? "is-active" : ""} aria-current={selectedBlockId === block.block_id ? "true" : undefined} onClick={() => setSelectedBlockId(block.block_id)}><span>{(index + 1).toString().padStart(2, "0")}</span>{workspace.template.blocks.find((item) => item.block_id === block.block_id)?.title || (block.kind === "SCENARIO_EXHIBIT" ? block.title : humanizeCode(block.kind))}<small>{workspace.template.blocks.some((item) => item.block_id === block.block_id) ? "Required" : "Optional"}</small></button>)}</nav>
         <details className="report-optional"><summary>Optional composition</summary><div className="report-optional-actions">{workspace.template.optional_blocks.map((policy) => <button className="button small" type="button" key={policy.kind} onClick={() => addOptional(policy)} disabled={!canWrite || authoringLocked || policy.kind === "SCENARIO_EXHIBIT" || policy.model_dependent && !modelSelection || blocks.filter((block) => block.kind === policy.kind).length >= policy.max_items}>Add {humanizeCode(policy.kind).toLowerCase()}</button>)}</div></details>
         <div className="report-history"><h3>Draft revisions</h3>{[...workspace.history].reverse().map((revision) => <div className="history-entry" key={revision.id}><strong>v{revision.version}</strong><span>{revision.author} · {formatDate(revision.created_at)}</span><button className="button small" type="button" onClick={() => void restoreRevision(revision)} disabled={!canWrite || lifecycleBusy || draftIsUnsaved || saveState.kind !== "SAVED"}>Restore as new revision</button></div>)}<h3>Frozen / Filed</h3>{[...workspace.frozen_history].reverse().map((item) => <button className="history-entry history-button" type="button" key={item.id} onClick={() => setSelectedFrozen(item)} disabled={lifecycleBusy}><strong>{humanizeCode(item.status)} · Draft v{item.draft_version}</strong><span>{item.frozen_by} · {formatDate(item.frozen_at)}</span></button>)}</div>
