@@ -275,6 +275,21 @@ Result: `38 passed, 1` existing third-party Starlette deprecation. Ruff on chang
 
 Least confident about: continuation scheduling racing shutdown, local cancellation suppression defeating the drain bound, and partial Anthropic client shutdown. Investigated the lifecycle lock transition, full local/foreign wait set, installed client shape, and production-shaped two-client retry test. Confirmed and fixed all three. Still open: unavailable PostgreSQL integration and the third-party Starlette deprecation; no independent approval is claimed.
 
+## Final lifecycle proof packet
+
+Test commit: `ceee0b1`. No product code changed in this packet.
+
+- A held registered continuation is snapshotted and cancelled by close; scheduling after close begins creates no late task.
+- A failing continuation is consumed by its completion callback, emits only `run_id` and exception class through `log_event`, and produces no loop exception-handler event.
+- A same-loop continuation that suppresses cancellation is bounded by the named drain timeout; both concurrent close callers receive the typed error, `_closed` remains false, the task remains tracked, and retry succeeds after release.
+- A real inert `AnthropicProvider` probe verifies both installed SDK clients are open before and closed after `aclose`; the existing production-shaped fake keeps first-error/retry/idempotence coverage.
+
+Final strict command:
+
+`/private/tmp/caos-enterprise-baseline-20260901/bin/python -m pytest caos/tests/test_anthropic_provider.py caos/tests/spec/test_runs_spec.py caos/tests/test_single_instance.py caos/tests/test_worker.py -q -W error::RuntimeWarning -W error::pytest.PytestUnraisableExceptionWarning -W error::ResourceWarning`
+
+Result: `65 passed, 2 skipped, 1 warning in 4.74s`. The warning is the pre-existing third-party Starlette TestClient deprecation. Ruff and `git diff --check` passed. PostgreSQL integration remains blocked by absent `CAOS_TEST_POSTGRES_URL`; independent approval is not claimed.
+
 ## Files
 
 Product lifecycle:
