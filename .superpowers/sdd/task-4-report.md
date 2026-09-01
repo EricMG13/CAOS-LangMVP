@@ -3,7 +3,7 @@
 ## Summary
 
 - Snapshot diffs now match the served `{module_id, digest}` entry contract; Command Center no longer models or renders nonexistent `before`/`after` fields.
-- A shared, tested `compactIdentity` policy presents long workspace identities as `leading…trailing`. The `IdentityValue` presenter preserves the exact value in `title` and announces both the abbreviation and full value through its accessible label. Human fallback copy is never passed through the formatter.
+- A shared, tested `compactIdentity` policy presents long workspace identities as `leading…trailing`. The `IdentityValue` presenter preserves the exact value in `title`, hides the visual duplicate from assistive technology, and supplies one semantic text node containing the spoken abbreviation and full value. Human fallback copy is never passed through the formatter.
 - Compact presentation is used on visible shell, Sources, Deep Dive, Command Center, Model Builder, and evidence-drawer authority values. Requests, comparisons, download URLs, persistence data, logs, and governed paper output remain exact and unchanged.
 - The governed paper retains its full digest and now wraps it more safely. Evidence drawers use the source filename as the heading and list the source ID among the facts.
 - Visible server codes use the existing `humanizeCode` helper or existing pathway labels. Canonical codes used as data, comparisons, and request values are unchanged.
@@ -33,7 +33,7 @@
 - Production build: `npm run build` — passed with Next.js 16.3.3; all 12 static pages generated.
 - Focused server response contracts: `caos/server/.venv/bin/python -m pytest caos/tests/spec/test_http_contracts_spec.py::test_snapshot_diff_entries_are_module_id_and_digest_only caos/tests/spec/test_http_contracts_spec.py::test_snapshot_diff_entries_reject_artifact_and_snapshot_ids -q` — 2/2 passed.
 - `git diff --check` and staged-diff checks — passed.
-- Bounded accessibility/source checks verify the abbreviated spoken label, exact `title`, every required presentation caller, the unchanged full governed-paper identity, and the absence of an ad hoc workspace `slice(0, 12)` identity policy. Full live browser coverage remains assigned to Task 6.
+- A self-building bounded Chromium check verifies the actual accessibility snapshot for long and short identities, exact pointer `title`, visible abbreviation, semantic hidden text, single announcement, and absence of new tab stops. Source checks retain caller-scope, governed-paper, and ad hoc-slice guards. Full assembled browser coverage remains assigned to Task 6.
 
 ## Rewrite tournament
 
@@ -79,22 +79,45 @@ Least confident about (ranked):
    verdict     → fine.
    patch       → n/a.
 5. Exact identities might become inaccessible after visual compaction.
-   investigated → long values retain their exact `title`, and the accessible label includes the abbreviation followed by the full identity; short values remain unchanged.
-   verdict     → fine in static/source checks and production compilation.
-   patch       → n/a.
+   investigated → Chromium ignored `aria-label` on the original generic span and exposed only the compact visible text; `title` was not a reliable assistive path.
+   verdict     → CONFIRMED bug during review.
+   patch       → the visible abbreviation is now `aria-hidden`, while one visually hidden text node carries the short value once or the long abbreviation plus full exact value. A real Chromium accessibility snapshot pins both cases.
 
-Fixed: readiness outranking preparation fallback; human fallback prose being compacted.
+Fixed: readiness outranking preparation fallback; human fallback prose being compacted; exact identities missing from Chromium's accessibility tree.
 
-Verified fine: server/client diff fidelity; exact request/download/persistence values; full governed-paper digest; short and threshold identity behavior; drawer heading/facts structure; scoped status humanization.
+Verified fine: server/client diff fidelity; exact request/download/persistence values; full governed-paper digest; short and threshold identity behavior; drawer heading/facts structure; scoped status humanization; one accessible announcement with no added tab stop.
 
-Still open: the full live screen-reader/browser journey is intentionally deferred to Task 6.
+Still open: the full assembled browser journey is intentionally deferred to Task 6.
+
+## Review correction — Chromium accessibility tree
+
+### Correction files
+
+- `caos/frontend/package.json`
+- `caos/frontend/scripts/identity-a11y.mjs`
+- `caos/frontend/src/components/states.tsx`
+- `caos/frontend/src/lib/workbench.test.ts`
+
+### TDD and verification
+
+- TDD red: `npm run test:identity-a11y` exercised the built application and timed out looking for semantic hidden identity text because the generic `aria-label` span rendered no such structure.
+- Focused green: `node --test src/lib/workbench.test.ts` — 22/22 passed.
+- Chromium accessibility tree: `npm run test:identity-a11y` — passed after rebuilding all 12 static pages; both long and short identities were exposed exactly once, exact `title` values were preserved, and neither identity created a tab stop.
+- Full frontend units: `npm run test:unit` — 105/105 passed; existing `MODULE_TYPELESS_PACKAGE_JSON` warnings only.
+- Lint: `npm run lint` — passed.
+- Local TypeScript: `npx tsc --noEmit` — passed.
+- Production build: passed both directly and as the first step of the self-building Chromium probe.
+- `git diff --check` and staged-diff checks — passed.
+
+The production correction is below the rewrite-tournament materiality threshold, and the remaining change is test-only, so the tournament was skipped.
 
 ## Commit
 
 - Task 4 implementation: `9104e51ff99b9081ea9f4aa4c9ed971c333ab6bd` (`feat(frontend): clarify visible identities`)
+- Task 4 accessibility correction: `d88b8f4cab0deb1b462520553beb9b9adc29c689` (`fix(frontend): expose exact identity to assistive tech`)
 
 ## Remaining risks
 
-- Task 6 should run the assembled combined-app browser journey and perform the live screen-reader spot-check at target viewports.
+- Task 6 should still run the complete assembled combined-app journey at target viewports; Task 4's focused Chromium accessibility snapshot is green.
 - Node's existing `MODULE_TYPELESS_PACKAGE_JSON` warning remains; it is unrelated to Task 4 behavior.
 - `.dev-data/` remains untracked runtime/user state and was intentionally untouched.
