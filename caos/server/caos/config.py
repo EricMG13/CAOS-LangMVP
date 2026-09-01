@@ -43,13 +43,14 @@ class Settings:
     deploy_v_root: Path = Path(__file__).parent / "methodology" / "vendor" / "deploy_v"
     anthropic_api_key: str = ""
     anthropic_model: str = "claude-sonnet-4-6"
-    anthropic_timeout_seconds: float = 150.0
     # OpenRouter is an alternative binding for the same provider port. It has no
     # pre-call token-counting endpoint, so its adapter estimates locally — see
     # engine/openrouter.py. Anthropic stays the default and wins when both are
     # configured, because only it can count before it calls.
     openrouter_api_key: str = ""
     openrouter_model: str = "z-ai/glm-5.3-flash"
+    provider_qualification_path: Path | None = None
+    provider_qualification_digest: str = ""
     # Fail-closed posture: agent (LLM) execution stays off without explicit opt-in.
     agent_execution_enabled: bool = False
 
@@ -75,6 +76,7 @@ class Settings:
                             ("MAX_CONCURRENT_PREVIEWS", max_previews)):
             if value <= 0:
                 raise ValueError(f"{name} must be greater than 0")
+        qualification_path = os.getenv("CAOS_PROVIDER_QUALIFICATION_PATH", "")
         return cls(
             environment=os.getenv("ENVIRONMENT", "development"),
             database_url=os.getenv("DATABASE_URL", ""),
@@ -93,6 +95,8 @@ class Settings:
             openrouter_api_key=os.getenv("OPENROUTER_API_KEY", ""),
             openrouter_model=os.getenv("OPENROUTER_MODEL", "z-ai/glm-5.3-flash"),
             anthropic_model=os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-6"),
+            provider_qualification_path=Path(qualification_path) if qualification_path else None,
+            provider_qualification_digest=os.getenv("CAOS_PROVIDER_QUALIFICATION_DIGEST", ""),
             agent_execution_enabled=_strict_bool("AGENT_EXECUTION_ENABLED", False),
         )
 

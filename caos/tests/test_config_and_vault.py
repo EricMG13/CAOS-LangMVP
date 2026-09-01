@@ -26,6 +26,16 @@ def test_agent_flag_defaults_off(monkeypatch):
     assert Settings.from_env().agent_execution_enabled is False
 
 
+def test_provider_qualification_settings_are_optional_and_literal(monkeypatch, tmp_path):
+    monkeypatch.setenv("CAOS_PROVIDER_QUALIFICATION_PATH", str(tmp_path / "qualification.json"))
+    monkeypatch.setenv("CAOS_PROVIDER_QUALIFICATION_DIGEST", "a" * 64)
+
+    settings = Settings.from_env()
+
+    assert settings.provider_qualification_path == tmp_path / "qualification.json"
+    assert settings.provider_qualification_digest == "a" * 64
+
+
 def test_production_fails_closed_without_postgres_and_secrets():
     with pytest.raises(RuntimeError, match="PostgreSQL"):
         Settings(environment="production").validate_runtime()

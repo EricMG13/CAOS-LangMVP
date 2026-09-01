@@ -164,6 +164,18 @@ async def test_a_final_answer_comes_back_as_one_text_block(provider):
     assert message.content[0].text == envelope
 
 
+async def test_response_reports_the_observed_openrouter_model(provider):
+    body = completion({"role": "assistant", "content": "{}"})
+    body["model"] = "provider/actual-model"
+    body["provider_version"] = "provider-build-7"
+    provider._client.post = Recorder(body)
+
+    message = await provider.create_message(make_request([{"role": "user", "content": "brief"}]))
+
+    assert message.observed_model == "provider/actual-model"
+    assert message.observed_provider_version == "provider-build-7"
+
+
 @pytest.mark.parametrize("finish,expected", sorted(STOP_REASONS.items()))
 async def test_finish_reasons_map_onto_the_port_vocabulary(provider, finish, expected):
     provider._client.post = Recorder(completion({"role": "assistant", "content": "{}"}, finish_reason=finish))

@@ -13,6 +13,7 @@ if str(SERVER) not in sys.path:
     sys.path.insert(0, str(SERVER))
 
 from caos.engine.anthropic import AnthropicProvider  # noqa: E402
+from caos.engine.provider import ProviderRequest  # noqa: E402
 
 
 async def test_anthropic_provider_closes_both_sdk_clients_once_and_retries_failure():
@@ -54,3 +55,23 @@ async def test_anthropic_provider_closes_both_real_sdk_clients():
 
     assert provider.chat._async_client.is_closed() is True
     assert provider.chat._client.is_closed() is True
+
+
+async def test_anthropic_response_reports_its_observed_model():
+    class Messages:
+        async def create(self, **_payload):
+            return SimpleNamespace(
+                content=[], stop_reason="end_turn",
+                usage=SimpleNamespace(input_tokens=1, output_tokens=0),
+                _request_id="req-1", model="claude-observed", provider_version="2026-09-01",
+            )
+
+    provider = AnthropicProvider.__new__(AnthropicProvider)
+    provider.model = "claude-configured"
+    provider.chat = SimpleNamespace(_async_client=SimpleNamespace(messages=Messages()))
+    message = await provider.create_message(ProviderRequest(
+        system="system", messages=[], schema={}, tools_enabled=False,
+    ))
+
+    assert message.observed_model == "claude-observed"
+    assert message.observed_provider_version == "2026-09-01"
