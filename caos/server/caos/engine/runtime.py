@@ -290,9 +290,11 @@ class Engine:
                               waiter_ref: concurrent.futures.Future[asyncio.Task[None]] = waiter_ref) -> None:
                 if bridge.done():
                     return
+                waiter_coro = self._wait_for_task(task)
                 try:
-                    waiter = owner.create_task(self._wait_for_task(task))
+                    waiter = owner.create_task(waiter_coro)
                 except BaseException as exc:
+                    waiter_coro.close()
                     waiter_ref.set_exception(exc)
                     bridge.set_exception(exc)
                     return

@@ -391,7 +391,6 @@ async def test_engine_close_propagates_foreign_waiter_creation_failure(
         real_create_task = owner_loop.create_task
 
         def fail_create_task(coro, *args, **kwargs):
-            coro.close()
             raise RuntimeError("foreign waiter creation failed")
 
         monkeypatch.setattr(owner_loop, "create_task", fail_create_task)
