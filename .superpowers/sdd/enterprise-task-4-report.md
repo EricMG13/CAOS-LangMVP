@@ -223,6 +223,40 @@ Verified fine: borrowed `serve` seam, construction rollback primary error preser
 
 Still open: PostgreSQL advisory-lock integration is blocked externally by absent `CAOS_TEST_POSTGRES_URL`; the third-party Starlette deprecation remains. No independent approval is claimed.
 
+## Rejected foreign-waiter coroutine correction
+
+Implementation commit: `c059512`. Independent approval remains pending.
+
+`_drain_tasks()` creates the owner-loop waiter coroutine before calling `owner.create_task()`. If that call raises, the runtime now closes the newly created coroutine before propagating the original scheduling error through the bridge. The test double now only raises; it no longer closes the coroutine on the product's behalf.
+
+Strict proof command:
+
+`/private/tmp/caos-enterprise-baseline-20260901/bin/python -m pytest caos/tests/spec/test_runs_spec.py::test_engine_close_propagates_foreign_waiter_creation_failure -q -W error::RuntimeWarning -W error::ResourceWarning`
+
+Result: `1 passed in 0.14s`. This exercises owner-loop `create_task` rejection, verifies the original error and retry state, and would fail on an unclosed coroutine warning.
+
+Final focused lifecycle command with strict coroutine and resource warnings:
+
+`/private/tmp/caos-enterprise-baseline-20260901/bin/python -m pytest caos/tests/test_anthropic_provider.py caos/tests/spec/test_runs_spec.py caos/tests/test_single_instance.py caos/tests/test_worker.py -q -W error::RuntimeWarning -W error::ResourceWarning`
+
+Result: `61 passed, 2 skipped, 1 warning in 5.06s`. The only warning remains the existing third-party Starlette TestClient deprecation.
+
+Ruff on changed Python and `git diff --check` passed before the implementation commit. No warning filter, suppression, dependency, sleep, garbage-collection proof, or rewrite tournament was added.
+
+## Confidence review — rejected waiter correction
+
+Least confident about:
+
+1. Closing the just-created waiter could replace the owner-loop scheduling error or conceal retry state.
+   - Investigated the exact path: the private waiter coroutine is unstarted and has no user cleanup body; it is closed only inside the `create_task` exception branch before the original exception is stored in the bridge.
+   - Verdict: fixed. The strict regression uses a raising-only fake, verifies the original error, `_closed == False`, retained task, and successful retry.
+
+Fixed: never-awaited coroutine leak when foreign owner-loop waiter creation fails.
+
+Verified fine: bridge failure propagation, retained retry state, strict ResourceWarning/RuntimeWarning lifecycle run, and existing bounded foreign-drain paths.
+
+Still open: PostgreSQL advisory-lock integration remains blocked by absent `CAOS_TEST_POSTGRES_URL`; the third-party Starlette deprecation remains. No independent approval is claimed.
+
 ## Files
 
 Product lifecycle:
