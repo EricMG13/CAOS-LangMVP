@@ -1031,25 +1031,42 @@ try {
   assert.equal(await calculatedWorksheetCell.innerText(), calculatedWorksheetValue, "forecast assumption changed a calculated historical cell");
   await firstAssumption.fill("0.06");
   await firstAssumption.press("Enter");
-  page.once("dialog", (dialog) => void dialog.dismiss());
-  await page.getByRole("combobox", { name: "Select case" }).selectOption(raceCase.id).catch(() => {});
+  const discardDraftDialog = () => page.getByRole("dialog", { name: "Discard draft changes?" });
+  const caseSelect = page.getByRole("combobox", { name: "Select case" });
+  await caseSelect.selectOption(raceCase.id);
+  await discardDraftDialog().waitFor();
   assert.ok(page.url().includes(`case=${caseRecord.id}`), "dismissed dirty-draft warning changed the selected case");
+  await discardDraftDialog().getByRole("button", { name: "Keep editing" }).click();
+  assert.equal(await caseSelect.evaluate((element) => document.activeElement === element), true, "canceling a case discard did not return focus to the case selector");
   const dirtyURL = page.url();
-  page.once("dialog", (dialog) => void dialog.dismiss());
-  await page.getByRole("link", { name: "Sources", exact: true }).first().click().catch(() => {});
+  const sourcesLink = page.getByRole("link", { name: "Sources", exact: true }).first();
+  await sourcesLink.click();
+  await discardDraftDialog().waitFor();
+  await discardDraftDialog().getByRole("button", { name: "Keep editing" }).click();
   assert.equal(page.url(), dirtyURL, "dismissed dirty-draft warning allowed internal workspace navigation");
-  let browserHistoryPromptCount = 0;
-  const dismissBrowserHistoryPrompt = (dialog) => {
-    browserHistoryPromptCount += 1;
-    void dialog.dismiss();
-  };
-  page.on("dialog", dismissBrowserHistoryPrompt);
+  assert.equal(await sourcesLink.evaluate((element) => document.activeElement === element), true, "canceling link navigation did not return focus to its trigger");
+  const commandTrigger = page.getByRole("button", { name: "Open command palette" });
+  await commandTrigger.click();
+  const dirtyDraftPalette = page.getByRole("dialog", { name: "Command palette" });
+  await dirtyDraftPalette.getByRole("combobox", { name: "Search cases, workflows or evidence IDs" }).fill("Sources");
+  await dirtyDraftPalette.getByRole("option", { name: "Open Sources" }).click();
+  await discardDraftDialog().waitFor();
+  await discardDraftDialog().getByRole("button", { name: "Keep editing" }).click();
+  assert.equal(page.url(), dirtyURL, "canceling palette navigation changed the URL");
+  assert.equal(await commandTrigger.evaluate((element) => document.activeElement === element), true, "canceling palette navigation did not return focus to the palette trigger");
+  await firstAssumption.focus();
   await page.evaluate(() => window.history.back());
-  await page.waitForTimeout(250);
-  page.off("dialog", dismissBrowserHistoryPrompt);
-  assert.equal(browserHistoryPromptCount, 1, "canceling browser Back prompted more than once during the compensating history restoration");
+  await discardDraftDialog().waitFor();
+  await page.keyboard.press("Escape");
+  await discardDraftDialog().waitFor({ state: "hidden" });
   assert.equal(page.url(), dirtyURL, "dismissed dirty-draft warning allowed browser history navigation");
   assert.equal(await firstAssumption.inputValue(), "0.06", "browser history restoration dropped the dirty local forecast value");
+  assert.equal(await firstAssumption.evaluate((element) => document.activeElement === element), true, "Escape did not return focus to the dirty editor after browser history cancelation");
+  await caseSelect.selectOption(raceCase.id);
+  await discardDraftDialog().waitFor();
+  await discardDraftDialog().getByRole("button", { name: "Discard changes" }).click();
+  await page.waitForFunction((caseId) => document.querySelector("#case-select")?.value === caseId, raceCase.id);
+  assert.equal(await caseSelect.inputValue(), raceCase.id, "confirming draft discard did not complete the case switch");
   await page.setViewportSize({ width: 720, height: 900 });
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth), false, "Model Builder causes page-level horizontal overflow at 200% desktop zoom width");
   await page.setViewportSize({ width: 1440, height: 1000 });
@@ -1401,6 +1418,10 @@ try {
 
   const reportPaper = () => page.getByRole("article", { name: /Deliverable preview/i });
   const reportTitle = (title) => reportPaper().locator(".rd-subtitle").filter({ hasText: title });
+  const openReportTool = async (name) => {
+    const details = page.locator("details").filter({ has: page.getByText(name, { exact: true }) }).first();
+    if (await details.getAttribute("open") === null) await details.locator(":scope > summary").click();
+  };
   for (const [pathway, label] of Object.entries(reportTitles)) {
     await page.getByRole("combobox", { name: "Pathway template" }).selectOption(pathway);
     await reportTitle(label).waitFor();
@@ -1422,18 +1443,13 @@ try {
   await dirtyHistoryEditor.fill("Dirty history fence value");
   await page.getByText("Unsaved changes", { exact: true }).waitFor();
   const dirtyReportURL = page.url();
-  let reportHistoryPromptCount = 0;
-  const dismissReportHistoryPrompt = (dialog) => {
-    reportHistoryPromptCount += 1;
-    void dialog.dismiss();
-  };
-  page.on("dialog", dismissReportHistoryPrompt);
+  await dirtyHistoryEditor.focus();
   await page.evaluate(() => window.history.back());
-  await new Promise((resolve) => setTimeout(resolve, 250));
-  page.off("dialog", dismissReportHistoryPrompt);
-  assert.equal(reportHistoryPromptCount, 1, "one dirty Report Studio Back action prompted more than once");
+  await discardDraftDialog().waitFor();
+  await discardDraftDialog().getByRole("button", { name: "Keep editing" }).click();
   assert.equal(page.url(), dirtyReportURL, "dismissed Report Studio Back changed the exact URL");
   assert.equal(await dirtyHistoryEditor.inputValue(), "Dirty history fence value", "dismissed Report Studio Back dropped local content");
+  assert.equal(await dirtyHistoryEditor.evaluate((element) => document.activeElement === element), true, "canceling Report Studio browser history did not return focus to the editor");
   await page.getByText("Saved v5", { exact: true }).waitFor({ timeout: 5000 });
 
   await page.getByRole("combobox", { name: "Pathway template" }).selectOption("FULL_CREDIT");
@@ -1470,6 +1486,7 @@ try {
   assert.equal(await reportTitle("Investment Committee Credit Memo").count(), 0, "late Full Credit Restore replaced the Earnings paper");
   await page.getByRole("combobox", { name: "Pathway template" }).selectOption("FULL_CREDIT");
 
+  await openReportTool("Scenario insertion");
   await page.getByLabel("Shock value").fill("0.07");
   heldReportLifecycle = "scenario";
   await page.getByRole("button", { name: "Calculate and insert exact exhibit" }).click();
@@ -1483,9 +1500,11 @@ try {
   await page.getByRole("combobox", { name: "Pathway template" }).selectOption("FULL_CREDIT");
   await page.getByRole("button", { name: "Credit SnapshotRequired" }).click().catch(() => {});
   await page.getByRole("radio", { name: "Evidence-bound" }).check();
+  await openReportTool("Evidence search and citations");
   await page.locator(".evidence-source-list details").first().locator("summary").click();
   await page.getByRole("button", { name: "Cite block" }).first().click();
   await page.getByText("Evidence-bound", { exact: true }).last().waitFor();
+  await openReportTool("Scenario insertion");
   await page.getByLabel("Shock value").fill("0.07");
   await page.getByRole("button", { name: "Calculate and insert exact exhibit" }).click();
   await page.getByText("Server-calculated Scenario Exhibit inserted into the Draft.").waitFor();
@@ -1509,9 +1528,12 @@ try {
   assert.equal(await restoreButtons.first().isDisabled(), true, `Restore raced a pending autosave: ${JSON.stringify(restoreState)}`);
   await page.waitForTimeout(900);
   holdReportSave = false;
-  page.once("dialog", (dialog) => void dialog.dismiss());
-  await page.getByRole("combobox", { name: "Select case" }).selectOption(raceCase.id);
+  const reportCaseSelect = page.getByRole("combobox", { name: "Select case" });
+  await reportCaseSelect.selectOption(raceCase.id);
+  await discardDraftDialog().waitFor();
   assert.equal(await page.getByRole("combobox", { name: "Select case" }).inputValue(), caseRecord.id, "Report Studio dirty case switch was not fenced");
+  await discardDraftDialog().getByRole("button", { name: "Keep editing" }).click();
+  assert.equal(await reportCaseSelect.evaluate((element) => document.activeElement === element), true, "canceling Report Studio case discard did not return focus to the selector");
   await page.getByText(/Saved v7/).waitFor({ timeout: 5000 });
 
   heldReportLifecycle = "freeze";

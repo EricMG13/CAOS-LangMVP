@@ -42,6 +42,31 @@ test("navigation and data captions use the four-role label taxonomy", () => {
   assert.doesNotMatch(styles, /[^{}]*\bdt\b[^{}]*\{[^{}]*(?:letter-spacing|text-transform)/);
 });
 
+test("Cases makes opening the selected credit primary and keeps portfolio limits secondary", () => {
+  const register = workspace.slice(workspace.indexOf('className="panel cases-register"'), workspace.indexOf('className="panel cases-create"'));
+  assert.match(register, /<tr aria-current=\{caseId === item\.id \? "true" : undefined\}/);
+  assert.match(register, /className="button small primary"[^>]*>Open credit/);
+  assert.ok(workspace.indexOf('id="portfolio-contract-title"') > workspace.indexOf('className="panel cases-fit"'), "portfolio limitation did not follow the primary work");
+});
+
+test("RV keeps core filters visible and discloses retained advanced bounds", () => {
+  const screener = workspace.slice(workspace.indexOf('className="panel span-12"><div className="panel-header"><h2>Loan screener'));
+  const advanced = screener.slice(screener.indexOf('<details className="loan-advanced-filters">'), screener.indexOf('</details>'));
+  for (const id of ["loan-maturity-from", "loan-maturity-to", "loan-margin-min", "loan-margin-max", "loan-dm-min", "loan-dm-max"]) assert.match(advanced, new RegExp(id));
+  assert.match(screener, /<caption className="sr-only">27 columns\. Scroll horizontally to review all workbook fields; column labels state source units\.<\/caption>/);
+});
+
+test("draft navigation uses one focus-returning native dialog and preserves beforeunload", () => {
+  assert.doesNotMatch(workspace, /window\.confirm/);
+  assert.doesNotMatch(reportStudio, /window\.confirm/);
+  assert.match(workspace, /function DraftDiscardDialog/);
+  assert.match(workspace, /<dialog[^>]+aria-labelledby="discard-dialog-title"[^>]+onClose=\{close\}/);
+  assert.match(workspace, /window\.addEventListener\("beforeunload", guardUnload\)/);
+  assert.match(workspace, /requestDraftDiscard/);
+  assert.match(workspace, /if \(discardPromptRef\.current\) \{ cancel\?\.\(\); return false; \}/);
+  assert.match(workspace, /if \(state\?\.caosModelDraftGuard \|\| state\?\.caosReportDraftGuard\) \{ modelHistoryGuardRef\.current = true; return; \}/);
+});
+
 test("DAG nodes use neutral containers and shape-coded visible statuses", async () => {
   const workbench = await import("./workbench.ts") as unknown as { nodeStatusTone?: (status: string) => string };
   for (const [status, tone] of [

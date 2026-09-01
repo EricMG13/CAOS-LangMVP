@@ -347,7 +347,7 @@ export default function WorkbenchShell({
               type="button"
               tabIndex={-1}
               key={item.id}
-              onClick={() => { onCaseChange(item.id); closePalette(); }}
+              onClick={() => { closePalette(); onCaseChange(item.id); }}
             >{item.issuer} / {item.name}<span className="muted">{item.sector}</span></button>;
           })}</div>}
           {workflowItems.length > 0 && <div role="group" aria-labelledby="palette-workflows-label"><div className="nav-label palette-group-label" id="palette-workflows-label">Workflows</div>{workflowItems.map((workflow) => {

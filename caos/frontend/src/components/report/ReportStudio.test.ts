@@ -102,6 +102,16 @@ test("evidence search covers every served source block without silent truncation
   assert.doesNotMatch(studio, /source\.blocks\.slice/);
 });
 
+test("the selected editor leads and expert composition tools are progressively disclosed", () => {
+  const compose = studio.slice(studio.indexOf('className="panel-body report-editor-scroll"'));
+  const editor = compose.indexOf('narrative-${selectedNarrative.block_id}');
+  assert.ok(editor >= 0 && editor < compose.indexOf('className="report-authority-strip"'), "model authority precedes the selected editor");
+  assert.match(compose, /rows=\{8\}/);
+  for (const label of ["Evidence search and citations", "Scenario insertion"]) assert.match(compose, new RegExp(`<summary>${label}`));
+  const outline = studio.slice(studio.indexOf('className="panel-body report-rail-scroll"'), studio.indexOf('className="panel report-compose"'));
+  assert.match(outline, /<details className="report-optional"><summary>Optional composition<\/summary>/);
+});
+
 test("Scenario registry is build-bound and seeded only from server defaults", () => {
   assert.match(studio, /assumptionRegistryPath\(caseId, buildId\)/);
   assert.match(studio, /value\.build_id !== buildId/);

@@ -15,6 +15,8 @@ import WorkbenchShell, { type DrawerState } from "./WorkbenchShell";
 import { type Destination, type Snapshot, type SnapshotView, acceptanceSlotSummary, acceptedAuthorityMatch, destinationFromSlug, destinationMeta, formatBlockLocator, formatDate, humanizeCode, moduleLabel, nodeStatusTone, routeDestinations, selectConclusionArtifact, withQuery } from "../lib/workbench";
 
 type WriteAccess = "yes" | "no" | "unknown";
+type DraftDiscardRequest = { detail: string; confirm: () => void; cancel?: () => void };
+type RequestDraftDiscard = (detail: string, confirm: () => void, cancel?: () => void) => boolean;
 
 // One sentence per blocked write, and it distinguishes the two reasons: identity
 // not yet confirmed, versus confirmed and read-only.
@@ -81,6 +83,7 @@ export default function Workspace({ destination, children }: { destination?: Des
   const [authority, setAuthority] = useState<SnapshotView | null>(null);
   const [drawer, setDrawer] = useState<DrawerState | null>(null);
   const [acceptPrompt, setAcceptPrompt] = useState(false);
+  const [discardPrompt, setDiscardPrompt] = useState<DraftDiscardRequest | null>(null);
   // Observed-404 capability memory: a resume or plan-approval POST that 404ed means the
   // route is absent on this deployment, so the control renders its unavailable block
   // instead of an action that can never succeed.
@@ -96,6 +99,7 @@ export default function Workspace({ destination, children }: { destination?: Des
   const routeAuthorityRef = useRef("");
   const modelDraftDirtyRef = useRef(false);
   const reportDraftDirtyRef = useRef(false);
+  const discardPromptRef = useRef<DraftDiscardRequest | null>(null);
   const modelHistoryGuardRef = useRef(false);
   const historyGuardRetiringRef = useRef(false);
   const historyGuardRearmRef = useRef(false);
@@ -112,14 +116,16 @@ export default function Workspace({ destination, children }: { destination?: Des
       historyGuardRearmRef.current = true;
       return;
     }
+    const state = window.history.state as { caosModelDraftGuard?: boolean; caosReportDraftGuard?: boolean } | null;
+    if (state?.caosModelDraftGuard || state?.caosReportDraftGuard) { modelHistoryGuardRef.current = true; return; }
     if (!modelHistoryGuardRef.current && !historyGuardRetiringRef.current) {
-      window.history.pushState({ ...window.history.state, [marker === "model" ? "caosModelDraftGuard" : "caosReportDraftGuard"]: true }, "", window.location.href);
+      window.history.pushState({ ...state, [marker === "model" ? "caosModelDraftGuard" : "caosReportDraftGuard"]: true }, "", window.location.href);
       modelHistoryGuardRef.current = true;
     }
   }, []);
 
   const retireOwnedHistoryGuard = useCallback(() => {
-    if (typeof window === "undefined" || modelDraftDirtyRef.current || reportDraftDirtyRef.current || !modelHistoryGuardRef.current || historyGuardRetiringRef.current) return;
+    if (typeof window === "undefined" || discardPromptRef.current || modelDraftDirtyRef.current || reportDraftDirtyRef.current || !modelHistoryGuardRef.current || historyGuardRetiringRef.current) return;
     modelHistoryGuardRef.current = false;
     historyGuardRetiringRef.current = true;
     historyGuardRearmRef.current = false;
@@ -148,27 +154,39 @@ export default function Workspace({ destination, children }: { destination?: Des
     else if (!modelDraftDirtyRef.current && !reportDraftDirtyRef.current) retireOwnedHistoryGuard();
   }, [armOwnedHistoryGuard, retireOwnedHistoryGuard]);
 
-  const confirmModelDraftDiscard = useCallback((detail: string) => {
-    if (!modelDraftDirtyRef.current) return true;
-    if (!window.confirm(detail)) return false;
+  const draftDiscardDetail = useCallback((action: string) => {
+    const drafts = modelDraftDirtyRef.current && reportDraftDirtyRef.current
+      ? "the unsigned Model Builder Draft Revision and unsaved Report Studio changes"
+      : modelDraftDirtyRef.current ? "the unsigned Model Builder Draft Revision" : "the unsaved Report Studio changes";
+    return `Discard ${drafts} ${action}?`;
+  }, []);
+
+  const requestDraftDiscard = useCallback<RequestDraftDiscard>((detail, confirm, cancel) => {
+    if (!modelDraftDirtyRef.current && !reportDraftDirtyRef.current) { confirm(); return true; }
+    if (discardPromptRef.current) { cancel?.(); return false; }
+    const next = { detail, confirm, cancel };
+    discardPromptRef.current = next;
+    setDiscardPrompt(next);
+    return false;
+  }, []);
+
+  const finishDraftDiscard = useCallback((confirmed: boolean) => {
+    const prompt = discardPromptRef.current;
+    if (!prompt) return;
+    discardPromptRef.current = null;
+    setDiscardPrompt(null);
+    if (!confirmed) {
+      prompt.cancel?.();
+      if (!prompt.cancel && !modelDraftDirtyRef.current && !reportDraftDirtyRef.current) retireOwnedHistoryGuard();
+      return;
+    }
     modelDraftDirtyRef.current = false;
-    if (!reportDraftDirtyRef.current) modelHistoryGuardRef.current = false;
-    return true;
-  }, []);
-
-  const confirmReportDraftDiscard = useCallback((detail: string) => {
-    if (!reportDraftDirtyRef.current) return true;
-    if (!window.confirm(detail)) return false;
     reportDraftDirtyRef.current = false;
-    if (!modelDraftDirtyRef.current) modelHistoryGuardRef.current = false;
-    return true;
-  }, []);
+    modelHistoryGuardRef.current = false;
+    prompt.confirm();
+  }, [retireOwnedHistoryGuard]);
 
-  const selectCase = useCallback((nextCaseId: string, availableCases = cases) => {
-    const currentCaseId = authorityRef.current.caseId || "";
-    if (nextCaseId === currentCaseId) return true;
-    if (!confirmModelDraftDiscard("Discard the unsigned Model Builder Draft Revision before changing case?")) return false;
-    if (!confirmReportDraftDiscard("Discard the unsaved Report Studio changes before changing case?")) return false;
+  const commitCaseSelection = useCallback((nextCaseId: string, availableCases = cases) => {
     dispatchAuthority({ type: "selectCase", caseId: nextCaseId || null });
     const nextRunId = availableCases.find((item) => item.id === nextCaseId)?.current_execution_id || "";
     if (nextRunId) dispatchAuthority({ type: "selectRun", caseId: nextCaseId, runId: nextRunId });
@@ -181,8 +199,13 @@ export default function Workspace({ destination, children }: { destination?: Des
     setRun(null);
     setRunError("");
     setError("");
-    return true;
-  }, [cases, confirmModelDraftDiscard, confirmReportDraftDiscard, dispatchAuthority]);
+  }, [cases, dispatchAuthority]);
+
+  const selectCase = useCallback((nextCaseId: string, availableCases = cases) => {
+    const currentCaseId = authorityRef.current.caseId || "";
+    if (nextCaseId === currentCaseId) return true;
+    return requestDraftDiscard(draftDiscardDetail("before changing case"), () => commitCaseSelection(nextCaseId, availableCases));
+  }, [cases, commitCaseSelection, draftDiscardDetail, requestDraftDiscard]);
 
   const refreshCases = async (signal?: AbortSignal) => {
     const requestId = ++casesRequest.current;
@@ -285,15 +308,14 @@ export default function Workspace({ destination, children }: { destination?: Des
     dispatchAuthority({ type: "hydrate", caseId: requestedCaseId || null, runId: requestedRunId || null });
     const controller = new AbortController();
     const guardDraftNavigation = (event: MouseEvent) => {
-      const target = event.target instanceof Element ? event.target.closest("a[href]") : null;
+      const target = event.target instanceof Element ? event.target.closest<HTMLElement>("a[href]") : null;
       const href = target?.getAttribute("href") || "";
       if (!target || !href.startsWith("/") || target.getAttribute("download") !== null) return;
-      if (!confirmModelDraftDiscard("Discard the unsigned Model Builder Draft Revision and leave this page?")) {
-        event.preventDefault();
-        event.stopImmediatePropagation();
-        return;
-      }
-      if (!confirmReportDraftDiscard("Discard the unsaved Report Studio changes and leave this page?")) { event.preventDefault(); event.stopImmediatePropagation(); }
+      if (!modelDraftDirtyRef.current && !reportDraftDirtyRef.current) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      target.closest<HTMLDialogElement>("dialog[open]")?.close();
+      requestDraftDiscard(draftDiscardDetail("and leave this page"), () => target.click());
     };
     const guardBrowserHistory = (event: PopStateEvent) => {
       if (suppressNextModelHistoryPopRef.current) {
@@ -310,20 +332,20 @@ export default function Workspace({ destination, children }: { destination?: Des
       }
       if (!modelDraftDirtyRef.current && !reportDraftDirtyRef.current) return;
       event.stopImmediatePropagation();
-      const label = modelDraftDirtyRef.current && reportDraftDirtyRef.current ? "Discard the unsigned Model Builder Draft Revision and unsaved Report Studio changes, then use browser history?" : modelDraftDirtyRef.current ? "Discard the unsigned Model Builder Draft Revision and use browser history?" : "Discard the unsaved Report Studio changes and use browser history?";
-      if (window.confirm(label)) {
-        modelDraftDirtyRef.current = false;
-        reportDraftDirtyRef.current = false;
-        modelHistoryGuardRef.current = false;
-        window.history.back();
-      } else if (modelHistoryGuardRef.current) {
+      const restoreHistoryGuard = () => {
+        if (!modelHistoryGuardRef.current) return;
+        if (!modelDraftDirtyRef.current && !reportDraftDirtyRef.current) {
+          modelHistoryGuardRef.current = false;
+          return;
+        }
         suppressNextModelHistoryPopRef.current = true;
         window.history.forward();
         modelHistoryPopFenceTimerRef.current = window.setTimeout(() => {
           suppressNextModelHistoryPopRef.current = false;
           modelHistoryPopFenceTimerRef.current = null;
         }, 1000);
-      }
+      };
+      requestDraftDiscard(draftDiscardDetail("and use browser history"), () => window.history.back(), restoreHistoryGuard);
     };
     const guardUnload = (event: BeforeUnloadEvent) => {
       if (!modelDraftDirtyRef.current && !reportDraftDirtyRef.current) return;
@@ -346,7 +368,7 @@ export default function Workspace({ destination, children }: { destination?: Des
     return () => { controller.abort(); window.clearTimeout(timer); if (modelHistoryPopFenceTimerRef.current !== null) window.clearTimeout(modelHistoryPopFenceTimerRef.current); suppressNextModelHistoryPopRef.current = false; historyGuardRetiringRef.current = false; historyGuardRearmRef.current = false; modelHistoryPopFenceTimerRef.current = null; document.removeEventListener("click", guardDraftNavigation, true); window.removeEventListener("popstate", guardBrowserHistory, true); window.removeEventListener("beforeunload", guardUnload); };
     // The selected case is intentionally not a fetch dependency.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [armOwnedHistoryGuard, confirmModelDraftDiscard, confirmReportDraftDiscard]);
+  }, [armOwnedHistoryGuard, draftDiscardDetail, requestDraftDiscard]);
 
   useEffect(() => {
     if (!hydrated) return;
@@ -722,7 +744,7 @@ export default function Workspace({ destination, children }: { destination?: Des
       case "RV Screener": return <RVView key={caseId} writeAccess={writeAccess} caseId={caseId} />;
       case "Command Center": return <CommandView caseId={caseId} question={routeQuestion} />;
       case "Model Builder": return <ModelBuilder caseId={caseId} role={role} onDraftStateChange={onModelDraftStateChange} />;
-      case "Report Studio": return <ReportStudio key={caseId} caseId={caseId} role={role} selectedCase={selectedCase} onDraftStateChange={onReportDraftStateChange} />;
+      case "Report Studio": return <ReportStudio key={caseId} caseId={caseId} role={role} selectedCase={selectedCase} onDraftStateChange={onReportDraftStateChange} requestDraftDiscard={requestDraftDiscard} />;
       case "Admin Studio": return <AdminView />;
     }
   };
@@ -749,6 +771,7 @@ export default function Workspace({ destination, children }: { destination?: Des
       <div key={`${active}:${caseId}`}>{routeIsKnown ? <>{renderDestination()}{children}</> : children}</div>
     </WorkbenchShell>
     <AcceptDialog open={acceptPrompt} run={run} replaces={authority?.latest_accepted ?? null} pending={pendingAction === "accept-run"} onConfirm={confirmAccept} onClose={() => setAcceptPrompt(false)} />
+    <DraftDiscardDialog open={discardPrompt !== null} detail={discardPrompt?.detail || ""} onConfirm={() => finishDraftDiscard(true)} onClose={() => finishDraftDiscard(false)} />
   </>;
 }
 
@@ -762,14 +785,14 @@ function CasesView({ writeAccess, cases, casesLoading, selectedCase, caseId, cre
     return matchesSearch && matchesFilter;
   }), [cases, search, snapshotFilter]);
   return <div className="grid cases-layout">
-    <section className="portfolio-contract-notice span-12" aria-labelledby="portfolio-contract-title"><span className="flag">PROPOSED</span><div><strong id="portfolio-contract-title">Attention ordering requires a governed portfolio-summary response.</strong><p>The production register below is not ranked. Threshold distance, freshness and material-change scores are withheld until the server owns those fields.</p></div></section>
-    <section className="panel cases-register"><div className="panel-header"><h2>Monitored credits</h2><span className="panel-meta">{casesLoading ? "Loading…" : `${visibleCases.length} of ${cases.length}`}</span></div><div className="worklist-toolbar"><div className="field"><label htmlFor="case-search">Search credits</label><input id="case-search" type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Issuer, case, or sector" /></div><div className="field"><label htmlFor="case-snapshot-filter">Authority</label><select id="case-snapshot-filter" value={snapshotFilter} onChange={(event) => setSnapshotFilter(event.target.value as "all" | "accepted" | "unaccepted")}><option value="all">All credits</option><option value="accepted">Accepted authority</option><option value="unaccepted">No accepted authority</option></select></div></div><div className="panel-body table-wrap" tabIndex={0} role="region" aria-label="Monitored credit register"><table><thead><tr><th scope="col">Credit</th><th scope="col">Case</th><th scope="col">Evidence</th><th scope="col">Authority</th><th scope="col">Action</th></tr></thead><tbody>{visibleCases.map((item) => <tr className={caseId === item.id ? "selected-row" : undefined} key={item.id}><td><strong>{item.issuer}</strong><div className="muted">{item.sector}</div></td><td>{item.name}</td><td className="num">{item.source_count == null ? "Unavailable" : `${item.source_count} source${item.source_count === 1 ? "" : "s"}`}</td><td>{item.accepted_snapshot_id ? <span className="status success">Accepted</span> : <span className="status warning">Not accepted</span>}</td><td><Link className="button small" href={withQuery("/command-center", { case: item.id })}>Open credit</Link></td></tr>)}</tbody></table>{!visibleCases.length && <LoadState loading={casesLoading} empty={cases.length ? "No credits match this search and filter." : "No credits yet. Create the first case to establish the context boundary."} />}</div></section>
+    <section className="panel cases-register"><div className="panel-header"><h2>Monitored credits</h2><span className="panel-meta">{casesLoading ? "Loading…" : `${visibleCases.length} of ${cases.length}`}</span></div><div className="worklist-toolbar"><div className="field"><label htmlFor="case-search">Search credits</label><input id="case-search" type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Issuer, case, or sector" /></div><div className="field"><label htmlFor="case-snapshot-filter">Authority</label><select id="case-snapshot-filter" value={snapshotFilter} onChange={(event) => setSnapshotFilter(event.target.value as "all" | "accepted" | "unaccepted")}><option value="all">All credits</option><option value="accepted">Accepted authority</option><option value="unaccepted">No accepted authority</option></select></div></div><div className="panel-body table-wrap" tabIndex={0} role="region" aria-label="Monitored credit register"><table><thead><tr><th scope="col">Credit</th><th scope="col">Case</th><th scope="col">Evidence</th><th scope="col">Authority</th><th scope="col">Action</th></tr></thead><tbody>{visibleCases.map((item) => <tr aria-current={caseId === item.id ? "true" : undefined} className={caseId === item.id ? "selected-row" : undefined} key={item.id}><td><strong>{item.issuer}</strong><div className="muted">{item.sector}</div></td><td>{item.name}</td><td className="num">{item.source_count == null ? "Unavailable" : `${item.source_count} source${item.source_count === 1 ? "" : "s"}`}</td><td>{item.accepted_snapshot_id ? <span className="status success">Accepted</span> : <span className="status warning">Not accepted</span>}</td><td><Link className="button small primary" href={withQuery("/command-center", { case: item.id })}>Open credit</Link></td></tr>)}</tbody></table>{!visibleCases.length && <LoadState loading={casesLoading} empty={cases.length ? "No credits match this search and filter." : "No credits yet. Create the first case to establish the context boundary."} />}</div></section>
     <section className="panel cases-create"><div className="panel-header"><h2>Create case</h2></div><div className="panel-body">{writeAccess === "yes" ? <form onSubmit={createCase}><div className="field"><label htmlFor="case-name">Case name</label><input id="case-name" name="name" autoComplete="off" required placeholder="Q3 credit review…" /></div><div className="field"><label htmlFor="issuer">Issuer</label><input id="issuer" name="issuer" autoComplete="organization" required placeholder="Issuer legal name…" /></div><div className="field"><label htmlFor="sector">Sector</label><input id="sector" name="sector" autoComplete="off" placeholder="Business services…" /></div><button className={`button ${selectedCase ? "" : "primary"}`} type="submit" disabled={pendingAction === "create-case"}>{pendingAction === "create-case" ? "Creating…" : "Create case"}</button></form> : <WriteBlocked access={writeAccess} action="case creation" />}</div></section>
     {/* Fit truth: render the served fit when the wire carries one; claim NEEDS_SOURCE
         only when the case verifiably has zero sources (the server's own rule); stay
         neutral otherwise. The case wire now serves pathway_fit, so the fallback below
         is only for a deployment whose build predates it. */}
     <section className="panel cases-fit"><div className="panel-header"><h2>Pathway fit</h2></div><div className="panel-body">{selectedCase ? selectedCase.pathway_fit ? <><span className={`status ${selectedCase.pathway_fit.fit === "READY" ? "success" : "warning"}`}>{humanizeCode(selectedCase.pathway_fit.fit)}</span><p>{selectedCase.pathway_fit.message}</p></> : selectedCase.source_count === 0 ? <><span className="status warning">NEEDS SOURCE</span><p>Upload a source to see fit.</p></> : <p className="muted">Fit unavailable. Pathway fit is not served by this deployment.</p> : <div className="empty">Select a case to inspect pathway fit.</div>}</div></section>
+    <section className="context-strip portfolio-contract-notice span-12" aria-labelledby="portfolio-contract-title"><strong id="portfolio-contract-title">Portfolio ordering is not yet governed.</strong><p>The register is unranked until the server supplies threshold distance, freshness, and material-change scores.</p></section>
   </div>;
 }
 
@@ -967,6 +990,42 @@ function AcceptDialog({ open, run, replaces, pending, onConfirm, onClose }: { op
           <button className="button small" type="button" onClick={() => dialogRef.current?.close()}>Cancel</button>
         </div>
       </>}
+    </div>
+  </dialog>;
+}
+
+function DraftDiscardDialog({ open, detail, onConfirm, onClose }: { open: boolean; detail: string; onConfirm: () => void; onClose: () => void }) {
+  const dialogRef = useRef<HTMLDialogElement>(null);
+  const headingRef = useRef<HTMLHeadingElement>(null);
+  const triggerRef = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    if (!dialog) return;
+    if (!open) {
+      if (dialog.open) dialog.close();
+      return;
+    }
+    if (!dialog.open) {
+      triggerRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+      dialog.showModal();
+    }
+    const frame = window.requestAnimationFrame(() => headingRef.current?.focus());
+    return () => window.cancelAnimationFrame(frame);
+  }, [open]);
+  const close = () => {
+    onClose();
+    const trigger = triggerRef.current;
+    window.requestAnimationFrame(() => trigger?.focus());
+  };
+  return <dialog ref={dialogRef} aria-labelledby="discard-dialog-title" onClose={close}>
+    <div className="dialog-body">
+      <div className="panel-header"><h2 id="discard-dialog-title" ref={headingRef} tabIndex={-1}>Discard draft changes?</h2></div>
+      <p>{detail}</p>
+      <p className="muted">This removes only local, uncommitted changes. Saved and signed versions remain unchanged.</p>
+      <div className="top-actions">
+        <button className="button primary" type="button" onClick={onConfirm}>Discard changes</button>
+        <button className="button small" type="button" onClick={() => dialogRef.current?.close()}>Keep editing</button>
+      </div>
     </div>
   </dialog>;
 }
@@ -1313,7 +1372,7 @@ function RVView({ writeAccess, caseId }: { writeAccess: WriteAccess; caseId: str
   return <div className="grid loan-rv">
     <section className="panel span-12"><div className="panel-header"><h2>Leveraged-loan universe</h2><span className="panel-meta">Source data · unanalyzed</span></div><div className="panel-body loan-upload">{writeAccess === "yes" ? <form onSubmit={upload}><div className="field"><label htmlFor="loan-workbook">Fixed CP-3 sector workbook (.xlsx)</label><input id="loan-workbook" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" onChange={(event) => setFile(event.target.files?.[0] || null)} required /></div><button className="button primary" type="submit" disabled={pending || !file}>{pending ? "Importing…" : "Upload CP-3 workbook"}</button></form> : <WriteBlocked access={writeAccess} action="importing a CP-3 workbook" />}<p className="muted">All visible sector tabs are ingested. Values remain in workbook units: prices and changes in points, margin and discount margin in bps, yield in percent.</p>{message && <p className={messageIsError ? "error" : "muted"} role={messageIsError ? "alert" : "status"}>{message}</p>}{findings.length ? <ul className="loan-findings" role="alert">{findings.map((finding, index) => <li key={`${finding.code}-${index}`}><strong>{humanizeCode(finding.code)}</strong> {finding.sheet ? `${finding.sheet}${finding.row ? ` R${finding.row}` : ""}: ` : ""}{finding.detail}</li>)}</ul> : null}</div></section>
     {rv?.universe ? <section className="panel span-12"><div className="panel-header"><h2>Active authority</h2><span className="status success">ACTIVE · v{rv.universe.version}</span></div><div className="panel-body loan-authority"><dl><dt className="meta-label">Workbook date</dt><dd>{rv.universe.workbook_date || "N/A"}</dd><dt className="meta-label">Source</dt><dd><Link href={withQuery("/sources/", { case: caseId, source: rv.universe.source_id })}>{rv.universe.source_filename}</Link></dd><dt className="meta-label">Instruments</dt><dd className="num">{rv.universe.row_count}</dd><dt className="meta-label">Template</dt><dd className="mono">{rv.universe.template_version}</dd><dt className="meta-label">Digest</dt><dd className="mono">{rv.universe.universe_digest}</dd></dl></div></section> : null}
-    <section className="panel span-12"><div className="panel-header"><h2>Loan screener</h2><span className="panel-meta">{filteredRows.length} / {rv?.rows.length || 0} instruments</span></div><div className="panel-body loan-filters"><div className="field"><label htmlFor="loan-search">Issuer / ID</label><input id="loan-search" type="search" value={search} onChange={(event) => setSearch(event.target.value)} /></div>{[["loan-sector", "Sector", sector, setSector, filterOptions.sector], ["loan-rating", "Rating", rating, setRating, filterOptions.ratings], ["loan-ranking", "Ranking", ranking, setRanking, filterOptions.ranking], ["loan-type", "Loan type", loanType, setLoanType, filterOptions.loan_type]] .map(([id, label, value, setter, values]) => <div className="field" key={id as string}><label htmlFor={id as string}>{label as string}</label><select id={id as string} value={value as string} onChange={(event) => (setter as (value: string) => void)(event.target.value)}><option value="">All</option>{(values as string[]).map((option) => <option key={option}>{option}</option>)}</select></div>)}<div className="field"><label htmlFor="loan-maturity-from">Maturity from</label><input id="loan-maturity-from" type="date" value={maturityFrom} onChange={(event) => setMaturityFrom(event.target.value)} /></div><div className="field"><label htmlFor="loan-maturity-to">Maturity to</label><input id="loan-maturity-to" type="date" value={maturityTo} onChange={(event) => setMaturityTo(event.target.value)} /></div>{[["loan-margin-min", "Min margin (bps)", marginMin, setMarginMin], ["loan-margin-max", "Max margin (bps)", marginMax, setMarginMax], ["loan-dm-min", "Min 3Y DM (bps)", dmMin, setDmMin], ["loan-dm-max", "Max 3Y DM (bps)", dmMax, setDmMax]].map(([id, label, value, setter]) => <div className="field" key={id as string}><label htmlFor={id as string}>{label as string}</label><input id={id as string} type="number" step="any" value={value as string} onChange={(event) => (setter as (value: string) => void)(event.target.value)} /></div>)}</div><div className="table-wrap loan-table-wrap" tabIndex={0} role="region" aria-label="Leveraged-loan screener; scroll horizontally to review all workbook fields">{rv?.rows.length ? <table className="loan-table"><caption className="sr-only">Active leveraged-loan universe. Column labels state the source unit.</caption><thead><tr className="loan-groups"><th scope="colgroup" colSpan={7}>Issuer profile</th><th scope="colgroup" colSpan={2}>Identifiers</th><th scope="colgroup" colSpan={6}>Loan terms</th><th scope="colgroup" colSpan={11}>Market data</th><th scope="colgroup" colSpan={1}>Source</th></tr><tr>{loanColumns.map((column) => <th scope="col" key={column.key} aria-sort={sort.key === column.key ? (sort.direction === "asc" ? "ascending" : "descending") : undefined}><button className="loan-sort" type="button" onClick={() => changeSort(column.key)}>{column.label}{sort.key === column.key ? (sort.direction === "asc" ? " ↑" : " ↓") : ""}</button></th>)}<th scope="col">Locator</th></tr></thead><tbody>{pageRows.map((row) => <tr key={row.instrument_key}>{loanColumns.map((column) => { const value = row[column.key]; const change = column.signed && typeof value === "number" ? value > 0 ? "positive" : value < 0 ? "negative" : "flat" : ""; return <td key={column.key} className={`${column.numeric ? "num" : ""} ${change}`.trim()}>{loanCell(value, column.signed)}</td>; })}<td className="mono">{row.source_locators.map((locator) => `${locator.sheet} R${locator.row}`).join("; ")}</td></tr>)}</tbody></table> : <LoadState loading={loading} error={loadError} empty="Upload the fixed CP-3 workbook to activate a leveraged-loan universe." />}{rv?.rows.length && !filteredRows.length ? <div className="empty">No loans match the current filters.</div> : null}</div>{filteredRows.length > LOAN_PAGE_SIZE ? <nav className="loan-pagination" aria-label="Loan screener pages"><button className="button small" type="button" disabled={currentPage === 0} onClick={() => setPage(currentPage - 1)}>Previous</button><span className="mono">Page {currentPage + 1} of {pageCount}</span><button className="button small" type="button" disabled={currentPage + 1 >= pageCount} onClick={() => setPage(currentPage + 1)}>Next</button></nav> : null}</section>
+    <section className="panel span-12"><div className="panel-header"><h2>Loan screener</h2><span className="panel-meta">{filteredRows.length} / {rv?.rows.length || 0} instruments</span></div><div className="panel-body loan-filters"><div className="field"><label htmlFor="loan-search">Issuer / ID</label><input id="loan-search" type="search" value={search} onChange={(event) => setSearch(event.target.value)} /></div>{[["loan-sector", "Sector", sector, setSector, filterOptions.sector], ["loan-rating", "Rating", rating, setRating, filterOptions.ratings], ["loan-ranking", "Ranking", ranking, setRanking, filterOptions.ranking], ["loan-type", "Loan type", loanType, setLoanType, filterOptions.loan_type]] .map(([id, label, value, setter, values]) => <div className="field" key={id as string}><label htmlFor={id as string}>{label as string}</label><select id={id as string} value={value as string} onChange={(event) => (setter as (value: string) => void)(event.target.value)}><option value="">All</option>{(values as string[]).map((option) => <option key={option}>{option}</option>)}</select></div>)}<details className="loan-advanced-filters"><summary>Advanced date and numeric filters</summary><div className="loan-advanced-grid"><div className="field"><label htmlFor="loan-maturity-from">Maturity from</label><input id="loan-maturity-from" type="date" value={maturityFrom} onChange={(event) => setMaturityFrom(event.target.value)} /></div><div className="field"><label htmlFor="loan-maturity-to">Maturity to</label><input id="loan-maturity-to" type="date" value={maturityTo} onChange={(event) => setMaturityTo(event.target.value)} /></div>{[["loan-margin-min", "Min margin (bps)", marginMin, setMarginMin], ["loan-margin-max", "Max margin (bps)", marginMax, setMarginMax], ["loan-dm-min", "Min 3Y DM (bps)", dmMin, setDmMin], ["loan-dm-max", "Max 3Y DM (bps)", dmMax, setDmMax]].map(([id, label, value, setter]) => <div className="field" key={id as string}><label htmlFor={id as string}>{label as string}</label><input id={id as string} type="number" step="any" value={value as string} onChange={(event) => (setter as (value: string) => void)(event.target.value)} /></div>)}</div></details></div><div className="table-wrap loan-table-wrap" tabIndex={0} role="region" aria-label="Leveraged-loan screener; scroll horizontally to review all workbook fields">{rv?.rows.length ? <table className="loan-table"><caption className="sr-only">27 columns. Scroll horizontally to review all workbook fields; column labels state source units.</caption><thead><tr className="loan-groups"><th scope="colgroup" colSpan={7}>Issuer profile</th><th scope="colgroup" colSpan={2}>Identifiers</th><th scope="colgroup" colSpan={6}>Loan terms</th><th scope="colgroup" colSpan={11}>Market data</th><th scope="colgroup" colSpan={1}>Source</th></tr><tr>{loanColumns.map((column) => <th scope="col" key={column.key} aria-sort={sort.key === column.key ? (sort.direction === "asc" ? "ascending" : "descending") : undefined}><button className="loan-sort" type="button" onClick={() => changeSort(column.key)}>{column.label}{sort.key === column.key ? (sort.direction === "asc" ? " ↑" : " ↓") : ""}</button></th>)}<th scope="col">Locator</th></tr></thead><tbody>{pageRows.map((row) => <tr key={row.instrument_key}>{loanColumns.map((column) => { const value = row[column.key]; const change = column.signed && typeof value === "number" ? value > 0 ? "positive" : value < 0 ? "negative" : "flat" : ""; return <td key={column.key} className={`${column.numeric ? "num" : ""} ${change}`.trim()}>{loanCell(value, column.signed)}</td>; })}<td className="mono">{row.source_locators.map((locator) => `${locator.sheet} R${locator.row}`).join("; ")}</td></tr>)}</tbody></table> : <LoadState loading={loading} error={loadError} empty="Upload the fixed CP-3 workbook to activate a leveraged-loan universe." />}{rv?.rows.length && !filteredRows.length ? <div className="empty">No loans match the current filters.</div> : null}</div>{filteredRows.length > LOAN_PAGE_SIZE ? <nav className="loan-pagination" aria-label="Loan screener pages"><button className="button small" type="button" disabled={currentPage === 0} onClick={() => setPage(currentPage - 1)}>Previous</button><span className="mono">Page {currentPage + 1} of {pageCount}</span><button className="button small" type="button" disabled={currentPage + 1 >= pageCount} onClick={() => setPage(currentPage + 1)}>Next</button></nav> : null}</section>
     <section className="context-strip span-12"><strong>Relative percentile unavailable</strong><p>The active universe serves exact source fields and filters, but no governed relative-position score. The browser does not infer one.</p></section>
   </div>;
 }
