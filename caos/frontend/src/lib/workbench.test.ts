@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { acceptanceSlotSummary, acceptedAuthorityMatch, destinationMeta, evidenceKind, formatBlockLocator, humanizeCode, moduleLabel, withQuery, workflows } from "./workbench.ts";
 
 const workbenchShell = readFileSync(new URL("../components/WorkbenchShell.tsx", import.meta.url), "utf8");
@@ -9,12 +9,38 @@ const states = readFileSync(new URL("../components/states.tsx", import.meta.url)
 const modelBuilder = readFileSync(new URL("../components/model/ModelBuilder.tsx", import.meta.url), "utf8");
 const deliverableDocument = readFileSync(new URL("../components/report/DeliverableDocument.tsx", import.meta.url), "utf8");
 const reportStudio = readFileSync(new URL("../components/report/ReportStudio.tsx", import.meta.url), "utf8");
-const layout = readFileSync(new URL("../../app/layout.tsx", import.meta.url), "utf8");
 const styles = readFileSync(new URL("../../app/globals.css", import.meta.url), "utf8");
 const smoke = readFileSync(new URL("../../scripts/workbench-smoke.mjs", import.meta.url), "utf8");
 
-test("shipped font configuration has no Google-hosted dependency", () => {
-  assert.doesNotMatch(`${layout}\n${styles}`, /next\/font\/google|fonts\.googleapis\.com|fonts\.gstatic\.com/);
+function shippedFiles(root: URL): URL[] {
+  try {
+    return readdirSync(root, { withFileTypes: true }).flatMap((entry) => {
+      if (entry.name === ".next" || entry.name === "node_modules") return [];
+      const file = new URL(`${entry.name}${entry.isDirectory() ? "/" : ""}`, root);
+      if (entry.isDirectory()) return shippedFiles(file);
+      return /\.(?:test|spec)\.[^.]+$/.test(entry.name) ? [] : [file];
+    });
+  } catch (error) {
+    if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") return [];
+    throw error;
+  }
+}
+
+test("all shipped frontend files have no Google-hosted font dependency", () => {
+  const frontendRoot = new URL("../../", import.meta.url);
+  const files = ["app/", "src/", "public/"].flatMap((directory) => shippedFiles(new URL(directory, frontendRoot)));
+  files.push(new URL("next.config.js", frontendRoot));
+  const forbidden = /next\/font\/google|fonts\.googleapis\.com|fonts\.gstatic\.com/;
+  const violations = files.filter((file) => forbidden.test(readFileSync(file, "utf8"))).map((file) => file.pathname.slice(frontendRoot.pathname.length));
+  assert.deepEqual(violations, []);
+});
+
+test("browser proof watches every context for Google font requests through final cleanup", () => {
+  const contexts = smoke.match(/browser\.newContext\(/g)?.length || 0;
+  const watchedContexts = smoke.match(/watchExternalGoogleFonts\(await browser\.newContext\(/g)?.length || 0;
+  assert.equal(watchedContexts, contexts);
+  assert.equal(smoke.match(/assert\.deepEqual\(externalGoogleFontRequests, \[\]/g)?.length, 1);
+  assert.match(smoke, /await reader\.close\(\);\s*assert\.deepEqual\(externalGoogleFontRequests, \[\], "workbench requested an external Google font"\);\s*} finally/);
 });
 
 test("approved workspace labels preserve the existing routes", () => {
