@@ -16,7 +16,7 @@ import { type Destination, type DraftHistoryTraversal, type Snapshot, type Snaps
 
 type WriteAccess = "yes" | "no" | "unknown";
 type DraftDiscardRequest = { detail: string; confirm: () => void; cancel?: () => void; trigger: HTMLElement | null };
-type RequestDraftDiscard = (detail: string, confirm: () => void, cancel?: () => void) => boolean;
+type RequestDraftDiscard = (detail: string, confirm: () => void, cancel?: () => void, trigger?: HTMLElement | null) => boolean;
 type DraftHistoryState = {
   caosDraftHistoryEntryId?: string;
   caosDraftHistoryPreviousId?: string;
@@ -273,11 +273,11 @@ export default function Workspace({ destination, children }: { destination?: Des
     return `Discard ${drafts} ${action}?`;
   }, []);
 
-  const requestDraftDiscard = useCallback<RequestDraftDiscard>((detail, confirm, cancel) => {
+  const requestDraftDiscard = useCallback<RequestDraftDiscard>((detail, confirm, cancel, trigger) => {
     if (!modelDraftDirtyRef.current && !reportDraftDirtyRef.current) { confirm(); return true; }
     if (discardPromptRef.current) { cancel?.(); return false; }
     const active = document.activeElement;
-    const next = { detail, confirm, cancel, trigger: active instanceof HTMLElement && active !== document.body ? active : focusedBeforeRef.current };
+    const next = { detail, confirm, cancel, trigger: trigger || (active instanceof HTMLElement && active !== document.body ? active : focusedBeforeRef.current) };
     discardPromptRef.current = next;
     setDiscardPrompt(next);
     return false;
@@ -307,13 +307,13 @@ export default function Workspace({ destination, children }: { destination?: Des
     setError("");
   }, [cases, dispatchAuthority]);
 
-  const selectCase = useCallback((nextCaseId: string, availableCases = cases) => {
+  const selectCase = useCallback((nextCaseId: string, availableCases = cases, trigger?: HTMLElement | null) => {
     const currentCaseId = authorityRef.current.caseId || "";
     if (nextCaseId === currentCaseId) return true;
     return requestDraftDiscard(draftDiscardDetail("before changing case"), () => {
       if (modelDraftDirtyRef.current || reportDraftDirtyRef.current) confirmedAuthoritySyncRef.current = true;
       commitCaseSelection(nextCaseId, availableCases);
-    });
+    }, undefined, trigger);
   }, [cases, commitCaseSelection, draftDiscardDetail, requestDraftDiscard]);
 
   const refreshCases = async (signal?: AbortSignal) => {
@@ -916,7 +916,7 @@ export default function Workspace({ destination, children }: { destination?: Des
       caseId={caseId}
       drawer={drawer}
       error={error}
-      onCaseChange={selectCase}
+      onCaseChange={(nextCaseId, trigger) => selectCase(nextCaseId, cases, trigger)}
       onDrawerChange={setDrawer}
       role={role}
       runId={runId}

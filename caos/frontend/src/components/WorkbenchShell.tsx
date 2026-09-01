@@ -37,7 +37,7 @@ type Props = {
   caseId: string;
   drawer: DrawerState | null;
   error: string;
-  onCaseChange: (caseId: string) => void;
+  onCaseChange: (caseId: string, trigger?: HTMLElement | null) => void;
   onDrawerChange: (drawer: DrawerState | null) => void;
   role: string;
   runId: string;
@@ -283,7 +283,7 @@ export default function WorkbenchShell({
           <div className="top-actions">
             {selectedCase && active !== "Sources" ? <Link className="button quiet" href={workflowHref("/sources")}>Sources &amp; evidence</Link> : null}
             <label className="sr-only" htmlFor="case-select">Select case</label>
-            <select id="case-select" aria-label="Select case" value={caseId} onChange={(event) => onCaseChange(event.target.value)}>
+            <select id="case-select" aria-label="Select case" value={caseId} onChange={(event) => onCaseChange(event.target.value, event.currentTarget)}>
               {/* The placeholder names its own state: while the register is still
                   in flight the control says so instead of offering a selection
                   that does not exist yet. */}
