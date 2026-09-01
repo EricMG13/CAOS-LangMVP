@@ -152,9 +152,12 @@ engine, the bundle, or the routes.
   `caos/server/worker.py` (polls the store for QUEUED model builds/exports and
   executes them; the only process with LibreOffice, so XLSX rendering lives
   here and nowhere else). `worker.py --once` runs a single pass.
-- Suite: `python -m pytest caos/tests -q` — 655 passed and 2 optional PostgreSQL
-  tests skipped in the default invocation with the retained corpus present.
-  Both optional tests pass against the local PostgreSQL 17 QA container.
+- Development evidence at `ba97a89` (not candidate qualification):
+  `python -m pytest caos/tests -q` produced `655 passed, 2 skipped, 864
+  warnings`; the retained full-corpus host control produced `34 passed, 124
+  warnings`. The security audit and quality-ledger gates each started with 10
+  failures and were repaired in enterprise-readiness Task 1. These results do
+  not qualify live analysis or an enterprise candidate.
   Spec tests (`caos/tests/spec/`) are the contractual surface —
   they pin invariants and wire shapes; `test_injection_spec.py` pins the
   behavioural half of the prompt-injection defence: adversarial documents in
@@ -201,20 +204,14 @@ engine, the bundle, or the routes.
 
 ## Known gaps (honest ledger)
 
-- The ported frontend calls some routes this server does not yet serve; those
-  surfaces degrade or stay hidden behind the capability gate: Admin Studio
-  (`/admin/audit`, `/admin/bundle`), one-way sensitivities
-  (`/models/sensitivities/one-way`), worksheet reads
-  (`/models/{build_id}/worksheet`), model build export
-  (`POST /models/{build_id}/export` — only `GET …/download` is served),
-  revision rebase-preview, revision export and revision download
-  (`/model-revisions/rebase-preview`, `/model-revisions/{id}/export`,
-  `GET /model-revisions/{id}/download` — the download is served for a model
-  build only, never for a revision), and deep-research plan approval
-  (`/runs/{id}/research-plan/approve`).
-  The Command Center lens, the Report Studio deliverables workspace, model
-  scenarios/previews, model sign-off and run resume are all served and wired —
-  do not re-add them to this list.
+- Admin Studio remains an explicit unavailable capability (`/admin/audit`,
+  `/admin/bundle`), as does deep-research plan approval
+  (`/runs/{id}/research-plan/approve`). Worksheet reads, one-way sensitivity,
+  tornado, revision rebase preview, and build/revision export and download
+  routes are served and must not be re-added to this gap list.
+- The governed builder and canonical deliverable implementation exists, but its
+  deterministic/scripted development proof does not qualify live analysis.
+  Enterprise qualification across all six pathways remains open.
 - Backup encryption is **untested here**: `caos/deploy/backup.sh` and
   `restore_drill.sh` now encrypt with `age`, but neither `age` nor a running
   Compose stack exists in the dev worktree, so only their syntax is checked.
