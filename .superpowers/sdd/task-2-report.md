@@ -180,3 +180,29 @@ Least-confident areas were detector false positives, incomplete removal through 
 The only remaining `web_only`/`hybrid` tokens inside the CP-1C directory belong to a generic validator branch explicitly gated on `module_id == "CP-DR"`, duplicated across methodology packages. They are not CP-1C authority or an acquisition instruction and were deliberately left unchanged to avoid creating a divergent validator clone outside this correction's scope.
 
 Rewrite tournament was skipped under the skill's test-only/trivial-change exception: no non-trivial executable function changed in this correction. The peer-statistics edits are comments, the registry edit is a regenerated literal pin, and the detector change is test-policy logic covered by the adversarial cases above.
+
+## Final generic-location boundary correction
+
+The final re-review found that excluding every hyphen after `public` or `external` was too broad: acquisition instructions using `public-company`, `external-regulatory`, or `external-facing` could evade the generic detector. The matcher now exempts only benign `public-private` comparability wording; `external` has no hyphen exception.
+
+Pinned source-safe positives:
+
+- `Search public-company filings on the web.`
+- `Search filings from public-company sources.`
+- `Download external-regulatory filings.`
+- `Search filings from external-facing databases.`
+
+The existing `public-private` peer-comparability sentence remains a pinned negative.
+
+Final verification:
+
+- Focused detector/direct CP-1C suite: `3 passed in 38.60s`.
+- Exact Task 2 bundle/spec suite: `26 passed in 1.96s`.
+- Integrity check: current.
+- Module consistency: 26 modules, zero drift.
+- Ruff and quality-ledger coverage: clean.
+- `git diff --check`: exit 0.
+
+Confidence review focused on the sole semantic distinction introduced here. Case-insensitive `public(?!-private\b)` rejects the intended benign compound while allowing other hyphenated public source descriptions; unqualified `external` covers both ordinary and hyphenated external-source descriptions. The four positive cases, the existing negative case, full tracked-tree self-scan, and unchanged bundle identities all pass.
+
+Rewrite tournament was explicitly skipped because this commit changes only test-policy regex/data and task records; it changes no product or methodology executable function.

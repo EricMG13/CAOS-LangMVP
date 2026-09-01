@@ -21,7 +21,7 @@ ACQUISITION_VERBS = "|".join((
     "que" + "ry|queries|queried|querying", "loc" + "at(?:e|es|ed|ing)",
 ))
 FILING_LOCATIONS = "|".join(("S" + "EC(?:\\s+(?:web\\s+)?site)?", "ED" + "GAR"))
-GENERIC_LOCATIONS = "|".join(("pub" + r"lic(?!-)", "exter" + r"nal(?!-)"))
+GENERIC_LOCATIONS = "|".join(("pub" + r"lic(?!-private\b)", "exter" + "nal"))
 FILING_OBJECTS = "|".join(("fil" + "ings?", "exhi" + "bits?", "10-[KQ]"))
 SEC_HOST = (
     r"(?<![A-Za-z0-9-])(?:[A-Za-z0-9-]+\.)*s" + r"ec\.gov"
@@ -76,6 +76,10 @@ def test_detector_catches_reviewer_variants():
         "Sear" + "ch fil" + "ings from exter" + "nal sources.",
         "Fil" + "ings from exter" + "nal sources should be down" + "loaded.",
         "Brow" + "sing S" + "EC exhi" + "bits is required.",
+        "Sear" + "ch pub" + "lic-company fil" + "ings on the web.",
+        "Sear" + "ch fil" + "ings from pub" + "lic-company sources.",
+        "Down" + "load exter" + "nal-regulatory fil" + "ings.",
+        "Sear" + "ch fil" + "ings from exter" + "nal-facing databases.",
     )
     assert all(FORBIDDEN.search(variant) for variant in variants)
     assert not FORBIDDEN.search("not" + "sec.gov.example.com")
