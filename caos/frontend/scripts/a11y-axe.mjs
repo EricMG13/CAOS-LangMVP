@@ -140,16 +140,16 @@ try {
     await modelPage.getByRole("tab", { name: "Credit Snapshot" }).waitFor();
     await modelPage.getByRole("button", { name: /Show lineage for account::revenue/ }).click();
     await modelPage.locator("#model-cell-lineage").getByText(/SRC-1/).waitFor();
-    const builderTabs = modelPage.getByRole("tablist", { name: "Model Builder views" });
+    const builderTabs = modelPage.getByRole("tablist", { name: "Model worksheets" });
     await builderTabs.getByRole("tab", { name: "Model", exact: true }).focus();
     await modelPage.keyboard.press("ArrowRight");
-    assert.equal(await modelPage.evaluate(() => document.activeElement?.id), "model-builder-tab-assumptions", `${viewport.name} Model Builder tab ArrowRight did not move focus`);
-    assert.equal(await builderTabs.getByRole("tab", { name: "Assumptions" }).getAttribute("aria-selected"), "true", `${viewport.name} Model Builder tab ArrowRight did not select the panel`);
+    assert.equal(await modelPage.evaluate(() => document.activeElement?.id), "model-tab-KPIS", `${viewport.name} Model Builder tab ArrowRight did not move focus`);
+    assert.equal(await builderTabs.getByRole("tab", { name: "KPIs", exact: true }).getAttribute("aria-selected"), "true", `${viewport.name} Model Builder tab ArrowRight did not select the panel`);
     await modelPage.keyboard.press("End");
-    assert.equal(await modelPage.evaluate(() => document.activeElement?.id), "model-builder-tab-history", `${viewport.name} Model Builder tab End did not focus History`);
+    assert.equal(await modelPage.evaluate(() => document.activeElement?.id), "model-tab-KPIS", `${viewport.name} Model Builder tab End did not focus the final worksheet`);
     await modelPage.keyboard.press("Home");
-    assert.equal(await modelPage.evaluate(() => document.activeElement?.id), "model-builder-tab-model", `${viewport.name} Model Builder tab Home did not focus Model`);
-    for (const tabName of ["Model", "Assumptions", "Sensitivities", "History"]) {
+    assert.equal(await modelPage.evaluate(() => document.activeElement?.id), "model-tab-CREDIT_SNAPSHOT", `${viewport.name} Model Builder tab Home did not focus the first worksheet`);
+    for (const tabName of ["Credit Snapshot", "Model", "KPIs"]) {
       await builderTabs.getByRole("tab", { name: tabName, exact: true }).click();
       const modelResult = await new AxeBuilder({ page: modelPage }).analyze();
       for (const violation of modelResult.violations) violations.push({ viewport: `ready-model-${viewport.name}-${tabName.toLowerCase()}`, route: "/model-builder/", id: violation.id, impact: violation.impact, nodes: violation.nodes.map((node) => ({ target: node.target, html: node.html, summary: node.failureSummary })) });
@@ -236,8 +236,10 @@ try {
     await pathwaySelect.focus();
     await reportPage.keyboard.press("Tab");
     assert.equal(await reportPage.evaluate(() => document.activeElement?.closest(".report-section-nav") !== null), true, `${viewport.name} Report Studio Tab did not move into the section navigator`);
-    await reportPage.locator(".evidence-source-list summary").filter({ hasText: "earnings.txt" }).click();
-    await reportPage.locator(".evidence-source-list").getByText("Liquidity was $210 million at quarter end.", { exact: true }).waitFor();
+    const evidenceInspector = reportPage.locator("details.evidence-inspector");
+    await evidenceInspector.locator(":scope > summary").click();
+    await evidenceInspector.locator(".evidence-source-list > details > summary").filter({ hasText: "earnings.txt" }).click();
+    await evidenceInspector.getByText("Liquidity was $210 million at quarter end.", { exact: true }).waitFor();
     const reportResult = await new AxeBuilder({ page: reportPage }).analyze();
     for (const violation of reportResult.violations) violations.push({ viewport: `ready-report-${viewport.name}`, route: "/report-studio/", id: violation.id, impact: violation.impact, nodes: violation.nodes.map((node) => ({ target: node.target, html: node.html, summary: node.failureSummary })) });
   }

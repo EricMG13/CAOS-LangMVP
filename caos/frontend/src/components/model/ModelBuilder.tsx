@@ -750,10 +750,10 @@ export default function ModelBuilder({
         {!canWrite ? <p className="callout">Reader mode: the model and forecast assumptions remain readable. Changes, recalculation, tornado refresh, and saving are unavailable.</p> : null}
       </aside>
 
-      <main className={styles.model} aria-labelledby="application-model-heading">
+      <section className={styles.model} aria-labelledby="application-model-heading">
         <div className={styles.sectionHeader}><h3 id="application-model-heading">{displayWorksheet?.identity.issuer_name || "Application model"}</h3>{pending === "preview" ? <span className="status warning">RECALCULATING</span> : previewCurrent ? <span className="status success">CURRENT</span> : null}</div>
         {displayWorksheet ? <WorksheetSurface key={worksheetKey} payload={displayWorksheet} /> : unavailable.worksheet ? <Unavailable title="Application model worksheet" /> : <LoadState loading error="" />}
-      </main>
+      </section>
 
       <aside className={styles.tornado} aria-labelledby="tornado-heading">
         <div className={styles.sectionHeader}><h3 id="tornado-heading">Tornado</h3>{tornadoLoading ? <span className="status warning">CALCULATING</span> : null}</div>
