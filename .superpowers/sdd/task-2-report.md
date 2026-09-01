@@ -7,7 +7,7 @@
 - Removed the redundant shell `Reading:` element and the unused `DestinationMeta.reading` field.
 - Rendered the command shortcut as `<kbd aria-hidden="true">⌘K</kbd>` and shared the command-palette key styling with a non-colliding gap.
 - Preserved report outline numbering, exact raw identifiers, conditional tool navigation, drawer/palette focus behavior, and Model Builder export-polling WIP of uncertain origin that appeared after the task's clean starting check.
-- Made no additional DAG edit: the live DAG already uses full semantic status borders from Task 1, and source inspection found no DAG status side stripe remaining.
+- The initial implementation inherited Task 1's full-border DAG status hues; the review correction below makes the container border neutral and moves state semantics to the existing shape-coded visible status treatment.
 
 ## Files committed
 
@@ -30,7 +30,7 @@
 - `npm run test:unit` — 84/84 passed; existing `MODULE_TYPELESS_PACKAGE_JSON` warnings only.
 - `npm run build` — passed with Next.js 16.3.3 static production output.
 - `git diff --check` and staged-diff check — passed.
-- Source checks — no production `.eyebrow`, `.reading-label`, `Reading:`, or `meta.reading` use; report `01`, `02`, … numbering remains; conditional `activeWorkflow.tools?.length` rendering remains; live DAG uses full status borders and no DAG `border-left` rule.
+- Source checks — no production `.eyebrow`, `.reading-label`, `Reading:`, or `meta.reading` use; report `01`, `02`, … numbering remains; conditional `activeWorkflow.tools?.length` rendering remains; live DAG uses a neutral full border plus shape-coded visible status and no DAG `border-left` rule.
 - Focused Playwright probe — passed real `<kbd>` rendering and spacing, Meta+K open, search, ArrowDown, ArrowUp, Escape, focus restoration, and Enter navigation to Model Builder. The probe then timed out on an overly strict case-id assertion because the live shell normalized to a newly created case, so it did not complete the requested 1440×1000 and 720×900 screenshots.
 - Full `npm run test:workbench` — manually stopped after a silent, bounded wait. Investigation showed the process defaulted to port 8000 while that local process served backend routes only (`/cases/` returned `{"detail":"Not Found"}`). The final combined-app verification task should rerun this suite against a correctly assembled server.
 - `rewrite-tournament` — skipped under its trivial-edit exemption: Task 2 changes are declarative markup/CSS/data-field deletions and do not alter an algorithmic function or branch structure.
@@ -39,6 +39,21 @@
 ## Commit
 
 - Task 2 implementation: `1d7e80068f1a0954ad370fac18d6896ad7a09989` (`feat(frontend): restore terminal label hierarchy`)
+- Task 2 review correction: `02cf9bcf37a6c94493d315449b853878a1f11f9c` (`fix(frontend): complete label and DAG semantics`)
+
+## Review correction
+
+- Palette group headers now use `nav-label` in markup; `.palette-group-label` retains only sticky layout/surface rules.
+- QA drawer definition terms and the Report Studio model-authority caption now use `meta-label`; their bespoke uppercase/tracked selectors were removed.
+- DAG node containers now retain a neutral border. Exact raw node status text remains visible and uses the existing shape-coded `status` roles: success disc, failure square, and warning triangle for non-terminal states.
+- TDD red: `node --test src/lib/workbench.test.ts` — expected 2 failures and 10 passes before the correction.
+- Focused green: the same command — 12/12 passed.
+- `npm run lint -- --max-warnings=0` — passed.
+- `./node_modules/.bin/tsc --noEmit -p .` — passed.
+- `npm run test:unit` — 88/88 passed; existing `MODULE_TYPELESS_PACKAGE_JSON` warnings only.
+- `git diff --check` and correction staged-diff checks — passed.
+- `rewrite-tournament` — skipped under the trivial/declarative-edit exemption.
+- `confidence-review` — completed against taxonomy inheritance, caption markup coverage, conditional palette groups, all served node states, neutral DAG borders, visible raw status text, and external WIP isolation. No confirmed correction defect remained.
 
 ## Remaining risks
 
