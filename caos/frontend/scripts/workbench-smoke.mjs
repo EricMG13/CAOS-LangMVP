@@ -1009,7 +1009,7 @@ try {
   await broadcast.press("Enter");
   assert.equal(await secondAssumption.inputValue(), "0.04", "all-year broadcast did not update every registry year");
   assert.equal(await page.getByLabel("Minimum operating cash, all forecast years, BASE").isDisabled(), true, "UNAVAILABLE assumptions remained editable");
-  await page.getByText(/MINIMUM_CASH_DEFINITION_UNAVAILABLE/).first().waitFor();
+  await page.getByText("Minimum cash definition unavailable", { exact: true }).first().waitFor();
   await page.getByText(/Forecast recalculated\. Historical accounts remain locked/).waitFor();
   const signOffNote = page.getByLabel("Sign-Off Note *");
   await signOffNote.fill("FY2025 growth updated for the accepted quarterly earnings release.");
