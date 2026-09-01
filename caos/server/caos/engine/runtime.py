@@ -13,6 +13,7 @@ import asyncio
 import concurrent.futures
 import contextlib
 import json
+import logging
 import sqlite3
 import threading
 import time
@@ -48,6 +49,9 @@ from .provider import AgentError, ProviderRequest
 
 
 MVP_PATHWAYS = {"FULL_CREDIT", "EARNINGS_UPDATE", "COVENANT_REFINANCING", "RELATIVE_VALUE"}
+# Shutdown must not wait forever for a task that ignores cancellation or a
+# foreign loop that cannot finish its waiter. Failed work stays registered so a
+# later close can retry once its owner can make progress.
 CLOSE_DRAIN_TIMEOUT_SECONDS = 5.0
 
 # /api/health is unauthenticated (oauth2-proxy `skip_auth_routes`) AND exempt
@@ -132,9 +136,24 @@ class Engine:
     def _schedule_continuation(self, run_id: str) -> None:
         if not self._auto_continue or self.runs.get_run(run_id)["status"] != "running":
             return
-        task = asyncio.get_running_loop().create_task(self.wait(run_id))
-        self._continuations.add(task)
-        task.add_done_callback(self._continuations.discard)
+        with self._lifecycle_lock:
+            if self._closing or self._closed:
+                return
+            task = asyncio.get_running_loop().create_task(self.wait(run_id))
+            self._continuations.add(task)
+
+        def finish(done: asyncio.Task[Any]) -> None:
+            with self._lifecycle_lock:
+                self._continuations.discard(done)
+            try:
+                error = done.exception()
+            except asyncio.CancelledError:
+                return
+            if error is not None:
+                log_event("engine.continuation_failed", level=logging.ERROR, run_id=run_id,
+                          detail=type(error).__name__)
+
+        task.add_done_callback(finish)
 
     def register_model_service(self, service: Any) -> None:
         """The Model Builder shares this engine's admission budget and receives
@@ -226,7 +245,10 @@ class Engine:
             continuations = tuple(task for task in self._continuations if task is not current)
             if continuations:
                 await self._drain_tasks(continuations, cancel=True)
-            self._continuations.clear()
+            with self._lifecycle_lock:
+                for task in continuations:
+                    if task.done():
+                        self._continuations.discard(task)
 
             with self._lifecycle_lock:
                 savers = tuple(self._savers.items())
@@ -321,15 +343,11 @@ class Engine:
                         pass
                 raise RuntimeError("cannot close a task without a runnable owner loop")
             foreign.append((owner, bridge, waiter_ref))
-        if local:
-            await asyncio.gather(*local, return_exceptions=True)
-        if foreign:
+        bridges = [asyncio.wrap_future(bridge) for _owner, bridge, _waiter in foreign]
+        if local or bridges:
             try:
                 async with asyncio.timeout(CLOSE_DRAIN_TIMEOUT_SECONDS):
-                    results = await asyncio.gather(
-                        *(asyncio.wrap_future(bridge) for _owner, bridge, _waiter in foreign),
-                        return_exceptions=True,
-                    )
+                    await asyncio.wait([*local, *bridges])
             except TimeoutError as exc:
                 for owner, bridge, waiter_ref in foreign:
                     bridge.cancel()
@@ -338,10 +356,15 @@ class Engine:
                             owner.call_soon_threadsafe(waiter_ref.result().cancel)
                     except BaseException:
                         pass
-                raise RuntimeError("engine close timed out draining foreign-loop tasks") from exc
-            first_error = next((result for result in results if isinstance(result, BaseException)), None)
-            if first_error is not None:
-                raise first_error
+                raise RuntimeError("engine close timed out draining tasks") from exc
+        for task in local:
+            try:
+                task.result()
+            except BaseException:
+                pass
+        first_error = next((bridge.exception() for bridge in bridges if bridge.exception() is not None), None)
+        if first_error is not None:
+            raise first_error
 
     @staticmethod
     async def _wait_for_task(task: asyncio.Task[Any]) -> None:

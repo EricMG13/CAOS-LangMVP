@@ -15,7 +15,7 @@ if str(SERVER) not in sys.path:
 from caos.engine.anthropic import AnthropicProvider  # noqa: E402
 
 
-async def test_anthropic_provider_closes_its_async_sdk_client_once_and_retries_failure():
+async def test_anthropic_provider_closes_both_sdk_clients_once_and_retries_failure():
     class AsyncClient:
         attempts = 0
 
@@ -24,9 +24,16 @@ async def test_anthropic_provider_closes_its_async_sdk_client_once_and_retries_f
             if self.attempts == 1:
                 raise RuntimeError("transient close failure")
 
-    client = AsyncClient()
+    class SyncClient:
+        attempts = 0
+
+        def close(self) -> None:
+            self.attempts += 1
+
+    async_client = AsyncClient()
+    sync_client = SyncClient()
     provider = AnthropicProvider.__new__(AnthropicProvider)
-    provider.chat = SimpleNamespace(_async_client=client)
+    provider.chat = SimpleNamespace(_async_client=async_client, _client=sync_client)
     provider._closed = False
 
     with pytest.raises(RuntimeError, match="transient close failure"):
@@ -34,4 +41,5 @@ async def test_anthropic_provider_closes_its_async_sdk_client_once_and_retries_f
     await provider.aclose()
     await provider.aclose()
 
-    assert client.attempts == 2
+    assert async_client.attempts == 2
+    assert sync_client.attempts == 2

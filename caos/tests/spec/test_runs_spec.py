@@ -473,7 +473,7 @@ async def test_engine_close_timeout_survives_stopped_owner_waiter_cleanup(
         monkeypatch.setattr(engine, "_wait_for_task", wait_for_task)
         monkeypatch.setattr(runtime.asyncio, "timeout", lambda _seconds: ForcedTimeout())
         monkeypatch.setattr(owner_loop, "call_soon_threadsafe", fail_waiter_cancel)
-        with pytest.raises(RuntimeError, match="timed out draining foreign-loop tasks"):
+        with pytest.raises(RuntimeError, match="timed out draining tasks"):
             await engine.aclose()
 
         assert engine._closed is False

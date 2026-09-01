@@ -39,7 +39,18 @@ class AnthropicProvider:
     async def aclose(self) -> None:
         if self._closed:
             return
-        await self.chat._async_client.close()
+        first_error = None
+        try:
+            await self.chat._async_client.close()
+        except BaseException as exc:
+            first_error = exc
+        try:
+            self.chat._client.close()
+        except BaseException as exc:
+            if first_error is None:
+                first_error = exc
+        if first_error is not None:
+            raise first_error
         self._closed = True
 
     def _payload(self, request: ProviderRequest) -> dict[str, Any]:
