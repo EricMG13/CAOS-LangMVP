@@ -202,9 +202,95 @@ Verified fine: one-boundary history event ordering, same-route protection, same-
 
 Still open: combined-app execution of the expanded smoke journey, owned by Task 6.
 
+## Final history-race correction
+
+The last confirmed race is resolved with one explicit `DraftHistoryTraversal` owner `{ token, kind }` for `confirmed`, `retire`, and `restore` moves. The former confirmed/suppress/retiring/rearm booleans and shared unbound timer are gone.
+
+- An autosave clean callback during confirmed Back sees the active token and cannot start a second retirement Back.
+- `popstate`, confirmed `beforeunload`, and the no-event fence finish only the currently matching token; duplicate and stale completions are inert.
+- Only an active `confirmed` token admits `beforeunload`. A true history-boundary timeout first clears that token, so a later unrelated unload remains protected while the editor is dirty.
+- Confirmed completion waits one animation frame for child cleanup/unmount, then re-arms only if the same traversal is still current and a child is still dirty.
+- Retirement and restoration retain their previous single-move behavior, but rearm now follows current dirty state instead of a stale remembered request.
+
+### Executable interleaving evidence
+
+TDD produced five focused executable checks in `workbench.test.ts`:
+
+1. confirmed token 1 accepts the first traversal and rejects autosave-triggered retire token 2;
+2. one pop consumes token 1, a duplicate completion is inert, and token 1 cannot clear newer restore token 2;
+3. a no-event completion clears confirmed unload permission before a new traversal can start;
+4. confirmed/retire completion re-arms only for current dirty state, while restore never re-arms;
+5. Workspace integration uses the single traversal ref and no legacy competing flags.
+
+RED: the first three checks failed because the helpers were absent; the Workspace binding check failed against the legacy refs; the current-dirty rearm check then reproduced a stale rearm for a clean owner.
+
+GREEN: the focused workbench run passed 32/32 and the Report Studio ownership run passed 17/17. The final full suite passed 116/116.
+
+### Final correction rewrite tournament
+
+- **Winner**: Snippet B for both capped targets: `caos/frontend/src/lib/workbench.ts` traversal helpers and `caos/frontend/src/components/Workspace.tsx` token ownership.
+- **Justification**:
+  - The helper winner removes dead `rearmRequested` state; current child dirty refs are the authoritative settlement input.
+  - Workspace makes `onNoEvent` optional, eliminating restore's no-op callback while preserving token/timer side effects.
+  - The active-traversal early return leaves less mutable surface without changing any caller or history outcome.
+- **Final code**:
+
+```ts
+export type DraftHistoryTraversal = {
+  token: number;
+  kind: "confirmed" | "retire" | "restore";
+};
+
+export function beginDraftHistoryTraversal(active: DraftHistoryTraversal | null, token: number, kind: DraftHistoryTraversal["kind"]) {
+  if (active) return { active, started: false };
+  return { active: { token, kind }, started: true };
+}
+
+export function finishDraftHistoryTraversal(active: DraftHistoryTraversal | null, token: number) {
+  if (!active || active.token !== token) return { active, completed: null };
+  return { active: null, completed: active };
+}
+```
+
+- **Verification**: `node --test src/lib/workbench.test.ts --test-name-pattern='confirmed history owns|history pop settles|confirmed boundary timeout|history completion rearms|Workspace binds every history move'` — 32/32 passed. Impact-set re-check via local TypeScript, 116/116 full units, lint, build, and fresh diff passed.
+
+### Final correction confidence review
+
+Least confident about (ranked):
+
+1. Autosave could still trigger clean retirement between confirmed Back and `popstate`.
+   investigated → `retireOwnedHistoryGuard` returns while `historyTraversalRef` owns token 1; the executable begin test proves retire token 2 is rejected and the pop test proves token 1 settles once.
+   verdict     → fine after token integration.
+   patch       → replaced competing refs with the single traversal token.
+2. A stale timer could clear a newer traversal or preserve unrelated unload permission.
+   investigated → the fence closes over its token and `finishDraftHistoryTraversal` refuses a mismatch; boundary completion returns active state to null, and only `isConfirmedDraftHistoryTraversal(active)` admits unload.
+   verdict     → fine under executable stale-token/boundary checks.
+   patch       → token-bound fence and confirmed type predicate.
+3. Confirmed completion might rearm before child cleanup or after another traversal begins.
+   investigated → the animation-frame callback checks both no active traversal and the unchanged completed token before reading current child dirty refs.
+   verdict     → fine by direct path trace and current-dirty tests.
+   patch       → token-checked deferred rearm.
+4. A dirty-then-clean owner during retirement could leave a stale sentinel.
+   investigated → the initial `rearmRequested` field remembered transient dirtiness even after autosave returned clean.
+   verdict     → CONFIRMED adjacent bug.
+   patch       → removed the field; `draftHistoryNeedsRearm` now uses current dirty state only. Focused red/green pins it.
+5. The no-event fence still has a bounded window while the requested confirmed move is active.
+   investigated → History API exposes no completion event for a boundary no-op; the fence remains necessary, but its permission is now scoped to the active confirmed token and deterministically removed at timeout.
+   verdict     → by-design browser boundary.
+   patch       → minimal one-second token-bound fence; no additional timer/state machine.
+
+Fixed: double Back/stuck-retirement race, stale timer settlement, confirmed unload leakage after timeout, and stale clean-owner rearm.
+
+Verified fine: one-pop settlement, duplicate/stale completion, autosave-clean interleaving, boundary cleanup, current-dirty rearm, Report Studio sentinel ownership, lint, TypeScript, and production build.
+
+By-design: a bounded no-event fence is required because History API does not signal a boundary no-op; it carries only the active confirmed token.
+
+Still open: assembled-app execution of the full smoke journey remains Task 6.
+
 ## Commit
 
 - Subject: `feat(frontend): reduce workspace cognitive load`
+- Correction subjects: `fix(frontend): preserve dirty draft navigation`; `fix(frontend): serialize draft history traversal`
 - Trailer: `Co-Authored-By: Codex Opus 4.8 <noreply@anthropic.com>`
 
 ## Remaining risks

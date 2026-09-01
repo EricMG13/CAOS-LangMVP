@@ -155,6 +155,29 @@ export function resolveDraftDiscard(request: { confirm: () => void; cancel?: () 
   else request.cancel?.();
 }
 
+export type DraftHistoryTraversal = {
+  token: number;
+  kind: "confirmed" | "retire" | "restore";
+};
+
+export function beginDraftHistoryTraversal(active: DraftHistoryTraversal | null, token: number, kind: DraftHistoryTraversal["kind"]) {
+  if (active) return { active, started: false };
+  return { active: { token, kind }, started: true };
+}
+
+export function finishDraftHistoryTraversal(active: DraftHistoryTraversal | null, token: number) {
+  if (!active || active.token !== token) return { active, completed: null };
+  return { active: null, completed: active };
+}
+
+export function draftHistoryNeedsRearm(completed: DraftHistoryTraversal, dirty: boolean) {
+  return completed.kind !== "restore" && dirty;
+}
+
+export function isConfirmedDraftHistoryTraversal(active: DraftHistoryTraversal | null): active is DraftHistoryTraversal & { kind: "confirmed" } {
+  return active?.kind === "confirmed";
+}
+
 type ConclusionArtifact = {
   module_id: string;
   markdown?: string | null;

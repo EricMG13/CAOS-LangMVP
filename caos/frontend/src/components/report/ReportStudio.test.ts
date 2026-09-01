@@ -177,9 +177,9 @@ test("paper columns collapse at the paper boundary before text is crushed", () =
 });
 
 test("Workspace owns and retires at most one shared draft-history sentinel", () => {
-  assert.match(workspace, /historyGuardRetiringRef/);
+  assert.match(workspace, /historyTraversalRef/);
   assert.match(workspace, /retireOwnedHistoryGuard/);
-  assert.match(workspace, /if \(!modelHistoryGuardRef\.current && !historyGuardRetiringRef\.current\)/);
+  assert.match(workspace, /if \(!modelHistoryGuardRef\.current\)/);
   assert.equal(workspace.match(/if \(!modelDraftDirtyRef\.current && !reportDraftDirtyRef\.current\) releaseCleanDraftGuard\(\)/g)?.length, 2);
   assert.match(workspace, /from !== null && window\.location\.href !== from/);
 });
