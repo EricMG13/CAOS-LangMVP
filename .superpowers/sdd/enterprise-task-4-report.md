@@ -8,6 +8,8 @@ Implementation commit: `0cfcc64`.
 
 Deterministic scheduling correction: `c506808` (replaces three zero-duration scheduling yields with event handshakes; no product behavior changed).
 
+Lifecycle follow-up correction: `6550449`. The process entrypoints now close their owned resources on both graceful and exceptional exits, and `Engine.aclose()` drains tasks from their owner loop when shutdown is requested from another loop. This correction has completed its confidence review; independent review remains pending.
+
 The evidence commit contains this report, the Task 4 brief, and the progress ledger; its SHA is reported in the handoff because a commit cannot record its own immutable SHA.
 
 ## Warning-visible baseline
@@ -120,6 +122,52 @@ Verified fine: sequential double-close, concurrent close, pending continuation c
 By design: a single thread is driven by one execution loop; a foreign loop may own a fully initialized saver at the TestClient boundary, but concurrently driving the same thread or an in-flight initializer from two loops is unsupported.
 
 Still open: the third-party Starlette deprecation and the two unavailable real-PostgreSQL executions. Neither is a first-party resource leak.
+
+## Lifecycle follow-up verification
+
+The original lifecycle work closed resources owned by test fixtures and application routes, but `run.py` and `worker.py` still left the resources they construct open after return or an exception. `run.build()` also needed rollback if provider, engine, app, or static mounting construction failed before `main()` received the owners. The correction keeps `Engine`'s borrowed-store/provider boundary unchanged:
+
+- `run.main()` closes owned resources in dependency order: Engine, provider when it exposes `aclose()`, then DomainStore. `serve(app, engine)` remains an injected/borrowed seam and does not close either argument.
+- `worker.main()` closes its owned Engine and then DomainStore, including failure while constructing the engine or model service.
+- `run.build()` rolls back its partially constructed provider/engine and store while preserving the original construction exception. A provider-close failure still cannot prevent store closure.
+- `Engine.aclose()` waits for saver-initialization tasks and cancels/drains continuation tasks on the loop that owns each live task. It refuses a non-runnable owner loop rather than deadlocking; existing concurrent-close, close-error, and retry semantics remain covered by the original lifecycle regressions.
+
+Focused strict command after the correction:
+
+`/private/tmp/caos-enterprise-baseline-20260901/bin/python -m pytest caos/tests/spec/test_runs_spec.py caos/tests/test_single_instance.py caos/tests/test_worker.py -q -W error::ResourceWarning`
+
+Result: `53 passed, 2 skipped, 1 warning in 4.98s`. The sole warning is the pre-existing third-party Starlette TestClient deprecation; there were zero first-party ResourceWarnings.
+
+The focused additions use separate retained, genuinely running owner-loop regressions for a continuation and an in-flight saver initialization; both fail on the prior local-loop `asyncio.gather()` path and pass with owner-loop drain. Entrypoint regressions cover normal return, service exceptions, construction rollback, and provider-close failure.
+
+Post-review checks:
+
+- `/private/tmp/caos-enterprise-baseline-20260901/bin/python -m ruff check caos/server/run.py caos/server/worker.py caos/server/caos/engine/runtime.py caos/tests/spec/test_runs_spec.py caos/tests/test_single_instance.py` — `All checks passed!`.
+- `git diff --check` — passed before the implementation commit.
+- No warning filter, suppression, dependency, sleep, or garbage-collection proof was added. `rewrite-tournament` was not run because it was explicitly prohibited for this session.
+
+## Confidence review — lifecycle follow-up
+
+Least confident about, ranked:
+
+1. Foreign-loop close could hang if the owner loop was not actually running, or if both loops shared one thread.
+   - Investigated with retained owner-loop tests running on a separate live thread, plus the `asyncio` loop state contract.
+   - Verdict: fixed. Foreign work is only submitted to a running, distinct owner loop; non-runnable ownership fails deterministically and leaves the task registered for retry.
+2. Saver initialization and continuation cancellation could appear to share a root but exercise different shutdown order.
+   - Investigated with separate regressions: a paused real `AsyncSqliteSaver.setup()` and a live continuation task.
+   - Verdict: fixed. Initialization drains without cancellation and rejects after close begins; continuation cancellation is dispatched and drained on its owner loop.
+3. Construction or shutdown exceptions could skip a lower-level resource.
+   - Investigated with entrypoint doubles for normal return, serving/worker failure, engine construction failure, and provider-close failure.
+   - Verdict: fixed. Nested `finally` paths reach the store in every case; build rollback preserves the primary construction exception.
+4. The correction could regress existing close serialization and retry behavior.
+   - Investigated by rerunning the complete run lifecycle specification, including concurrent close and fail-once saver cases.
+   - Verdict: verified fine (`53 passed, 2 skipped` in the focused strict suite).
+
+Fixed: entrypoint ownership leaks, construction rollback leaks, and foreign-loop task draining.
+
+Verified fine: injected `serve` ownership boundary, borrowed store/provider behavior in `Engine`, normal and exceptional resource order, cross-loop continuation cancellation, in-flight saver initialization rejection, close retry, and concurrent close serialization.
+
+Still open: real PostgreSQL integration remains unavailable without `CAOS_TEST_POSTGRES_URL`; the unrelated third-party Starlette deprecation remains. Independent approval is not claimed here.
 
 ## Files
 
