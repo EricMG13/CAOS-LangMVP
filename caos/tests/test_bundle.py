@@ -40,6 +40,57 @@ def test_bundle_identity_files_are_current_and_agree():
     )
 
 
+def test_regeneration_rejects_undeclared_tree_entries(tmp_path: Path):
+    script = REPO / "caos/scripts/regenerate_deploy_v_integrity.py"
+    bundle_relative = ROOT.relative_to(REPO)
+    cases = (
+        ("skills-file", bundle_relative / "skills/UNDECLARED.txt", False, "skills must contain only"),
+        ("root-file", bundle_relative / "UNDECLARED.txt", False, "bundle root entries"),
+        ("root-entry-symlink", bundle_relative / "UNDECLARED", True, "bundle root entries"),
+        (
+            "nested-symlink",
+            bundle_relative / "skills/cp-4-legal-covenant-interpreter/UNDECLARED",
+            True,
+            "symlink is not valid",
+        ),
+    )
+    for name, relative, symlink, expected in cases:
+        repo = tmp_path / name
+        copy = repo / bundle_relative
+        copy.parent.mkdir(parents=True)
+        shutil.copytree(ROOT, copy)
+        command = [sys.executable, script, "--check"]
+        subprocess.run(command, cwd=repo, check=True, capture_output=True, text=True)
+        target = repo / relative
+        if symlink:
+            target.symlink_to(copy / "README.md")
+        else:
+            target.write_text("undeclared", encoding="utf-8")
+        result = subprocess.run(
+            command,
+            cwd=repo,
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode != 0, name
+        assert expected in result.stderr, name
+
+    repo = tmp_path / "bundle-root-symlink"
+    real_bundle = repo / "real-deploy-v"
+    shutil.copytree(ROOT, real_bundle)
+    linked_bundle = repo / bundle_relative
+    linked_bundle.parent.mkdir(parents=True)
+    linked_bundle.symlink_to(real_bundle, target_is_directory=True)
+    result = subprocess.run(
+        [sys.executable, script, "--check"],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode != 0
+    assert "symlink is not valid" in result.stderr
+
+
 def test_tampered_bundle_fails_closed(tmp_path: Path):
     copy = tmp_path / "deploy_v"
     shutil.copytree(ROOT, copy)

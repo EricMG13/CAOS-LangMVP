@@ -17,6 +17,21 @@ BASELINE = "DEPLOY_V_BASELINE.json"
 INTEGRITY = "DEPLOY_V_INTEGRITY_v1.json"
 RETRIEVAL = "CP_DEPLOY_V_RETRIEVAL_INDEX_v1.json"
 PROMPTS = ("DEPLOY_V_COPILOT_MEMORY_PROMPT.md", "DEPLOY_V_COPILOT_MEMORY_PROMPT_URL_BOUND.md")
+ROOT_ENTRIES = {
+    "CANON_SHARED.md",
+    "CP_DEPLOY_V_CHILD_SCHEMA_REGISTRY_v1.json",
+    "CP_DEPLOY_V_EXECUTION_PROFILES_v1.json",
+    "CP_DEPLOY_V_LITE_MODULE_PAYLOAD_BASE_v1.schema.txt",
+    RETRIEVAL,
+    "CP_MODULE_PAYLOAD_BASE.schema.txt",
+    BASELINE,
+    "DEPLOY_V_COPILOT_MEMORY_PROMPT.md",
+    "DEPLOY_V_COPILOT_MEMORY_PROMPT_URL_BOUND.md",
+    INTEGRITY,
+    MANIFEST,
+    "README.md",
+    "skills",
+}
 
 
 def json_bytes(value: dict[str, Any]) -> bytes:
@@ -51,15 +66,30 @@ def load_json(name: str) -> dict[str, Any]:
     return json.loads((BUNDLE / name).read_text(encoding="utf-8"))
 
 
+def validate_bundle_tree() -> None:
+    if BUNDLE.is_symlink():
+        raise ValueError(f"symlink is not valid bundle input: {BUNDLE}")
+    entries = list(BUNDLE.iterdir())
+    if {path.name for path in entries} != ROOT_ENTRIES:
+        raise ValueError("bundle root entries do not match the managed tree")
+    for path in BUNDLE.rglob("*"):
+        if path.is_symlink():
+            raise ValueError(f"symlink is not valid bundle input: {path}")
+    if any(not path.is_file() for path in entries if path.name != "skills"):
+        raise ValueError("bundle root contains a non-file entry")
+    skills_root = BUNDLE / "skills"
+    if not skills_root.is_dir() or any(not path.is_dir() for path in skills_root.iterdir()):
+        raise ValueError("skills must contain only declared skill directories")
+
+
 def generated_files() -> dict[Path, bytes]:
+    validate_bundle_tree()
     manifest = load_json(MANIFEST)
     baseline = load_json(BASELINE)
     integrity = load_json(INTEGRITY)
     retrieval = load_json(RETRIEVAL)
     skills_root = BUNDLE / "skills"
     skill_entries = list(skills_root.iterdir())
-    if any(path.is_symlink() for path in skill_entries):
-        raise ValueError("symlink is not valid bundle input")
 
     manifest_slugs = [skill["folder_slug"] for skill in manifest["skills"]]
     integrity_slugs = [skill["folder_slug"] for skill in integrity["skills"]]

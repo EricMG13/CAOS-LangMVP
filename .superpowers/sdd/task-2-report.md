@@ -95,3 +95,42 @@ Verified fine: canonicalization, check-only behavior, idempotency, symlink rejec
 By design: the offline regeneration command writes six identity files sequentially; `--check` detects an interrupted partial run. Add staged directory replacement only if concurrent release builders/readers are introduced.
 
 Still open: none for Task 2.
+
+## Reviewer P1 corrections
+
+The first review identified two real coverage gaps:
+
+1. The prohibition gate used a text-suffix allowlist and line-by-line matching, so tracked extensionless text, multiline instructions, and several common acquisition phrasings could evade it.
+2. The standalone integrity checker did not reject every undeclared tree shape: a direct file under `skills`, undeclared root entries, nested symlinks, and a symlink at the bundle root required explicit validation.
+
+Corrections:
+
+- Enumerate every tracked path below `caos` with NUL-delimited `git ls-files`; read bytes; skip only NUL-containing or non-UTF-8 files; and scan each complete decoded file.
+- Match real `sec.gov` hosts with hostname boundaries, without rejecting lookalikes such as `notsec.gov.example.com`.
+- Add sentence-bounded, order-independent acquisition detection for SEC/EDGAR filing objects and bounded public/external filing acquisition, including passive download wording.
+- Pin the reviewer's four exact false-negative cases, two tournament challenge cases, and the lookalike-host negative case in a self-scannable detector test.
+- Validate an exact managed bundle-root membership, reject the bundle itself when it is a symlink, reject every symlink below it, and require every direct `skills` entry to be a directory whose slug agrees with manifest and integrity membership.
+- Add deterministic temporary-copy regressions for a direct undeclared skills file, an extra root file, an extra root symlink, a nested symlink, and a symlinked bundle root.
+
+### Follow-up rewrite tournament
+
+**Winner:** challenger, narrowly.
+
+The challenger demonstrated four concrete gaps: a symlinked bundle root passed, newline-containing tracked filenames were not safely enumerated, the first hostname pattern overmatched a lookalike domain, and acquisition wording could evade verb-first rules. Those corrections were adopted. The challenger did not replace canonical digest formulas or generated identity semantics.
+
+### Follow-up acceptance
+
+1. Focused adversarial suite: `3 passed in 39.98s`.
+2. Exact bundle/spec suite: `26 passed in 1.85s`.
+3. Standalone integrity check: `Deploy V integrity is current`.
+4. Module consistency: `26 modules checked, 0 with drift.`
+5. Ruff over server/tests excluding vendored methodology: `All checks passed!`
+6. Quality-ledger coverage: 45 routes, 230 product files, 120 features; all documented.
+7. `git diff --check`: exit 0.
+8. Generated bundle identity files: no byte changes in the P1 correction.
+
+### Follow-up confidence review
+
+Least-confident areas were the regex boundary, ordering/newline behavior, tracked-file enumeration, tree validation order, and accidental identity drift. The focused positive and negative cases verified the detector boundary and order independence; NUL-delimited enumeration and full-text decoding were reviewed directly; temporary repositories exercised every rejected tree shape from pristine passing copies; and both standalone `--check` and an empty generated-identity diff confirmed that canonical identities did not change.
+
+Residual maintenance constraint: `ROOT_ENTRIES` is deliberately closed. Any intentional new bundle-root file must be added to that set and covered by the normal regeneration review.
