@@ -6,13 +6,13 @@ import { FormEvent, ReactNode, useCallback, useEffect, useMemo, useReducer, useR
 import EvidenceChip from "./EvidenceChip";
 import ModelBuilder from "./model/ModelBuilder";
 import ReportStudio from "./report/ReportStudio";
-import { EmptyPanel, LoadState, MutationReceipt, StateBlock, StateNote, Unavailable } from "./states";
+import { EmptyPanel, IdentityValue, LoadState, MutationReceipt, StateBlock, StateNote, Unavailable } from "./states";
 import { api as request, firstErrorMessage, isUnavailableRoute, type ArtifactRecord, type CaseRecord, type LoanFinding, type LoanRow, type LoanUniverseResponse, type ResearchPlan, type RunRecord, type SourceRecord } from "../lib/api";
 import { displayValue, flattenValue, markdownBlocks, normalizeEvidenceRefs, type NormalizedEvidenceRef } from "../lib/artifactReader";
 import { initialAuthorityState, matchesAuthority, requestContext, workspaceAuthorityReducer, type AuthorityEvent } from "../lib/workspaceAuthority";
 
 import WorkbenchShell, { type DrawerState } from "./WorkbenchShell";
-import { type Destination, type Snapshot, type SnapshotView, acceptanceSlotSummary, acceptedAuthorityMatch, destinationFromSlug, destinationMeta, formatBlockLocator, formatDate, humanizeCode, moduleLabel, nodeStatusTone, routeDestinations, withQuery } from "../lib/workbench";
+import { type Destination, type Snapshot, type SnapshotView, acceptanceSlotSummary, acceptedAuthorityMatch, destinationFromSlug, destinationMeta, formatBlockLocator, formatDate, humanizeCode, moduleLabel, nodeStatusTone, routeDestinations, selectConclusionArtifact, withQuery } from "../lib/workbench";
 
 type WriteAccess = "yes" | "no" | "unknown";
 
@@ -637,7 +637,7 @@ export default function Workspace({ destination, children }: { destination?: Des
       const resumed = await request<RunRecord>(`/api/runs/${runId}/resume`, { method: "POST" });
       if (!matchesAuthority(authorityRef.current, context)) return;
       setRun(resumed);
-      setNotice(`Run resumed. Status ${resumed.status}.`);
+      setNotice(`Run resumed. Status ${humanizeCode(resumed.status)}.`);
       dispatchAuthority({ type: "requestSucceeded", context, scope: "resume-run" });
       await refreshRun(runId);
     } catch (caught) {
@@ -769,7 +769,7 @@ function CasesView({ writeAccess, cases, casesLoading, selectedCase, caseId, cre
         only when the case verifiably has zero sources (the server's own rule); stay
         neutral otherwise. The case wire now serves pathway_fit, so the fallback below
         is only for a deployment whose build predates it. */}
-    <section className="panel cases-fit"><div className="panel-header"><h2>Pathway fit</h2></div><div className="panel-body">{selectedCase ? selectedCase.pathway_fit ? <><span className={`status ${selectedCase.pathway_fit.fit === "READY" ? "success" : "warning"}`}>{selectedCase.pathway_fit.fit}</span><p>{selectedCase.pathway_fit.message}</p></> : selectedCase.source_count === 0 ? <><span className="status warning">NEEDS_SOURCE</span><p>Upload a source to see fit.</p></> : <p className="muted">Fit unavailable. Pathway fit is not served by this deployment.</p> : <div className="empty">Select a case to inspect pathway fit.</div>}</div></section>
+    <section className="panel cases-fit"><div className="panel-header"><h2>Pathway fit</h2></div><div className="panel-body">{selectedCase ? selectedCase.pathway_fit ? <><span className={`status ${selectedCase.pathway_fit.fit === "READY" ? "success" : "warning"}`}>{humanizeCode(selectedCase.pathway_fit.fit)}</span><p>{selectedCase.pathway_fit.message}</p></> : selectedCase.source_count === 0 ? <><span className="status warning">NEEDS SOURCE</span><p>Upload a source to see fit.</p></> : <p className="muted">Fit unavailable. Pathway fit is not served by this deployment.</p> : <div className="empty">Select a case to inspect pathway fit.</div>}</div></section>
   </div>;
 }
 
@@ -837,7 +837,7 @@ function SourcesView({ writeAccess, selectedCase, artifactId, sourceId, upload, 
     <section className="source-workspace span-12" aria-label="Source workspace">
       <aside className="source-register"><div className="source-region-head"><h2>Source register</h2><span className="mono muted">{loading ? "Loading…" : `${filteredSources.length} / ${sources.length}`}</span></div>{artifactError && !artifactId ? <StateNote tone="critical" live="alert">{artifactError}</StateNote> : null}{filteredSources.map((source) => <button id={`source-${source.id}`} className={`source-register-row ${selectedSource?.id === source.id ? "is-active" : ""}`} type="button" aria-pressed={selectedSource?.id === source.id} onClick={() => { setSelectedSourceId(source.id); setSelectedBlockId(""); }} key={source.id}><strong>{source.filename}</strong><span className="mono">{source.id} · {source.blocks.length} blocks</span><span className={`status ${source.blocks.length ? "success" : "warning"}`}>{source.blocks.length ? "Extracted" : "No blocks"}</span></button>)}{!filteredSources.length ? <LoadState loading={loading} error={loadError} empty={sources.length ? "No documents match this search." : "No source objects in this credit."} /> : null}</aside>
       <section className="source-reader" aria-labelledby="source-reader-title">{selectedSource ? <><div className="meta-label">{selectedSource.id} · immutable source object</div><h2 id="source-reader-title">{selectedSource.filename}</h2><div className="source-document-blocks">{selectedSource.blocks.slice(0, 40).map((block) => <article className={selectedBlock?.block_id === block.block_id ? "source-document-block is-selected" : "source-document-block"} id={`block-${selectedSource.id}-${block.block_id}`} key={block.block_id}><button type="button" onClick={() => setSelectedBlockId(block.block_id)} aria-pressed={selectedBlock?.block_id === block.block_id}><span className="meta-label">{block.block_id} · {formatBlockLocator(block.locator)}</span><span>{block.text || "No extracted text."}</span></button></article>)}</div>{selectedSource.blocks.length > 40 ? <p className="muted">Showing the first 40 of {selectedSource.blocks.length} extracted blocks.</p> : null}</> : <LoadState loading={loading} empty={loadError ? "Source reader unavailable while the source register could not be loaded." : "Select a source document."} />}</section>
-      <aside className="source-support"><div className="meta-label">Evidence support</div><h2>Selected source authority</h2>{selectedSource ? <><dl className="state-facts"><dt>Source</dt><dd className="mono">{selectedSource.id}</dd><dt>SHA-256</dt><dd className="mono">{selectedSource.sha256}</dd><dt>Blocks</dt><dd className="num">{selectedSource.blocks.length}</dd>{selectedBlock ? <><dt>Selected block</dt><dd className="mono">{selectedBlock.block_id}</dd><dt>Locator</dt><dd className="mono">{formatBlockLocator(selectedBlock.locator)}</dd></> : null}</dl><button className="button small" type="button" onClick={() => openEvidence(selectedSource.id)}>Open evidence context</button></> : <p className="muted">No source selected.</p>}<div className="source-coverage-gate"><Unavailable title="Claim coverage" context="A normalized claim-to-source map is not served by this deployment. Source blocks remain readable above." /></div></aside>
+      <aside className="source-support"><div className="meta-label">Evidence support</div><h2>Selected source authority</h2>{selectedSource ? <><dl className="state-facts"><dt>Source</dt><dd className="mono">{selectedSource.id}</dd><dt>SHA-256</dt><dd><IdentityValue value={selectedSource.sha256} /></dd><dt>Blocks</dt><dd className="num">{selectedSource.blocks.length}</dd>{selectedBlock ? <><dt>Selected block</dt><dd className="mono">{selectedBlock.block_id}</dd><dt>Locator</dt><dd className="mono">{formatBlockLocator(selectedBlock.locator)}</dd></> : null}</dl><button className="button small" type="button" onClick={() => openEvidence(selectedSource.id)}>Open evidence context</button></> : <p className="muted">No source selected.</p>}<div className="source-coverage-gate"><Unavailable title="Claim coverage" context="A normalized claim-to-source map is not served by this deployment. Source blocks remain readable above." /></div></aside>
     </section>
   </div>;
 }
@@ -863,10 +863,10 @@ function ArtifactReader({ artifact, evidenceRefs, activeEvidenceId, onOpenEviden
     <div className="artifact-provenance">
       {moduleName === artifact.module_id ? null : <span>{moduleName}</span>}
       <span className="mono">{artifact.module_id}</span>
-      {payload?.status && <span className={`status ${payload.status === "COMPLETE" ? "success" : "warning"}`}>{payload.status}</span>}
-      {payload?.authority && <span className="meta-label">{payload.authority}</span>}
-      {payload?.confidence?.band && <span className="meta-label">Confidence {payload.confidence.band}</span>}
-      {payload?.confidence?.qa_status && <span className="meta-label">QA {payload.confidence.qa_status}</span>}
+      {payload?.status && <span className={`status ${payload.status === "COMPLETE" ? "success" : "warning"}`}>{humanizeCode(payload.status)}</span>}
+      {payload?.authority && <span className="meta-label">{humanizeCode(payload.authority)}</span>}
+      {payload?.confidence?.band && <span className="meta-label">Confidence {humanizeCode(payload.confidence.band)}</span>}
+      {payload?.confidence?.qa_status && <span className="meta-label">QA {humanizeCode(payload.confidence.qa_status)}</span>}
     </div>
     {artifact.markdown ? <>
       <h3>Module output</h3>
@@ -879,12 +879,12 @@ function ArtifactReader({ artifact, evidenceRefs, activeEvidenceId, onOpenEviden
     </>}
     <h3>Lineage</h3>
     <dl className="state-facts">
-      <dt>Artifact digest</dt><dd className="mono">{artifact.digest}</dd>
-      {inputFingerprint && <><dt>Input fingerprint</dt><dd className="mono">{inputFingerprint}</dd></>}
-      <dt>Upstream digests</dt><dd>{upstreamDigests.length ? <ul className="artifact-digest-list">{upstreamDigests.map((digest, index) => <li className="mono" key={`upstream:${index}`}>{digest}</li>)}</ul> : <span className="muted">None</span>}</dd>
-      {payload?.provenance?.executor && <><dt>Executor</dt><dd className="mono">{payload.provenance.executor}</dd></>}
-      {payload?.provenance?.profile_id && <><dt>Profile</dt><dd className="mono">{payload.provenance.profile_id}</dd></>}
-      {payload?.provenance?.selection_id && <><dt>Selection</dt><dd className="mono">{payload.provenance.selection_id}</dd></>}
+      <dt>Artifact digest</dt><dd><IdentityValue value={artifact.digest} /></dd>
+      {inputFingerprint && <><dt>Input fingerprint</dt><dd><IdentityValue value={inputFingerprint} /></dd></>}
+      <dt>Upstream digests</dt><dd>{upstreamDigests.length ? <ul className="artifact-digest-list">{upstreamDigests.map((digest, index) => <li key={`upstream:${index}`}><IdentityValue value={digest} /></li>)}</ul> : <span className="muted">None</span>}</dd>
+      {payload?.provenance?.executor && <><dt>Executor</dt><dd><IdentityValue value={payload.provenance.executor} /></dd></>}
+      {payload?.provenance?.profile_id && <><dt>Profile</dt><dd><IdentityValue value={payload.provenance.profile_id} /></dd></>}
+      {payload?.provenance?.selection_id && <><dt>Selection</dt><dd><IdentityValue value={payload.provenance.selection_id} /></dd></>}
     </dl>
     {loanUniverse?.rows && <><h3>Loan universe</h3><ArtifactDataTable label="Pinned loan universe" value={loanUniverse} /></>}
     <h3>Evidence</h3>
@@ -1129,7 +1129,7 @@ function ResearchPlanView({ plan, planHash, approving, approvalUnavailable, onAp
 
 function DeepDive({ writeAccess, selectedCase, question, caseId, run, onSwitchSnapshot }: { writeAccess: WriteAccess; selectedCase: CaseRecord | null; question: string; caseId: string; run: RunRecord | null; onSwitchSnapshot: (snapshotId: string) => Promise<SnapshotView | null> }) {
   const selectedCaseId = selectedCase?.id || "";
-  const [view, setView] = useState<{ accepted: Snapshot | null; latest_accepted: Snapshot | null; switch_required: boolean } | null>(null);
+  const [view, setView] = useState<SnapshotView | null>(null);
   const [artifacts, setArtifacts] = useState<ArtifactRecord[]>([]);
   const [selectedArtifactId, setSelectedArtifactId] = useState("");
   const [artifactError, setArtifactError] = useState("");
@@ -1146,7 +1146,7 @@ function DeepDive({ writeAccess, selectedCase, question, caseId, run, onSwitchSn
     if (selectedCaseId) {
       void (async () => {
         try {
-          const next = await request<typeof view>(`/api/cases/${selectedCaseId}/snapshot`);
+          const next = await request<SnapshotView>(`/api/cases/${selectedCaseId}/snapshot`);
           if (ignore || generation !== loadGeneration.current) return;
           const expected = next?.accepted?.artifacts ?? [];
           const loaded = await Promise.all(expected.map(({ id }) =>
@@ -1204,13 +1204,13 @@ function DeepDive({ writeAccess, selectedCase, question, caseId, run, onSwitchSn
   if (!snapshot) return <div className="panel"><div className="panel-body">{loading || loadError ? <LoadState loading={loading} error={loadError} /> : <StateBlock shape="action" title="Analysis unavailable" body="No accepted snapshot. Run the selected route, inspect exceptions, then accept it explicitly." action={{ label: "Open analysis run", href: withQuery("/run-console", { case: selectedCase?.id, run: run?.id }) }} />}</div></div>;
   return <div className="analysis-screen">
     {question ? <section className="context-strip"><strong>Evidence request</strong><p>{question}</p></section> : null}
-    {view?.switch_required ? <div className="analysis-switch callout warning"><strong>New accepted execution available.</strong><p>This reader remains on snapshot <span className="mono">{snapshot.id}</span> until authority is switched explicitly.</p>{writeAccess === "yes" ? <button className="button small" type="button" onClick={switchSnapshot}>Switch visible snapshot</button> : null}</div> : null}
+    {view?.switch_required ? <div className="analysis-switch callout warning"><strong>New accepted execution available.</strong><p>This reader remains on snapshot <IdentityValue value={snapshot.id} /> until authority is switched explicitly.</p>{writeAccess === "yes" ? <button className="button small" type="button" onClick={switchSnapshot}>Switch visible snapshot</button> : null}</div> : null}
     {message ? <MutationReceipt>{message}</MutationReceipt> : null}
     {artifactError ? <StateNote tone="critical" live="alert">{artifactError}</StateNote> : null}
     <div className="analysis-reader-shell">
       <nav className="analysis-toc" aria-label="Accepted analysis modules"><div className="meta-label">Accepted modules</div>{artifacts.map((artifact) => <button type="button" aria-pressed={selectedArtifact?.id === artifact.id} className={selectedArtifact?.id === artifact.id ? "is-active" : ""} onClick={() => setSelectedArtifactId(artifact.id)} key={artifact.id}><span>{moduleLabel(artifact.module_id)}</span><span className="mono">{artifact.module_id}</span></button>)}<Link className="button small" href={withQuery("/run-console", { case: caseId, run: run?.id })}>Open selected run</Link></nav>
-      <article className="analysis-reader" aria-labelledby="analysis-artifact-title">{selectedArtifact ? <><div className="meta-label">Accepted {formatDate(snapshot.accepted_at)} · Source set v{snapshot.source_set_version ?? "Unavailable"}</div><h2 id="analysis-artifact-title">{moduleLabel(selectedArtifact.module_id)}</h2><p className="analysis-lead">{selectedArtifact.payload?.narrative?.takeaway || selectedArtifact.payload?.summary || selectedBlocks.find((block) => block.kind === "paragraph")?.text || "No module summary is available."}</p>{selectedArtifact.markdown ? <div className="analysis-copy">{selectedBlocks.map((block, index) => block.kind === "heading" ? <h3 key={`${block.text}:${index}`}>{block.text}</h3> : <p key={`${block.text}:${index}`}>{block.text}</p>)}</div> : <div className="analysis-copy">{selectedArtifact.payload?.narrative?.basis ? <><h3>Basis</h3><p>{selectedArtifact.payload.narrative.basis}</p></> : null}{selectedArtifact.payload?.narrative?.exceptions ? <div className="callout warning"><strong>Exceptions</strong><p>{selectedArtifact.payload.narrative.exceptions}</p></div> : null}</div>}<dl className="analysis-provenance"><dt className="meta-label">Artifact</dt><dd className="mono">{selectedArtifact.id}</dd><dt className="meta-label">Digest</dt><dd className="mono">{selectedArtifact.digest}</dd><dt className="meta-label">Input fingerprint</dt><dd className="mono">{selectedArtifact.payload?.lineage?.input_fingerprint || selectedArtifact.input_fingerprint || "Unavailable"}</dd></dl></> : <LoadState loading={loading} error={loadError} empty="No accepted module output is available." />}</article>
-      <aside className="analysis-evidence"><div className="meta-label">Evidence rail</div><h2>{selectedEvidence.length} cited source{selectedEvidence.length === 1 ? "" : "s"}</h2>{selectedEvidence.map((ref, index) => <div className="analysis-evidence-card" key={`${ref.sourceId}:${index}`}><Link href={withQuery("/sources", { case: caseId, source: ref.sourceId })}>{ref.sourceId}</Link><span className="mono muted">{ref.blockIds.length ? ref.blockIds.join(" · ") : "Source-level reference"}</span></div>)}{selectedArtifact && !selectedEvidence.length ? <Unavailable title="Evidence citations" context="This accepted module output contains no normalized evidence references." /> : null}<div className="analysis-evidence-authority"><span className="meta-label">Visible authority</span><span className="mono">{snapshot.digest}</span></div></aside>
+      <article className="analysis-reader" aria-labelledby="analysis-artifact-title">{selectedArtifact ? <><div className="meta-label">Accepted {formatDate(snapshot.accepted_at)} · Source set v{snapshot.source_set_version ?? "Unavailable"}</div><h2 id="analysis-artifact-title">{moduleLabel(selectedArtifact.module_id)}</h2><p className="analysis-lead">{selectedArtifact.payload?.narrative?.takeaway || selectedArtifact.payload?.summary || selectedBlocks.find((block) => block.kind === "paragraph")?.text || "No module summary is available."}</p>{selectedArtifact.markdown ? <div className="analysis-copy">{selectedBlocks.map((block, index) => block.kind === "heading" ? <h3 key={`${block.text}:${index}`}>{block.text}</h3> : <p key={`${block.text}:${index}`}>{block.text}</p>)}</div> : <div className="analysis-copy">{selectedArtifact.payload?.narrative?.basis ? <><h3>Basis</h3><p>{selectedArtifact.payload.narrative.basis}</p></> : null}{selectedArtifact.payload?.narrative?.exceptions ? <div className="callout warning"><strong>Exceptions</strong><p>{selectedArtifact.payload.narrative.exceptions}</p></div> : null}</div>}<dl className="analysis-provenance"><dt className="meta-label">Artifact</dt><dd><IdentityValue value={selectedArtifact.id} /></dd><dt className="meta-label">Digest</dt><dd><IdentityValue value={selectedArtifact.digest} /></dd><dt className="meta-label">Input fingerprint</dt><dd><IdentityValue value={selectedArtifact.payload?.lineage?.input_fingerprint || selectedArtifact.input_fingerprint || "Unavailable"} /></dd></dl></> : <LoadState loading={loading} error={loadError} empty="No accepted module output is available." />}</article>
+      <aside className="analysis-evidence"><div className="meta-label">Evidence rail</div><h2>{selectedEvidence.length} cited source{selectedEvidence.length === 1 ? "" : "s"}</h2>{selectedEvidence.map((ref, index) => <div className="analysis-evidence-card" key={`${ref.sourceId}:${index}`}><Link href={withQuery("/sources", { case: caseId, source: ref.sourceId })}>{ref.sourceId}</Link><span className="mono muted">{ref.blockIds.length ? ref.blockIds.join(" · ") : "Source-level reference"}</span></div>)}{selectedArtifact && !selectedEvidence.length ? <Unavailable title="Evidence citations" context="This accepted module output contains no normalized evidence references." /> : null}<div className="analysis-evidence-authority"><span className="meta-label">Visible authority</span><IdentityValue value={snapshot.digest} /></div></aside>
     </div>
   </div>;
 }
@@ -1320,7 +1320,7 @@ function RVView({ writeAccess, caseId }: { writeAccess: WriteAccess; caseId: str
 
 function CommandView({ caseId, question }: { caseId: string; question: string }) {
   const [lens, setLens] = useState<{ issuer: string; sector: string; accepted_snapshot_id: string | null; source_set?: { version: number } | null } | null>(null);
-  const [snapshot, setSnapshot] = useState<{ accepted: Snapshot | null; latest_accepted: Snapshot | null; diff: { changed?: boolean; added?: { module_id: string; digest: string }[]; removed?: { module_id: string; digest: string }[]; modified?: { module_id: string; before: string; after: string }[]; source_set_changed?: boolean } | null } | null>(null);
+  const [snapshot, setSnapshot] = useState<SnapshotView | null>(null);
   const [artifacts, setArtifacts] = useState<ArtifactRecord[]>([]);
   const [artifactError, setArtifactError] = useState("");
   const [lensLoading, setLensLoading] = useState(true); const [lensError, setLensError] = useState(""); const [lensUnavailable, setLensUnavailable] = useState(false);
@@ -1342,7 +1342,7 @@ function CommandView({ caseId, question }: { caseId: string; question: string })
         else setLensError(firstErrorMessage(caught, "Unable to load the issuer lens"));
       })
       .finally(() => { if (!ignore) setLensLoading(false); });
-    void request<typeof snapshot>(`/api/cases/${caseId}/snapshot`)
+    void request<SnapshotView>(`/api/cases/${caseId}/snapshot`)
       .then(async (nextSnapshot) => {
         if (ignore) return;
         setSnapshot(nextSnapshot);
@@ -1362,7 +1362,7 @@ function CommandView({ caseId, question }: { caseId: string; question: string })
     return () => { ignore = true; };
   }, [caseId]);
   const diff = snapshot?.diff;
-  const conclusion = artifacts.find((item) => item.module_id === "CP-2") || artifacts.find((item) => item.payload?.narrative?.takeaway || item.payload?.summary || item.markdown) || null;
+  const conclusion = selectConclusionArtifact(artifacts);
   const conclusionBlocks = conclusion?.markdown ? markdownBlocks(conclusion.markdown) : [];
   const conclusionText = conclusion?.payload?.narrative?.takeaway || conclusion?.payload?.summary || conclusionBlocks.find((block) => block.kind === "paragraph")?.text || "";
   const evidenceCount = artifacts.reduce((total, item) => total + normalizeEvidenceRefs(item.payload?.evidence_refs).length, 0);
@@ -1371,14 +1371,14 @@ function CommandView({ caseId, question }: { caseId: string; question: string })
     <section className="credit-main span-9">
       {snapshotUnavailable ? <Unavailable title="Credit authority" /> : snapshotLoading || snapshotError ? <LoadState loading={snapshotLoading} error={snapshotError} /> : !snapshot?.accepted ? <StateBlock shape="action" title="Credit state unavailable" body="No accepted snapshot yet. Run analysis, inspect its exact outputs, then accept the snapshot." action={{ label: "Open analysis run", href: withQuery("/run-console", { case: caseId }) }} /> : <>
         <div className="credit-authority-head"><div><span className="meta-label">{lens?.issuer || "Selected credit"} · accepted record</span><h2>Accepted conclusion and exact module authority</h2></div><span className="status success">Accepted {formatDate(snapshot.accepted.accepted_at)}</span></div>
-        <div className="standing-answer"><span className="meta-label">Current conclusion · {evidenceCount} source reference{evidenceCount === 1 ? "" : "s"}</span>{conclusionText ? <><h2>{conclusionText}</h2>{conclusion?.payload?.narrative?.basis ? <p>{conclusion.payload.narrative.basis}</p> : null}<p className="mono muted">{moduleLabel(conclusion?.module_id || "")} · {conclusion?.digest}</p></> : <Unavailable title="Standing conclusion" context="The accepted snapshot contains no module summary that can be presented as a conclusion." />}</div>
-        <div className="authority-metrics"><div><span className="meta-label">Accepted snapshot</span><strong className="mono">{snapshot.accepted.id}</strong></div><div><span className="meta-label">Source set</span><strong className="mono">v{snapshot.accepted.source_set_version ?? "Unavailable"}</strong></div><div><span className="meta-label">Module outputs</span><strong className="num">{snapshot.accepted.artifacts.length}</strong></div><div><span className="meta-label">Evidence references</span><strong className="num">{evidenceCount}</strong></div></div>
-        <section className="credit-change-section"><div className="section-heading"><h3>What changed</h3><span>Snapshot diff</span></div>{diff?.changed ? <><p className="callout warning">The visible accepted snapshot differs from the latest accepted execution. Navigation does not switch authority.</p><ul className="credit-change-list">{diff.source_set_changed ? <li><strong>Source set changed</strong><span>The latest accepted execution binds a different source set.</span></li> : null}{diff.added?.map((item) => <li key={`added:${item.module_id}`}><strong>{moduleLabel(item.module_id)} added</strong><span className="mono">{item.digest}</span></li>)}{diff.modified?.map((item) => <li key={`modified:${item.module_id}`}><strong>{moduleLabel(item.module_id)} changed</strong><span className="mono">{item.before.slice(0, 12)} → {item.after.slice(0, 12)}</span></li>)}{diff.removed?.map((item) => <li key={`removed:${item.module_id}`}><strong>{moduleLabel(item.module_id)} removed</strong><span className="mono">{item.digest}</span></li>)}</ul></> : <p className="callout">No material module or source-set change is present in the served snapshot diff.</p>}</section>
+        <div className="standing-answer"><span className="meta-label">Current conclusion · {evidenceCount} source reference{evidenceCount === 1 ? "" : "s"}</span>{conclusionText ? <><h2>{conclusionText}</h2>{conclusion?.payload?.narrative?.basis ? <p>{conclusion.payload.narrative.basis}</p> : null}<p className="mono muted">{moduleLabel(conclusion?.module_id || "")} · {conclusion ? <IdentityValue value={conclusion.digest} className="" /> : null}</p></> : <Unavailable title="Standing conclusion" context="The accepted snapshot contains no module summary that can be presented as a conclusion." />}</div>
+        <div className="authority-metrics"><div><span className="meta-label">Accepted snapshot</span><strong><IdentityValue value={snapshot.accepted.id} /></strong></div><div><span className="meta-label">Source set</span><strong className="mono">v{snapshot.accepted.source_set_version ?? "Unavailable"}</strong></div><div><span className="meta-label">Module outputs</span><strong className="num">{snapshot.accepted.artifacts.length}</strong></div><div><span className="meta-label">Evidence references</span><strong className="num">{evidenceCount}</strong></div></div>
+        <section className="credit-change-section"><div className="section-heading"><h3>What changed</h3><span>Snapshot diff</span></div>{diff?.changed ? <><p className="callout warning">The visible accepted snapshot differs from the latest accepted execution. Navigation does not switch authority.</p><ul className="credit-change-list">{diff.source_set_changed ? <li><strong>Source set changed</strong><span>The latest accepted execution binds a different source set.</span></li> : null}{diff.added.map((item) => <li key={`added:${item.module_id}`}><strong>{moduleLabel(item.module_id)} added</strong><IdentityValue value={item.digest} /></li>)}{diff.modified.map((item) => <li key={`modified:${item.module_id}`}><strong>{moduleLabel(item.module_id)} changed</strong><span>Latest digest <IdentityValue value={item.digest} /></span></li>)}{diff.removed.map((item) => <li key={`removed:${item.module_id}`}><strong>{moduleLabel(item.module_id)} removed</strong><IdentityValue value={item.digest} /></li>)}</ul></> : <p className="callout">No material module or source-set change is present in the served snapshot diff.</p>}</section>
         {artifactError ? <StateNote tone="critical" live="alert">{artifactError}</StateNote> : null}
         <div className="top-actions credit-actions"><Link className="button primary" href={withQuery("/deep-dive", { case: caseId })}>Read accepted analysis</Link><Link className="button" href={withQuery("/run-console", { case: caseId })}>Review latest run</Link></div>
       </>}
     </section>
-    <aside className="credit-proof span-3"><div className="meta-label">Proof and gaps</div><h2>Accepted support</h2>{lensUnavailable ? <Unavailable title="Issuer lens" /> : lensLoading || lensError ? <LoadState loading={lensLoading} error={lensError} /> : <dl className="state-facts"><dt>Issuer</dt><dd>{lens?.issuer || "Unavailable"}</dd><dt>Sector</dt><dd>{lens?.sector || "Unavailable"}</dd><dt>Accepted snapshot</dt><dd className="mono">{lens?.accepted_snapshot_id || "None"}</dd><dt>Source set</dt><dd className="mono">{lens?.source_set?.version ? `v${lens.source_set.version}` : "None"}</dd></dl>}<div className="proof-register"><strong className="num">{artifacts.length}</strong><p>Accepted module outputs are directly addressable by artifact id and digest.</p></div><Unavailable title="Binding measure and claim gaps" context="The current API does not serve normalized measure, threshold, assumption and counterfactual fields. No client inference is shown." /></aside>
+    <aside className="credit-proof span-3"><div className="meta-label">Proof and gaps</div><h2>Accepted support</h2>{lensUnavailable ? <Unavailable title="Issuer lens" /> : lensLoading || lensError ? <LoadState loading={lensLoading} error={lensError} /> : <dl className="state-facts"><dt>Issuer</dt><dd>{lens?.issuer || "Unavailable"}</dd><dt>Sector</dt><dd>{lens?.sector || "Unavailable"}</dd><dt>Accepted snapshot</dt><dd><IdentityValue value={lens?.accepted_snapshot_id || "None"} /></dd><dt>Source set</dt><dd className="mono">{lens?.source_set?.version ? `v${lens.source_set.version}` : "None"}</dd></dl>}<div className="proof-register"><strong className="num">{artifacts.length}</strong><p>Accepted module outputs are directly addressable by artifact id and digest.</p></div><Unavailable title="Binding measure and claim gaps" context="The current API does not serve normalized measure, threshold, assumption and counterfactual fields. No client inference is shown." /></aside>
     <section className="context-strip span-12"><strong>Analyst boundary</strong><p>Engine output is separated from analyst judgment. Instrument recommendations remain analyst-owned and versioned in Report Studio.</p></section>
   </div>;
 }

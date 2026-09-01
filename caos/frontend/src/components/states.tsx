@@ -1,6 +1,6 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
-import { humanizeCode } from "../lib/workbench";
+import { compactIdentity, humanizeCode } from "../lib/workbench";
 
 // One home for every "nothing here / still loading / this failed / this route is
 // absent" surface in the workbench. Three surfaces used to own near-duplicate
@@ -26,6 +26,11 @@ export type StateAction = { label: string; href: string } | { label: string; onA
 // humanizer from the same place; the single definition lives in lib/workbench.ts
 // because the request helper needs it too and must stay free of React.
 export { humanizeCode };
+
+export function IdentityValue({ value, className = "mono" }: { value: string; className?: string }) {
+  const abbreviated = compactIdentity(value);
+  return <span className={className} title={value} aria-label={abbreviated === value ? value : `${abbreviated}. Full identity: ${value}`}>{abbreviated}</span>;
+}
 
 function liveProps(live?: StateLive) {
   if (live === "alert") return { role: "alert" as const };

@@ -15,6 +15,7 @@ import {
 } from "../lib/workbench";
 // The authority lifecycle has one declaration, in the reducer that owns it.
 import type { AuthorityStatus } from "../lib/workspaceAuthority";
+import { IdentityValue } from "./states";
 
 export type DrawerState = {
   kind: "evidence";
@@ -194,13 +195,14 @@ export default function WorkbenchShell({
   // name honest here because latest_accepted may move while this lens remains.
   const visible = authority?.accepted;
   const authorityPending = Boolean(caseId) && (authorityStatus === "idle" || authorityStatus === "loading");
+  const visibleSnapshotId = caseId && !authorityPending && authorityStatus !== "error" ? visible?.id || "" : "";
   const visibleSnapshotIdentity = !caseId
     ? "No case selected"
     : authorityPending
     ? "Loading authority…"
     : authorityStatus === "error"
       ? "Authority unavailable"
-      : visible?.id ?? "No visible snapshot";
+      : visibleSnapshotId || "No visible snapshot";
   const visibleSourceSetIdentity = !caseId
     ? "Not applicable"
     : authorityPending
@@ -210,15 +212,14 @@ export default function WorkbenchShell({
       : visible
         ? visible.source_set_version == null ? "Version unavailable" : `v${visible.source_set_version}`
         : "No visible source set";
-  const drawerTitle = drawer ? `Evidence ${drawer.evidenceId}` : "Context";
+  const drawerTitle = drawer?.source.filename || "Context";
   let drawerBody: ReactNode = null;
   if (drawer) {
     drawerBody = <div className="state-block">
       <dl>
-        <dt className="meta-label">Stable ID</dt><dd className="mono">{drawer.evidenceId}</dd>
-        <dt className="meta-label">Filename</dt><dd>{drawer.source.filename}</dd>
-        <dt className="meta-label">SHA-256</dt><dd className="mono">{drawer.source.sha256}</dd>
-        <dt className="meta-label">Visible snapshot</dt><dd className="mono">{visibleSnapshotIdentity}</dd>
+        <dt className="meta-label">Source ID</dt><dd className="mono">{drawer.evidenceId}</dd>
+        <dt className="meta-label">SHA-256</dt><dd><IdentityValue value={drawer.source.sha256} /></dd>
+        <dt className="meta-label">Visible snapshot</dt><dd>{visibleSnapshotId ? <IdentityValue value={visibleSnapshotId} /> : visibleSnapshotIdentity}</dd>
         <dt className="meta-label">Visible source set</dt><dd className="mono">{visibleSourceSetIdentity}</dd>
       </dl>
       <p className="status warning">Source-level reference; no block locator supplied by this artifact.</p>
@@ -294,8 +295,8 @@ export default function WorkbenchShell({
         <div role="region" className="authority-strip" aria-label="Visible authority" tabIndex={0}>
           <span className="authority-dot" aria-hidden="true" />
           <span><b>Credit:</b> {selectedCase ? selectedCase.issuer : "None selected"}</span>
-          <span><b>Visible snapshot:</b> {visibleSnapshotIdentity}</span>
-          <span><b>Selected run:</b> {runId ? `${runId}${runIsLive ? " · live" : ""}` : "None"}</span>
+          <span><b>Visible snapshot:</b> {visibleSnapshotId ? <IdentityValue value={visibleSnapshotId} /> : visibleSnapshotIdentity}</span>
+          <span><b>Selected run:</b> {runId ? <><IdentityValue value={runId} />{runIsLive ? " · live" : ""}</> : "None"}</span>
           <span><b>Source set:</b> {visibleSourceSetIdentity}</span>
           {authority?.switch_required
             ? <span className="status warning">Latest accepted differs</span>

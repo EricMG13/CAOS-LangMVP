@@ -39,6 +39,15 @@ export type Snapshot = {
   artifacts: { id: string; module_id: string; digest: string }[];
 };
 
+export type SnapshotDiffEntry = { module_id: string; digest: string };
+export type SnapshotDiff = {
+  changed: boolean;
+  added: SnapshotDiffEntry[];
+  removed: SnapshotDiffEntry[];
+  modified: SnapshotDiffEntry[];
+  source_set_changed: boolean;
+};
+
 export type SnapshotView = {
   // The server wire calls the effective visible/pinned reader lens `accepted`.
   // It may intentionally trail the acceptance ledger after an explicit pin.
@@ -47,7 +56,7 @@ export type SnapshotView = {
   // the newest ledger entry, regardless of which snapshot the reader lens shows.
   latest_accepted: Snapshot | null;
   switch_required: boolean;
-  diff?: { changed?: boolean } | null;
+  diff: SnapshotDiff | null;
 };
 
 export type CaseRecord = {
@@ -125,6 +134,26 @@ export function moduleLabel(moduleId: string): string {
 // helper, and every surface that shows a typed refusal beside its detail.
 export function humanizeCode(code: string) {
   return code.replaceAll("_", " ");
+}
+
+export function compactIdentity(value: string, leading = 12, trailing = 4) {
+  leading = Math.max(0, leading);
+  trailing = Math.max(0, trailing);
+  return value.length <= leading + trailing ? value : `${value.slice(0, leading)}…${trailing ? value.slice(-trailing) : ""}`;
+}
+
+type ConclusionArtifact = {
+  module_id: string;
+  markdown?: string | null;
+  payload?: { summary?: string; narrative?: { takeaway?: string } } | null;
+};
+
+export function selectConclusionArtifact<T extends ConclusionArtifact>(artifacts: readonly T[]): T | null {
+  const substantive = (artifact: T) => Boolean(artifact.payload?.narrative?.takeaway?.trim() || artifact.payload?.summary?.trim() || artifact.markdown?.trim());
+  return artifacts.find((artifact) => artifact.module_id === "CP-2" && substantive(artifact))
+    ?? artifacts.find((artifact) => artifact.module_id !== "CP-PARSE" && artifact.module_id !== "CP-0" && substantive(artifact))
+    ?? artifacts.find((artifact) => artifact.module_id === "CP-PARSE" && substantive(artifact))
+    ?? null;
 }
 
 export function nodeStatusTone(status: string) {

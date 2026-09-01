@@ -129,7 +129,7 @@ test("one lifecycle lock disables every draft-mutating authoring control", () =>
   assert.match(studio, /narrative-\$\{selectedNarrative\.block_id\}[\s\S]*?disabled=\{!canWrite \|\| authoringLocked\}/);
   assert.match(studio, /name=\{`mode-\$\{selectedNarrative\.block_id\}`\}[\s\S]*?disabled=\{!canWrite \|\| authoringLocked\}/);
   assert.match(studio, /name="report-model"[\s\S]*?disabled=\{!canWrite \|\| authoringLocked\}/);
-  assert.match(studio, /disabled=\{[^}]*authoringLocked[^}]*\}>Add \{policy\.kind/);
+  assert.match(studio, /disabled=\{[^}]*authoringLocked[^}]*\}>Add \{humanizeCode\(policy\.kind\)\.toLowerCase\(\)\}/);
   assert.match(studio, /disabled=\{[^}]*authoringLocked[^}]*\}>Omit block/);
   assert.match(studio, /disabled=\{[^}]*authoringLocked[^}]*\}>Remove citation/);
   assert.match(studio, /disabled=\{[^}]*authoringLocked[^}]*\}>Cite block/);

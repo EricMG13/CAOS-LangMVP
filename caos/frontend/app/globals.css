@@ -497,7 +497,7 @@ a.dag-node:hover strong, a.dag-node:focus-visible strong { text-decoration: unde
 .rd-mast-meta { flex: 0 0 auto; color: var(--caos-paper-meta); font: 600 9px/1.35 var(--font-mono), ui-monospace, monospace; letter-spacing: .1em; text-transform: uppercase; white-space: nowrap; }
 .rd-title { margin: 14px 0 4px; font-size: 21px; font-weight: 650; line-height: 1.2; letter-spacing: -.01em; }
 .rd-subtitle { margin: 0 0 var(--space-sm); color: var(--caos-paper-meta); font: 600 10px/1.5 var(--font-mono), ui-monospace, monospace; }
-.rd-identity { margin: 0 0 var(--space-lg); color: var(--caos-paper-meta); font-size: 8px; overflow-wrap: anywhere; }
+.rd-identity { margin: 0 0 var(--space-lg); color: var(--caos-paper-meta); font-size: 8px; line-height: 1.45; overflow-wrap: anywhere; word-break: break-word; }
 .rd-secs { display: flex; flex-direction: column; gap: 18px; margin-top: var(--space-lg); }
 .rd-sec { min-width: 0; }
 .rd-h { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-md); margin: 0 0 6px; border-bottom: 1px solid var(--caos-ink); padding-bottom: 3px; font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }

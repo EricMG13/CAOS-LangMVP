@@ -5,6 +5,9 @@ import { acceptanceSlotSummary, acceptedAuthorityMatch, destinationMeta, evidenc
 
 const workbenchShell = readFileSync(new URL("../components/WorkbenchShell.tsx", import.meta.url), "utf8");
 const workspace = readFileSync(new URL("../components/Workspace.tsx", import.meta.url), "utf8");
+const states = readFileSync(new URL("../components/states.tsx", import.meta.url), "utf8");
+const modelBuilder = readFileSync(new URL("../components/model/ModelBuilder.tsx", import.meta.url), "utf8");
+const deliverableDocument = readFileSync(new URL("../components/report/DeliverableDocument.tsx", import.meta.url), "utf8");
 const reportStudio = readFileSync(new URL("../components/report/ReportStudio.tsx", import.meta.url), "utf8");
 const styles = readFileSync(new URL("../../app/globals.css", import.meta.url), "utf8");
 const smoke = readFileSync(new URL("../../scripts/workbench-smoke.mjs", import.meta.url), "utf8");
@@ -30,7 +33,7 @@ test("the shell omits the redundant reading taxonomy and renders its command sho
 test("navigation and data captions use the four-role label taxonomy", () => {
   assert.equal(workbenchShell.match(/className="nav-label palette-group-label"/g)?.length, 3);
   assert.doesNotMatch(styles, /\.palette-group-label\s*\{[^}]*text-transform/);
-  assert.match(workbenchShell, /<dt className="meta-label">Stable ID<\/dt>/);
+  assert.match(workbenchShell, /<dt className="meta-label">Source ID<\/dt>/);
   assert.doesNotMatch(styles, /\.state-block dt\s*\{/);
   assert.match(reportStudio, /report-authority-strip"><div><span className="meta-label">Model authority<\/span>/);
   assert.doesNotMatch(styles, /\.report-authority-strip div > span\s*\{/);
@@ -116,6 +119,55 @@ test("module ids carry their registry name, and an unknown id stays the id", () 
 test("a server code is never presented as a raw identifier", () => {
   assert.equal(humanizeCode("MODEL_EXPORT_FAILED"), "MODEL EXPORT FAILED");
   assert.equal(humanizeCode("PAUSED"), "PAUSED");
+});
+
+test("workspace identities compact only beyond the exact display threshold", async () => {
+  const workbench = await import("./workbench.ts") as unknown as {
+    compactIdentity?: (value: string, leading?: number, trailing?: number) => string;
+  };
+  assert.equal(typeof workbench.compactIdentity, "function");
+  assert.equal(workbench.compactIdentity?.(""), "");
+  assert.equal(workbench.compactIdentity?.("short-id"), "short-id");
+  assert.equal(workbench.compactIdentity?.("1234567890123456"), "1234567890123456");
+  assert.equal(workbench.compactIdentity?.("0123456789abcdef0123456789abcdef"), "0123456789ab…cdef");
+  assert.equal(workbench.compactIdentity?.("model-version-identity", 5, 3), "model…ity");
+});
+
+test("the identity presenter speaks the abbreviation and retains the exact value", () => {
+  assert.match(states, /export function IdentityValue/);
+  assert.match(states, /title=\{value\}/);
+  assert.match(states, /aria-label=\{abbreviated === value \? value : `\$\{abbreviated\}\. Full identity: \$\{value\}`\}/);
+  assert.match(workbenchShell, /visibleSnapshotId \? <IdentityValue value=\{visibleSnapshotId\}/);
+  assert.doesNotMatch(workbenchShell, /<IdentityValue value=\{visibleSnapshotIdentity\}/);
+  assert.match(workspace, /<IdentityValue value=\{selectedSource\.sha256\}/);
+  assert.match(workspace, /<IdentityValue value=\{selectedArtifact\.digest\}/);
+  assert.match(modelBuilder, /<IdentityValue value=\{revision\.id\}/);
+  assert.doesNotMatch(modelBuilder, /<IdentityValue[^>]*(?:Recalculation required|Application version)/);
+  assert.match(deliverableDocument, /Exact identity · \{digest\}/, "governed paper keeps its exact identity");
+  assert.match(styles, /\.rd-identity\s*\{[^}]*overflow-wrap:\s*anywhere;[^}]*word-break:/);
+});
+
+test("command center selects a credit conclusion before preparation output", async () => {
+  const workbench = await import("./workbench.ts") as unknown as {
+    selectConclusionArtifact?: <T extends { module_id: string }>(artifacts: readonly T[]) => T | null;
+  };
+  assert.equal(typeof workbench.selectConclusionArtifact, "function");
+  const preparation = { module_id: "CP-PARSE", payload: { summary: "Sources prepared" } };
+  const readiness = { module_id: "CP-0", payload: { summary: "Ready" } };
+  const credit = { module_id: "CP-1", payload: { narrative: { takeaway: "Credit conclusion" } } };
+  const synthesis = { module_id: "CP-2", payload: { summary: "Preferred synthesis" } };
+  assert.equal(workbench.selectConclusionArtifact?.([preparation, readiness, credit]), credit);
+  assert.equal(workbench.selectConclusionArtifact?.([credit, synthesis]), synthesis);
+  assert.equal(workbench.selectConclusionArtifact?.([readiness, preparation]), preparation);
+});
+
+test("command center renders the served snapshot diff shape honestly", () => {
+  const commandView = workspace.slice(workspace.indexOf("function CommandView("), workspace.indexOf("function AdminView("));
+  assert.match(commandView, /useState<SnapshotView \| null>/);
+  assert.match(commandView, /selectConclusionArtifact\(artifacts\)/);
+  assert.match(commandView, /diff\.modified(?:\?\.|\.)map\(\(item\)[\s\S]*?<IdentityValue value=\{item\.digest\}/);
+  assert.doesNotMatch(commandView, /item\.(?:before|after)/);
+  assert.doesNotMatch(workspace, /slice\(0,\s*12\)/);
 });
 
 test("acceptance aftermath binds to the matching snapshot id", () => {
