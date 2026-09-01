@@ -26,6 +26,9 @@ paths = [
   '''Modular OS/.*''',
   '''\.agents/skills/.*''',
   '''\.claude/skills/.*''',
+  # SDD evidence reports record public commit/build identities; they are
+  # documentation, not credentials.
+  '''\.superpowers/sdd/.*''',
   # pip-compile dependency lock: hundreds of sha256 wheel hashes. A hex digest
   # that happens to begin "eaaa…" (or similar) false-positives vendor-token rules
   # (e.g. square-access-token = EAAA + 60 alnum). These are package hashes, not
