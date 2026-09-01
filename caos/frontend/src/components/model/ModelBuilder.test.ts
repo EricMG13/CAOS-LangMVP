@@ -74,6 +74,21 @@ test("forecast edits preview the complete draft and only then become signable", 
   assert.doesNotMatch(modelBuilder, /localStorage|sessionStorage/);
 });
 
+test("model sign-off is one ordered approval sequence and remains reader-gated", () => {
+  const start = modelBuilder.indexOf('data-model-approval');
+  const end = modelBuilder.indexOf('</section>', start);
+  const approval = modelBuilder.slice(start, end);
+  assert.ok(start >= 0, "missing model approval panel");
+  for (const token of ["What will bind", "Changed assumption slots", "Preview digest", "Sign-Off Note", "Save model version"]) {
+    assert.match(approval, new RegExp(token));
+  }
+  assert.ok(approval.indexOf("What will bind") < approval.indexOf('className="state-facts"'));
+  assert.ok(approval.indexOf('className="state-facts"') < approval.indexOf("Sign-Off Note"));
+  assert.ok(approval.indexOf("Sign-Off Note") < approval.indexOf("Save model version"));
+  assert.match(modelBuilder, /dirty && canWrite \? <section className="approval-panel" data-model-approval/);
+  assert.doesNotMatch(modelBuilder.slice(modelBuilder.indexOf("model-builder-command-body"), start), /Save model version/);
+});
+
 test("the legacy tornado replaces sensitivities and scenarios", () => {
   assert.match(modelBuilder, /models\/tornado/);
   assert.match(modelBuilder, /assumptions: draftRows/);

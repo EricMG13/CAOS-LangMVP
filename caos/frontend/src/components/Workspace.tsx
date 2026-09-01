@@ -12,7 +12,7 @@ import { displayValue, flattenValue, markdownBlocks, normalizeEvidenceRefs, type
 import { initialAuthorityState, matchesAuthority, requestContext, workspaceAuthorityReducer, type AuthorityEvent } from "../lib/workspaceAuthority";
 
 import WorkbenchShell, { type DrawerState } from "./WorkbenchShell";
-import { type Destination, type Snapshot, type SnapshotView, acceptedAuthorityMatch, destinationFromSlug, destinationMeta, formatBlockLocator, formatDate, humanizeCode, moduleLabel, nodeStatusTone, routeDestinations, withQuery } from "../lib/workbench";
+import { type Destination, type Snapshot, type SnapshotView, acceptanceSlotSummary, acceptedAuthorityMatch, destinationFromSlug, destinationMeta, formatBlockLocator, formatDate, humanizeCode, moduleLabel, nodeStatusTone, routeDestinations, withQuery } from "../lib/workbench";
 
 type WriteAccess = "yes" | "no" | "unknown";
 
@@ -946,6 +946,7 @@ function AcceptDialog({ open, run, replaces, pending, onConfirm, onClose }: { op
     window.requestAnimationFrame(() => trigger?.focus());
   };
   const pathwayLabel = run ? pathways.find(([value]) => value === run.plan.pathway)?.[1] || run.plan.pathway : "";
+  const slots = acceptanceSlotSummary(run?.nodes || [], replaces?.artifacts || []);
   return <dialog ref={dialogRef} aria-labelledby="accept-dialog-title" onClose={close}>
     <div className="dialog-body">
       <div className="panel-header"><h2 id="accept-dialog-title" ref={headingRef} tabIndex={-1}>Accept analytical snapshot</h2></div>
@@ -953,10 +954,13 @@ function AcceptDialog({ open, run, replaces, pending, onConfirm, onClose }: { op
         <dl className="state-facts">
           <dt>Run</dt><dd className="mono">{run.id}</dd>
           <dt>Pathway</dt><dd>{pathwayLabel} · {run.plan.depth}</dd>
-          <dt>Modules</dt><dd><ul className="accept-modules">{run.nodes.map((node) => <li key={node.id}><span className="mono">{node.module_id}</span>{node.artifact_id && <span className="mono muted">{node.artifact_id}</span>}</li>)}</ul></dd>
-          <dt>Replaces</dt><dd>{replaces ? <><span className="mono">{replaces.digest}</span><div className="muted">Source set v{replaces.source_set_version ?? "—"}</div></> : <span className="muted">No accepted snapshot</span>}</dd>
+          <dt>Source set</dt><dd><span>{run.plan.source_set_version == null ? "Unavailable" : `v${run.plan.source_set_version}`}</span>{run.plan.source_set_id ? <div className="mono muted">{run.plan.source_set_id}</div> : null}{run.plan.source_set_digest ? <div className="mono muted">{run.plan.source_set_digest}</div> : null}</dd>
+          <dt>New authority slots</dt><dd><strong className="num">{slots.added.length}</strong><div className="mono muted">{slots.added.join(" · ") || "None"}</div></dd>
+          <dt>Existing slots replaced</dt><dd><strong className="num">{slots.replaced.length}</strong><div className="mono muted">{slots.replaced.join(" · ") || "None"}</div></dd>
+          <dt>Slots removed</dt><dd><strong className="num">{slots.removed.length}</strong><div className="mono muted">{slots.removed.join(" · ") || "None"}</div></dd>
+          <dt>Replaces snapshot digest</dt><dd>{replaces ? <><span className="mono">{replaces.digest}</span><div className="muted">Source set {replaces.source_set_version == null ? "Unavailable" : `v${replaces.source_set_version}`}{replaces.source_set_id ? ` · ${replaces.source_set_id}` : ""}</div></> : <span className="muted">No accepted snapshot</span>}</dd>
         </dl>
-        <p>Accepting makes this run&apos;s snapshot the visible authority for the case.</p>
+        <p>Accepting binds these module slots as the case&apos;s visible authority. Artifact digests are verified by the server at acceptance.</p>
         <div className="top-actions">
           <button className="button primary" type="button" disabled={pending} onClick={onConfirm}>Accept analytical snapshot</button>
           <button className="button small" type="button" onClick={() => dialogRef.current?.close()}>Cancel</button>
@@ -982,21 +986,49 @@ function RunStatus({ writeAccess, caseId, run, runLoading, runError, acceptRun, 
   const complete = run.nodes.filter((node) => node.status === "succeeded").length;
   const current = run.nodes.find((node) => node.status === "running") || run.nodes.find((node) => node.status === "pending");
   const progress = run.nodes.length ? Math.round(complete / run.nodes.length * 100) : 0;
+  const progressLabel = current ? `${moduleLabel(current.module_id)} · ${current.status}` : run.status === "succeeded" ? "Execution complete" : run.status === "failed" ? "Execution stopped" : "Execution paused";
+  let acceptance: ReactNode;
+  if (acceptedSnapshotId) {
+    acceptance = <>
+      <span className="status success">Accepted — visible authority</span>
+      <span className="mono muted">{acceptedSnapshotId}</span>
+    </>;
+  } else if (run.status === "succeeded") {
+    acceptance = <>
+      <span className="status warning">Ready for acceptance</span>
+      <p>Review the exact authority change, then accept this analytical snapshot.</p>
+      {writeAccess === "yes"
+        ? <button className="button primary" disabled={pendingAction === "accept-run"} onClick={acceptRun}>{pendingAction === "accept-run" ? "Accepting…" : "Accept analytical snapshot"}</button>
+        : <p className="muted">{writeAccess === "unknown" ? "Confirming access…" : "Acceptance is an analyst action."}</p>}
+    </>;
+  } else if (run.status === "failed") {
+    acceptance = <>
+      <span className="status critical">Acceptance blocked</span>
+      <p>Review the execution failure, then compile a new route.</p>
+    </>;
+  } else if (run.status === "paused") {
+    acceptance = <>
+      <span className="status warning">Acceptance blocked</span>
+      {run.error?.code === "SOURCE_SET_EMPTY" ? <><p>Upload governed source material before execution can continue.</p><Link className="button small" href={withQuery("/sources/", { case: caseId })}>Open Sources</Link></>
+        : run.error?.code === "PLAN_APPROVAL_REQUIRED" ? <p>Review and approve the persisted research plan below.</p>
+          : <><p>Resolve the paused execution before acceptance.</p>{resumeSlot}</>}
+    </>;
+  } else {
+    acceptance = <>
+      <span className="status running">Acceptance waiting</span>
+      <p>{complete} of {run.nodes.length} module slots complete. Acceptance unlocks only after the route succeeds.</p>
+    </>;
+  }
   // `flow` here, not on the caller: the acceptance control must never abut the
   // route it accepts, whichever panel body this block is mounted in.
   return <div className="flow">
     <RunProgressAnnouncer run={run} />
-    <div className="run-progress" role="progressbar" aria-label="Execution progress" aria-valuemin={0} aria-valuemax={run.nodes.length} aria-valuenow={complete} aria-valuetext={`${complete} of ${run.nodes.length} modules complete${current ? `; ${moduleLabel(current.module_id)} ${current.status}` : ""}`}><div><span>{current ? `${moduleLabel(current.module_id)} · ${current.status}` : run.status}</span><span className="mono">{complete}/{run.nodes.length}</span></div><span className="run-progress-track" aria-hidden="true"><span style={{ width: `${progress}%` }} /></span></div>
-    <div className="dag">{run.nodes.map((node, index) => <div className="dag-step" key={node.id}>{index > 0 && <span className="dag-edge" aria-hidden="true">→</span>}{node.artifact_id ? <Link className="dag-node" href={withQuery("/sources/", { case: caseId, artifact: node.artifact_id })}><ModuleIdentity moduleId={node.module_id} /><div className={`status ${nodeStatusTone(node.status)}`}>{node.status}</div><span className="dag-node-open">Open output</span></Link> : <div className="dag-node"><ModuleIdentity moduleId={node.module_id} /><div className={`status ${nodeStatusTone(node.status)}`}>{node.status}</div></div>}</div>)}</div>
+    <div className="run-progress" role="progressbar" aria-label="Execution progress" aria-valuemin={0} aria-valuemax={run.nodes.length} aria-valuenow={complete} aria-valuetext={`${complete} of ${run.nodes.length} modules complete${current ? `; ${moduleLabel(current.module_id)} ${current.status}` : ""}`}><div><span>{progressLabel}</span><span className="mono">{complete}/{run.nodes.length}</span></div><span className="run-progress-track" aria-hidden="true"><span style={{ width: `${progress}%` }} /></span></div>
+    <div className="dag">{run.nodes.map((node, index) => <div className="dag-step" key={node.id}>{index > 0 && <span className="dag-edge" aria-hidden="true">→</span>}{node.artifact_id ? <Link className="dag-node" href={withQuery("/sources/", { case: caseId, artifact: node.artifact_id })}><ModuleIdentity moduleId={node.module_id} /><div className={`status ${nodeStatusTone(node.status)}`}>{node.status}</div><span className="dag-node-open">Open output</span></Link> : <div className="dag-node"><ModuleIdentity moduleId={node.module_id} /><div className={`status ${nodeStatusTone(node.status)}`}>{node.status}</div><span className="dag-node-open dag-node-placeholder" aria-hidden="true">Open output</span></div>}</div>)}</div>
+    <div className="approval-panel run-acceptance" data-run-acceptance>{acceptance}</div>
     {run.status === "failed" && run.error && <StateNote tone="critical" live="alert" code={run.error.code}>{run.error.message || "Run exception"}</StateNote>}
-    {run.status === "succeeded" && (acceptedSnapshotId
-      ? <div className="run-accepted" role="status"><span className="status success">Accepted — visible authority</span><span className="mono muted">{acceptedSnapshotId}</span></div>
-      : writeAccess === "yes"
-        ? <button className="button primary" disabled={pendingAction === "accept-run"} onClick={acceptRun}>{pendingAction === "accept-run" ? "Accepting…" : "Accept analytical snapshot"}</button>
-        : <p className="muted">Succeeded and not yet accepted. Acceptance is an analyst action.</p>)}
-    {run.status === "paused" && run.error?.code === "SOURCE_SET_EMPTY" && <div className="callout warning" role="status" aria-live="polite">Material exception: upload governed source material before execution.<div className="top-actions"><Link className="button small" href={withQuery("/sources/", { case: caseId })}>Open Sources</Link></div></div>}
     {run.status === "paused" && run.error?.code === "PLAN_APPROVAL_REQUIRED" && approvalSlot}
-    {run.status === "paused" && !["SOURCE_SET_EMPTY", "PLAN_APPROVAL_REQUIRED"].includes(run.error?.code || "") && <StateBlock tone="warning" live="status" code={run.error?.code || "RUN_PAUSED"} body={run.error?.message || "Run paused."}>{resumeSlot}</StateBlock>}
+    {run.status === "paused" && !["SOURCE_SET_EMPTY", "PLAN_APPROVAL_REQUIRED"].includes(run.error?.code || "") && <StateNote tone="warning" live="status" code={run.error?.code || "RUN_PAUSED"}>{run.error?.message || "Run paused."}</StateNote>}
   </div>;
 }
 

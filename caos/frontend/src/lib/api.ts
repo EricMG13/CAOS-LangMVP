@@ -9,7 +9,7 @@ export type ResearchPlan = { methodology_build_id: string; brief_digest: string;
 // `accepted_snapshot_id` is already on the wire (RunResponse in caos/server/caos/responses.py,
 // projected by `_wire_run` and pinned in caos/tests/spec/test_http_contracts_spec.py) — this
 // declaration only surfaces it to the client.
-export type RunRecord = { id: string; case_id: string; status: string; plan: { pathway: string; depth: string; profile_id: string; selection_id: string }; nodes: { id: string; module_id: string; status: string; artifact_id?: string | null }[]; accepted_snapshot_id?: string | null; error?: { code?: string; message?: string } | null; research?: { phase?: string; proposed_plan_hash?: string | null; approved_plan_hash?: string | null; proposed_plan?: ResearchPlan | null } | null };
+export type RunRecord = { id: string; case_id: string; status: string; plan: { pathway: string; depth: string; profile_id: string; selection_id: string; source_set_id?: string; source_set_version?: number; source_set_digest?: string }; nodes: { id: string; module_id: string; status: string; artifact_id?: string | null }[]; accepted_snapshot_id?: string | null; error?: { code?: string; message?: string } | null; research?: { phase?: string; proposed_plan_hash?: string | null; approved_plan_hash?: string | null; proposed_plan?: ResearchPlan | null } | null };
 export type SourceRecord = { id: string; filename: string; sha256: string; blocks: { block_id: string; locator: Record<string, unknown>; text?: string }[] };
 // Envelope: GET /api/cases/{case_id}/artifacts/{artifact_id} (ArtifactResponse in
 // caos/server/caos/responses.py). `markdown` is null for deterministic payloads

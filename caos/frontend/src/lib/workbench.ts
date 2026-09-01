@@ -34,6 +34,7 @@ export type Snapshot = {
   id: string;
   digest: string;
   accepted_at: string;
+  source_set_id?: string | null;
   source_set_version?: number | null;
   artifacts: { id: string; module_id: string; digest: string }[];
 };
@@ -201,6 +202,21 @@ export function acceptedAuthorityMatch(
 ): string {
   const candidate = runSnapshotId || localSnapshotId || "";
   return candidate && candidate === authoritySnapshotId ? candidate : "";
+}
+
+export function acceptanceSlotSummary(
+  runNodes: readonly { module_id: string }[],
+  replacedArtifacts: readonly { module_id: string }[],
+) {
+  const next = [...new Set(runNodes.map((node) => node.module_id))];
+  const previous = [...new Set(replacedArtifacts.map((artifact) => artifact.module_id))];
+  const nextSet = new Set(next);
+  const previousSet = new Set(previous);
+  return {
+    added: next.filter((moduleId) => !previousSet.has(moduleId)),
+    replaced: next.filter((moduleId) => previousSet.has(moduleId)),
+    removed: previous.filter((moduleId) => !nextSet.has(moduleId)),
+  };
 }
 
 export function evidenceKind(value: string): "source" | "artifact" | null {

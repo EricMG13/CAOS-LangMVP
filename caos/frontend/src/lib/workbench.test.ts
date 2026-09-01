@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { acceptedAuthorityMatch, destinationMeta, evidenceKind, formatBlockLocator, humanizeCode, moduleLabel, withQuery, workflows } from "./workbench.ts";
+import { acceptanceSlotSummary, acceptedAuthorityMatch, destinationMeta, evidenceKind, formatBlockLocator, humanizeCode, moduleLabel, withQuery, workflows } from "./workbench.ts";
 
 const workbenchShell = readFileSync(new URL("../components/WorkbenchShell.tsx", import.meta.url), "utf8");
 const workspace = readFileSync(new URL("../components/Workspace.tsx", import.meta.url), "utf8");
@@ -52,6 +52,7 @@ test("DAG nodes use neutral containers and shape-coded visible statuses", async 
   assert.doesNotMatch(styles, /\.dag-node\.(?:succeeded|running|failed)\s*\{/);
   assert.doesNotMatch(workspace, /className=\{`dag-node \$\{node\.status\}`\}/);
   assert.match(workspace, /className=\{`status \$\{nodeStatusTone\(node\.status\)\}`\}>\{node\.status\}<\/div>/);
+  assert.match(workspace, /dag-node-open dag-node-placeholder" aria-hidden="true">Open output/, "unfinished DAG nodes must reserve the completed-output row");
   assert.match(styles, /\.status\.running::before\s*\{/);
 });
 
@@ -121,6 +122,20 @@ test("acceptance aftermath binds to the matching snapshot id", () => {
   assert.equal(acceptedAuthorityMatch(null, "snap_a", "snap_a"), "snap_a", "the locally returned snapshot covers a server without the run field");
   assert.equal(acceptedAuthorityMatch("snap_a", "snap_b", "snap_a"), "snap_a", "the served run field wins over local state");
   assert.equal(acceptedAuthorityMatch("snap_a", "snap_b", "snap_b"), "", "local state never overrides a served mismatch");
+});
+
+test("acceptance review classifies authority slots without claiming artifact byte changes", () => {
+  const summary = acceptanceSlotSummary(
+    [{ module_id: "CP-0" }, { module_id: "CP-1" }, { module_id: "CP-5" }, { module_id: "CP-5" }],
+    [{ module_id: "CP-0" }, { module_id: "CP-2" }, { module_id: "CP-5" }],
+  );
+
+  assert.deepEqual(summary, {
+    added: ["CP-1"],
+    replaced: ["CP-0", "CP-5"],
+    removed: ["CP-2"],
+  });
+  assert.doesNotMatch(workspace, /v\{(?:run\.plan|replaces)\.source_set_version \?\? "Unavailable"\}/, "missing versions must not render as vUnavailable");
 });
 
 test("an evidence id resolves whatever this store minted", () => {

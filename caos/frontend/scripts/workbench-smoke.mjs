@@ -594,6 +594,47 @@ try {
     await new Promise((resolve) => setTimeout(resolve, 50));
   }
   assert.equal(nextRunState?.status, "succeeded");
+
+  // The acceptance ceremony owns one reserved region from queued through accepted.
+  // Its box may change contents, but it must not make the execution panel jump as
+  // progress crosses the irreversible-action boundary.
+  let acceptanceRunPhase = "queued";
+  const acceptanceRunPath = (url) => url.pathname === `/api/runs/${nextRun.id}`;
+  const acceptanceEventsPath = (url) => url.pathname === `/api/runs/${nextRun.id}/events`;
+  const acceptanceRunFixture = () => ({
+    ...nextRunState,
+    status: acceptanceRunPhase,
+    accepted_snapshot_id: null,
+    nodes: nextRunState.nodes.map((node, index) => ({
+      ...node,
+      status: acceptanceRunPhase === "succeeded" ? "succeeded"
+        : acceptanceRunPhase === "running" ? index === 0 ? "succeeded" : index === 1 ? "running" : "pending"
+          : "pending",
+      artifact_id: acceptanceRunPhase === "succeeded" ? node.artifact_id : index === 0 && acceptanceRunPhase === "running" ? node.artifact_id : null,
+    })),
+  });
+  await page.route(acceptanceRunPath, (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(acceptanceRunFixture()) }));
+  await page.route(acceptanceEventsPath, (route) => route.fulfill({ status: 200, contentType: "text/event-stream", body: "retry: 60000\n\n" }));
+  const acceptanceBoxes = [];
+  for (const phase of ["queued", "running", "succeeded"]) {
+    acceptanceRunPhase = phase;
+    await page.reload({ waitUntil: "networkidle" });
+    const region = page.locator("[data-run-acceptance]");
+    await region.getByText(phase === "succeeded" ? "Ready for acceptance" : "Acceptance waiting", { exact: true }).waitFor();
+    acceptanceBoxes.push(await region.boundingBox());
+  }
+  assert.ok(acceptanceBoxes.every(Boolean), "an execution state omitted the acceptance region");
+  assert.deepEqual(
+    acceptanceBoxes.map(({ x, y, width, height }) => [Math.round(x), Math.round(y), Math.round(width), Math.round(height)]),
+    Array.from({ length: 3 }, () => {
+      const { x, y, width, height } = acceptanceBoxes[0];
+      return [Math.round(x), Math.round(y), Math.round(width), Math.round(height)];
+    }),
+    "acceptance-region geometry changed between queued, running, and succeeded",
+  );
+  await page.unroute(acceptanceRunPath);
+  await page.unroute(acceptanceEventsPath);
+  await page.reload({ waitUntil: "networkidle" });
   const acceptTrigger = page.getByRole("button", { name: "Accept analytical snapshot" });
   await acceptTrigger.waitFor();
   let markAcceptanceIntercepted;
@@ -631,10 +672,17 @@ try {
   await acceptTrigger.click();
   const acceptDialog = page.getByRole("dialog", { name: "Accept analytical snapshot" });
   await acceptDialog.getByText(nextRun.id, { exact: true }).waitFor();
+  assert.equal(await page.evaluate(() => document.activeElement?.id), "accept-dialog-title", "accept dialog did not focus its heading");
   await page.keyboard.press("Escape");
   await acceptDialog.waitFor({ state: "hidden" });
   await assert.doesNotReject(() => acceptTrigger.evaluate((element) => {
     if (document.activeElement !== element) throw new Error("focus did not return to the accept trigger");
+  }));
+  await acceptTrigger.click();
+  await acceptDialog.getByRole("button", { name: "Cancel" }).click();
+  await acceptDialog.waitFor({ state: "hidden" });
+  await assert.doesNotReject(() => acceptTrigger.evaluate((element) => {
+    if (document.activeElement !== element) throw new Error("cancel did not return focus to the accept trigger");
   }));
   await acceptTrigger.click();
   await acceptDialog.getByText(nextRun.id, { exact: true }).waitFor();
@@ -1287,6 +1335,26 @@ try {
     return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ draft_generation: payload.draft_generation, baseline: {}, scenario, scenario_digest: "9".repeat(64) }) });
   });
 
+  const fullCreditWorkspace = reportWorkspaces.get("FULL_CREDIT");
+  const governedReportEligibility = fullCreditWorkspace.model_eligibility;
+  const governedReportCurrent = fullCreditWorkspace.current;
+  fullCreditWorkspace.model_eligibility = {
+    ...governedReportEligibility,
+    active_revision: { ...governedReportEligibility.active_revision, revision_id: "revision_new_authority" },
+  };
+  await page.goto(`${baseURL}/report-studio/?case=${caseRecord.id}&prerequisite=stale-model`, { waitUntil: "networkidle" });
+  const staleModelLink = page.getByRole("link", { name: "Open Model Builder" });
+  await staleModelLink.waitFor();
+  assert.equal(new URL(await staleModelLink.getAttribute("href"), baseURL).searchParams.get("case"), caseRecord.id, "stale-model remedy lost case context");
+  fullCreditWorkspace.model_eligibility = { active_revision: null, application_build: null, fallback_acknowledgement_required: false, default_model_selection: null };
+  fullCreditWorkspace.current = { ...governedReportCurrent, content: { ...governedReportCurrent.content, model_selection: null, model_identity: null } };
+  await page.reload({ waitUntil: "networkidle" });
+  const missingModelLink = page.getByRole("link", { name: "Open Run Console" });
+  await missingModelLink.waitFor();
+  assert.equal(new URL(await missingModelLink.getAttribute("href"), baseURL).searchParams.get("case"), caseRecord.id, "missing-model remedy lost case context");
+  fullCreditWorkspace.model_eligibility = governedReportEligibility;
+  fullCreditWorkspace.current = governedReportCurrent;
+
   await page.goto(`${baseURL}/report-studio/?case=${caseRecord.id}`, { waitUntil: "networkidle" });
   await page.getByRole("heading", { name: "Compose", exact: true }).waitFor();
   await page.getByRole("heading", { name: `${caseRecord.issuer} — ${caseRecord.name}` }).waitFor();
@@ -1675,9 +1743,10 @@ try {
   await absent(readerPage, "Upload and version");
   assert.equal(await readerPage.locator("main input[type=file]").count(), 0, "READER was offered a source file input");
 
-  await readerPage.goto(`${baseURL}/run-console/?case=${caseRecord.id}`, { waitUntil: "networkidle" });
+  await readerPage.goto(`${baseURL}/run-console/?case=${raceCase.id}&run=${crossCaseRun.id}`, { waitUntil: "networkidle" });
   await absent(readerPage, "Compile and run");
   await absent(readerPage, "Accept analytical snapshot");
+  await readerPage.getByText("Acceptance is an analyst action.", { exact: true }).waitFor();
   assert.equal(await readerPage.locator("#pathway").count(), 0, "READER was offered the compile form");
 
   await readerPage.goto(`${baseURL}/rv-screener/?case=${caseRecord.id}`, { waitUntil: "networkidle" });

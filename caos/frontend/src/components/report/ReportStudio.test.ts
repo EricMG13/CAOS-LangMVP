@@ -68,6 +68,21 @@ test("exact Frozen and Filed lifecycle is identity-bound and role-gated", () => 
   assert.doesNotMatch(studio, /onClick=\{\(\) => setBlocks\(revision\.content\.blocks\)\}/);
 });
 
+test("freeze remains a reserved approval sequence with complete blockers and governed links", () => {
+  assert.match(studio, /freezeChecklist\(\{/);
+  const start = studio.indexOf('data-freeze-approval');
+  const end = studio.indexOf('</section>', start);
+  const approval = studio.slice(start, end);
+  assert.ok(start >= 0, "missing freeze approval panel");
+  for (const label of ["Write access", "Exact saved revision", "Current model selection", "Required model availability"]) {
+    assert.match(approval, new RegExp(label));
+  }
+  assert.match(approval, /withQuery\("\/model-builder", \{ case: caseId \}\)/);
+  assert.match(approval, /withQuery\("\/run-console", \{ case: caseId \}\)/);
+  assert.match(approval, /canWrite \? <button[^>]+data-primary-report-action/);
+  assert.match(approval, /className="status idle">Reader mode/);
+});
+
 test("model fallback, evidence, scenario, focus, and case fences remain explicit", () => {
   assert.match(studio, /fallback_acknowledged: true/);
   assert.match(studio, /ANALYST_REVISION/);

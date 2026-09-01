@@ -702,10 +702,8 @@ export default function ModelBuilder({
   if (!caseId || loadedCaseId !== caseId || loading && !inventory) return <div className="grid"><section className="panel span-12"><div className="panel-header"><h2>Model Builder</h2></div><div className="panel-body"><LoadState loading error={loadError} /></div></section></div>;
 
   const renderPrimaryAction = () => {
-    if (!primaryAction) return null;
     if (primaryAction === "BUILD") return <button data-primary-model-action="BUILD" className="button primary" type="button" disabled={pending === "build"} onClick={() => void buildModel()}>{pending === "build" ? "Queuing…" : status === "FAILED" ? "Retry build" : "Build model"}</button>;
-    if (primaryAction === "PREVIEW") return <button data-primary-model-action="PREVIEW" className="button primary" type="button" disabled={pending === "preview"} onClick={() => void previewDraft()}>{pending === "preview" ? "Recalculating…" : "Recalculate forecast"}</button>;
-    return <button data-primary-model-action="SIGN_OFF" className="button primary" type="button" disabled={pending === "sign-off" || !signOffNote.trim()} onClick={() => void signOff()}>{pending === "sign-off" ? "Saving…" : "Save model version"}</button>;
+    return null;
   };
 
   return <div className="grid model-builder analyst-model-builder">
@@ -718,7 +716,22 @@ export default function ModelBuilder({
       {status === "FAILED" ? <StateBlock tone="warning" live="alert" code={build?.error?.code || "MODEL_CALCULATION_FAILED"} body={build?.error?.detail || "The model calculation did not complete."} /> : null}
       {inventory?.readiness.blockers.map((blocker) => <div className="callout warning model-blocker" key={blocker.code}><strong>{humanizeCode(blocker.code)}</strong><br />{blocker.detail}</div>)}
       {message ? <p className={message.includes("Unable") || message.includes("conflict") || message.includes("changed") ? "error" : "muted"} role="status" aria-live="polite">{message}</p> : null}
-      {conflict || authorityMismatch ? <div className="callout warning" role="alert"><strong>Model authority changed</strong><p>Your local forecast is preserved. Current version <span className="mono">{conflict?.current?.id || currentHeadRevisionId || "Application version"}</span>; draft parent <span className="mono">{draftAuthority?.parentRevisionId || "Application version"}</span>.</p>{conflictRebaseRevision && build?.status === "READY" ? unavailable.rebase ? <Unavailable title="Rebase preview" /> : <button className="button small" type="button" disabled={pending === `rebase:${conflictRebaseRevision.id}`} onClick={() => void requestRebase(conflictRebaseRevision)}>Review and rebase local draft</button> : null}</div> : null}
+      {dirty && canWrite ? <section className="approval-panel" data-model-approval aria-labelledby="model-approval-title">
+        <div><span className="meta-label">What will bind</span><h3 id="model-approval-title">Current forecast preview as the next saved model version</h3><p className="muted">Changed assumption slots: <strong className="num">{dirtyCount}</strong></p></div>
+        <dl className="state-facts">
+          <dt>Preview digest</dt><dd className="mono">{previewCurrent ? preview?.preview_digest : "Recalculation required"}</dd>
+          <dt>Accepted snapshot</dt><dd className="mono">{previewCurrent ? preview?.accepted_snapshot_id : build?.accepted_snapshot_id || "Unavailable"}</dd>
+          <dt>Application build</dt><dd className="mono">{build?.id || "Unavailable"}</dd>
+          <dt>Build payload digest</dt><dd className="mono">{build?.payload_digest || "Unavailable"}</dd>
+          <dt>Registry digest</dt><dd className="mono">{registry?.digest || "Unavailable"}</dd>
+          <dt>Parent model version</dt><dd className="mono">{draftAuthority?.parentRevisionId || "Application version"}</dd>
+        </dl>
+        {conflict || authorityMismatch ? <div className="callout warning" role="alert"><strong>Model authority changed</strong><p>Your local forecast is preserved. Current version <span className="mono">{conflict?.current?.id || currentHeadRevisionId || "Application version"}</span>; draft parent <span className="mono">{draftAuthority?.parentRevisionId || "Application version"}</span>.</p>{conflictRebaseRevision && build?.status === "READY" ? unavailable.rebase ? <Unavailable title="Rebase preview" /> : <button className="button small" type="button" disabled={pending === `rebase:${conflictRebaseRevision.id}`} onClick={() => void requestRebase(conflictRebaseRevision)}>Review and rebase local draft</button> : null}</div> : null}
+        <div className={styles.signOff}><label htmlFor="model-signoff-note">Sign-Off Note <span aria-hidden="true">*</span></label><textarea id="model-signoff-note" required maxLength={2000} value={signOffNote} onChange={(event) => setSignOffNote(event.target.value)} placeholder="What changed, why, and the evidence behind it." /><p className="muted">Required actor note stored with this exact model version.</p></div>
+        <div className="top-actions">{primaryAction === "SIGN_OFF"
+          ? <button data-primary-model-action="SIGN_OFF" className="button primary" type="button" disabled={pending === "sign-off" || !signOffNote.trim()} onClick={() => void signOff()}>{pending === "sign-off" ? "Saving…" : "Save model version"}</button>
+          : primaryAction === "PREVIEW" ? <button data-primary-model-action="PREVIEW" className="button primary" type="button" disabled={pending === "preview"} onClick={() => void previewDraft()}>{pending === "preview" ? "Recalculating…" : "Recalculate forecast"}</button> : null}</div>
+      </section> : null}
     </section>
 
     {status === "READY" && registry ? <section className={`panel span-12 ${styles.workspace}`}>
@@ -733,7 +746,6 @@ export default function ModelBuilder({
           const step = Number(definition.sensitivity_default.step);
           return <fieldset className={styles.driver} key={`${definition.assumption_id}:${selectedCase}`}><legend><span>{definition.label}</span><small>{definition.unit}</small></legend><div className={styles.forecastValues}><label><span>All forecast years</span><ForecastScrubber key={`${definition.assumption_id}:${selectedCase}:ALL:${draftGeneration}`} value={scope.value} mixed={scope.mixed} label={`${definition.label}, all forecast years, ${selectedCase}`} minimum={Number(definition.hard_min)} maximum={Number(definition.hard_max)} step={step} disabled={!canWrite || !scope.editable} onCommit={(value) => editAssumption(definition, selectedCase, "ALL", value)} /></label>{rows.map((row) => <label key={assumptionKey(row)}><span>{row.period_id}</span><ForecastScrubber key={`${assumptionKey(row)}:${draftGeneration}`} value={row.value === null ? "" : String(row.value)} label={`${definition.label}, ${row.period_id}, ${selectedCase}`} minimum={Number(definition.hard_min)} maximum={Number(definition.hard_max)} step={step} disabled={!canWrite || row.status !== "READY"} onCommit={(value) => editAssumption(definition, selectedCase, row.period_id, value)} />{row.status !== "READY" ? <small>{row.gap_code || row.status}</small> : <small>App {formatModelValue(row.default_value)}</small>}</label>)}</div></fieldset>;
         })}</div>
-        {dirty && canWrite ? <div className={styles.signOff}><label htmlFor="model-signoff-note">Sign-Off Note <span aria-hidden="true">*</span></label><textarea id="model-signoff-note" required maxLength={2000} value={signOffNote} onChange={(event) => setSignOffNote(event.target.value)} placeholder="What changed, why, and the evidence behind it." /><p className="muted">Saved with this model version after the current forecast preview completes.</p></div> : null}
         {!canWrite ? <p className="callout">Reader mode: the model and forecast assumptions remain readable. Changes, recalculation, tornado refresh, and saving are unavailable.</p> : null}
       </aside>
 
