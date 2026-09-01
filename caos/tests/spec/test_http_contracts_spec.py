@@ -62,6 +62,19 @@ _HEALTH_KEYS = {
     "checkpointer": None,
 }
 
+_PROVIDER_IDENTITY_KEYS = {
+    "provider_name": None,
+    "model": None,
+    "provider_version": None,
+    "adapter_version": None,
+    "parameter_context_digest": None,
+    "qualification_record_id": None,
+    "qualification_record_digest": None,
+    "qualification_status": None,
+    "qualification_expires_at": None,
+    "identity_digest": None,
+}
+
 KEY_SETS = {
     "case": {
         "id": None,
@@ -130,6 +143,7 @@ KEY_SETS = {
         "created_by": None,
         "created_at": None,
         "error": None,
+        "provider_identity": _PROVIDER_IDENTITY_KEYS,
     },
     "snapshot": {
         "id": None,
@@ -141,6 +155,7 @@ KEY_SETS = {
         "digest": None,
         "previous_snapshot_id": None,
         "accepted_at": None,
+        "provider_identity": _PROVIDER_IDENTITY_KEYS,
     },
     "artifact": {
         "id": None,
@@ -153,6 +168,7 @@ KEY_SETS = {
         "input_fingerprint": None,
         "created_by": None,
         "created_at": None,
+        "provider_identity": _PROVIDER_IDENTITY_KEYS,
     },
     "model_readiness": {
         "status": None,
@@ -780,6 +796,7 @@ def _run_payload(extension: dict) -> dict:
         "created_by": "analyst",
         "created_at": "2026-08-26T00:00:00+00:00",
         "error": None,
+        "provider_identity": None,
         **extension,
     }
 
@@ -798,9 +815,13 @@ def _budgets() -> dict:
 
 
 def _generation_payload() -> dict:
+    from caos.engine.provider import host_control_identity
+
+    identity = host_control_identity().as_dict()
     return {
         "phase": "generating",
-        "model": "model",
+        "model": identity["model"],
+        "provider_identity": identity,
         "reporting_period": "2026-08-26",
         "module_output_tokens": {
             "CP-1": 32_000,
@@ -837,6 +858,44 @@ def test_canonical_generation_rejects_unknown_keys():
         CanonicalRunResponse.model_validate(
             _run_payload({"canonical_generation": {**_generation_payload(), "unexpected": True}})
         )
+
+
+def test_provider_identity_wire_contract_verifies_the_self_digest_and_exact_keys():
+    from pydantic import ValidationError
+
+    from caos.engine.provider import host_control_identity
+    from caos.responses import ProviderIdentityResponse
+
+    identity = host_control_identity().as_dict()
+    assert _round_trips(ProviderIdentityResponse, identity)
+    with pytest.raises(ValidationError):
+        ProviderIdentityResponse.model_validate({**identity, "model": "tampered"})
+    with pytest.raises(ValidationError):
+        ProviderIdentityResponse.model_validate({**identity, "unexpected": True})
+
+
+def test_generation_attempt_identity_is_never_synthesized_or_open_ended(client, engine, store):
+    from caos.engine.provider import host_control_identity
+
+    case = store.create_case("Attempt authority", "Issuer", "Services", "analyst")
+    run = engine.runs.create_run(
+        case["id"], "FULL_CREDIT", "full", "analyst",
+        provider_identity=host_control_identity(),
+    )
+    engine.runs.init_budget(run["id"], _budgets())
+    engine.runs.record_attempt(
+        run["id"],
+        {
+            "run_id": run["id"], "module_id": "CP-1", "kind": "generation",
+            "raw_body": "must-not-cross-the-wire",
+        },
+        terminal=False,
+    )
+
+    served = client.get(f"/api/runs/{run['id']}").json()
+    assert served["provider_identity"] == host_control_identity().as_dict()
+    assert served["canonical_generation"]["attempts"][0]["provider_identity"] is None
+    assert "raw_body" not in served["canonical_generation"]["attempts"][0]
 
 
 # --- loan-universe import results are strict to the leaf --------------------------

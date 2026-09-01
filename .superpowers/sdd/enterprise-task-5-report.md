@@ -1,7 +1,7 @@
-# Enterprise Task 5A report — identity contract and adapters
+# Enterprise Task 5 report — provider authority and false-success removal
 
 Implementation commit: `fe2fed45d0cfc14fc3ecc6ecdf4b5a61770dc3f6`.
-Authority correction: pending commit (2026-09-01).
+Authority correction: `9b0f16d` (2026-09-01).
 
 ## Delivered
 
@@ -49,3 +49,33 @@ no matches
 
 - The parameter/context digest is intentionally sensitive to installed adapter/runtime versions and policy constants; a change requires a new qualification record.
 - Task 5A's corrected authority boundary is accepted for local execution. User-controlled mode means no delegated reviewer is active; later Task 5 and final candidate gates still require the plan's independent enterprise evidence.
+
+## Task 5B — durable authority and strict wire contract
+
+Delivered:
+
+- Added nullable JSON provider-identity columns to runs, artifacts, and snapshots. Fresh metadata creates them; existing SQLite databases evolve inside serialized `BEGIN IMMEDIATE` rechecks; PostgreSQL uses idempotent `ADD COLUMN IF NOT EXISTS`. Unsupported dialects abort startup.
+- New runs validate and store one exact identity atomically with `run.created`; every subsequent run/node event carries its digest. Artifacts copy the run identity and reject divergent relinks. Snapshots copy the run identity, reject caller divergence, and require their digest to bind it.
+- Legacy rows remain `null`; no environment or current provider backfill exists.
+- Added strict provider identity and provider-attempt wire models. Run, generation, artifact, and snapshot responses project stored identity; generation model derives from stored identity, never Anthropic settings. Unknown attempt fields are dropped and a missing historical attempt identity remains `null` rather than being synthesized from its run.
+
+Verification:
+
+```text
+python -m pytest caos/tests/spec/test_runs_spec.py caos/tests/spec/test_http_contracts_spec.py -q \
+  -W error::ResourceWarning -W error::RuntimeWarning \
+  -W error::pytest.PytestUnraisableExceptionWarning
+113 passed, 1 third-party Starlette deprecation warning in 9.16s
+
+python -m ruff check <Task 5B files>
+All checks passed!
+
+git diff --check
+passed
+```
+
+Confidence review:
+
+- Reproduced and fixed an attempted API backfill: a stored attempt lacking identity was initially projected with the run identity. It now remains honestly `null`, while the strict projection removes an injected `raw_body` field.
+- Adversarial checks reject identity-divergent artifact relinks, snapshot identity substitution, and stale snapshot digests. Two concurrent SQLite initializers add each missing column once and preserve a legacy run as `provider_identity: null`.
+- PostgreSQL schema-race execution remains `BLOCKED EXTERNAL` until `CAOS_TEST_POSTGRES_URL` is supplied. Runtime capture, attempt persistence, payload/plan binding, recovery checks, and false-success removal remain Task 5C rather than being claimed here.

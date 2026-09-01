@@ -1088,6 +1088,7 @@ class Engine:
             "source_set_id": source_set["id"],
             "source_set_version": source_set["version"],
             "artifacts": artifact_refs,
+            "provider_identity": run.get("provider_identity"),
             "previous_snapshot_id": case.get("accepted_snapshot_id"),
             "accepted_at": self.runs.get_run(run_id)["created_at"],
         }
@@ -1096,7 +1097,7 @@ class Engine:
 
         snapshot["id"] = new_id("snap")
         snapshot["digest"] = digest(preimage)
-        self.runs.create_snapshot(snapshot)
+        snapshot = self.runs.create_snapshot(snapshot)
         # Only an explicit switch moves the visible snapshot; acceptance
         # advances the accepted pointer alone and divergence surfaces as
         # switch_required (misc spec, snapshot lens contract).

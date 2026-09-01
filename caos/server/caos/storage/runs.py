@@ -16,6 +16,7 @@ from typing import Any
 import sqlalchemy as sa
 
 from ..contracts import digest
+from ..engine.provider import AgentError, ProviderIdentity
 from ..observability import log_event
 from .store import new_id, now_iso
 
@@ -37,6 +38,7 @@ runs = sa.Table(
     sa.Column("created_by", sa.String, nullable=False),
     sa.Column("created_at", sa.String, nullable=False),
     sa.Column("schema_version", sa.String, nullable=False),
+    sa.Column("provider_identity", sa.JSON),
 )
 
 run_nodes = sa.Table(
@@ -67,6 +69,7 @@ run_artifacts = sa.Table(
     sa.Column("qa_status", sa.String),
     sa.Column("created_by", sa.String, nullable=False),
     sa.Column("created_at", sa.String, nullable=False),
+    sa.Column("provider_identity", sa.JSON),
     sa.UniqueConstraint("run_id", "module_id", "input_fingerprint", name="uq_artifact_exec_key"),
 )
 
@@ -90,6 +93,7 @@ run_snapshots = sa.Table(
     sa.Column("digest", sa.String, nullable=False),
     sa.Column("previous_snapshot_id", sa.String),
     sa.Column("accepted_at", sa.String, nullable=False),
+    sa.Column("provider_identity", sa.JSON),
 )
 
 run_budgets = sa.Table(
@@ -124,16 +128,58 @@ class StoreConflict(ValueError):
 
 
 TERMINAL = {"succeeded", "failed"}
+_IDENTITY_TABLES = ("runs", "run_artifacts", "run_snapshots")
+
+
+def _provider_identity(value: Any) -> dict[str, Any] | None:
+    if value is None:
+        return None
+    try:
+        identity = value if isinstance(value, ProviderIdentity) else ProviderIdentity.from_dict(value)
+        identity.verify()
+    except (AgentError, TypeError, ValueError) as exc:
+        raise StoreConflict("AGENT_IDENTITY_MISMATCH", "provider identity is invalid") from exc
+    return identity.as_dict()
 
 
 class RunStore:
     def __init__(self, engine: sa.Engine) -> None:
         self.engine = engine
         run_metadata.create_all(engine)
+        self._ensure_provider_identity_columns()
+
+    def _ensure_provider_identity_columns(self) -> None:
+        if self.engine.dialect.name == "postgresql":
+            with self.engine.begin() as conn:
+                for table in _IDENTITY_TABLES:
+                    conn.exec_driver_sql(
+                        f'ALTER TABLE "{table}" ADD COLUMN IF NOT EXISTS provider_identity JSON'
+                    )
+            return
+        if self.engine.dialect.name != "sqlite":
+            raise RuntimeError(f"unsupported run-store dialect: {self.engine.dialect.name}")
+        with self.engine.connect() as conn:
+            conn.exec_driver_sql("BEGIN IMMEDIATE")
+            try:
+                for table in _IDENTITY_TABLES:
+                    columns = {row[1] for row in conn.exec_driver_sql(f'PRAGMA table_info("{table}")')}
+                    if "provider_identity" not in columns:
+                        conn.exec_driver_sql(
+                            f'ALTER TABLE "{table}" ADD COLUMN provider_identity JSON'
+                        )
+                conn.commit()
+            except BaseException:
+                conn.rollback()
+                raise
 
     # -- events (always inside a caller transaction) ----------------------
 
     def _emit(self, conn: sa.Connection, run_id: str, event: str, **data: Any) -> None:
+        identity = _provider_identity(conn.execute(
+            sa.select(runs.c.provider_identity).where(runs.c.id == run_id)
+        ).scalar())
+        if identity is not None:
+            data = {**data, "provider_identity_digest": identity["identity_digest"]}
         next_seq = conn.execute(
             sa.select(sa.func.coalesce(sa.func.max(run_events.c.seq), 0) + 1).where(run_events.c.run_id == run_id)
         ).scalar_one()
@@ -161,14 +207,17 @@ class RunStore:
     def create_run(self, case_id: str, pathway: str, depth: str, actor: str, *,
                    focus_questions: list[str] | None = None,
                    upgraded_from_run_id: str | None = None,
+                   provider_identity: ProviderIdentity | dict[str, Any] | None = None,
                    schema_version: str = "caos-state-v1") -> dict[str, Any]:
         run_id = new_id("run")
+        identity = _provider_identity(provider_identity)
         with self.engine.begin() as conn:
             conn.execute(runs.insert().values(
                 id=run_id, case_id=case_id, pathway=pathway, depth=depth, status="queued",
                 plan={}, plan_digest=None, error=None, focus_questions=list(focus_questions or []),
                 accepted_snapshot_id=None, upgraded_from_run_id=upgraded_from_run_id,
                 created_by=actor, created_at=now_iso(), schema_version=schema_version,
+                provider_identity=identity,
             ))
             self._emit(conn, run_id, "run.created", case_id=case_id, pathway=pathway, depth=depth)
         return self.get_run(run_id)
@@ -308,6 +357,9 @@ class RunStore:
         """§12.8 validate-then-replace, one transaction: artifact link/relink,
         node completion, execution marker, node.succeeded event (conditional)."""
         with self.engine.begin() as conn:
+            identity = _provider_identity(conn.execute(
+                sa.select(runs.c.provider_identity).where(runs.c.id == run_id)
+            ).scalar_one())
             existing = conn.execute(
                 sa.select(run_artifacts).where(
                     run_artifacts.c.run_id == run_id,
@@ -316,6 +368,8 @@ class RunStore:
                 )
             ).mappings().first()
             if existing is not None and digest(existing["payload"]) == existing["digest"]:
+                if _provider_identity(existing["provider_identity"]) != identity:
+                    raise StoreConflict("AGENT_IDENTITY_MISMATCH", "artifact identity differs from run")
                 artifact = dict(existing)  # relink: discard candidate, keep stored ids
             else:
                 if existing is not None:
@@ -325,6 +379,7 @@ class RunStore:
                     "input_fingerprint": input_fingerprint, "payload": payload, "markdown": markdown,
                     "digest": digest(payload), "qa_status": qa_status,
                     "created_by": actor, "created_at": now_iso(),
+                    "provider_identity": identity,
                 }
                 conn.execute(run_artifacts.insert().values(**artifact))
                 conn.execute(executions.insert().values(run_id=run_id, module_id=module_id))
@@ -516,9 +571,22 @@ class RunStore:
 
     def create_snapshot(self, snapshot: dict[str, Any]) -> dict[str, Any]:
         with self.engine.begin() as conn:
-            conn.execute(run_snapshots.insert().values(**snapshot))
-            conn.execute(sa.update(runs).where(runs.c.id == snapshot["run_id"]).values(accepted_snapshot_id=snapshot["id"]))
-        return snapshot
+            run_identity = _provider_identity(conn.execute(
+                sa.select(runs.c.provider_identity).where(runs.c.id == snapshot["run_id"])
+            ).scalar_one())
+            snapshot_identity = _provider_identity(snapshot.get("provider_identity"))
+            if snapshot_identity != run_identity:
+                raise StoreConflict("AGENT_IDENTITY_MISMATCH", "snapshot identity differs from run")
+            record = {**snapshot, "provider_identity": run_identity}
+            preimage = {
+                key: value for key, value in record.items()
+                if key not in {"digest", "id", "previous_snapshot_id"}
+            }
+            if record.get("digest") != digest(preimage):
+                raise StoreConflict("AGENT_IDENTITY_MISMATCH", "snapshot digest does not bind provider identity")
+            conn.execute(run_snapshots.insert().values(**record))
+            conn.execute(sa.update(runs).where(runs.c.id == record["run_id"]).values(accepted_snapshot_id=record["id"]))
+        return record
 
     def serialize_all_for_run(self, run_id: str) -> str:
         chunks: list[Any] = [self.get_run(run_id), self.events_after(run_id, 0), self.artifacts_for_run(run_id), self.get_budget(run_id)]

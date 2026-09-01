@@ -54,6 +54,11 @@ RUNTIME_KEYS = (
 )
 _SOURCE_BLOCK_KEYS = ("block_id", "text", "locator", "confidence", "untrusted_data", "extractor_version")
 _RUN_NODE_KEYS = ("id", "run_id", "case_id", "module_id", "stage", "dependencies", "status", "attempt", "artifact_id", "error")
+_ATTEMPT_KEYS = (
+    "run_id", "module_id", "kind", "provider_identity", "request_digest", "response_digest",
+    "provider_request_id", "observed_model", "observed_provider_version", "input_tokens",
+    "output_tokens", "stop_reason", "retry_index", "terminal_code", "operation",
+)
 # Schemas the wire contract names but no route references directly.
 _UNROUTED_SCHEMAS = (
     wire.ThesisResponse,
@@ -519,9 +524,16 @@ def create_app(*, settings: Settings, store: DomainStore, engine: Any) -> FastAP
         ]
         dimensions = ("turns", "evidence_reads", "evidence_bytes", "input_tokens",
                       "output_tokens", "active_minutes", "provider_retries", "repairs")
+        identity = run.get("provider_identity")
+        attempts = []
+        for raw in budget["attempts"]:
+            projected = {key: raw.get(key) for key in _ATTEMPT_KEYS}
+            projected["provider_request_id"] = raw.get("provider_request_id", raw.get("request_id"))
+            attempts.append(projected)
         state = {
             "phase": "generating" if run["status"] == "running" else "complete",
-            "model": settings.anthropic_model,
+            "model": identity["model"] if identity else None,
+            "provider_identity": identity,
             "reporting_period": run["created_at"][:10],
             "module_output_tokens": {
                 module_id: MODULES[module_id].max_output_tokens for module_id in agent_modules
@@ -529,7 +541,7 @@ def create_app(*, settings: Settings, store: DomainStore, engine: Any) -> FastAP
             "budget_limits": {key: budget["limits"].get(key, 0) for key in dimensions},
             "budget_used": {key: budget["used"].get(key, 0) for key in dimensions},
             "inflight_request_digest": budget["inflight_request_digest"],
-            "attempts": budget["attempts"],
+            "attempts": attempts,
         }
         completed = [module_id for module_id in engine.runs.executed_modules(run["id"]) if module_id in agent_modules]
         if completed:
@@ -552,6 +564,7 @@ def create_app(*, settings: Settings, store: DomainStore, engine: Any) -> FastAP
             "created_by": run["created_by"],
             "created_at": run["created_at"],
             "error": run.get("error"),
+            "provider_identity": run.get("provider_identity"),
         }
         generation = _generation_state(run)
         if generation is not None:
@@ -648,7 +661,7 @@ def create_app(*, settings: Settings, store: DomainStore, engine: Any) -> FastAP
         return {
             key: snapshot.get(key)
             for key in ("id", "case_id", "run_id", "source_set_id", "source_set_version",
-                        "artifacts", "digest", "previous_snapshot_id", "accepted_at")
+                        "artifacts", "digest", "previous_snapshot_id", "accepted_at", "provider_identity")
         }
 
     @app.post("/api/runs/{run_id}/accept", response_model=wire.SnapshotResponse)
@@ -730,7 +743,7 @@ def create_app(*, settings: Settings, store: DomainStore, engine: Any) -> FastAP
         return {
             key: artifact.get(key)
             for key in ("id", "case_id", "run_id", "module_id", "payload", "markdown",
-                        "digest", "input_fingerprint", "created_by", "created_at")
+                        "digest", "input_fingerprint", "created_by", "created_at", "provider_identity")
         }
 
     # -- Model Builder ------------------------------------------------------

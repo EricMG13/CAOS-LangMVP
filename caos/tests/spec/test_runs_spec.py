@@ -848,6 +848,114 @@ def test_a_terminal_failure_leaves_no_node_claiming_in_flight_work(tmp_path, bla
         db.dispose()
 
 
+def test_run_store_copies_one_provider_identity_through_run_artifact_snapshot_and_events(tmp_path):
+    import sqlalchemy as sa
+
+    from caos.contracts import digest
+    from caos.engine.provider import host_control_identity
+    from caos.storage.runs import RunStore, StoreConflict
+
+    db = sa.create_engine(f"sqlite:///{tmp_path / 'authority.db'}")
+    store = RunStore(db)
+    identity = host_control_identity().as_dict()
+    try:
+        run = store.create_run(
+            "case-1", "FULL_CREDIT", "full", "analyst", provider_identity=identity,
+        )
+        assert run["provider_identity"] == identity
+        assert store.events_after(run["id"], 0)[0]["data"]["provider_identity_digest"] == identity["identity_digest"]
+
+        store.pin_plan(
+            run["id"],
+            {"nodes": [{"module_id": "CP-0", "stage": 0, "dependencies": []}]},
+            "plan-digest",
+        )
+        store.node_running(run["id"], "CP-0")
+        artifact = store.complete_node(
+            run["id"], "case-1", "CP-0", "fingerprint", {"status": "COMPLETE"},
+            None, "Passed", "analyst",
+        )
+        assert artifact["provider_identity"] == identity
+
+        snapshot = {
+            "id": "snap-1", "case_id": "case-1", "run_id": run["id"],
+            "source_set_id": "ss-1", "source_set_version": 1,
+            "artifacts": [{"id": artifact["id"], "module_id": "CP-0", "digest": artifact["digest"]}],
+            "provider_identity": identity, "previous_snapshot_id": None,
+            "accepted_at": "2026-09-01T00:00:00+00:00",
+        }
+        preimage = {key: value for key, value in snapshot.items() if key not in {"id", "previous_snapshot_id"}}
+        snapshot["digest"] = digest(preimage)
+        assert store.create_snapshot(snapshot)["provider_identity"] == identity
+        assert store.get_snapshot("snap-1")["digest"] == digest(preimage)
+
+        legacy = store.create_run("case-1", "FULL_CREDIT", "full", "analyst")
+        assert legacy["provider_identity"] is None
+        with pytest.raises(StoreConflict, match="AGENT_IDENTITY_MISMATCH"):
+            store.create_snapshot({**snapshot, "id": "snap-2", "run_id": legacy["id"]})
+
+        same_identity = store.create_run(
+            "case-1", "FULL_CREDIT", "full", "analyst", provider_identity=identity,
+        )
+        with pytest.raises(StoreConflict, match="AGENT_IDENTITY_MISMATCH"):
+            store.create_snapshot({**snapshot, "id": "snap-3", "run_id": same_identity["id"]})
+
+        store.update_artifact_for_tests(
+            run["id"], "CP-0",
+            provider_identity=host_control_identity(adapter_version="caos.host-control.v2").as_dict(),
+        )
+        with pytest.raises(StoreConflict, match="AGENT_IDENTITY_MISMATCH"):
+            store.complete_node(
+                run["id"], "case-1", "CP-0", "fingerprint", {"status": "COMPLETE"},
+                None, "Passed", "analyst",
+            )
+    finally:
+        db.dispose()
+
+
+def test_provider_identity_schema_evolution_is_serialized_and_does_not_backfill(tmp_path):
+    import sqlalchemy as sa
+
+    from caos.storage.runs import RunStore
+
+    path = tmp_path / "legacy-authority.db"
+    seed_engine = sa.create_engine(f"sqlite:///{path}")
+    seed = RunStore(seed_engine)
+    legacy_run_id = seed.create_run("case-1", "FULL_CREDIT", "full", "analyst")["id"]
+    with seed_engine.begin() as conn:
+        for table in ("runs", "run_artifacts", "run_snapshots"):
+            conn.exec_driver_sql(f'ALTER TABLE "{table}" DROP COLUMN provider_identity')
+    seed_engine.dispose()
+
+    errors: list[BaseException] = []
+
+    def initialize() -> None:
+        engine = sa.create_engine(f"sqlite:///{path}")
+        try:
+            RunStore(engine)
+        except BaseException as exc:  # pragma: no cover - asserted below
+            errors.append(exc)
+        finally:
+            engine.dispose()
+
+    workers = [threading.Thread(target=initialize) for _ in range(2)]
+    for worker in workers:
+        worker.start()
+    for worker in workers:
+        worker.join()
+
+    assert errors == []
+    verify_engine = sa.create_engine(f"sqlite:///{path}")
+    try:
+        assert all(
+            "provider_identity" in {column["name"] for column in sa.inspect(verify_engine).get_columns(table)}
+            for table in ("runs", "run_artifacts", "run_snapshots")
+        )
+        assert RunStore(verify_engine).get_run(legacy_run_id)["provider_identity"] is None
+    finally:
+        verify_engine.dispose()
+
+
 # --- determinism and replay (invariant 10) ----------------------------------------
 
 
