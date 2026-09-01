@@ -29,7 +29,7 @@
 - `caos/server/caos/modules/registry.py` only to update CP-1C's strict assembled-authority digest after the deployed authority changes
 - The smallest prohibition test beside `caos/tests/test_bundle.py`
 - `docs/superpowers/plans/2026-09-01-enterprise-testing-readiness-execution.md` only to correct the nonexistent-generator instruction
-- `.superpowers/sdd/task-2-report.md`
+- `.superpowers/sdd/enterprise-task-2-report.md`
 - `.superpowers/sdd/progress.md`
 
 Do not edit runtime ingestion, engine, API, provider, frontend, model, or deliverable implementation in this task. Preserve every CP-4 analytical/legal rule unrelated to external acquisition.

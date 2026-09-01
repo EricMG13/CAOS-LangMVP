@@ -1,208 +1,78 @@
-# Task 2 report — user-upload-only methodology
+# Task 2 report — Restore hierarchy and repair shell polish
 
-Base: `1993172`
+## Summary
 
-Branch: `codex/enterprise-readiness`
+- Reduced the frontend label taxonomy to the intended roles: uppercase tracked `nav-label`, compact uppercase table headers, sentence-case `panel-meta`, and `meta-label` data captions.
+- Removed production `.eyebrow` markup/selectors, including the stacked Model Builder section labels, while retaining the useful “forward periods only” meaning in helper copy.
+- Removed the redundant shell `Reading:` element and the unused `DestinationMeta.reading` field.
+- Rendered the command shortcut as `<kbd aria-hidden="true">⌘K</kbd>` and shared the command-palette key styling with a non-colliding gap.
+- Preserved report outline numbering, exact raw identifiers, conditional tool navigation, drawer/palette focus behavior, and Model Builder export-polling WIP of uncertain origin that appeared after the task's clean starting check.
+- The initial implementation inherited Task 1's full-border DAG status hues; the review correction below makes the container border neutral and moves state semantics to the existing shape-coded visible status treatment.
 
-## Preserved failing baseline
+## Files committed
 
-Added `caos/tests/test_user_upload_only.py` before changing methodology, then ran:
+- `caos/frontend/app/globals.css`
+- `caos/frontend/app/not-found.tsx`
+- `caos/frontend/src/components/WorkbenchShell.tsx`
+- `caos/frontend/src/components/Workspace.tsx`
+- `caos/frontend/src/components/model/ModelBuilder.tsx`
+- `caos/frontend/src/components/model/ModelBuilder.test.ts`
+- `caos/frontend/src/components/report/ReportStudio.tsx`
+- `caos/frontend/src/lib/workbench.ts`
+- `caos/frontend/src/lib/workbench.test.ts`
 
-`/private/tmp/caos-enterprise-baseline-20260901/bin/python -m pytest caos/tests/test_user_upload_only.py -q`
+## Tests and verification
 
-- Exit 1: 33 forbidden acquisition references across exactly the four brief-owned CP-4 files.
-- The failures included the named provider, retrieval-map references, public retrieval hosts/endpoints, `EDGAR_USER_AGENT`, `/api/edgar`, nonexistent server/MCP modules, and instructions to search, pull, fetch, or vault filing exhibits.
+- TDD red: `node --test src/lib/workbench.test.ts src/components/model/ModelBuilder.test.ts` — expected 2 failures before implementation (obsolete `reading` data/shell copy and Model Builder eyebrows), 20 passed.
+- Focused green: same command — 22/22 passed immediately after implementation; final rerun with concurrent WIP tests present — 24/24 passed.
+- `npm run lint -- --max-warnings=0` — passed.
+- `./node_modules/.bin/tsc --noEmit -p .` — passed using the repository-local TypeScript binary.
+- `npm run test:unit` — 84/84 passed; existing `MODULE_TYPELESS_PACKAGE_JSON` warnings only.
+- `npm run build` — passed with Next.js 16.3.3 static production output.
+- `git diff --check` and staged-diff check — passed.
+- Source checks — no production `.eyebrow`, `.reading-label`, `Reading:`, or `meta.reading` use; report `01`, `02`, … numbering remains; conditional `activeWorkflow.tools?.length` rendering remains; live DAG uses a neutral full border plus shape-coded visible status and no DAG `border-left` rule.
+- Focused Playwright probe — passed real `<kbd>` rendering and spacing, Meta+K open, search, ArrowDown, ArrowUp, Escape, focus restoration, and Enter navigation to Model Builder. The probe then timed out on an overly strict case-id assertion because the live shell normalized to a newly created case, so it did not complete the requested 1440×1000 and 720×900 screenshots.
+- Full `npm run test:workbench` — manually stopped after a silent, bounded wait. Investigation showed the process defaulted to port 8000 while that local process served backend routes only (`/cases/` returned `{"detail":"Not Found"}`). The final combined-app verification task should rerun this suite against a correctly assembled server.
+- `rewrite-tournament` — skipped under its trivial-edit exemption: Task 2 changes are declarative markup/CSS/data-field deletions and do not alter an algorithmic function or branch structure.
+- `confidence-review` — completed. Ranked risks checked: dead taxonomy selectors/callers, shortcut semantics/focus/spacing, report numbering/raw IDs/conditional tools, Model Builder primary-action exclusivity, and DAG stripe state. No confirmed Task 2 defect remained.
 
-## Implementation
+## Commit
 
-- Deleted the complete external filing acquisition map from `CP-4_RUNBOOK.md` and `REF_CP-4_STEPS.md`.
-- Removed every acquisition-map companion reference from `SKILL.md` and both acquisition-lane gate instructions from the consolidated CP-4/CP-4B steps.
-- Replaced only the affected gates: supplied executed governing documents remain authoritative; absence produces a typed evidence gap and `Blocked`; summaries/snippets cannot pass.
-- Preserved the six-rank supplied-document authority hierarchy, every provision-level legal rule, scoring rule, downstream register, and stop/fail-closed semantic unrelated to acquisition.
-- Proved the original `build/build_package.py` is absent from the checkout and all git history; the distributed README also says the builder is not shipped.
-- Added the minimal stdlib `caos/scripts/regenerate_deploy_v_integrity.py`. It preserves the shipped sorted-JSON format, exact byte/SHA inventories, compact canonical baseline/build digests, rejects symlinks and membership drift, synchronizes the retrieval index and both memory prompts, is idempotent, and has a non-mutating `--check` mode.
-- Regenerated `DEPLOY_V_MANIFEST.json`, `DEPLOY_V_BASELINE.json`, `DEPLOY_V_INTEGRITY_v1.json`, `CP_DEPLOY_V_RETRIEVAL_INDEX_v1.json`, and both memory prompts.
-- New build ID: `cc8decc567c55037db1b54573f836ea3e0326e2cdd1337ca657d8b49af910aa9`.
-- Updated the independent release pin without weakening it: 319 files, digest `0df950e68e0e8caaa5d825ed382c6090c1bc8e8e4bd673a6effd147777461d67`.
-- Corrected the execution plan to name the replacement generator instead of a nonexistent existing command.
-- Added the single narrow quality-ledger file mapping required when the new command became tracked: existing features `F-RUN-11` and `F-RUN-15`; no new feature or exclusion was added.
+- Task 2 implementation: `1d7e80068f1a0954ad370fac18d6896ad7a09989` (`feat(frontend): restore terminal label hierarchy`)
+- Task 2 review correction: `02cf9bcf37a6c94493d315449b853878a1f11f9c` (`fix(frontend): complete label and DAG semantics`)
+- Task 2 second review correction: `2bbbccbe746dff8daa635bda01944c45daab1b6f` (`fix(frontend): align captions and DAG states`)
 
-## Acceptance results
+## Review correction
 
-All commands ran from the isolated Task 2 worktree.
+- Palette group headers now use `nav-label` in markup; `.palette-group-label` retains only sticky layout/surface rules.
+- QA drawer definition terms and the Report Studio model-authority caption now use `meta-label`; their bespoke uppercase/tracked selectors were removed.
+- DAG node containers now retain a neutral border. Exact raw node status text remains visible and uses the shared shape-coded `status` roles.
+- TDD red: `node --test src/lib/workbench.test.ts` — expected 2 failures and 10 passes before the correction.
+- Focused green: the same command — 12/12 passed.
+- `npm run lint -- --max-warnings=0` — passed.
+- `./node_modules/.bin/tsc --noEmit -p .` — passed.
+- `npm run test:unit` — 88/88 passed; existing `MODULE_TYPELESS_PACKAGE_JSON` warnings only.
+- `git diff --check` and correction staged-diff checks — passed.
+- `rewrite-tournament` — skipped under the trivial/declarative-edit exemption.
+- `confidence-review` — completed against taxonomy inheritance, caption markup coverage, conditional palette groups, all served node states, neutral DAG borders, visible raw status text, and external WIP isolation. No confirmed correction defect remained.
 
-1. `/private/tmp/caos-enterprise-baseline-20260901/bin/python -m pytest caos/tests/test_bundle.py caos/tests/spec/test_modules_spec.py -q`
-   - Exit 0: `25 passed in 0.77s`.
-2. `/private/tmp/caos-enterprise-baseline-20260901/bin/python caos/scripts/regenerate_deploy_v_integrity.py --check`
-   - Exit 0: `Deploy V integrity is current`.
-3. `/usr/bin/env python3 "Modular OS/tools/check_module_consistency.py"`
-   - Exit 0: `26 modules checked, 0 with drift.`
-4. `/private/tmp/caos-enterprise-baseline-20260901/bin/python -m ruff check --config ruff.toml caos/server caos/tests --exclude caos/server/caos/methodology/vendor`
-   - Exit 0: `All checks passed!`
-5. `/usr/bin/env python3 docs/quality_ledger_coverage.py`
-   - Exit 0: 45 routes, 230 product files, 120 features; every route and product file documented.
-6. `git diff --check`
-   - Exit 0.
-7. Tracked-source prohibition test after adding all Task 2 files.
-   - Exit 0; zero forbidden product/runtime/methodology/test-fixture references.
-8. Adversarial regeneration check in a temporary copied bundle.
-   - `--check` returned 1 after byte drift and left every identity file unchanged; normal regeneration repaired the copy; a second `--check` passed; an extra symlinked skill directory was rejected.
+## Second review correction
 
-## Rewrite tournament
+- Leveraged-loan authority and accepted-analysis provenance definition terms now use `meta-label`; their bespoke uppercase/tracked `dt` selectors were removed.
+- The source assertion now rejects any stylesheet rule that adds tracking or uppercase transformation to a `dt`, covering future caption duplicates rather than only named selectors.
+- A small pure `nodeStatusTone` helper explicitly covers the server `NodeStatus` contract: `pending`/`ready` → idle, `running` → running, `blocked`/`cancelled` → warning, `failed` → critical/error, and `succeeded` → success. Unknown future states fail safe to warning.
+- Running status now has the live accent glyph/tone, while every DAG status retains exact visible raw text.
+- TDD red: `node --test src/lib/workbench.test.ts` — expected 2 failures and 10 passes before the correction.
+- Focused green: the same command — 12/12 passed.
+- `npm run lint -- --max-warnings=0` — passed.
+- `./node_modules/.bin/tsc --noEmit -p .` — passed.
+- `npm run test:unit` — 88/88 passed; existing `MODULE_TYPELESS_PACKAGE_JSON` warnings only.
+- `git diff --check` and correction staged-diff checks — passed.
+- `rewrite-tournament` — skipped because the helper is a straightforward contract-to-tone mapping below the skill's trivial-function threshold.
+- `confidence-review` — completed against all seven server states, unknown-state fallback, raw visible labels, running styling, global `dt` typography duplication, and preservation of starting checkpoint `5b425a2c3024f453edf7caab8c7a4d8235d20b17`. No confirmed defect remained.
 
-**Winner:** Readability challenger, replacing `caos/scripts/regenerate_deploy_v_integrity.py` lines 22–144.
+## Remaining risks
 
-**Justification:**
-
-- Computes one immutable generated snapshot instead of scanning twice across a time-of-check/time-of-write gap.
-- Rejects duplicate, missing, or extra skill membership across disk, manifest, and integrity metadata.
-- Centralizes the established “canonical JSON excluding the identity field” rule without changing output bytes.
-
-**Final code:** `caos/scripts/regenerate_deploy_v_integrity.py`.
-
-**Verification:** the exact Task 2 pytest command passed 25/25; `--check` passed; the only caller remains `caos/tests/test_bundle.py`; all bundle consumers continue to receive the same schema and synchronized identity fields.
-
-## Confidence review — Task 2 diff
-
-Least confident about (ranked):
-
-1. The replacement generator might use a different canonicalization than the omitted original.
-   - Investigated: reproduced the pre-change `baseline_digest` and integrity `build_id` exactly from the checked-in JSON using compact, sorted JSON with only the identity field omitted; reproduced the existing pretty-printed files byte-for-byte with sorted two-space JSON plus newline.
-   - Verdict: fine; regenerated bundle verification, identity agreement, independent byte pin, and idempotent `--check` all pass.
-2. A bundle path might escape or be silently omitted.
-   - Investigated: adversarially added a symlinked extra skill directory and reviewed manifest/integrity membership handling.
-   - Verdict: confirmed risk in the first draft; fixed at the root by rejecting symlinks and requiring disk, manifest, and integrity membership to match exactly.
-3. `--check` might mutate files or normal mode might use a different snapshot.
-   - Investigated: drifted a temporary bundle, hashed every identity file before/after `--check`, regenerated, and checked again.
-   - Verdict: confirmed double-scan risk in the first draft; fixed by generating once. `--check` left all identity bytes unchanged and normal mode was idempotent.
-4. The prohibition test might be narrowly tailored to the current strings.
-   - Investigated: expanded it across tracked CAOS text/code suffixes with provider, host, endpoint, environment, nonexistent-module, named-map, and bidirectional acquisition-instruction patterns; no broad vendored-methodology exclusion exists.
-   - Verdict: fine; the red baseline named all four files and the final tracked-source run is green.
-5. Removing the acquisition section might weaken unrelated CP-4 authority or legal gates.
-   - Investigated: reviewed the actual diff and retained hierarchy, provision-analysis steps, registers, scoring, blocked semantics, and supplied executed-document primacy.
-   - Verdict: fine; only acquisition content and its direct references changed.
-6. Updating the release pin could accidentally weaken independent verification.
-   - Investigated: count remains exactly 319 and the test still hashes every shipped byte independently of self-authored metadata.
-   - Verdict: fine; the strict new digest passes.
-7. Mapping the new command could conceal it through a broad tooling exclusion.
-   - Investigated: staged-file discovery failed first, then the acceptance correction mapped only the exact script path to existing methodology-integrity features `F-RUN-11` and `F-RUN-15`.
-   - Verdict: fine; no exclusion, wildcard script mapping, or feature row was added.
-
-Fixed: ignored/mismatched skill membership and the double-generation race in the initial regeneration script.
-
-Verified fine: canonicalization, check-only behavior, idempotency, symlink rejection, prohibition coverage, legal-gate preservation, bundle verification, independent pin, and narrow ledger coverage.
-
-By design: the offline regeneration command writes six identity files sequentially; `--check` detects an interrupted partial run. Add staged directory replacement only if concurrent release builders/readers are introduced.
-
-Still open: none for Task 2.
-
-## Reviewer P1 corrections
-
-The first review identified two real coverage gaps:
-
-1. The prohibition gate used a text-suffix allowlist and line-by-line matching, so tracked extensionless text, multiline instructions, and several common acquisition phrasings could evade it.
-2. The standalone integrity checker did not reject every undeclared tree shape: a direct file under `skills`, undeclared root entries, nested symlinks, and a symlink at the bundle root required explicit validation.
-
-Corrections:
-
-- Enumerate every tracked path below `caos` with NUL-delimited `git ls-files`; read bytes; skip only NUL-containing or non-UTF-8 files; and scan each complete decoded file.
-- Match real `sec.gov` hosts with hostname boundaries, without rejecting lookalikes such as `notsec.gov.example.com`.
-- Add sentence-bounded, order-independent acquisition detection for SEC/EDGAR filing objects and bounded public/external filing acquisition, including passive download wording.
-- Pin the reviewer's four exact false-negative cases, two tournament challenge cases, and the lookalike-host negative case in a self-scannable detector test.
-- Validate an exact managed bundle-root membership, reject the bundle itself when it is a symlink, reject every symlink below it, and require every direct `skills` entry to be a directory whose slug agrees with manifest and integrity membership.
-- Add deterministic temporary-copy regressions for a direct undeclared skills file, an extra root file, an extra root symlink, a nested symlink, and a symlinked bundle root.
-
-### Follow-up rewrite tournament
-
-**Winner:** challenger, narrowly.
-
-The challenger demonstrated four concrete gaps: a symlinked bundle root passed, newline-containing tracked filenames were not safely enumerated, the first hostname pattern overmatched a lookalike domain, and acquisition wording could evade verb-first rules. Those corrections were adopted. The challenger did not replace canonical digest formulas or generated identity semantics.
-
-### Follow-up acceptance
-
-1. Focused adversarial suite: `3 passed in 39.98s`.
-2. Exact bundle/spec suite: `26 passed in 1.85s`.
-3. Standalone integrity check: `Deploy V integrity is current`.
-4. Module consistency: `26 modules checked, 0 with drift.`
-5. Ruff over server/tests excluding vendored methodology: `All checks passed!`
-6. Quality-ledger coverage: 45 routes, 230 product files, 120 features; all documented.
-7. `git diff --check`: exit 0.
-8. Generated bundle identity files: no byte changes in the P1 correction.
-
-### Follow-up confidence review
-
-Least-confident areas were the regex boundary, ordering/newline behavior, tracked-file enumeration, tree validation order, and accidental identity drift. The focused positive and negative cases verified the detector boundary and order independence; NUL-delimited enumeration and full-text decoding were reviewed directly; temporary repositories exercised every rejected tree shape from pristine passing copies; and both standalone `--check` and an empty generated-identity diff confirmed that canonical identities did not change.
-
-Residual maintenance constraint: `ROOT_ENTRIES` is deliberately closed. Any intentional new bundle-root file must be added to that set and covered by the normal regeneration review.
-
-## Remaining re-review blocker and CP-1C authority correction
-
-The next re-review proved that the generic detector was not fully order-independent and that the deployed CP-1C authority contradicted the runtime's existing `supplied_only` pin. Shared canon granted a CP-1C public-research exception, and CP-1C instructions still directed automatic peer discovery, external-source queries, scraping provenance, and provisional externally sourced tiers.
-
-Detector corrections:
-
-- Give acquisition verb, generic public/external location, and filing/exhibit object their own independent sentence-bounded lookaheads.
-- Correct the verb family to match `browse`, `browses`, `browsed`, and `browsing`.
-- Pin `Search filings from external sources.`, `Filings from external sources should be downloaded.`, and `Browsing SEC exhibits is required.` through source-safe composition.
-- Preserve the negative `public-private` peer-profile case, which the stronger generic matcher initially exposed as a false positive.
-- Add a direct all-files assertion over the deployed CP-1C slug for discovery/scraping vocabulary, automatic discovery defaults, externally sourced tiers, and external filing-query instructions.
-
-CP-1C authority corrections:
-
-- Replace the shared-canon public-research exception with a supplied-evidence boundary aligned to `MODULES["CP-1C"].source_mode == "supplied_only"`.
-- Limit candidate selection to analyst-uploaded peer lists and peer entities disclosed in supplied bytes. A peer list remains selection input, not metric evidence.
-- Require every peer metric to resolve to a supplied source file and locator. Public/regulatory filings and other source types remain usable only when their exact bytes were supplied to the active run.
-- Replace automatic discovery and scraping tables with a supplied Peer Candidate Source Register. No peer evidence produces `PEER_SET_NOT_SUPPLIED` and `Blocked`; insufficient benchmark data produces a typed limitation or blocked dependent calculation.
-- Replace scraping-specific provenance tiers, exclusion rules, validation wording, and script comments with supplied-primary/supplied-secondary evidence rules.
-- Preserve all substantive peer analysis: the 15 core formulas, 16 comparability dimensions, alignment standard, minimum-N rules, outlier analysis, valuation calculations/tables, creditor implications, gaps ledger, and downstream handoffs.
-
-Regenerated identities:
-
-- Deploy V build ID: `1912cb03a21a750ec995e623de9b9a8973aa6e0160cc4b0d8c36f4a863c5c001`.
-- Independent approved-release pin: 319 files, `1f1a71d3388070f57cfeafd220c060c411fff426cf21b8c1b02a5270e5718200`.
-- CP-1C assembled-authority pin: `6a472b9802a1fc21784d1fee1f306b051701860c80e57f459819b46d9600ce42`.
-
-### Final acceptance after CP-1C correction
-
-1. Focused detector and direct CP-1C authority tests: `3 passed in 38.26s`.
-2. Exact bundle/spec suite: `26 passed in 1.70s`.
-3. Standalone integrity check: `Deploy V integrity is current`.
-4. Module consistency: `26 modules checked, 0 with drift.`
-5. Ruff over server/tests excluding vendored methodology: `All checks passed!`
-6. Quality-ledger coverage: 45 routes, 230 product files, 120 features; all documented.
-7. CP-1C acquisition-vocabulary search: zero matches.
-8. `git diff --check`: exit 0.
-
-### Final confidence review
-
-Least-confident areas were detector false positives, incomplete removal through shared authority, accidental loss of peer-analysis rules, and hand-updated identity mistakes. The `public-private` regression now proves the generic boundary; the tracked-tree detector plus direct recursive CP-1C assertion and zero-result search cover the complete authority surface; diff review confirmed the formulas, registers, thresholds, valuation/outlier logic, and downstream semantics remain; and the exact suite independently verifies the regenerated bundle bytes and assembled authority. A second non-mutating regeneration check is current.
-
-The only remaining `web_only`/`hybrid` tokens inside the CP-1C directory belong to a generic validator branch explicitly gated on `module_id == "CP-DR"`, duplicated across methodology packages. They are not CP-1C authority or an acquisition instruction and were deliberately left unchanged to avoid creating a divergent validator clone outside this correction's scope.
-
-Rewrite tournament was skipped under the skill's test-only/trivial-change exception: no non-trivial executable function changed in this correction. The peer-statistics edits are comments, the registry edit is a regenerated literal pin, and the detector change is test-policy logic covered by the adversarial cases above.
-
-## Final generic-location boundary correction
-
-The final re-review found that excluding every hyphen after `public` or `external` was too broad: acquisition instructions using `public-company`, `external-regulatory`, or `external-facing` could evade the generic detector. The matcher now exempts only benign `public-private` comparability wording; `external` has no hyphen exception.
-
-Pinned source-safe positives:
-
-- `Search public-company filings on the web.`
-- `Search filings from public-company sources.`
-- `Download external-regulatory filings.`
-- `Search filings from external-facing databases.`
-
-The existing `public-private` peer-comparability sentence remains a pinned negative.
-
-Final verification:
-
-- Focused detector/direct CP-1C suite: `3 passed in 38.60s`.
-- Exact Task 2 bundle/spec suite: `26 passed in 1.96s`.
-- Integrity check: current.
-- Module consistency: 26 modules, zero drift.
-- Ruff and quality-ledger coverage: clean.
-- `git diff --check`: exit 0.
-
-Confidence review focused on the sole semantic distinction introduced here. Case-insensitive `public(?!-private\b)` rejects the intended benign compound while allowing other hyphenated public source descriptions; unqualified `external` covers both ordinary and hyphenated external-source descriptions. The four positive cases, the existing negative case, full tracked-tree self-scan, and unchanged bundle identities all pass.
-
-Rewrite tournament was explicitly skipped because this commit changes only test-policy regex/data and task records; it changes no product or methodology executable function.
+- Visual inspection at 1440×1000 and 720×900 remains unverified because the focused live fixture changed the selected case before the viewport stage. Source/unit/build verification covers the hierarchy, but the final combined-app browser task should capture both viewports.
+- The full browser journey remains unverified in this task because the available port-8000 process was backend-only. This is an environment assembly issue, not a captured application assertion failure.
+- The original Task 2 worktree was clean at `9874a68c8b51473706bce1ed73a3e73fc022474a`. The separately reviewed Model Builder export-polling work is now preserved in checkpoint `5b425a2c3024f453edf7caab8c7a4d8235d20b17`; the second review correction started from that commit and did not alter it.
