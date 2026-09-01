@@ -70,6 +70,7 @@ FILE_MAP = {
     r"^caos/frontend/scripts/production-inventory": "F-OPS-02 (D-009)",
     r"^caos/frontend/(next\.config|eslint\.config|tsconfig|package)": "F-OPS-04, F-OPS-09",
     r"^caos/scripts/build_frontend\.sh": "F-OPS-04",
+    r"^caos/scripts/regenerate_deploy_v_integrity\.py": "F-RUN-11, F-RUN-15",
     r"^caos/deploy/(backup|restore_drill)\.sh": "F-OPS-05",
     r"^caos/deploy/verify_image_resources\.py": "F-OPS-06",
     r"^caos/deploy/Dockerfile": "F-OPS-06, F-OPS-11",

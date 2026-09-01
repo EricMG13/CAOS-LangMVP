@@ -56,7 +56,9 @@
 - Modify: `caos/server/caos/methodology/vendor/deploy_v/skills/cp-4-legal-covenant-interpreter/references/CP-4_RUNBOOK.md`
 - Modify: `caos/server/caos/methodology/vendor/deploy_v/skills/cp-4-legal-covenant-interpreter/references/REF_CP-4B_STEPS.md`
 - Modify: `caos/server/caos/methodology/vendor/deploy_v/skills/cp-4-legal-covenant-interpreter/references/REF_CP-4_STEPS.md`
-- Modify: vendored bundle manifest/digests through the existing regeneration command only
+- Modify: vendored bundle manifest/digests through `caos/scripts/regenerate_deploy_v_integrity.py`
+- Add: `caos/scripts/regenerate_deploy_v_integrity.py` because the distributed package omits its original builder
+- Modify: `docs/quality_ledger_coverage.py` to map the replacement command to existing methodology-integrity features
 - Test: `caos/tests/test_bundle.py`
 - Test: `caos/tests/spec/test_modules_spec.py`
 - Test: add the smallest tracked-text prohibition test beside the bundle tests
@@ -65,7 +67,7 @@
 
 **Step 2 — Delete the acquisition lane.** Remove the EDGAR reference section and every instruction that asks an agent to search, fetch, or vault external filings. Replace only necessary legal-gate wording with “use supplied governing documents; otherwise record a typed evidence gap.”
 
-**Step 3 — Regenerate integrity metadata.** Use the repository’s existing methodology build/integrity scripts; never hand-edit a digest without regenerating its preimage.
+**Step 3 — Regenerate integrity metadata.** The distributed package does not ship its original builder. Use the minimal stdlib `caos/scripts/regenerate_deploy_v_integrity.py` replacement; never hand-edit a digest without regenerating its preimage.
 
 **Step 4 — Verify.** Run the prohibition test, module consistency, bundle verification, methodology specs, and a repository search. Expected: zero forbidden references and zero bundle drift.
 

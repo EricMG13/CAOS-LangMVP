@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import shutil
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -12,6 +14,7 @@ from caos.contracts import Depth
 from caos.methodology.bundle import DeployVBundle, MethodologyError
 
 ROOT = Settings().deploy_v_root
+REPO = Path(__file__).resolve().parents[2]
 
 
 def test_vendored_bundle_integrity_passes():
@@ -22,6 +25,19 @@ def test_vendored_bundle_integrity_passes():
     assert report["logical_entries"] == 41
     assert report["physical_skills"] == 22
     assert bundle.build_id == bundle.integrity["build_id"]
+
+
+def test_bundle_identity_files_are_current_and_agree():
+    bundle = DeployVBundle(ROOT)
+    assert bundle.retrieval["build_id"] == bundle.build_id
+    for name in ("DEPLOY_V_COPILOT_MEMORY_PROMPT.md", "DEPLOY_V_COPILOT_MEMORY_PROMPT_URL_BOUND.md"):
+        prompt = (ROOT / name).read_text(encoding="utf-8")
+        assert "INDEX_BUILD_ID:" in prompt and prompt.count(bundle.build_id) == 1
+    subprocess.run(
+        [sys.executable, "caos/scripts/regenerate_deploy_v_integrity.py", "--check"],
+        cwd=REPO,
+        check=True,
+    )
 
 
 def test_tampered_bundle_fails_closed(tmp_path: Path):

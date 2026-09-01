@@ -1,6 +1,6 @@
 {
   "authority": "DEPLOY_V_INTEGRITY_v1",
-  "build_id": "7fa967c472e8d185f6b7c0e716628de5aea9367f059f6e3fe307224fdd9ee213",
+  "build_id": "cc8decc567c55037db1b54573f836ea3e0326e2cdd1337ca657d8b49af910aa9",
   "routing_index": "CP_DEPLOY_V_RETRIEVAL_INDEX_v1.json",
   "schema_version": "1.0",
   "skills": [
@@ -750,14 +750,14 @@
       "companion_count": 18,
       "companion_limit": 20,
       "companion_limit_exception": false,
-      "entry_bytes": 38746,
-      "entry_sha256": "af3d0c9b9e518b023470c3f855c435ec8706c50ded24523528ae8744310ddb89",
+      "entry_bytes": 38671,
+      "entry_sha256": "7ac723f6dab9f107bc5a1785b125d3136217990803f69debfd81abacf0384511",
       "folder_slug": "cp-4-legal-covenant-interpreter",
       "module_id": "CP-4",
       "relative_file_hashes": {
         "SKILL.md": {
-          "bytes": 38746,
-          "sha256": "af3d0c9b9e518b023470c3f855c435ec8706c50ded24523528ae8744310ddb89"
+          "bytes": 38671,
+          "sha256": "7ac723f6dab9f107bc5a1785b125d3136217990803f69debfd81abacf0384511"
         },
         "references/CP-4A_RUNBOOK.md": {
           "bytes": 11568,
@@ -788,8 +788,8 @@
           "sha256": "0695f3917d43bba80aafe5e4d29045afbd00acbefd6ad55b3e40913141328cf8"
         },
         "references/CP-4_RUNBOOK.md": {
-          "bytes": 28060,
-          "sha256": "abe96a72629686818d5697fbf7a9ccedaf90c3f6d80ca8c46fa3dd27b461ad57"
+          "bytes": 18750,
+          "sha256": "14f832139c88f049eda3093f37083f1c936db127f992a0420e1191e6310bf691"
         },
         "references/CP-4_SCHEMA_REFERENCE.md": {
           "bytes": 4237,
@@ -804,12 +804,12 @@
           "sha256": "592fff340b5701ef3cf536364860ea480e5c30398a2e912f03361436b3bd0824"
         },
         "references/REF_CP-4B_STEPS.md": {
-          "bytes": 20377,
-          "sha256": "66cc95e7007d279caf6f97729c3e40ec0d8745c777ed588054cd388c832f3794"
+          "bytes": 20232,
+          "sha256": "150c3615d327afabf401816f272455f48870636ce28213fb81f5ffede45aa2a7"
         },
         "references/REF_CP-4_STEPS.md": {
-          "bytes": 45530,
-          "sha256": "3742f5e432d657ac38ed49005e3d6bd553db56740c950ca3326787c90f402d0e"
+          "bytes": 35561,
+          "sha256": "b199ef1327407b87ef5a12493be758a0f9a1b2e2cc62012ef39b94e2f402f2d4"
         },
         "scripts/completeness_check.py": {
           "bytes": 17807,
@@ -1530,8 +1530,8 @@
     }
   ],
   "source_hashes": {
-    "deployed_baseline": "4572210267eb6df248fbbe77830bf02e1d3c071fe319bad0f77e3f9f39f3a0dd",
+    "deployed_baseline": "3d058bcebe962b6c341683a5cec586fa3ea737552ee5f3fd037b95d458665ce7",
     "deployed_child_schema_registry": "6b1766e5698632e277ede71037bee2fcd3e02b726c43b76fc4fe0f8b47c5ef48",
-    "deployed_manifest": "1e4ca1ec02c43efd096915a56d4e0aad6525ffe5babdce8ee0d01f31a7fb3823"
+    "deployed_manifest": "ca8bee29553ff44cf27e167b05bf71320c2e5fb7b6e27948d351364ab9e1f23e"
   }
 }

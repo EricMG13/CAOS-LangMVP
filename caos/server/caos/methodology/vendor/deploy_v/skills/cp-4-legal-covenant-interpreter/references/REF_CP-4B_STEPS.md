@@ -24,7 +24,10 @@ Original files, in this bundle: REF_CP-4B_01_SourceGateEntityEvidence.md, REF_CP
    - **Blocked:** no entity/guarantee evidence. Output blocked message and STOP. Do not infer the perimeter.
 7. If CP-1 entity-level debt missing: structural-subordination analysis limited — flag. If CP-4 findings missing: leakage routes carry [Insufficient Information] for enabling provisions — flag.
 
-> **Free acquisition lane:** before assigning **Blocked**, attempt the free SEC EDGAR lane — Ex-21 (subsidiaries list), Ex-10.x (credit agreements with guarantor + collateral schedules), Ex-4.x (indentures / supplemental indentures). A pulled-and-vaulted exhibit is an executed primary source; an unfetched full-text hit is `external · unverified` and does **not** satisfy the BLOCKING gate until ingested.
+> **Supplied-document gate:** Only entity-perimeter and guarantee/security evidence
+> supplied to CAOS may satisfy this gate. If it is absent, record a typed evidence
+> gap, set Module Status = **Blocked**, and STOP. A summary or snippet cannot
+> satisfy the gate.
 
 ## Output
 T4D.1: Source gate register (entity-evidence inventory + status + authority rank + limitations) + Module Status: Completed / Completed with Limitations / Blocked
