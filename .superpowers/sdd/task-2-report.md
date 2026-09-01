@@ -40,12 +40,13 @@
 
 - Task 2 implementation: `1d7e80068f1a0954ad370fac18d6896ad7a09989` (`feat(frontend): restore terminal label hierarchy`)
 - Task 2 review correction: `02cf9bcf37a6c94493d315449b853878a1f11f9c` (`fix(frontend): complete label and DAG semantics`)
+- Task 2 second review correction: `2bbbccbe746dff8daa635bda01944c45daab1b6f` (`fix(frontend): align captions and DAG states`)
 
 ## Review correction
 
 - Palette group headers now use `nav-label` in markup; `.palette-group-label` retains only sticky layout/surface rules.
 - QA drawer definition terms and the Report Studio model-authority caption now use `meta-label`; their bespoke uppercase/tracked selectors were removed.
-- DAG node containers now retain a neutral border. Exact raw node status text remains visible and uses the existing shape-coded `status` roles: success disc, failure square, and warning triangle for non-terminal states.
+- DAG node containers now retain a neutral border. Exact raw node status text remains visible and uses the shared shape-coded `status` roles.
 - TDD red: `node --test src/lib/workbench.test.ts` — expected 2 failures and 10 passes before the correction.
 - Focused green: the same command — 12/12 passed.
 - `npm run lint -- --max-warnings=0` — passed.
@@ -55,8 +56,23 @@
 - `rewrite-tournament` — skipped under the trivial/declarative-edit exemption.
 - `confidence-review` — completed against taxonomy inheritance, caption markup coverage, conditional palette groups, all served node states, neutral DAG borders, visible raw status text, and external WIP isolation. No confirmed correction defect remained.
 
+## Second review correction
+
+- Leveraged-loan authority and accepted-analysis provenance definition terms now use `meta-label`; their bespoke uppercase/tracked `dt` selectors were removed.
+- The source assertion now rejects any stylesheet rule that adds tracking or uppercase transformation to a `dt`, covering future caption duplicates rather than only named selectors.
+- A small pure `nodeStatusTone` helper explicitly covers the server `NodeStatus` contract: `pending`/`ready` → idle, `running` → running, `blocked`/`cancelled` → warning, `failed` → critical/error, and `succeeded` → success. Unknown future states fail safe to warning.
+- Running status now has the live accent glyph/tone, while every DAG status retains exact visible raw text.
+- TDD red: `node --test src/lib/workbench.test.ts` — expected 2 failures and 10 passes before the correction.
+- Focused green: the same command — 12/12 passed.
+- `npm run lint -- --max-warnings=0` — passed.
+- `./node_modules/.bin/tsc --noEmit -p .` — passed.
+- `npm run test:unit` — 88/88 passed; existing `MODULE_TYPELESS_PACKAGE_JSON` warnings only.
+- `git diff --check` and correction staged-diff checks — passed.
+- `rewrite-tournament` — skipped because the helper is a straightforward contract-to-tone mapping below the skill's trivial-function threshold.
+- `confidence-review` — completed against all seven server states, unknown-state fallback, raw visible labels, running styling, global `dt` typography duplication, and preservation of starting checkpoint `5b425a2c3024f453edf7caab8c7a4d8235d20b17`. No confirmed defect remained.
+
 ## Remaining risks
 
 - Visual inspection at 1440×1000 and 720×900 remains unverified because the focused live fixture changed the selected case before the viewport stage. Source/unit/build verification covers the hierarchy, but the final combined-app browser task should capture both viewports.
 - The full browser journey remains unverified in this task because the available port-8000 process was backend-only. This is an environment assembly issue, not a captured application assertion failure.
-- The worktree was clean at starting HEAD `9874a68c8b51473706bce1ed73a3e73fc022474a`. Model Builder export-polling changes of uncertain origin appeared during this turn; they remain intentionally uncommitted and preserved in the shared worktree, and were excluded from the Task 2 implementation commit.
+- The original Task 2 worktree was clean at `9874a68c8b51473706bce1ed73a3e73fc022474a`. The separately reviewed Model Builder export-polling work is now preserved in checkpoint `5b425a2c3024f453edf7caab8c7a4d8235d20b17`; the second review correction started from that commit and did not alter it.
