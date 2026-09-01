@@ -948,7 +948,7 @@ try {
   await page.goto(`${baseURL}/model-builder/?case=${caseRecord.id}`, { waitUntil: "networkidle" });
   const buildButton = page.getByRole("button", { name: "Build model" });
   await buildButton.click();
-  await page.getByText("Model build queued.", { exact: true }).waitFor();
+  await page.getByText("Build queued", { exact: true }).waitFor();
   await buildButton.click({ force: true }).catch(() => {});
   assert.equal(modelPosts, 1, "disabled model control submitted a duplicate build");
   modelState = "BUILDING";
