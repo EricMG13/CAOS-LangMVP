@@ -71,6 +71,7 @@ type RevisionExport = {
   error?: { code: string; detail: string } | null;
   filename?: string;
 };
+type RevisionExportStatus = { revision_id: string; export: RevisionExport };
 type ModelRevision = Omit<ModelPreview, "draft_generation" | "deltas" | "worksheet"> & {
   id: string;
   effective_assumptions: WireAssumptionValue[];
@@ -428,6 +429,20 @@ export default function ModelBuilder({
     }
   }, [caseId]);
 
+  const refreshRevisionExports = useCallback(async () => {
+    if (!caseId) return;
+    const generation = requestGeneration.current;
+    const response = await request<{ exports: RevisionExportStatus[] }>(
+      `/api/cases/${caseId}/model-revisions/export-statuses`,
+    ).catch(() => null);
+    if (!response || generation !== requestGeneration.current) return;
+    const exports = new Map(response.exports.map((item) => [item.revision_id, item.export]));
+    setRevisions((current) => current.map((revision) => {
+      const next = exports.get(revision.id);
+      return next ? { ...revision, export: next } : revision;
+    }));
+  }, [caseId]);
+
   useEffect(() => {
     requestGeneration.current += 1;
     actionGeneration.current += 1;
@@ -473,11 +488,21 @@ export default function ModelBuilder({
   useEffect(() => { onDraftStateChange?.(dirty); }, [dirty, onDraftStateChange]);
   useEffect(() => () => onDraftStateChange?.(false), [onDraftStateChange]);
   useEffect(() => {
-    const exportPending = revisions.some((item) => item.export?.status === "QUEUED" || item.export?.status === "EXPORTING");
-    if (status !== "QUEUED" && status !== "BUILDING" && !exportPending) return;
-    const timer = window.setTimeout(() => { void refresh(undefined, false); }, 1500);
-    return () => window.clearTimeout(timer);
-  }, [refresh, revisions, status]);
+    const buildPending = status === "QUEUED" || status === "BUILDING";
+    const exportPending = !buildPending && revisions.some(
+      (item) => item.export?.status === "QUEUED" || item.export?.status === "EXPORTING",
+    );
+    if (!buildPending && !exportPending) return;
+    let active = true;
+    let timer = 0;
+    const poll = async () => {
+      if (buildPending) await refresh(undefined, false);
+      else await refreshRevisionExports();
+      if (active) timer = window.setTimeout(poll, 1500);
+    };
+    timer = window.setTimeout(poll, 1500);
+    return () => { active = false; window.clearTimeout(timer); };
+  }, [refresh, refreshRevisionExports, revisions, status]);
 
   const previewDraft = async (nextDraft = draftRef.current, nextGeneration = draftGenerationRef.current) => {
     const authority = draftAuthorityRef.current;
@@ -642,7 +667,12 @@ export default function ModelBuilder({
   const queueRevisionExport = async (revision: ModelRevision) => {
     const action = ++actionGeneration.current;
     setPending(`export:${revision.id}`); setMessage("");
-    try { await request(`/api/cases/${caseId}/model-revisions/${revision.id}/export`, { method: "POST" }); if (action !== actionGeneration.current) return; setMessage("Exact version XLSX export queued."); await refresh(undefined, false); }
+    try {
+      const queued = await request<ModelRevision>(`/api/cases/${caseId}/model-revisions/${revision.id}/export`, { method: "POST" });
+      if (action !== actionGeneration.current) return;
+      setRevisions((current) => current.map((item) => item.id === queued.id ? queued : item));
+      setMessage("Exact version XLSX export queued.");
+    }
     catch (caught) {
       if (action !== actionGeneration.current) return;
       if (isUnavailableRoute(caught)) setUnavailable((current) => ({ ...current, revisionExport: true }));

@@ -1447,6 +1447,34 @@ async def test_http_revision_export_route_queues_the_exact_signed_revision(clien
     assert response.json()["export"]["status"] == "QUEUED"
 
 
+async def test_http_revision_export_statuses_omit_signed_model_payloads(client, models, engine, store):
+    case, build = await _built_case(models, engine, store)
+    registry = models.assumption_registry(case["id"], build["id"])
+    preview = models.preview(case["id"], _preview_request(registry, build["id"]))
+    signed = models.sign_off(case["id"], _sign_off_request(registry, build["id"], preview))
+
+    response = client.get(
+        f"/api/cases/{case['id']}/model-revisions/export-statuses",
+        headers=_ANALYST,
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "exports": [{"revision_id": signed["id"], "export": {"status": "QUEUED"}}],
+    }
+    assert "worksheet" not in response.text
+    history = client.get(f"/api/cases/{case['id']}/model-revisions", headers=_ANALYST)
+    assert len(response.content) * 10 < len(history.content), "poll payload stays at least 10x smaller than signed history"
+
+    models.run_export_for_tests(signed["id"])
+    ready = client.get(
+        f"/api/cases/{case['id']}/model-revisions/export-statuses",
+        headers=_ANALYST,
+    ).json()["exports"][0]["export"]
+    assert ready["status"] == "READY" and ready["filename"] and ready["sha256"] and ready["size"] > 0
+    assert "vault_key" not in ready, "polling never exposes the server-side export location"
+
+
 async def test_http_revision_download_serves_the_verified_export(client, models, engine, store):
     case, build = await _built_case(models, engine, store)
     registry = models.assumption_registry(case["id"], build["id"])

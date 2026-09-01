@@ -320,6 +320,23 @@ class ModelRevisionListResponse(WireModel):
     revisions: list[Any]
 
 
+class ModelRevisionExportStateResponse(WireModel):
+    status: Literal["NOT_REQUESTED", "QUEUED", "EXPORTING", "READY", "FAILED"]
+    error: Any | None = None
+    filename: str | None = None
+    sha256: str | None = None
+    size: int | None = None
+
+
+class ModelRevisionExportStatusResponse(WireModel):
+    revision_id: str
+    export: ModelRevisionExportStateResponse
+
+
+class ModelRevisionExportStatusListResponse(WireModel):
+    exports: list[ModelRevisionExportStatusResponse]
+
+
 class AuditEventResponse(WireModel):
     id: str
     actor: str

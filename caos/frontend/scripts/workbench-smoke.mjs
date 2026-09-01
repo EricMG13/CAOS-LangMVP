@@ -802,6 +802,7 @@ try {
   const exportPath = (url) => url.pathname === `/api/cases/${caseRecord.id}/models/${modelBuildId}/export`;
   const registryPath = (url) => url.pathname === `/api/cases/${caseRecord.id}/models/assumption-registry`;
   const revisionsPath = (url) => url.pathname === `/api/cases/${caseRecord.id}/model-revisions`;
+  const revisionExportStatusesPath = (url) => url.pathname === `/api/cases/${caseRecord.id}/model-revisions/export-statuses`;
   const previewPath = (url) => url.pathname === `/api/cases/${caseRecord.id}/models/previews`;
   const signOffPath = (url) => url.pathname === `/api/cases/${caseRecord.id}/model-revisions/sign-off`;
   const rebasePath = (url) => url.pathname === `/api/cases/${caseRecord.id}/model-revisions/rebase-preview`;
@@ -836,6 +837,7 @@ try {
   });
   await page.route(registryPath, (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(assumptionRegistry()) }));
   await page.route(revisionsPath, (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ revisions: modelRevisions }) }));
+  await page.route(revisionExportStatusesPath, (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ exports: modelRevisions.map((revision) => ({ revision_id: revision.id, export: revision.export })) }) }));
   await page.route(previewPath, async (route) => {
     previewPosts += 1;
     const requestBody = route.request().postDataJSON();
@@ -929,7 +931,7 @@ try {
   await firstAssumption.press("Enter");
   await page.getByText(/Forecast recalculated\. Historical accounts remain locked/).waitFor();
   assert.equal(previewPosts, 1, "forecast edit did not automatically calculate one preview");
-  await page.getByRole("img", { name: /Net leverage tornado for BASE/ }).waitFor();
+  await page.getByRole("group", { name: /Net leverage tornado for BASE/ }).waitFor();
   const secondAssumption = page.getByLabel("Revenue growth, FY2026, BASE");
   await firstAssumption.fill("3");
   await firstAssumption.press("Enter");

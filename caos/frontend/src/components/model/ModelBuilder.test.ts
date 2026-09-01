@@ -99,6 +99,18 @@ test("signed records are versions of the same model and remain recoverable", () 
   assert.match(modelBuilder, /Review and rebase local draft/);
 });
 
+test("export polling fetches only lightweight revision export states", () => {
+  assert.match(modelBuilder, /model-revisions\/export-statuses/);
+  assert.match(modelBuilder, /const refreshRevisionExports = useCallback/);
+  assert.match(modelBuilder, /setRevisions\(\(current\) => current\.map/);
+  assert.match(modelBuilder, /exportPending[\s\S]*refreshRevisionExports\(\)/);
+});
+
+test("revision export polling retries without overlapping requests", () => {
+  assert.match(modelBuilder, /const poll = async \(\) => \{[\s\S]*await refreshRevisionExports\(\);[\s\S]*if \(active\) timer = window\.setTimeout\(poll, 1500\)/);
+  assert.match(modelBuilder, /active = false;[\s\S]*window\.clearTimeout\(timer\)/);
+});
+
 test("readers can inspect but cannot change forecasts or sign a version", () => {
   assert.match(modelBuilder, /const canWrite = role !== "READER"/);
   assert.match(modelBuilder, /Reader mode: the model and forecast assumptions remain readable/);

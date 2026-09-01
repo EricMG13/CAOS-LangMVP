@@ -688,6 +688,17 @@ class ModelService:
             for revision in self.builds.list_revisions(case_id)
         ]
 
+    def revision_export_statuses(self, case_id: str) -> list[dict[str, Any]]:
+        safe_fields = ("status", "error", "filename", "sha256", "size")
+        statuses = []
+        for item in self.builds.list_revision_exports(case_id):
+            export = item.get("export") or {"status": "NOT_REQUESTED"}
+            statuses.append({
+                "revision_id": item["revision_id"],
+                "export": {key: export[key] for key in safe_fields if key in export},
+            })
+        return statuses
+
     def head_revision(self, case_id: str) -> dict[str, Any] | None:
         head = self.builds.head_revision(case_id)
         if head is None:

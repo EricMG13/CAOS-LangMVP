@@ -290,6 +290,15 @@ class ModelStore:
             ).mappings().all()
         return [self._public(dict(row)) for row in rows]
 
+    def list_revision_exports(self, case_id: str) -> list[dict[str, Any]]:
+        with self.engine.connect() as conn:
+            rows = conn.execute(
+                sa.select(model_revisions.c.id, model_revisions.c.export)
+                .where(model_revisions.c.case_id == case_id)
+                .order_by(model_revisions.c.revision_number)
+            ).mappings().all()
+        return [{"revision_id": row["id"], "export": row["export"]} for row in rows]
+
     def head_revision(self, case_id: str) -> dict[str, Any] | None:
         with self.engine.connect() as conn:
             head = conn.execute(

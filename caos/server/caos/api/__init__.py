@@ -957,6 +957,13 @@ def create_app(*, settings: Settings, store: DomainStore, engine: Any) -> FastAP
         require_case(store, case_id, identity(request))
         return {"revisions": models().revisions(case_id)}
 
+    @app.get("/api/cases/{case_id}/model-revisions/export-statuses",
+             response_model=wire.ModelRevisionExportStatusListResponse,
+             response_model_exclude_none=True)
+    def model_revision_export_statuses(case_id: str, request: Request) -> dict[str, Any]:
+        require_case(store, case_id, identity(request))
+        return {"exports": models().revision_export_statuses(case_id)}
+
     @app.post("/api/cases/{case_id}/model-revisions/{revision_id}/export", status_code=202,
               response_model=wire.ModelRevisionResponse)
     def queue_model_revision_export(case_id: str, revision_id: str, request: Request) -> dict[str, Any]:
