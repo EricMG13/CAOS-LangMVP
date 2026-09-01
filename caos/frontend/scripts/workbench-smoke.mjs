@@ -1052,6 +1052,7 @@ try {
   await sourcesLink.click();
   await discardDraftDialog().waitFor();
   await discardDraftDialog().getByRole("button", { name: "Keep editing" }).click();
+  await page.waitForFunction(() => document.activeElement?.getAttribute("href")?.startsWith("/sources") === true);
   assert.equal(page.url(), dirtyURL, "dismissed dirty-draft warning allowed internal workspace navigation");
   assert.equal(await sourcesLink.evaluate((element) => document.activeElement === element), true, "canceling link navigation did not return focus to its trigger");
   for (const gesture of [{ ctrlKey: true, button: 0 }, { button: 1 }, { button: 0, target: "_blank" }]) {
@@ -1075,6 +1076,7 @@ try {
   await discardDraftDialog().waitFor();
   await discardDraftDialog().getByRole("button", { name: "Keep editing" }).click();
   assert.equal(page.url(), dirtyURL, "canceling palette navigation changed the URL");
+  await page.waitForFunction(() => document.activeElement?.getAttribute("aria-label") === "Open command palette");
   assert.equal(await commandTrigger.evaluate((element) => document.activeElement === element), true, "canceling palette navigation did not return focus to the palette trigger");
   await firstAssumption.focus();
   await page.evaluate(() => window.history.back());
@@ -1083,6 +1085,7 @@ try {
   await discardDraftDialog().waitFor({ state: "hidden" });
   assert.equal(page.url(), dirtyURL, "dismissed dirty-draft warning allowed browser history navigation");
   assert.equal(await firstAssumption.inputValue(), "0.06", "browser history restoration dropped the dirty local forecast value");
+  await page.waitForFunction(() => document.activeElement?.getAttribute("aria-label") === "Revenue growth, FY2025, BASE");
   assert.equal(await firstAssumption.evaluate((element) => document.activeElement === element), true, "Escape did not return focus to the dirty editor after browser history cancelation");
   await page.evaluate(() => window.history.back());
   await discardDraftDialog().waitFor();
