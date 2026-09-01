@@ -1,6 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { acceptedAuthorityMatch, destinationMeta, evidenceKind, formatBlockLocator, humanizeCode, moduleLabel, withQuery, workflows } from "./workbench.ts";
+
+const workbenchShell = readFileSync(new URL("../components/WorkbenchShell.tsx", import.meta.url), "utf8");
 
 test("approved workspace labels preserve the existing routes", () => {
   assert.deepEqual(workflows.map(({ label, href }) => [label, href]), [
@@ -12,9 +15,12 @@ test("approved workspace labels preserve the existing routes", () => {
     ["Model", "/model-builder"],
     ["Report", "/report-studio"],
   ]);
-  assert.equal(destinationMeta.Cases.reading, "Portfolio");
-  assert.equal(destinationMeta.Sources.reading, "Assurance");
-  assert.equal(destinationMeta["Model Builder"].reading, "Analysis");
+});
+
+test("the shell omits the redundant reading taxonomy and renders its command shortcut as a key", () => {
+  assert.ok(Object.values(destinationMeta).every((meta) => !("reading" in meta)));
+  assert.doesNotMatch(workbenchShell, /Reading:/);
+  assert.match(workbenchShell, /Command <kbd aria-hidden="true">⌘K<\/kbd>/);
 });
 
 test("every route path keeps its trailing slash", () => {

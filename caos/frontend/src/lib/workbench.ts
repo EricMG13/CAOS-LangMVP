@@ -16,19 +16,18 @@ export type WorkflowId = "portfolio" | "credit" | "sources" | "analysis" | "mark
 export type DestinationMeta = {
   kicker: string;
   title: string;
-  reading: "Portfolio" | "Analysis" | "Assurance";
 };
 
 export const destinationMeta: Record<Destination, DestinationMeta> = {
-  Cases: { kicker: "Portfolio / Surveillance", title: "Monitored credits", reading: "Portfolio" },
-  "Command Center": { kicker: "Credit / Current state", title: "Current state and what changed", reading: "Analysis" },
-  Sources: { kicker: "Sources / Evidence", title: "Documents, extraction and coverage", reading: "Assurance" },
-  "Run Console": { kicker: "Analysis / Execution", title: "Run and acceptance", reading: "Analysis" },
-  "Deep-Dive": { kicker: "Analysis / Reader", title: "Accepted analysis", reading: "Analysis" },
-  "RV Screener": { kicker: "Market / Comparison", title: "Governed loan universe", reading: "Analysis" },
-  "Model Builder": { kicker: "Model / Forecast", title: "Assumptions, lineage and sign-off", reading: "Analysis" },
-  "Report Studio": { kicker: "Report / Publication", title: "Compose, freeze and file", reading: "Analysis" },
-  "Admin Studio": { kicker: "Admin / Governance", title: "Deployment capability", reading: "Assurance" },
+  Cases: { kicker: "Portfolio / Surveillance", title: "Monitored credits" },
+  "Command Center": { kicker: "Credit / Current state", title: "Current state and what changed" },
+  Sources: { kicker: "Sources / Evidence", title: "Documents, extraction and coverage" },
+  "Run Console": { kicker: "Analysis / Execution", title: "Run and acceptance" },
+  "Deep-Dive": { kicker: "Analysis / Reader", title: "Accepted analysis" },
+  "RV Screener": { kicker: "Market / Comparison", title: "Governed loan universe" },
+  "Model Builder": { kicker: "Model / Forecast", title: "Assumptions, lineage and sign-off" },
+  "Report Studio": { kicker: "Report / Publication", title: "Compose, freeze and file" },
+  "Admin Studio": { kicker: "Admin / Governance", title: "Deployment capability" },
 };
 
 export type Snapshot = {

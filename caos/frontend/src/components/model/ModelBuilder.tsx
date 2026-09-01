@@ -680,7 +680,7 @@ export default function ModelBuilder({
 
   return <div className="grid model-builder analyst-model-builder">
     <section className="panel span-12 model-builder-command">
-      <div className="panel-header"><div><p className="eyebrow">ONE GOVERNED CREDIT MODEL</p><h2>Model Builder</h2></div><span className={`status ${modelStatusTone(status)}`} role="status" aria-live="polite">{status?.replaceAll("_", " ")}</span></div>
+      <div className="panel-header"><h2>Model Builder</h2><span className={`status ${modelStatusTone(status)}`} role="status" aria-live="polite">{status?.replaceAll("_", " ")}</span></div>
       <div className="panel-body model-builder-command-body"><div><strong>Application model · {activeRevision ? `R${activeRevision.revision_number}` : "Application version"}</strong><p className="muted">{activeRevision ? `${activeRevision.created_by} · ${formatDate(activeRevision.created_at)} · ${activeRevision.note}` : status === "READY" ? "Built from the accepted application and saved as the starting version. Forecast assumptions create the next version." : "Build the application model from accepted credit analysis."}</p></div><div className="model-primary-action">{renderPrimaryAction()}<button className="button small" type="button" disabled={loading} onClick={() => void refresh()}>{loading ? "Refreshing…" : "Refresh"}</button></div></div>
       {status === "NOT_READY" ? <StateBlock tone="warning" title="Accepted analysis required" body="Accept a completed Full Credit run before building the application model." /> : null}
       {status === "NOT_READY" ? <Link className="button small" href={withQuery("/run-console", { case: caseId })}>Open Run Console</Link> : null}
@@ -693,9 +693,9 @@ export default function ModelBuilder({
 
     {status === "READY" && registry ? <section className={`panel span-12 ${styles.workspace}`}>
       <aside className={styles.assumptions} aria-labelledby="forecast-assumptions-heading">
-        <div className={styles.sectionHeader}><div><p className="eyebrow">FORWARD PERIODS ONLY</p><h3 id="forecast-assumptions-heading">Forecast assumptions</h3></div><span className={`status ${dirty ? "warning" : "success"}`}>{dirtyCount} CHANGES</span></div>
+        <div className={styles.sectionHeader}><h3 id="forecast-assumptions-heading">Forecast assumptions</h3><span className={`status ${dirty ? "warning" : "success"}`}>{dirtyCount} CHANGES</span></div>
         <div className={styles.caseSwitch} role="group" aria-label="Forecast case"><button type="button" className={selectedCase === "BASE" ? "button small is-active" : "button small"} aria-pressed={selectedCase === "BASE"} onClick={() => setSelectedCase("BASE")}>Base</button><button type="button" className={selectedCase === "DOWNSIDE" ? "button small is-active" : "button small"} aria-pressed={selectedCase === "DOWNSIDE"} onClick={() => setSelectedCase("DOWNSIDE")}>Downside</button></div>
-        <p className="muted">Drag any value horizontally or type it. “All” broadcasts to exactly the available forecast years.</p>
+        <p className="muted">Only forward periods are editable. Drag any value horizontally or type it. “All” broadcasts to exactly the available forecast years.</p>
         <div className={styles.driverList}>{registry.definitions.map((definition) => {
           const rows = draft.filter((row) => row.assumption_id === definition.assumption_id && row.case === selectedCase).sort((left, right) => left.period_id.localeCompare(right.period_id));
           if (!rows.length) return null;
@@ -708,12 +708,12 @@ export default function ModelBuilder({
       </aside>
 
       <main className={styles.model} aria-labelledby="application-model-heading">
-        <div className={styles.sectionHeader}><div><p className="eyebrow">{previewCurrent ? "UNSAVED FORECAST PREVIEW" : activeRevision ? `SAVED VERSION R${activeRevision.revision_number}` : "SAVED APPLICATION VERSION"}</p><h3 id="application-model-heading">{displayWorksheet?.identity.issuer_name || "Application model"}</h3></div>{pending === "preview" ? <span className="status warning">RECALCULATING</span> : previewCurrent ? <span className="status success">CURRENT</span> : null}</div>
+        <div className={styles.sectionHeader}><h3 id="application-model-heading">{displayWorksheet?.identity.issuer_name || "Application model"}</h3>{pending === "preview" ? <span className="status warning">RECALCULATING</span> : previewCurrent ? <span className="status success">CURRENT</span> : null}</div>
         {displayWorksheet ? <WorksheetSurface key={worksheetKey} payload={displayWorksheet} /> : unavailable.worksheet ? <Unavailable title="Application model worksheet" /> : <LoadState loading error="" />}
       </main>
 
       <aside className={styles.tornado} aria-labelledby="tornado-heading">
-        <div className={styles.sectionHeader}><div><p className="eyebrow">LEGACY CREDIT LENS</p><h3 id="tornado-heading">Tornado</h3></div>{tornadoLoading ? <span className="status warning">CALCULATING</span> : null}</div>
+        <div className={styles.sectionHeader}><h3 id="tornado-heading">Tornado</h3>{tornadoLoading ? <span className="status warning">CALCULATING</span> : null}</div>
         <label className={styles.control}>Output<select value={tornadoOutputId} onChange={(event) => setTornadoOutputId(event.target.value as typeof tornadoOutputId)}>{TORNADO_METRICS.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</select></label>
         <div className={styles.intensity} role="group" aria-label="Driver swing intensity"><span>Swing</span>{([0.5, 1, 1.5] as const).map((value) => <button type="button" className={tornadoIntensity === value ? "button small is-active" : "button small"} aria-pressed={tornadoIntensity === value} key={value} onClick={() => setTornadoIntensity(value)}>±{value}×</button>)}</div>
         {unavailable.tornado ? <Unavailable title="Tornado" /> : tornado && tornado.output_id === tornadoOutputId && tornado.case === selectedCase ? <TornadoChart result={tornado} metric={selectedMetric} /> : tornadoError ? <p className="error" role="alert">{tornadoError}</p> : <p className="muted">The four legacy drivers recalculate against the complete current forecast.</p>}

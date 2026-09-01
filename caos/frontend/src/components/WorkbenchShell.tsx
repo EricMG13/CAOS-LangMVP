@@ -223,7 +223,7 @@ export default function WorkbenchShell({
       <h3>Available source text</h3>
       <div className="source-blocks">
         {drawer.source.blocks.slice(0, 20).map((block) => <article className="source-block" key={block.block_id}>
-          <div className="eyebrow">{block.block_id}</div>
+          <div className="meta-label">{block.block_id}</div>
           <p>{block.text || "No extracted text."}</p>
         </article>)}
         {!drawer.source.blocks.length && <p className="muted">No extracted source text.</p>}
@@ -278,7 +278,6 @@ export default function WorkbenchShell({
           <div className="topbar-heading"><span className="meta-label">{meta.kicker}</span><h1>{unknownRoute ? "Page not found" : meta.title}</h1></div>
           <div className="top-actions">
             {selectedCase && active !== "Sources" ? <Link className="button quiet" href={workflowHref("/sources")}>Sources &amp; evidence</Link> : null}
-            <span className="reading-label">Reading: {meta.reading}</span>
             <label className="sr-only" htmlFor="case-select">Select case</label>
             <select id="case-select" aria-label="Select case" value={caseId} onChange={(event) => onCaseChange(event.target.value)}>
               {/* The placeholder names its own state: while the register is still
@@ -287,7 +286,7 @@ export default function WorkbenchShell({
               <option value="">{casesLoading && !cases.length ? "Loading cases…" : "Select case"}</option>
               {cases.map((item) => <option key={item.id} value={item.id}>{item.issuer} — {item.name}</option>)}
             </select>
-            <button ref={triggerRef} className="button small" type="button" aria-label="Open command palette" onClick={openPalette}>Command <span className="shortcut">⌘K</span></button>
+            <button ref={triggerRef} className="button small" type="button" aria-label="Open command palette" onClick={openPalette}>Command <kbd aria-hidden="true">⌘K</kbd></button>
           </div>
         </header>
         <div role="region" className="authority-strip" aria-label="Visible authority" tabIndex={0}>
@@ -403,10 +402,7 @@ export default function WorkbenchShell({
       onClose={closeDrawer}
     >
       <div className="drawer-header">
-        <div>
-          <span className="eyebrow">CONTEXT</span>
-          <h2 id="drawer-title" ref={drawerHeadingRef} tabIndex={-1}>{drawerTitle}</h2>
-        </div>
+        <h2 id="drawer-title" ref={drawerHeadingRef} tabIndex={-1}>{drawerTitle}</h2>
         <button className="button small" type="button" onClick={() => drawerRef.current?.close()}>Close</button>
       </div>
       <div className="drawer-body">{drawerBody}</div>

@@ -12,5 +12,5 @@ export const metadata: Metadata = { title: "CAOS — Page not found" };
 // and cannot read the query; it does not need to — the shell keeps the selection
 // in workspace authority and re-resolves it on Cases (Workspace.tsx `resolvedCaseId`).
 export default function NotFound() {
-  return <section className="panel"><div className="panel-body flow"><div className="eyebrow">ROUTE NOT FOUND</div><p className="muted">This workspace destination does not exist. Your case selection is unchanged — the top bar still holds it.</p><div><Link className="button small" href="/cases/">Return to Cases</Link></div></div></section>;
+  return <section className="panel"><div className="panel-body flow"><p className="muted">This workspace destination does not exist. Your case selection is unchanged — the top bar still holds it.</p><div><Link className="button small" href="/cases/">Return to Cases</Link></div></div></section>;
 }

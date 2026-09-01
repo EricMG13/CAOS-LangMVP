@@ -27,6 +27,13 @@ test("the builder exposes one model with the application build as its saved star
   assert.doesNotMatch(modelBuilder, /label: "Sensitivities"|Multi-Driver Scenario|Apply to Draft/);
 });
 
+test("model builder headings lead directly without decorative eyebrow stacks", () => {
+  assert.doesNotMatch(modelBuilder, /className="eyebrow"/);
+  assert.match(modelBuilder, /id="forecast-assumptions-heading">Forecast assumptions<\/h3>/);
+  assert.match(modelBuilder, /id="application-model-heading">\{displayWorksheet\?\.identity\.issuer_name \|\| "Application model"\}<\/h3>/);
+  assert.match(modelBuilder, /id="tornado-heading">Tornado<\/h3>/);
+});
+
 test("the visible worksheet is the current forecast preview without making governed cells editable", () => {
   assert.match(modelState, /worksheet: WorksheetPayload/);
   assert.match(modelBuilder, /previewCurrent \? preview\?\.worksheet/);
