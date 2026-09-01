@@ -287,6 +287,7 @@ export default function Workspace({ destination, children }: { destination?: Des
     const prompt = discardPromptRef.current;
     if (!prompt) return;
     discardPromptRef.current = null;
+    focusedBeforeRef.current = prompt.trigger;
     setDiscardPrompt(null);
     resolveDraftDiscard(prompt, confirmed);
     if (!confirmed && !prompt.cancel && !modelDraftDirtyRef.current && !reportDraftDirtyRef.current) releaseCleanDraftGuard();
