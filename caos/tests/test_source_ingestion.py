@@ -22,7 +22,13 @@ def case_id(store):
 
 
 async def ingest(store, vault, case_id, filename, content, content_type="application/octet-stream"):
-    return await ingest_upload(store, vault, case_id, "analyst", make_upload(filename, content, content_type), max_bytes=vault.settings.max_upload_bytes)
+    upload = make_upload(filename, content, content_type)
+    try:
+        return await ingest_upload(
+            store, vault, case_id, "analyst", upload, max_bytes=vault.settings.max_upload_bytes,
+        )
+    finally:
+        await upload.close()
 
 
 async def assert_rejected(store, vault, case_id, filename, content, status=422):
@@ -118,8 +124,12 @@ async def test_unsupported_type_is_rejected_415(store, vault, case_id):
 
 async def test_oversize_upload_is_rejected_413(store, vault, case_id, settings):
     small = Vault(type(settings)(storage_dir=settings.storage_dir, max_upload_bytes=10))
-    with pytest.raises(HTTPException) as excinfo:
-        await ingest_upload(store, small, case_id, "analyst", make_upload("big.txt", b"x" * 11), max_bytes=10)
+    upload = make_upload("big.txt", b"x" * 11)
+    try:
+        with pytest.raises(HTTPException) as excinfo:
+            await ingest_upload(store, small, case_id, "analyst", upload, max_bytes=10)
+    finally:
+        await upload.close()
     assert excinfo.value.status_code == 413
 
 

@@ -179,14 +179,22 @@ class ReadingProvider:
 
 
 @pytest.fixture()
-def build_engine(tmp_path, settings, store):
+async def build_engine(tmp_path, settings, store):
+    engines = []
+
     def build(provider):
         from caos.engine.runtime import Engine
 
-        return Engine.create(settings=settings, store=store,
-                             checkpoint_path=tmp_path / "checkpoints.db", provider=provider)
+        engine = Engine.create(settings=settings, store=store,
+                               checkpoint_path=tmp_path / "checkpoints.db", provider=provider)
+        engines.append(engine)
+        return engine
 
-    return build
+    try:
+        yield build
+    finally:
+        for engine in reversed(engines):
+            await engine.aclose()
 
 
 async def _sentinel_agent_run(build_engine, store, **provider_kwargs):
@@ -705,12 +713,12 @@ def test_health_reports_degraded_when_the_app_has_no_engine(settings, store):
 
     from caos.api import create_app
 
-    client = TestClient(create_app(settings=settings, store=store, engine=None),
-                        raise_server_exceptions=False)
-    response = client.get("/api/health")
-    assert response.status_code == 503
-    assert response.json() == {"status": "degraded", "store": False, "bundle": False,
-                               "checkpointer": False}
+    with TestClient(create_app(settings=settings, store=store, engine=None),
+                    raise_server_exceptions=False) as client:
+        response = client.get("/api/health")
+        assert response.status_code == 503
+        assert response.json() == {"status": "degraded", "store": False, "bundle": False,
+                                   "checkpointer": False}
 
 
 def test_health_fails_closed_when_the_bundle_no_longer_verifies(client, engine):

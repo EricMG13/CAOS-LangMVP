@@ -89,16 +89,22 @@ async def test_unresolved_inflight_reservation_fails_closed_on_resume_without_re
     from caos.engine.runtime import Engine
 
     engine = Engine.create(settings=settings, store=store, checkpoint_path=tmp_path / "ck.db", provider=provider)
-    case, source, run = await start_full_credit_run(engine, store)
-    await engine.crash_mid_provider_call_for_tests(run["id"])  # inflight digest persisted, never reconciled
-    calls_before = len(provider.create_requests)
+    try:
+        case, source, run = await start_full_credit_run(engine, store)
+        await engine.crash_mid_provider_call_for_tests(run["id"])  # inflight digest persisted, never reconciled
+        calls_before = len(provider.create_requests)
+    finally:
+        await engine.aclose()
 
     revived = Engine.create(settings=settings, store=store, checkpoint_path=tmp_path / "ck.db", provider=provider)
-    await revived.recover()
-    await revived.wait(run["id"])
-    record = revived.get_run(run["id"])
-    assert record["status"] == "failed" and record["error"]["code"] == "AGENT_BUDGET_EXCEEDED"
-    assert len(provider.create_requests) == calls_before, "no re-spend after crash with unknown spend"
+    try:
+        await revived.recover()
+        await revived.wait(run["id"])
+        record = revived.get_run(run["id"])
+        assert record["status"] == "failed" and record["error"]["code"] == "AGENT_BUDGET_EXCEEDED"
+        assert len(provider.create_requests) == calls_before, "no re-spend after crash with unknown spend"
+    finally:
+        await revived.aclose()
 
 
 async def test_timeout_retry_must_be_byte_identical_and_single(engine, store, provider):
@@ -253,16 +259,20 @@ def test_reconcile_commits_the_actual_usage_before_it_refuses_the_overage(tmp_pa
 
     from caos.storage.runs import RunStore, StoreConflict
 
-    store = RunStore(sa.create_engine(f"sqlite:///{tmp_path / 'runs.db'}"))
-    run_id = store.create_run("case-1", "FULL_CREDIT", "full", "analyst")["id"]
-    store.init_budget(run_id, {"turns": 10, "input_tokens": 1_000, "output_tokens": 1_000})
-    store.reserve_provider(run_id, "digest-1", 100, 100, retry=False)
+    db = sa.create_engine(f"sqlite:///{tmp_path / 'runs.db'}")
+    try:
+        store = RunStore(db)
+        run_id = store.create_run("case-1", "FULL_CREDIT", "full", "analyst")["id"]
+        store.init_budget(run_id, {"turns": 10, "input_tokens": 1_000, "output_tokens": 1_000})
+        store.reserve_provider(run_id, "digest-1", 100, 100, retry=False)
 
-    with pytest.raises(StoreConflict, match="AGENT_BUDGET_EXCEEDED"):
-        store.reconcile_provider(run_id, "digest-1", 100, 100, 100, 5_000)
+        with pytest.raises(StoreConflict, match="AGENT_BUDGET_EXCEEDED"):
+            store.reconcile_provider(run_id, "digest-1", 100, 100, 100, 5_000)
 
-    budget = store.get_budget(run_id)
-    assert budget["used"]["output_tokens"] == 5_000, "the ledger records what was actually spent"
-    assert budget["inflight_request_digest"] is None, "the request is resolved, not stranded in flight"
-    with pytest.raises(StoreConflict, match="AGENT_BUDGET_EXCEEDED"):
-        store.reserve_provider(run_id, "digest-2", 1, 1, retry=False)
+        budget = store.get_budget(run_id)
+        assert budget["used"]["output_tokens"] == 5_000, "the ledger records what was actually spent"
+        assert budget["inflight_request_digest"] is None, "the request is resolved, not stranded in flight"
+        with pytest.raises(StoreConflict, match="AGENT_BUDGET_EXCEEDED"):
+            store.reserve_provider(run_id, "digest-2", 1, 1, retry=False)
+    finally:
+        db.dispose()

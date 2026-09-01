@@ -49,20 +49,23 @@ def _postgres_lock_store(tmp_path: Path) -> tuple[DomainStore, set[tuple[int, in
 
 def test_postgres_refuses_duplicate_roles_and_releases_locks_on_exit(tmp_path):
     store, held = _postgres_lock_store(tmp_path)
-    lock = getattr(store, "single_instance", None)
-    assert callable(lock), "the domain store must expose the production instance guard"
+    try:
+        lock = getattr(store, "single_instance", None)
+        assert callable(lock), "the domain store must expose the production instance guard"
 
-    with lock("app"), lock("worker"):
-        with pytest.raises(RuntimeError, match="app instance is already running"):
-            with lock("app"):
-                pass
-        with pytest.raises(RuntimeError, match="worker instance is already running"):
-            with lock("worker"):
-                pass
+        with lock("app"), lock("worker"):
+            with pytest.raises(RuntimeError, match="app instance is already running"):
+                with lock("app"):
+                    pass
+            with pytest.raises(RuntimeError, match="worker instance is already running"):
+                with lock("worker"):
+                    pass
 
-    assert not held
-    with lock("app"):
-        pass
+        assert not held
+        with lock("app"):
+            pass
+    finally:
+        store.engine.dispose()
 
 
 class _ScalarResult:
@@ -126,12 +129,15 @@ def test_postgres_thread_start_failure_refuses_startup_without_taking_lock(monke
     def fail_start(_thread):
         raise RuntimeError("thread unavailable")
 
-    monkeypatch.setattr(store_module.threading.Thread, "start", fail_start)
-    with pytest.raises(RuntimeError, match="thread unavailable"):
-        with store.single_instance("app"):
-            pass
+    try:
+        monkeypatch.setattr(store_module.threading.Thread, "start", fail_start)
+        with pytest.raises(RuntimeError, match="thread unavailable"):
+            with store.single_instance("app"):
+                pass
 
-    assert not held
+        assert not held
+    finally:
+        store.engine.dispose()
 
 
 def test_lock_loss_termination_cannot_be_blocked_by_logging(monkeypatch):

@@ -6,7 +6,9 @@ and the re-hosted CP-DR finalization rows; DECISIONS.md §§10–12.
 
 from __future__ import annotations
 
+import asyncio
 import sqlite3
+from contextlib import closing
 
 import pytest
 
@@ -14,11 +16,156 @@ from spec_helpers import seed_case_with_source, start_full_credit_run
 
 
 def _checkpoint_rows(path, thread_id: str) -> int:
-    with sqlite3.connect(path) as conn:
+    with closing(sqlite3.connect(path)) as conn:
         return sum(
             conn.execute(f"SELECT count(*) FROM {table} WHERE thread_id = ?", (thread_id,)).fetchone()[0]
             for table in ("checkpoints", "writes")
         )
+
+
+async def test_engine_close_cancels_pending_work_closes_savers_once_and_borrows_dependencies(
+    tmp_path, settings, store,
+):
+    from caos.engine.runtime import Engine
+
+    class BorrowedProvider:
+        closed = False
+
+        async def aclose(self):
+            self.closed = True
+
+    provider = BorrowedProvider()
+    engine = Engine.create(
+        settings=settings,
+        store=store,
+        checkpoint_path=tmp_path / "lifecycle.db",
+        provider=provider,
+    )
+    try:
+        saver = await engine._ensure_saver()
+        cancelled = asyncio.Event()
+
+        async def pending_continuation():
+            try:
+                await asyncio.Event().wait()
+            finally:
+                cancelled.set()
+
+        pending = asyncio.create_task(pending_continuation())
+        engine._continuations.add(pending)
+        await asyncio.sleep(0)
+
+        await engine.aclose()
+        await engine.aclose()
+
+        assert pending.cancelled() and cancelled.is_set()
+        assert saver.conn._connection is None
+        assert engine._savers == {}
+        assert provider.closed is False, "the engine borrows its provider"
+        assert store.create_case("Still open", "Issuer", "Services", "analyst"), \
+            "the engine borrows its domain store"
+    finally:
+        await engine.aclose()
+
+
+async def test_engine_close_retries_a_saver_that_failed_to_close(tmp_path, settings, store, monkeypatch):
+    from caos.engine.runtime import Engine
+
+    engine = Engine.create(settings=settings, store=store, checkpoint_path=tmp_path / "retry-close.db")
+    saver = await engine._ensure_saver()
+    real_close = saver.conn.close
+    attempts = 0
+
+    async def fail_once():
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise RuntimeError("close failed")
+        await real_close()
+
+    monkeypatch.setattr(saver.conn, "close", fail_once)
+    try:
+        with pytest.raises(RuntimeError, match="close failed"):
+            await engine.aclose()
+        await engine.aclose()
+
+        assert attempts == 2, "a failed close must retain its saver for an idempotent retry"
+        assert saver.conn._connection is None
+    finally:
+        await engine.aclose()
+
+
+async def test_engine_close_serializes_concurrent_callers(tmp_path, settings, store, monkeypatch):
+    from caos.engine.runtime import Engine
+
+    engine = Engine.create(settings=settings, store=store, checkpoint_path=tmp_path / "concurrent-close.db")
+    saver = await engine._ensure_saver()
+    real_close = saver.conn.close
+    entered = asyncio.Event()
+    release = asyncio.Event()
+    attempts = 0
+
+    async def paused_close():
+        nonlocal attempts
+        attempts += 1
+        attempt = attempts
+        entered.set()
+        await release.wait()
+        if attempt == 1:
+            await real_close()
+
+    monkeypatch.setattr(saver.conn, "close", paused_close)
+    first = asyncio.create_task(engine.aclose())
+    second = None
+    try:
+        await entered.wait()
+        second = asyncio.create_task(engine.aclose())
+        await asyncio.sleep(0)
+        release.set()
+        await asyncio.gather(first, second)
+
+        assert attempts == 1, "concurrent callers must share one owned close operation"
+    finally:
+        release.set()
+        await asyncio.gather(first, *(task for task in (second,) if task is not None), return_exceptions=True)
+        await engine.aclose()
+
+
+async def test_engine_close_catches_a_saver_initializing_concurrently(
+    tmp_path, settings, store, monkeypatch,
+):
+    from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
+
+    from caos.engine.runtime import Engine
+
+    entered = asyncio.Event()
+    release = asyncio.Event()
+    real_setup = AsyncSqliteSaver.setup
+
+    async def paused_setup(saver):
+        entered.set()
+        await release.wait()
+        await real_setup(saver)
+
+    monkeypatch.setattr(AsyncSqliteSaver, "setup", paused_setup)
+    engine = Engine.create(settings=settings, store=store, checkpoint_path=tmp_path / "racing-close.db")
+    initializing = asyncio.create_task(engine._ensure_saver())
+    closing = None
+    try:
+        await entered.wait()
+        closing = asyncio.create_task(engine.aclose())
+        await asyncio.sleep(0)
+        assert not closing.done(), "close must wait for an in-flight saver initialization"
+        release.set()
+        await closing
+
+        with pytest.raises(RuntimeError, match="engine is closed"):
+            await initializing
+        assert engine._savers == {}, "no saver may register after shutdown begins"
+    finally:
+        release.set()
+        await asyncio.gather(initializing, *(task for task in (closing,) if task is not None), return_exceptions=True)
+        await engine.aclose()
 
 
 # --- the offered cut is the startable cut ----------------------------------------
@@ -140,14 +287,20 @@ async def test_reuse_relink_on_resume_revalidates_live_sources(tmp_path, setting
     from caos.engine.runtime import Engine
 
     engine = Engine.create(settings=settings, store=store, checkpoint_path=tmp_path / "ck.db", provider=provider)
-    case, source, run = await start_full_credit_run(engine, store, depth="screen")
-    await engine.crash_in_commit_gap_for_tests(run["id"], module_id="CP-0")
-    store.withdraw(case["id"], source["id"], "analyst")
+    try:
+        case, source, run = await start_full_credit_run(engine, store, depth="screen")
+        await engine.crash_in_commit_gap_for_tests(run["id"], module_id="CP-0")
+        store.withdraw(case["id"], source["id"], "analyst")
+    finally:
+        await engine.aclose()
 
     revived = Engine.create(settings=settings, store=store, checkpoint_path=tmp_path / "ck.db", provider=provider)
-    await revived.recover()
-    await revived.wait(run["id"])
-    assert revived.get_run(run["id"])["status"] == "failed", "reuse never relinks past a withdrawal"
+    try:
+        await revived.recover()
+        await revived.wait(run["id"])
+        assert revived.get_run(run["id"])["status"] == "failed", "reuse never relinks past a withdrawal"
+    finally:
+        await revived.aclose()
 
 
 @pytest.mark.parametrize("blamed", ["CP-1", None])
@@ -162,32 +315,36 @@ def test_a_terminal_failure_leaves_no_node_claiming_in_flight_work(tmp_path, bla
 
     from caos.storage.runs import RunStore
 
-    store = RunStore(sa.create_engine(f"sqlite:///{tmp_path / 'runs.db'}"))
-    run_id = store.create_run("case-1", "FULL_CREDIT", "full", "analyst")["id"]
-    siblings = ["CP-1", "CP-1A", "CP-1B"]
-    store.pin_plan(
-        run_id,
-        {"nodes": [{"module_id": m, "stage": 1, "dependencies": ["CP-0"]} for m in [*siblings, "CP-2"]]},
-        "plan-digest",
-    )
-    for module_id in siblings:
-        store.node_running(run_id, module_id)
+    db = sa.create_engine(f"sqlite:///{tmp_path / 'runs.db'}")
+    store = RunStore(db)
+    try:
+        run_id = store.create_run("case-1", "FULL_CREDIT", "full", "analyst")["id"]
+        siblings = ["CP-1", "CP-1A", "CP-1B"]
+        store.pin_plan(
+            run_id,
+            {"nodes": [{"module_id": m, "stage": 1, "dependencies": ["CP-0"]} for m in [*siblings, "CP-2"]]},
+            "plan-digest",
+        )
+        for module_id in siblings:
+            store.node_running(run_id, module_id)
 
-    assert store.finalize_failure(run_id, "AGENT_BUDGET_EXCEEDED", blamed)
+        assert store.finalize_failure(run_id, "AGENT_BUDGET_EXCEEDED", blamed)
 
-    nodes = {node["module_id"]: node for node in store.get_run(run_id)["nodes"]}
-    assert [m for m, n in nodes.items() if n["status"] == "running"] == [], \
-        "a terminal run may not carry a node the console renders as live work"
-    if blamed:
-        assert nodes[blamed]["status"] == "failed"
-        assert nodes[blamed]["error"] == {"code": "AGENT_BUDGET_EXCEEDED", "module_id": blamed}
-    for module_id in siblings:
-        if module_id != blamed:
-            assert nodes[module_id]["status"] == "cancelled", "abandoned work is not failed work"
-            assert nodes[module_id]["error"] is None, "only the blamed module carries the error"
-    assert nodes["CP-2"]["status"] == "pending", "a node that never started did not start; that stays true"
-    terminal = [e for e in store.events_after(run_id, 0) if e["event"] in {"run.failed", "run.succeeded"}]
-    assert len(terminal) == 1, "reconciling the siblings must not mint a second terminal event"
+        nodes = {node["module_id"]: node for node in store.get_run(run_id)["nodes"]}
+        assert [m for m, n in nodes.items() if n["status"] == "running"] == [], \
+            "a terminal run may not carry a node the console renders as live work"
+        if blamed:
+            assert nodes[blamed]["status"] == "failed"
+            assert nodes[blamed]["error"] == {"code": "AGENT_BUDGET_EXCEEDED", "module_id": blamed}
+        for module_id in siblings:
+            if module_id != blamed:
+                assert nodes[module_id]["status"] == "cancelled", "abandoned work is not failed work"
+                assert nodes[module_id]["error"] is None, "only the blamed module carries the error"
+        assert nodes["CP-2"]["status"] == "pending", "a node that never started did not start; that stays true"
+        terminal = [e for e in store.events_after(run_id, 0) if e["event"] in {"run.failed", "run.succeeded"}]
+        assert len(terminal) == 1, "reconciling the siblings must not mint a second terminal event"
+    finally:
+        db.dispose()
 
 
 # --- determinism and replay (invariant 10) ----------------------------------------
@@ -236,17 +393,24 @@ async def test_worker_killed_mid_run_resumes_from_last_checkpoint_not_restart(tm
     from caos.engine.runtime import Engine
 
     engine = Engine.create(settings=settings, store=store, checkpoint_path=tmp_path / "ck.db", provider=provider)
-    case, source, run = await start_full_credit_run(engine, store, depth="screen")
-    await engine.kill_after_modules_for_tests(run["id"], count=2)  # crashes the worker mid-run
-    executed_before = engine.executed_modules_for_tests(run["id"])
-    assert len(executed_before) == 2
+    try:
+        case, source, run = await start_full_credit_run(engine, store, depth="screen")
+        await engine.kill_after_modules_for_tests(run["id"], count=2)  # crashes the worker mid-run
+        executed_before = engine.executed_modules_for_tests(run["id"])
+        assert len(executed_before) == 2
+    finally:
+        await engine.aclose()
 
     revived = Engine.create(settings=settings, store=store, checkpoint_path=tmp_path / "ck.db", provider=provider)
-    await revived.recover()
-    await revived.wait(run["id"])
-    record = revived.get_run(run["id"])
-    assert record["status"] == "succeeded"
-    assert revived.execution_counts_for_tests(run["id"])[executed_before[0]] == 1, "finished module not re-executed"
+    try:
+        await revived.recover()
+        await revived.wait(run["id"])
+        record = revived.get_run(run["id"])
+        assert record["status"] == "succeeded"
+        assert revived.execution_counts_for_tests(run["id"])[executed_before[0]] == 1, \
+            "finished module not re-executed"
+    finally:
+        await revived.aclose()
 
 
 async def test_crash_between_store_commit_and_checkpoint_write_yields_one_artifact_one_charge(tmp_path, settings, store, provider):
@@ -254,30 +418,42 @@ async def test_crash_between_store_commit_and_checkpoint_write_yields_one_artifa
     from caos.engine.runtime import Engine
 
     engine = Engine.create(settings=settings, store=store, checkpoint_path=tmp_path / "ck.db", provider=provider)
-    case, source, run = await start_full_credit_run(engine, store, depth="screen")
-    await engine.crash_in_commit_gap_for_tests(run["id"], module_id="CP-0")
+    try:
+        case, source, run = await start_full_credit_run(engine, store, depth="screen")
+        await engine.crash_in_commit_gap_for_tests(run["id"], module_id="CP-0")
+    finally:
+        await engine.aclose()
 
     revived = Engine.create(settings=settings, store=store, checkpoint_path=tmp_path / "ck.db", provider=provider)
-    await revived.recover()
-    await revived.wait(run["id"])
-    artifacts = [a for a in revived.artifacts_for_run(run["id"]) if a["module_id"] == "CP-0"]
-    assert len(artifacts) == 1, "exactly one artifact for the crashed module"
-    events = [e for e in revived.events_after(run["id"], 0) if e["event"] == "run.succeeded"]
-    assert len(events) == 1, "run.succeeded exactly once"
+    try:
+        await revived.recover()
+        await revived.wait(run["id"])
+        artifacts = [a for a in revived.artifacts_for_run(run["id"]) if a["module_id"] == "CP-0"]
+        assert len(artifacts) == 1, "exactly one artifact for the crashed module"
+        events = [e for e in revived.events_after(run["id"], 0) if e["event"] == "run.succeeded"]
+        assert len(events) == 1, "run.succeeded exactly once"
+    finally:
+        await revived.aclose()
 
 
 async def test_interrupt_paused_threads_are_skipped_by_recovery_and_hold_no_admission_slot(tmp_path, settings, store, provider):
     from caos.engine.runtime import Engine
 
     engine = Engine.create(settings=settings, store=store, checkpoint_path=tmp_path / "ck.db", provider=provider)
-    case = store.create_case("Empty", "Issuer", "Services", "analyst")
-    run = await engine.start_run(case_id=case["id"], pathway="FULL_CREDIT", depth="full", actor="analyst")
-    assert engine.get_run(run["id"])["status"] == "paused"
+    try:
+        case = store.create_case("Empty", "Issuer", "Services", "analyst")
+        run = await engine.start_run(case_id=case["id"], pathway="FULL_CREDIT", depth="full", actor="analyst")
+        assert engine.get_run(run["id"])["status"] == "paused"
+    finally:
+        await engine.aclose()
 
     revived = Engine.create(settings=settings, store=store, checkpoint_path=tmp_path / "ck.db", provider=provider)
-    await revived.recover()
-    assert revived.get_run(run["id"])["status"] == "paused", "recovery must not poke parked threads"
-    assert revived.active_execution_count() == 0, "paused threads hold no admission slot"
+    try:
+        await revived.recover()
+        assert revived.get_run(run["id"])["status"] == "paused", "recovery must not poke parked threads"
+        assert revived.active_execution_count() == 0, "paused threads hold no admission slot"
+    finally:
+        await revived.aclose()
 
 
 async def test_terminal_run_deletes_checkpoints_after_domain_audit_is_durable(tmp_path, settings, store, provider):
@@ -285,15 +461,18 @@ async def test_terminal_run_deletes_checkpoints_after_domain_audit_is_durable(tm
 
     checkpoint_path = tmp_path / "ck.db"
     engine = Engine.create(settings=settings, store=store, checkpoint_path=checkpoint_path, provider=provider)
-    case, _source, run = await start_full_credit_run(engine, store, depth="screen")
-    assert _checkpoint_rows(checkpoint_path, run["id"]) > 0
+    try:
+        case, _source, run = await start_full_credit_run(engine, store, depth="screen")
+        assert _checkpoint_rows(checkpoint_path, run["id"]) > 0
 
-    await engine.wait(run["id"])
+        await engine.wait(run["id"])
 
-    assert _checkpoint_rows(checkpoint_path, run["id"]) == 0
-    assert engine.artifacts_for_run(run["id"]), "domain artifacts survive checkpoint cleanup"
-    assert engine.events_after(run["id"], 0)[-1]["event"] == "run.succeeded", \
-        "the durable audit trail survives checkpoint cleanup"
+        assert _checkpoint_rows(checkpoint_path, run["id"]) == 0
+        assert engine.artifacts_for_run(run["id"]), "domain artifacts survive checkpoint cleanup"
+        assert engine.events_after(run["id"], 0)[-1]["event"] == "run.succeeded", \
+            "the durable audit trail survives checkpoint cleanup"
+    finally:
+        await engine.aclose()
 
 
 async def test_recovery_deletes_stranded_terminal_checkpoint_but_keeps_parked_threads(
@@ -303,28 +482,34 @@ async def test_recovery_deletes_stranded_terminal_checkpoint_but_keeps_parked_th
 
     checkpoint_path = tmp_path / "ck.db"
     engine = Engine.create(settings=settings, store=store, checkpoint_path=checkpoint_path, provider=provider)
-    terminal_case = store.create_case("Terminal", "Issuer", "Services", "analyst")
-    terminal = await engine.start_run(
-        case_id=terminal_case["id"], pathway="FULL_CREDIT", depth="screen", actor="analyst",
-    )
-    parked_case = store.create_case("Parked", "Issuer", "Services", "analyst")
-    parked = await engine.start_run(
-        case_id=parked_case["id"], pathway="FULL_CREDIT", depth="screen", actor="analyst",
-    )
-    engine.runs.finalize_failure(terminal["id"], "AGENT_OUTPUT_INVALID", None)
-    assert _checkpoint_rows(checkpoint_path, terminal["id"]) > 0
-    assert _checkpoint_rows(checkpoint_path, parked["id"]) > 0
-    with sqlite3.connect(checkpoint_path) as conn:
-        conn.execute("DELETE FROM checkpoints WHERE thread_id = ?", (terminal["id"],))
-        assert conn.execute(
-            "SELECT count(*) FROM writes WHERE thread_id = ?", (terminal["id"],),
-        ).fetchone()[0] > 0, "a crash may strand intermediate writes without their checkpoint"
+    try:
+        terminal_case = store.create_case("Terminal", "Issuer", "Services", "analyst")
+        terminal = await engine.start_run(
+            case_id=terminal_case["id"], pathway="FULL_CREDIT", depth="screen", actor="analyst",
+        )
+        parked_case = store.create_case("Parked", "Issuer", "Services", "analyst")
+        parked = await engine.start_run(
+            case_id=parked_case["id"], pathway="FULL_CREDIT", depth="screen", actor="analyst",
+        )
+        engine.runs.finalize_failure(terminal["id"], "AGENT_OUTPUT_INVALID", None)
+        assert _checkpoint_rows(checkpoint_path, terminal["id"]) > 0
+        assert _checkpoint_rows(checkpoint_path, parked["id"]) > 0
+        with closing(sqlite3.connect(checkpoint_path)) as conn:
+            conn.execute("DELETE FROM checkpoints WHERE thread_id = ?", (terminal["id"],))
+            assert conn.execute(
+                "SELECT count(*) FROM writes WHERE thread_id = ?", (terminal["id"],),
+            ).fetchone()[0] > 0, "a crash may strand intermediate writes without their checkpoint"
+    finally:
+        await engine.aclose()
 
     revived = Engine.create(settings=settings, store=store, checkpoint_path=checkpoint_path, provider=provider)
-    await revived.recover()
+    try:
+        await revived.recover()
 
-    assert _checkpoint_rows(checkpoint_path, terminal["id"]) == 0
-    assert _checkpoint_rows(checkpoint_path, parked["id"]) > 0, "parked runs still need their resume state"
+        assert _checkpoint_rows(checkpoint_path, terminal["id"]) == 0
+        assert _checkpoint_rows(checkpoint_path, parked["id"]) > 0, "parked runs still need their resume state"
+    finally:
+        await revived.aclose()
 
 
 # --- events (contractual: atomic state+event, exactly-once terminals, ordering) ---
@@ -412,11 +597,11 @@ def test_production_rejects_forged_forwarded_identity(store, tmp_path):
     prod = Settings(environment="production", storage_dir=tmp_path / "v",
                     database_url="postgresql://x/y", edge_proxy_secret="real-secret", session_secret="real-session")
     app = create_app(settings=prod, store=store, engine=None)
-    test_client = TestClient(app)
-    assert test_client.get("/api/me", headers={"x-forwarded-user": "spoof"}).status_code == 401
-    escalated = test_client.get(
-        "/api/me",
-        headers={"x-edge-authorization": "real-secret", "x-forwarded-user": "user", "x-caos-role": "ADMIN"},
-    )
-    assert escalated.status_code == 200
-    assert escalated.json()["role"] == "READER", "client role headers never escalate in production"
+    with TestClient(app) as test_client:
+        assert test_client.get("/api/me", headers={"x-forwarded-user": "spoof"}).status_code == 401
+        escalated = test_client.get(
+            "/api/me",
+            headers={"x-edge-authorization": "real-secret", "x-forwarded-user": "user", "x-caos-role": "ADMIN"},
+        )
+        assert escalated.status_code == 200
+        assert escalated.json()["role"] == "READER", "client role headers never escalate in production"

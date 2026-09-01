@@ -425,30 +425,33 @@ async def test_an_unbounded_read_loop_is_stopped_by_the_run_evidence_read_ceilin
     provider = LoopingReadProvider(source["id"])
     engine = Engine.create(settings=settings, store=store,
                            checkpoint_path=tmp_path / "checkpoints.db", provider=provider)
-    run = await engine.start_run(case_id=case["id"], pathway="FULL_CREDIT", depth="full", actor="analyst")
-    await engine.wait(run["id"])
+    try:
+        run = await engine.start_run(case_id=case["id"], pathway="FULL_CREDIT", depth="full", actor="analyst")
+        await engine.wait(run["id"])
 
-    record = engine.get_run(run["id"])
-    assert record["status"] == "failed"
-    # The blamed module is derived, not named: which node holds the looping
-    # provider is a property of the compiled route, and pinning it here would
-    # turn a catalog change into a failure of this boundary test.
-    assert set(record["error"]) == {"code", "module_id"}
-    assert record["error"]["code"] == "AGENT_BUDGET_EXCEEDED"
-    blamed = record["error"]["module_id"]
-    failed = {node["module_id"]: node for node in record["nodes"] if node.get("status") == "failed"}
-    assert blamed in failed, "a module is blamed, not the graph boundary"
-    assert failed[blamed]["error"]["code"] == "AGENT_BUDGET_EXCEEDED"
+        record = engine.get_run(run["id"])
+        assert record["status"] == "failed"
+        # The blamed module is derived, not named: which node holds the looping
+        # provider is a property of the compiled route, and pinning it here would
+        # turn a catalog change into a failure of this boundary test.
+        assert set(record["error"]) == {"code", "module_id"}
+        assert record["error"]["code"] == "AGENT_BUDGET_EXCEEDED"
+        blamed = record["error"]["module_id"]
+        failed = {node["module_id"]: node for node in record["nodes"] if node.get("status") == "failed"}
+        assert blamed in failed, "a module is blamed, not the graph boundary"
+        assert failed[blamed]["error"]["code"] == "AGENT_BUDGET_EXCEEDED"
 
-    # The bound is run-wide, not per-node: the reader a node is handed is sized
-    # `limits - used`, so the looping module drinks the whole run's allowance and
-    # is refused at read N+1. Nothing per-node caps it short of that.
-    budget = engine.runs.get_budget(run["id"])
-    ceiling = budget["limits"]["evidence_reads"]
-    assert ceiling > 0
-    assert provider.turns > ceiling, "the module really did loop"
-    assert budget["used"]["evidence_reads"] == ceiling, "the ceiling is exact, never overspent"
-    assert budget["used"]["turns"] <= budget["limits"]["turns"]
+        # The bound is run-wide, not per-node: the reader a node is handed is sized
+        # `limits - used`, so the looping module drinks the whole run's allowance and
+        # is refused at read N+1. Nothing per-node caps it short of that.
+        budget = engine.runs.get_budget(run["id"])
+        ceiling = budget["limits"]["evidence_reads"]
+        assert ceiling > 0
+        assert provider.turns > ceiling, "the module really did loop"
+        assert budget["used"]["evidence_reads"] == ceiling, "the ceiling is exact, never overspent"
+        assert budget["used"]["turns"] <= budget["limits"]["turns"]
+    finally:
+        await engine.aclose()
 
 
 class OneBadReadProvider:
@@ -481,29 +484,32 @@ async def test_a_refused_read_ends_the_module_instead_of_returning_a_reason_to_t
     provider = OneBadReadProvider(outsider_id)
     engine = Engine.create(settings=settings, store=store,
                            checkpoint_path=tmp_path / "checkpoints.db", provider=provider)
-    run = await engine.start_run(case_id=case["id"], pathway="FULL_CREDIT", depth="full", actor="analyst")
-    # Ingested after gate exit: live, same case, outside the pinned set.
-    _ingest_text(store, case["id"], OUT_OF_SET_TEXT, source_id=outsider_id)
-    await engine.wait(run["id"])
+    try:
+        run = await engine.start_run(case_id=case["id"], pathway="FULL_CREDIT", depth="full", actor="analyst")
+        # Ingested after gate exit: live, same case, outside the pinned set.
+        _ingest_text(store, case["id"], OUT_OF_SET_TEXT, source_id=outsider_id)
+        await engine.wait(run["id"])
 
-    record = engine.get_run(run["id"])
-    assert record["status"] == "failed"
-    assert record["error"]["code"] == "AGENT_AUTHORITY_MISMATCH"
+        record = engine.get_run(run["id"])
+        assert record["status"] == "failed"
+        assert record["error"]["code"] == "AGENT_AUTHORITY_MISMATCH"
 
-    # Nothing the host ever put on the wire is a tool_result: a refused read is
-    # not answered, it ends the module. That is what makes "no text" total —
-    # there is no channel left to carry text, a code, or a reason — and it is
-    # also why a failing read cannot be looped.
-    for request in provider.create_requests:
-        for message in request.messages:
-            content = message.get("content")
-            blocks = content if isinstance(content, list) else []
-            assert not [b for b in blocks if isinstance(b, dict) and b.get("type") == "tool_result"]
+        # Nothing the host ever put on the wire is a tool_result: a refused read is
+        # not answered, it ends the module. That is what makes "no text" total —
+        # there is no channel left to carry text, a code, or a reason — and it is
+        # also why a failing read cannot be looped.
+        for request in provider.create_requests:
+            for message in request.messages:
+                content = message.get("content")
+                blocks = content if isinstance(content, list) else []
+                assert not [b for b in blocks if isinstance(b, dict) and b.get("type") == "tool_result"]
 
-    sent = json.dumps([request.messages for request in provider.create_requests], default=str)
-    assert "OUTOFSET-EVIDENCE-MARKER-c204" not in sent
-    assert "AGENT_AUTHORITY_MISMATCH" not in sent, "the refusal reason never reaches the model"
-    assert engine.runs.get_budget(run["id"])["used"]["evidence_reads"] == 0
+        sent = json.dumps([request.messages for request in provider.create_requests], default=str)
+        assert "OUTOFSET-EVIDENCE-MARKER-c204" not in sent
+        assert "AGENT_AUTHORITY_MISMATCH" not in sent, "the refusal reason never reaches the model"
+        assert engine.runs.get_budget(run["id"])["used"]["evidence_reads"] == 0
+    finally:
+        await engine.aclose()
 
 
 def test_the_run_error_surface_carries_a_code_and_never_a_message(evidence_lab, engine):

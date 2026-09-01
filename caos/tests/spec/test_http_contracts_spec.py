@@ -549,6 +549,33 @@ def test_upload_route_enforces_the_same_admission_as_the_ingestion_helper(client
     assert len(client.get(f"/api/cases/{case['id']}/sources").json()) == 1, "only the admitted source landed"
 
 
+def test_upload_route_closes_multipart_files_on_success_and_refusal(client, monkeypatch):
+    from starlette.formparsers import MultiPartParser
+
+    parsed = []
+    real_parse = MultiPartParser.parse
+
+    async def capture_form(parser):
+        form = await real_parse(parser)
+        parsed.append(form)
+        return form
+
+    monkeypatch.setattr(MultiPartParser, "parse", capture_form)
+    case = client.post(
+        "/api/cases", json={"name": "Upload owner", "issuer": "Issuer", "sector": "Services"}
+    ).json()
+    url = f"/api/cases/{case['id']}/sources"
+
+    assert client.post(url, files={"file": ("evidence.txt", b"Debt 100", "text/plain")}).status_code == 201
+    assert client.post(
+        url, files={"file": ("payload.exe", b"MZ", "application/octet-stream")}
+    ).status_code == 415
+
+    assert len(parsed) == 2
+    assert all(form["file"].file.closed for form in parsed), \
+        "the route owns parsed multipart files on success and exception paths"
+
+
 def test_every_response_carries_the_browser_hardening_headers(client):
     """The app is the origin for the static export and the JSON API alike, so
     the headers ride here rather than only at the reverse proxy."""

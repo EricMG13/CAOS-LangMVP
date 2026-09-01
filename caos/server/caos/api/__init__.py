@@ -394,12 +394,12 @@ def create_app(*, settings: Settings, store: DomainStore, engine: Any) -> FastAP
 
         who = identity(request)
         require_case(store, case_id, who, write=True)
-        form = await request.form()
-        upload = form.get("file")
-        if upload is None or isinstance(upload, str):
-            raise HTTPException(status_code=422, detail="multipart field 'file' is required")
-        saved = await ingest_upload(store, Vault(settings), case_id, who.subject,
-                                    upload, max_bytes=settings.max_source_bytes)
+        async with request.form() as form:
+            upload = form.get("file")
+            if upload is None or isinstance(upload, str):
+                raise HTTPException(status_code=422, detail="multipart field 'file' is required")
+            saved = await ingest_upload(store, Vault(settings), case_id, who.subject,
+                                        upload, max_bytes=settings.max_source_bytes)
         return _wire_source(saved, source_set=saved["source_set"])
 
     def visible_source(case_id: str, source_id: str, request: Request) -> dict[str, Any]:

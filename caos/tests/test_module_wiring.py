@@ -96,16 +96,24 @@ async def _run_pathway(tmp_path: Path, pathway: str):
 
     settings = Settings(storage_dir=tmp_path / "vault", agent_execution_enabled=True)
     store = DomainStore.from_url(f"sqlite:///{tmp_path / 'caos.db'}")
-    case, source = _seed_case(store)
-    provider = ScriptedProvider(script=_agent_turns(source["id"], modules=10))
-    engine = Engine.create(settings=settings, store=store,
-                           checkpoint_path=tmp_path / "ck.db", provider=provider)
-    run = await engine.start_run(case_id=case["id"], pathway=pathway, depth="full", actor="analyst")
-    await engine.wait(run["id"])
-    record = engine.get_run(run["id"])
-    assert record["status"] == "succeeded", record.get("error")
-    artifacts = {a["module_id"]: a for a in engine.artifacts_for_run(run["id"])}
-    return artifacts, provider
+    engine = None
+    try:
+        case, source = _seed_case(store)
+        provider = ScriptedProvider(script=_agent_turns(source["id"], modules=10))
+        engine = Engine.create(settings=settings, store=store,
+                               checkpoint_path=tmp_path / "ck.db", provider=provider)
+        run = await engine.start_run(case_id=case["id"], pathway=pathway, depth="full", actor="analyst")
+        await engine.wait(run["id"])
+        record = engine.get_run(run["id"])
+        assert record["status"] == "succeeded", record.get("error")
+        artifacts = {a["module_id"]: a for a in engine.artifacts_for_run(run["id"])}
+        return artifacts, provider
+    finally:
+        try:
+            if engine is not None:
+                await engine.aclose()
+        finally:
+            store.close()
 
 
 def _assert_agent_executed(artifacts, provider, module_id: str):

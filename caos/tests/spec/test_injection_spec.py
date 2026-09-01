@@ -192,14 +192,22 @@ class CompliantProvider:
 
 
 @pytest.fixture()
-def build_engine(tmp_path, settings, store):
+async def build_engine(tmp_path, settings, store):
+    engines = []
+
     def build(provider):
         from caos.engine.runtime import Engine
 
-        return Engine.create(settings=settings, store=store,
-                             checkpoint_path=tmp_path / "checkpoints.db", provider=provider)
+        engine = Engine.create(settings=settings, store=store,
+                               checkpoint_path=tmp_path / "checkpoints.db", provider=provider)
+        engines.append(engine)
+        return engine
 
-    return build
+    try:
+        yield build
+    finally:
+        for engine in reversed(engines):
+            await engine.aclose()
 
 
 def cp1_artifact(engine, run_id: str) -> dict[str, Any] | None:

@@ -222,7 +222,11 @@ def settings(tmp_path: Path) -> Settings:
 
 @pytest.fixture()
 def store(tmp_path: Path) -> DomainStore:
-    return DomainStore.from_url(f"sqlite:///{tmp_path / 'caos.db'}")
+    value = DomainStore.from_url(f"sqlite:///{tmp_path / 'caos.db'}")
+    try:
+        yield value
+    finally:
+        value.close()
 
 
 @pytest.fixture()
@@ -231,13 +235,17 @@ def provider() -> CorpusProvider:
 
 
 @pytest.fixture()
-def engine(tmp_path: Path, settings: Settings, store: DomainStore, provider: CorpusProvider):
+async def engine(tmp_path: Path, settings: Settings, store: DomainStore, provider: CorpusProvider):
     from caos.engine.runtime import Engine
 
-    return Engine.create(
+    value = Engine.create(
         settings=settings, store=store,
         checkpoint_path=tmp_path / "checkpoints.db", provider=provider,
     )
+    try:
+        yield value
+    finally:
+        await value.aclose()
 
 
 @pytest.fixture()

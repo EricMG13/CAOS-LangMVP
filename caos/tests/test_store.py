@@ -120,6 +120,44 @@ def test_membership_and_roles_gate_access(store):
     assert [c["id"] for c in store.list_cases("reviewer")] == [case_id]
 
 
+def test_store_close_is_idempotent_and_disposes_only_its_owned_engine(tmp_path):
+    import sqlalchemy as sa
+
+    from caos.storage.store import DomainStore
+
+    owned = DomainStore.from_url(f"sqlite:///{tmp_path / 'owned.db'}")
+    original_owned_pool = owned.engine.pool
+    owned.close()
+    disposed_owned_pool = owned.engine.pool
+    owned.close()
+    assert disposed_owned_pool is not original_owned_pool
+    assert owned.engine.pool is disposed_owned_pool, "double-close must be a no-op"
+
+    borrowed_engine = sa.create_engine(f"sqlite:///{tmp_path / 'borrowed.db'}")
+    borrowed_pool = borrowed_engine.pool
+    try:
+        DomainStore(borrowed_engine).close()
+        assert borrowed_engine.pool is borrowed_pool, "the store must not dispose a caller-owned engine"
+    finally:
+        borrowed_engine.dispose()
+
+    class FailingEngine:
+        def __init__(self):
+            self.attempts = 0
+
+        def dispose(self):
+            self.attempts += 1
+            if self.attempts == 1:
+                raise RuntimeError("dispose failed")
+
+    retryable_engine = FailingEngine()
+    retryable = DomainStore(retryable_engine, owns_engine=True)
+    with pytest.raises(RuntimeError, match="dispose failed"):
+        retryable.close()
+    retryable.close()
+    assert retryable_engine.attempts == 2, "a failed owned dispose must remain retryable"
+
+
 def test_source_set_version_allocation_locks_the_case_row(tmp_path):
     """Version allocation is read-max-then-insert against UNIQUE(case_id, version).
     Under READ COMMITTED two concurrent ingests both read N and both insert N+1,
@@ -133,17 +171,20 @@ def test_source_set_version_allocation_locks_the_case_row(tmp_path):
     from caos.storage.store import DomainStore, cases
 
     store = DomainStore.from_url(f"sqlite:///{tmp_path / 'lock.db'}")
-    case = store.create_case("Lock", "Issuer", "Sector", "analyst")
+    try:
+        case = store.create_case("Lock", "Issuer", "Sector", "analyst")
 
-    statements: list[str] = []
-    sa.event.listen(store.engine, "before_cursor_execute",
-                    lambda conn, cursor, statement, *rest: statements.append(" ".join(statement.split())))
-    store.ingest({"case_id": case["id"], "filename": "a.txt", "media_type": "text/plain",
-                  "bytes": 1, "sha256": "a" * 64, "vault_path": None, "blocks": []}, "analyst")
-    lock_at = next(i for i, s in enumerate(statements) if "SELECT cases.id FROM cases WHERE cases.id" in s)
-    insert_at = next(i for i, s in enumerate(statements) if "INSERT INTO source_sets" in s)
-    assert lock_at < insert_at, "the case row is claimed before a version is allocated"
+        statements: list[str] = []
+        sa.event.listen(store.engine, "before_cursor_execute",
+                        lambda conn, cursor, statement, *rest: statements.append(" ".join(statement.split())))
+        store.ingest({"case_id": case["id"], "filename": "a.txt", "media_type": "text/plain",
+                      "bytes": 1, "sha256": "a" * 64, "vault_path": None, "blocks": []}, "analyst")
+        lock_at = next(i for i, s in enumerate(statements) if "SELECT cases.id FROM cases WHERE cases.id" in s)
+        insert_at = next(i for i, s in enumerate(statements) if "INSERT INTO source_sets" in s)
+        assert lock_at < insert_at, "the case row is claimed before a version is allocated"
 
-    # The clause itself, on the dialect that needs it (SQLite emits nothing).
-    locked = sa.select(cases.c.id).where(cases.c.id == case["id"]).with_for_update()
-    assert "FOR UPDATE" in str(locked.compile(dialect=postgresql.dialect()))
+        # The clause itself, on the dialect that needs it (SQLite emits nothing).
+        locked = sa.select(cases.c.id).where(cases.c.id == case["id"]).with_for_update()
+        assert "FOR UPDATE" in str(locked.compile(dialect=postgresql.dialect()))
+    finally:
+        store.close()

@@ -177,14 +177,27 @@ def _public_source(row: dict[str, Any]) -> dict[str, Any]:
 
 
 class DomainStore:
-    def __init__(self, engine: sa.Engine) -> None:
+    def __init__(self, engine: sa.Engine, *, owns_engine: bool = False) -> None:
         self.engine = engine
+        self._owns_engine = owns_engine
+        self._closed = False
 
     @classmethod
     def from_url(cls, url: str) -> "DomainStore":
         engine = sa.create_engine(url, json_serializer=lambda value: json.dumps(value, sort_keys=True))
-        metadata.create_all(engine)
-        return cls(engine)
+        try:
+            metadata.create_all(engine)
+        except Exception:
+            engine.dispose()
+            raise
+        return cls(engine, owns_engine=True)
+
+    def close(self) -> None:
+        if self._closed:
+            return
+        if self._owns_engine:
+            self.engine.dispose()
+        self._closed = True
 
     @contextmanager
     def single_instance(self, role: str) -> Iterator[None]:

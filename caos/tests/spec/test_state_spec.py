@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import unicodedata
 
 import pytest
@@ -131,14 +132,17 @@ def test_checkpointed_digests_are_expectations_not_authority(engine, store):
         verify_source_set_expectation(store, source["source_set"]["id"], "0" * 64)
 
 
-def test_schema_version_is_checked_at_the_raw_layer_before_coercion(tmp_path, settings, store, provider):
+async def test_schema_version_is_checked_at_the_raw_layer_before_coercion(tmp_path, settings, store, provider):
     """§12.24: a mismatched stamp fails closed before Pydantic fills defaults or drops fields."""
     from caos.engine.runtime import Engine, StateSchemaMismatch
 
     engine = Engine.create(settings=settings, store=store, checkpoint_path=tmp_path / "ck.db", provider=provider)
-    thread_id = engine.write_legacy_schema_checkpoint_for_tests(schema_version="caos-state-v0")
-    with pytest.raises(StateSchemaMismatch):
-        engine.resume_thread_for_tests(thread_id)
+    try:
+        thread_id = engine.write_legacy_schema_checkpoint_for_tests(schema_version="caos-state-v0")
+        with pytest.raises(StateSchemaMismatch):
+            engine.resume_thread_for_tests(thread_id)
+    finally:
+        await engine.aclose()
 
 
 def test_single_time_authority_survives_a_day_boundary(engine, store):
@@ -160,17 +164,15 @@ def test_single_time_authority_survives_a_day_boundary(engine, store):
     asyncio.run(scenario())
 
 
-def test_resume_ticket_makes_racing_resumes_single_effect(tmp_path, settings, store, provider):
+async def test_resume_ticket_makes_racing_resumes_single_effect(tmp_path, settings, store, provider):
     """§12.21: langgraph 1.2.11 executes BOTH racing resumes (proven empirically) — the
     store-side one-shot ticket must make the second a no-op."""
-    import asyncio
-
     from caos.engine.runtime import Engine
 
     engine = Engine.create(settings=settings, store=store, checkpoint_path=tmp_path / "ck.db", provider=provider)
     case = store.create_case("Gate", "Issuer", "Services", "analyst")
 
-    async def scenario():
+    try:
         run = await engine.start_run(case_id=case["id"], pathway="FULL_CREDIT", depth="full", actor="analyst")
         ticket = engine.pending_interrupt_for_tests(run["id"])
         first, second = await asyncio.gather(
@@ -180,8 +182,8 @@ def test_resume_ticket_makes_racing_resumes_single_effect(tmp_path, settings, st
         )
         outcomes = {bool(first is True), bool(second is True)}
         assert outcomes == {True, False}, "exactly one racer consumes the ticket"
-
-    asyncio.run(scenario())
+    finally:
+        await engine.aclose()
 
 
 def test_stale_or_late_resume_returns_typed_not_applied(client, engine, store):

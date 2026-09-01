@@ -112,6 +112,12 @@ class Engine:
         self._scripted_runs: set[str] = set()
         self._readiness: tuple[float, dict[str, bool]] | None = None
         self._readiness_lock = threading.Lock()
+        self._lifecycle_lock = threading.Lock()
+        self._saver_initializations: set[asyncio.Task[Any]] = set()
+        self._close_in_progress = False
+        self._close_waiters: list[tuple[asyncio.AbstractEventLoop, asyncio.Future[None]]] = []
+        self._closing = False
+        self._closed = False
 
     def enable_auto_continue(self) -> None:
         """The serving entrypoint owns execution: start/resume stop at the plan
@@ -149,11 +155,21 @@ class Engine:
 
     async def _ensure_saver(self):
         key = self._loop_key()
-        saver = self._savers.get(key)
-        if saver is None:
-            import aiosqlite
-            from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
+        current = asyncio.current_task()
+        with self._lifecycle_lock:
+            if self._closing or self._closed:
+                raise RuntimeError("engine is closed")
+            saver = self._savers.get(key)
+            if saver is not None:
+                return saver
+            if current is not None:
+                self._saver_initializations.add(current)
 
+        import aiosqlite
+        from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
+
+        conn = None
+        try:
             connector = aiosqlite.connect(str(self.checkpoint_path))
             # The worker thread must not block interpreter shutdown (tests and
             # scripts would otherwise hang at exit joining it).
@@ -161,8 +177,102 @@ class Engine:
             conn = await connector
             saver = AsyncSqliteSaver(conn)
             await saver.setup()
-            self._savers[key] = saver
-        return saver
+            with self._lifecycle_lock:
+                rejected = self._closing or self._closed
+                existing = self._savers.get(key)
+                if not rejected and existing is None:
+                    self._savers[key] = saver
+                    return saver
+            await conn.close()
+            conn = None
+            if rejected:
+                raise RuntimeError("engine is closed")
+            return existing
+        except BaseException:
+            if conn is not None:
+                await conn.close()
+            raise
+        finally:
+            if current is not None:
+                with self._lifecycle_lock:
+                    self._saver_initializations.discard(current)
+
+    async def aclose(self) -> None:
+        """Stop owned work and close owned checkpointers, but not borrowed ports."""
+        loop = asyncio.get_running_loop()
+        with self._lifecycle_lock:
+            if self._closed:
+                return
+            if self._close_in_progress:
+                waiter = loop.create_future()
+                self._close_waiters.append((loop, waiter))
+            else:
+                self._close_in_progress = True
+                waiter = None
+            self._closing = True
+            current = asyncio.current_task()
+            initializations = tuple(task for task in self._saver_initializations if task is not current)
+        if waiter is not None:
+            await waiter
+            return
+
+        error: BaseException | None = None
+        try:
+            if initializations:
+                await asyncio.gather(*initializations, return_exceptions=True)
+
+            continuations = tuple(task for task in self._continuations if task is not current)
+            for task in continuations:
+                task.cancel()
+            if continuations:
+                await asyncio.gather(*continuations, return_exceptions=True)
+            self._continuations.clear()
+
+            with self._lifecycle_lock:
+                savers = tuple(self._savers.items())
+            self._graphs.clear()
+            first_error: Exception | None = None
+            for key, saver in savers:
+                try:
+                    await saver.conn.close()
+                except Exception as exc:
+                    if first_error is None:
+                        first_error = exc
+                else:
+                    with self._lifecycle_lock:
+                        if self._savers.get(key) is saver:
+                            del self._savers[key]
+            if first_error is not None:
+                raise first_error
+            with self._lifecycle_lock:
+                self._closed = True
+        except BaseException as exc:
+            error = exc
+            raise
+        finally:
+            with self._lifecycle_lock:
+                self._close_in_progress = False
+                waiters = tuple(self._close_waiters)
+                self._close_waiters.clear()
+            for waiter_loop, close_waiter in waiters:
+                try:
+                    if error is None:
+                        waiter_loop.call_soon_threadsafe(self._finish_close_waiter, close_waiter, None)
+                    else:
+                        waiter_loop.call_soon_threadsafe(self._finish_close_waiter, close_waiter, error)
+                except RuntimeError:
+                    pass
+
+    @staticmethod
+    def _finish_close_waiter(waiter: asyncio.Future[None], error: BaseException | None) -> None:
+        if waiter.done():
+            return
+        if error is None:
+            waiter.set_result(None)
+        elif isinstance(error, asyncio.CancelledError):
+            waiter.cancel()
+        else:
+            waiter.set_exception(error)
 
     def _sync_saver(self):
         from langgraph.checkpoint.sqlite import SqliteSaver

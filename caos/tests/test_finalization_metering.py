@@ -29,12 +29,33 @@ async def _start_full_run(tmp_path: Path):
 
     settings = Settings(storage_dir=tmp_path / "vault", agent_execution_enabled=True)
     store = DomainStore.from_url(f"sqlite:///{tmp_path / 'caos.db'}")
-    case, source = _seed_case(store)
-    provider = ScriptedProvider(script=_agent_turns(source["id"], modules=10))
-    engine = Engine.create(settings=settings, store=store,
-                           checkpoint_path=tmp_path / "ck.db", provider=provider)
-    run = await engine.start_run(case_id=case["id"], pathway="FULL_CREDIT", depth="full", actor="analyst")
-    return engine, store, settings, provider, run
+    engine = None
+    try:
+        case, source = _seed_case(store)
+        provider = ScriptedProvider(script=_agent_turns(source["id"], modules=10))
+        engine = Engine.create(settings=settings, store=store,
+                               checkpoint_path=tmp_path / "ck.db", provider=provider)
+        run = await engine.start_run(case_id=case["id"], pathway="FULL_CREDIT", depth="full", actor="analyst")
+        return engine, store, settings, provider, run
+    except BaseException:
+        try:
+            if engine is not None:
+                await engine.aclose()
+        finally:
+            store.close()
+        raise
+
+
+@pytest.fixture
+async def full_run(tmp_path):
+    resources = await _start_full_run(tmp_path)
+    try:
+        yield resources
+    finally:
+        try:
+            await resources[0].aclose()
+        finally:
+            resources[1].close()
 
 
 def _succeeded_events(engine, run_id: str) -> list[dict]:
@@ -89,13 +110,13 @@ def test_every_step_in_the_node_sequence_is_wrapped_by_the_timed_bracket():
 # --- D1: fake-clock behavior per re-hosted row ------------------------------------
 
 
-async def test_slow_render_is_charged_before_artifact_completion(tmp_path, monkeypatch):
+async def test_slow_render_is_charged_before_artifact_completion(full_run, monkeypatch):
     """Re-hosts test_cpdr_slow_render_is_charged_before_artifact_completion:
     post-provider render/validation time crossing the ceiling fails the run
     with no artifact for the module."""
     import caos.engine.runtime as runtime_mod
 
-    engine, store, settings, provider, run = await _start_full_run(tmp_path)
+    engine, store, settings, provider, run = full_run
     real = runtime_mod.canonicalize_for_tests
     with engine.fake_clock_for_tests() as clock:
         def slow_canonicalize(*args, **kwargs):
@@ -113,12 +134,12 @@ async def test_slow_render_is_charged_before_artifact_completion(tmp_path, monke
         "an over-ceiling render must never commit its artifact"
 
 
-async def test_throwing_host_operations_charge_active_time(tmp_path, monkeypatch):
+async def test_throwing_host_operations_charge_active_time(full_run, monkeypatch):
     """Re-hosts test_cpdr_throwing_host_operations_charge_active_time: a host
     op that throws still charges its elapsed time before the sanitized terminal."""
     import caos.engine.runtime as runtime_mod
 
-    engine, store, settings, provider, run = await _start_full_run(tmp_path)
+    engine, store, settings, provider, run = full_run
     with engine.fake_clock_for_tests() as clock:
         def exploding_confidence(decoded):
             clock.advance(30)
@@ -134,10 +155,10 @@ async def test_throwing_host_operations_charge_active_time(tmp_path, monkeypatch
         "the throwing bracket's elapsed time must be charged"
 
 
-async def test_slow_atomic_completion_crosses_ceiling_and_cannot_succeed(tmp_path, monkeypatch):
+async def test_slow_atomic_completion_crosses_ceiling_and_cannot_succeed(full_run, monkeypatch):
     """Re-hosts test_cpdr_slow_atomic_completion_crosses_ceiling_and_cannot_succeed:
     metered persistence crossing the ceiling ends run and node failed."""
-    engine, store, settings, provider, run = await _start_full_run(tmp_path)
+    engine, store, settings, provider, run = full_run
     real_complete = engine.runs.complete_node
     with engine.fake_clock_for_tests() as clock:
         def slow_complete(*args, **kwargs):
@@ -157,10 +178,10 @@ async def test_slow_atomic_completion_crosses_ceiling_and_cannot_succeed(tmp_pat
     assert _succeeded_events(engine, run["id"]) == []
 
 
-async def test_final_validation_is_charged_before_run_success(tmp_path, monkeypatch):
+async def test_final_validation_is_charged_before_run_success(full_run, monkeypatch):
     """Re-hosts test_cpdr_no_pending_final_validation_is_charged_before_run_success:
     the pre-success verification segment is metered."""
-    engine, store, settings, provider, run = await _start_full_run(tmp_path)
+    engine, store, settings, provider, run = full_run
     real_verify = engine._verify_run_artifacts
     with engine.fake_clock_for_tests() as clock:
         def slow_verify(run_id, plan):
@@ -179,12 +200,12 @@ async def test_final_validation_is_charged_before_run_success(tmp_path, monkeypa
 # --- D2: the finalization deadline under a fake clock -----------------------------
 
 
-async def test_success_commit_that_would_breach_the_ceiling_never_lands(tmp_path, monkeypatch):
+async def test_success_commit_that_would_breach_the_ceiling_never_lands(tmp_path, full_run, monkeypatch):
     """Re-hosts test_cpdr_174_plus_ten_second_finalization_never_commits_success:
     durable failed state, no success event, snapshot acceptance refused."""
     from caos.engine.runtime import Engine
 
-    engine, store, settings, provider, run = await _start_full_run(tmp_path)
+    engine, store, settings, provider, run = full_run
     real_verify = engine._verify_run_artifacts
     with engine.fake_clock_for_tests() as clock:
         def breaching_verify(run_id, plan):
@@ -202,15 +223,18 @@ async def test_success_commit_that_would_breach_the_ceiling_never_lands(tmp_path
         await engine.accept(run["id"], actor="analyst")
     revived = Engine.create(settings=settings, store=store,
                             checkpoint_path=tmp_path / "ck.db", provider=provider)
-    assert revived.get_run(run["id"])["status"] == "failed", "the terminal state is durable"
+    try:
+        assert revived.get_run(run["id"])["status"] == "failed", "the terminal state is durable"
+    finally:
+        await revived.aclose()
 
 
-async def test_within_budget_success_commit_lands_once_inside_the_deadline(tmp_path, monkeypatch):
+async def test_within_budget_success_commit_lands_once_inside_the_deadline(tmp_path, full_run, monkeypatch):
     """Re-hosts test_cpdr_two_second_finalization_commits_inside_absolute_deadline:
     a within-budget success commit persists succeeded with exactly one event."""
     from caos.engine.runtime import Engine
 
-    engine, store, settings, provider, run = await _start_full_run(tmp_path)
+    engine, store, settings, provider, run = full_run
     real_verify = engine._verify_run_artifacts
     with engine.fake_clock_for_tests() as clock:
         def two_second_verify(run_id, plan):
@@ -223,5 +247,8 @@ async def test_within_budget_success_commit_lands_once_inside_the_deadline(tmp_p
     assert engine.get_run(run["id"])["status"] == "succeeded"
     revived = Engine.create(settings=settings, store=store,
                             checkpoint_path=tmp_path / "ck.db", provider=provider)
-    assert revived.get_run(run["id"])["status"] == "succeeded"
-    assert len(_succeeded_events(revived, run["id"])) == 1, "run.succeeded exactly once"
+    try:
+        assert revived.get_run(run["id"])["status"] == "succeeded"
+        assert len(_succeeded_events(revived, run["id"])) == 1, "run.succeeded exactly once"
+    finally:
+        await revived.aclose()
