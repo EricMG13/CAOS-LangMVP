@@ -156,6 +156,13 @@ test("the browser geometry fixture covers every acceptance-region state", () => 
   }
 });
 
+test("failed and paused runs never announce a pending module as current progress", () => {
+  const runStatus = workspace.slice(workspace.indexOf("function RunStatus("), workspace.indexOf("function RunConsole("));
+  assert.match(runStatus, /const current = \(run\.status === "queued" \|\| run\.status === "running"\)[\s\S]*?\? run\.nodes\.find\(\(node\) => node\.status === "running"\) \|\| run\.nodes\.find\(\(node\) => node\.status === "pending"\)[\s\S]*?: undefined;/);
+  assert.match(runStatus, /run\.status === "failed" \? "Execution stopped" : "Execution paused"/);
+  assert.match(runStatus, /aria-valuetext=\{`\$\{complete\} of \$\{run\.nodes\.length\} modules complete\$\{current \?/);
+});
+
 test("acceptance review classifies authority slots without claiming artifact byte changes", () => {
   const summary = acceptanceSlotSummary(
     [{ module_id: "CP-0" }, { module_id: "CP-1" }, { module_id: "CP-5" }, { module_id: "CP-5" }],

@@ -985,7 +985,9 @@ function ModuleIdentity({ moduleId }: { moduleId: string }) {
 function RunStatus({ writeAccess, caseId, run, runLoading, runError, acceptRun, acceptedSnapshotId, visibleSnapshotId, switchRequired, pendingAction, approvalSlot, resumeSlot }: { writeAccess: WriteAccess; caseId: string; run: RunRecord | null; runLoading: boolean; runError: string; acceptRun: () => void; acceptedSnapshotId: string; visibleSnapshotId: string; switchRequired: boolean; pendingAction: string; approvalSlot: ReactNode; resumeSlot: ReactNode }) {
   if (!run) return <LoadState loading={runLoading} error={runError} empty="No current execution. Select a purpose and depth to create an immutable plan." />;
   const complete = run.nodes.filter((node) => node.status === "succeeded").length;
-  const current = run.nodes.find((node) => node.status === "running") || run.nodes.find((node) => node.status === "pending");
+  const current = (run.status === "queued" || run.status === "running")
+    ? run.nodes.find((node) => node.status === "running") || run.nodes.find((node) => node.status === "pending")
+    : undefined;
   const progress = run.nodes.length ? Math.round(complete / run.nodes.length * 100) : 0;
   const progressLabel = current ? `${moduleLabel(current.module_id)} · ${current.status}` : run.status === "succeeded" ? "Execution complete" : run.status === "failed" ? "Execution stopped" : "Execution paused";
   let acceptance: ReactNode;
