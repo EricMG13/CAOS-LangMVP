@@ -1004,7 +1004,7 @@ try {
   await firstAssumption.press("Enter");
   assert.equal(await firstAssumption.inputValue(), "0.04", "rejected out-of-bounds edit did not revert the controlled input");
   await page.getByText(/Enter a finite value from -0.75 to 2/).waitFor();
-  const broadcast = page.getByLabel("Revenue growth, all forecast years, BASE");
+  const broadcast = page.getByLabel("Revenue growth, all forecast years, BASE", { exact: true });
   await broadcast.fill("0.04");
   await broadcast.press("Enter");
   assert.equal(await secondAssumption.inputValue(), "0.04", "all-year broadcast did not update every registry year");
@@ -1108,7 +1108,7 @@ try {
     modelRole = checkedRole;
     if (readOnly) modelRevisions = modelRevisions.map((item) => ({ ...item, export: { ...item.export, status: "FAILED", error: { code: "MODEL_REVISION_EXPORT_FAILED", detail: "Retry remains a shared write." } } }));
     await page.goto(`${baseURL}/model-builder/?case=${caseRecord.id}&role=${checkedRole.toLowerCase()}`, { waitUntil: "networkidle" });
-    const roleInput = page.getByLabel("Revenue growth, FY2025, BASE");
+    const roleInput = page.getByLabel("Revenue growth, FY2025, BASE", { exact: true });
     if (readOnly) {
       assert.equal(await roleInput.isDisabled(), true, `${checkedRole} could edit an assumption`);
       assert.equal(await page.getByLabel("Sign-Off Note *").count(), 0, `${checkedRole} was shown the shared Sign-Off Note control`);
