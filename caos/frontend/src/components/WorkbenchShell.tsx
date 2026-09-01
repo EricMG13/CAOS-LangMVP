@@ -213,11 +213,11 @@ export default function WorkbenchShell({
   if (drawer) {
     drawerBody = <div className="state-block">
       <dl>
-        <dt>Stable ID</dt><dd className="mono">{drawer.evidenceId}</dd>
-        <dt>Filename</dt><dd>{drawer.source.filename}</dd>
-        <dt>SHA-256</dt><dd className="mono">{drawer.source.sha256}</dd>
-        <dt>Accepted snapshot</dt><dd className="mono">{acceptedSnapshotIdentity}</dd>
-        <dt>Accepted source set</dt><dd className="mono">{acceptedSourceSetIdentity}</dd>
+        <dt className="meta-label">Stable ID</dt><dd className="mono">{drawer.evidenceId}</dd>
+        <dt className="meta-label">Filename</dt><dd>{drawer.source.filename}</dd>
+        <dt className="meta-label">SHA-256</dt><dd className="mono">{drawer.source.sha256}</dd>
+        <dt className="meta-label">Accepted snapshot</dt><dd className="mono">{acceptedSnapshotIdentity}</dd>
+        <dt className="meta-label">Accepted source set</dt><dd className="mono">{acceptedSourceSetIdentity}</dd>
       </dl>
       <p className="status warning">Source-level reference; no block locator supplied by this artifact.</p>
       <h3>Available source text</h3>
@@ -332,7 +332,7 @@ export default function WorkbenchShell({
           />
         </div>
         <div ref={resultRef} id="command-results" role="listbox">
-          {caseItems.length > 0 && <div role="group" aria-labelledby="palette-cases-label"><div className="palette-group-label" id="palette-cases-label">Cases</div>{caseItems.map((item) => {
+          {caseItems.length > 0 && <div role="group" aria-labelledby="palette-cases-label"><div className="nav-label palette-group-label" id="palette-cases-label">Cases</div>{caseItems.map((item) => {
             const index = resultIndex++;
             return <button
               id={`command-result-${index}`}
@@ -345,7 +345,7 @@ export default function WorkbenchShell({
               onClick={() => { onCaseChange(item.id); closePalette(); }}
             >{item.issuer} / {item.name}<span className="muted">{item.sector}</span></button>;
           })}</div>}
-          {workflowItems.length > 0 && <div role="group" aria-labelledby="palette-workflows-label"><div className="palette-group-label" id="palette-workflows-label">Workflows</div>{workflowItems.map((workflow) => {
+          {workflowItems.length > 0 && <div role="group" aria-labelledby="palette-workflows-label"><div className="nav-label palette-group-label" id="palette-workflows-label">Workflows</div>{workflowItems.map((workflow) => {
             const index = resultIndex++;
             return <Link
               id={`command-result-${index}`}
@@ -358,7 +358,7 @@ export default function WorkbenchShell({
               onClick={closePalette}
             >Open {workflow.label}</Link>;
           })}</div>}
-          {toolItems.length > 0 && <div role="group" aria-labelledby="palette-tools-label"><div className="palette-group-label" id="palette-tools-label">Tools</div>{toolItems.map((tool) => {
+          {toolItems.length > 0 && <div role="group" aria-labelledby="palette-tools-label"><div className="nav-label palette-group-label" id="palette-tools-label">Tools</div>{toolItems.map((tool) => {
             const index = resultIndex++;
             return <Link
               id={`command-result-${index}`}

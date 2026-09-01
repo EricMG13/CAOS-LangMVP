@@ -4,6 +4,9 @@ import { readFileSync } from "node:fs";
 import { acceptedAuthorityMatch, destinationMeta, evidenceKind, formatBlockLocator, humanizeCode, moduleLabel, withQuery, workflows } from "./workbench.ts";
 
 const workbenchShell = readFileSync(new URL("../components/WorkbenchShell.tsx", import.meta.url), "utf8");
+const workspace = readFileSync(new URL("../components/Workspace.tsx", import.meta.url), "utf8");
+const reportStudio = readFileSync(new URL("../components/report/ReportStudio.tsx", import.meta.url), "utf8");
+const styles = readFileSync(new URL("../../app/globals.css", import.meta.url), "utf8");
 
 test("approved workspace labels preserve the existing routes", () => {
   assert.deepEqual(workflows.map(({ label, href }) => [label, href]), [
@@ -21,6 +24,21 @@ test("the shell omits the redundant reading taxonomy and renders its command sho
   assert.ok(Object.values(destinationMeta).every((meta) => !("reading" in meta)));
   assert.doesNotMatch(workbenchShell, /Reading:/);
   assert.match(workbenchShell, /Command <kbd aria-hidden="true">⌘K<\/kbd>/);
+});
+
+test("navigation and data captions use the four-role label taxonomy", () => {
+  assert.equal(workbenchShell.match(/className="nav-label palette-group-label"/g)?.length, 3);
+  assert.doesNotMatch(styles, /\.palette-group-label\s*\{[^}]*text-transform/);
+  assert.match(workbenchShell, /<dt className="meta-label">Stable ID<\/dt>/);
+  assert.doesNotMatch(styles, /\.state-block dt\s*\{/);
+  assert.match(reportStudio, /report-authority-strip"><div><span className="meta-label">Model authority<\/span>/);
+  assert.doesNotMatch(styles, /\.report-authority-strip div > span\s*\{/);
+});
+
+test("DAG nodes use neutral containers and shape-coded visible statuses", () => {
+  assert.doesNotMatch(styles, /\.dag-node\.(?:succeeded|running|failed)\s*\{/);
+  assert.doesNotMatch(workspace, /className=\{`dag-node \$\{node\.status\}`\}/);
+  assert.match(workspace, /className=\{`status \$\{node\.status === "succeeded" \? "success" : node\.status === "failed" \? "critical" : "warning"\}`\}>\{node\.status\}<\/div>/);
 });
 
 test("every route path keeps its trailing slash", () => {
