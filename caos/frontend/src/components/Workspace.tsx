@@ -1189,15 +1189,20 @@ function DraftDiscardDialog({ open, detail, trigger, onConfirm, onClose }: { ope
     onClose();
     dialogRef.current?.close();
     const restore = (attempt = 0) => {
-      if (trigger?.isConnected) { trigger.focus(); return; }
+      const focus = (candidate: HTMLElement | null | undefined) => {
+        if (!candidate?.isConnected) return false;
+        candidate.focus();
+        return document.activeElement === candidate;
+      };
+      if (focus(trigger)) return;
       if (trigger?.id) {
         const replacement = document.getElementById(trigger.id);
-        if (replacement) { replacement.focus(); return; }
+        if (focus(replacement)) return;
       }
       const label = trigger?.getAttribute("aria-label");
       if (label) {
         const replacement = [...document.querySelectorAll<HTMLElement>("[aria-label]")].find((element) => element.getAttribute("aria-label") === label);
-        if (replacement) { replacement.focus(); return; }
+        if (focus(replacement)) return;
       }
       if (attempt < 10) window.setTimeout(() => restore(attempt + 1), 50);
     };
