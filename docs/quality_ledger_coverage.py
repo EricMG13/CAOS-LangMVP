@@ -63,6 +63,8 @@ FILE_MAP = {
     r"^caos/frontend/src/": "F-UI-01..12",
     r"^caos/frontend/scripts/a11y-axe": "F-UI-14, F-UI-15",
     r"^caos/frontend/scripts/workbench-smoke": "F-UI-02, F-UI-04",
+    r"^caos/frontend/scripts/draft-history-smoke": "F-UI-02, F-UI-04",
+    r"^caos/frontend/scripts/identity-a11y": "F-UI-14, F-UI-15",
     r"^caos/frontend/scripts/production-inventory": "F-OPS-02 (D-009)",
     r"^caos/frontend/(next\.config|eslint\.config|tsconfig|package)": "F-OPS-04, F-OPS-09",
     r"^caos/scripts/build_frontend\.sh": "F-OPS-04",

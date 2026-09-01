@@ -376,7 +376,7 @@ try {
 
   const rail = page.locator(".analysis-evidence");
   await rail.getByText("Evidence rail", { exact: true }).waitFor();
-  await rail.getByText(accepted.digest, { exact: true }).waitFor();
+  await rail.getByTitle(accepted.digest, { exact: true }).waitFor();
   assert.ok(await rail.locator(".analysis-evidence-card").count() > 0, "accepted analysis lists no cited sources");
 
 
