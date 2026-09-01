@@ -1045,6 +1045,7 @@ try {
   assert.equal(await page.getByRole("dialog", { name: "Command palette" }).isVisible(), false, "command shortcut opened a nested modal");
   assert.ok(page.url().includes(`case=${caseRecord.id}`), "dismissed dirty-draft warning changed the selected case");
   await discardDraftDialog().getByRole("button", { name: "Keep editing" }).click();
+  await page.waitForFunction(() => document.activeElement?.id === "case-select");
   assert.equal(await caseSelect.evaluate((element) => document.activeElement === element), true, "canceling a case discard did not return focus to the case selector");
   const dirtyURL = page.url();
   const sourcesLink = page.getByRole("link", { name: "Sources", exact: true }).first();
