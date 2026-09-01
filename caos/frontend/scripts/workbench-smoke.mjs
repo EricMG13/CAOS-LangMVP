@@ -1079,6 +1079,7 @@ try {
   await page.waitForFunction(() => document.activeElement?.getAttribute("aria-label") === "Open command palette");
   assert.equal(await commandTrigger.evaluate((element) => document.activeElement === element), true, "canceling palette navigation did not return focus to the palette trigger");
   await firstAssumption.focus();
+  await page.waitForFunction(() => Boolean(window.history.state?.caosModelDraftGuard || window.history.state?.caosReportDraftGuard));
   await page.evaluate(() => window.history.back());
   await discardDraftDialog().waitFor();
   await page.keyboard.press("Escape");
@@ -1087,6 +1088,7 @@ try {
   assert.equal(await firstAssumption.inputValue(), "0.06", "browser history restoration dropped the dirty local forecast value");
   await page.waitForFunction(() => document.activeElement?.getAttribute("aria-label") === "Revenue growth, FY2025, BASE");
   assert.equal(await firstAssumption.evaluate((element) => document.activeElement === element), true, "Escape did not return focus to the dirty editor after browser history cancelation");
+  await page.waitForFunction(() => Boolean(window.history.state?.caosModelDraftGuard || window.history.state?.caosReportDraftGuard));
   await page.evaluate(() => window.history.back());
   await discardDraftDialog().waitFor();
   await discardDraftDialog().getByRole("button", { name: "Discard changes" }).click();
