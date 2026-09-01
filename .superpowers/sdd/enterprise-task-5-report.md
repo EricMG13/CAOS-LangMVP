@@ -1,6 +1,7 @@
 # Enterprise Task 5A report — identity contract and adapters
 
 Implementation commit: `fe2fed45d0cfc14fc3ecc6ecdf4b5a61770dc3f6`.
+Authority correction: pending commit (2026-09-01).
 
 ## Delivered
 
@@ -32,6 +33,8 @@ no matches
 2. Time-zone edge — a naive caller-supplied validation time would have adopted the host local zone. Reproduced with `datetime.now()`; it now fails closed. Future/expired UTC boundaries are covered.
 3. Identity tampering, optional observed fields, and policy secrecy — verified the frozen identity's stored digest detects forced mutation, both response adapters preserve supplied values only, and the identity serialization contains no test API keys. The policy preimage has exactly `provider`, `adapter`, `transport`, `counting`, `loop`, `tool`, `schema`, and `modules`.
 4. Constructor/lifecycle cleanup — qualification construction occurs before either SDK/HTTP client is created. Real dual-client closure is covered, including constructing a later adapter after a prior close; the SDK cache is cleared only after both closes succeed.
+5. Independent review reproduced three authority gaps: provider-version binding was omitted, a forced mutation of the frozen qualification was not reverified, and stored identity reconstruction had no strict digest-aware path. The shared values now bind provider version, reverify the complete qualification preimage before use, and reconstruct only an exact ten-field identity whose claimed digest matches. Field-by-field adversarial mutation matrices passed for both values.
+6. The corrected strict gate passed with `49 passed in 0.87s` under fatal `ResourceWarning`, `RuntimeWarning`, and `PytestUnraisableExceptionWarning`; Ruff and `git diff --check` passed. Two fresh interpreter processes produced the same host-control identity digest.
 
 ## NOT PROVED
 
@@ -45,4 +48,4 @@ no matches
 ## Risks / follow-up
 
 - The parameter/context digest is intentionally sensitive to installed adapter/runtime versions and policy constants; a change requires a new qualification record.
-- Independent review remains pending before 5B.
+- Task 5A's corrected authority boundary is accepted for local execution. User-controlled mode means no delegated reviewer is active; later Task 5 and final candidate gates still require the plan's independent enterprise evidence.

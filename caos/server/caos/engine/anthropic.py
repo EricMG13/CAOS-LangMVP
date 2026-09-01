@@ -58,7 +58,8 @@ class AnthropicProvider:
         if qualification is not None:
             build_id, manifest_digest = methodology_binding(methodology_root or Settings().deploy_v_root)
             qualification.validate_binding(
-                provider_name="anthropic", model=model, adapter_version=ADAPTER_VERSION,
+                provider_name="anthropic", model=model, provider_version=None,
+                adapter_version=ADAPTER_VERSION,
                 parameter_context_digest=context_digest, methodology_build_id=build_id,
                 methodology_manifest_digest=manifest_digest,
             )

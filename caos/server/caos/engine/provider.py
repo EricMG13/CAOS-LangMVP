@@ -52,6 +52,12 @@ _QUALIFICATION_FIELDS = frozenset({
     "methodology_build_id", "methodology_manifest_digest", "qualified_at",
     "expires_at", "evidence_digest",
 })
+_IDENTITY_FIELDS = frozenset({
+    "provider_name", "model", "provider_version", "adapter_version",
+    "parameter_context_digest", "qualification_record_id",
+    "qualification_record_digest", "qualification_status",
+    "qualification_expires_at", "identity_digest",
+})
 
 
 def _sha256(value: Any, field_name: str) -> str:
@@ -134,6 +140,19 @@ class ProviderIdentity:
     def as_dict(self) -> dict[str, Any]:
         return {**self._preimage(), "identity_digest": self.identity_digest}
 
+    @classmethod
+    def from_dict(cls, record: Mapping[str, Any]) -> "ProviderIdentity":
+        if not isinstance(record, dict) or set(record) != _IDENTITY_FIELDS:
+            raise AgentError("AGENT_IDENTITY_MISMATCH", "provider identity fields are not exact")
+        claimed_digest = record["identity_digest"]
+        try:
+            identity = cls(**{key: record[key] for key in _IDENTITY_FIELDS - {"identity_digest"}})
+        except (AgentError, TypeError, ValueError) as exc:
+            raise AgentError("AGENT_IDENTITY_MISMATCH", "provider identity is malformed") from exc
+        if not isinstance(claimed_digest, str) or identity.identity_digest != claimed_digest:
+            raise AgentError("AGENT_IDENTITY_MISMATCH", "provider identity digest does not match")
+        return identity
+
     def verify(self) -> None:
         if self.identity_digest != digest(self._preimage()):
             raise AgentError("AGENT_IDENTITY_MISMATCH", "provider identity digest changed")
@@ -155,6 +174,27 @@ class ProviderQualification:
     expires_at: str
     evidence_digest: str
     record_digest: str
+
+    def _preimage(self) -> dict[str, Any]:
+        return {
+            "schema_version": QUALIFICATION_SCHEMA_VERSION,
+            "record_id": self.record_id,
+            "status": "qualified",
+            "provider_name": self.provider_name,
+            "model": self.model,
+            "provider_version": self.provider_version,
+            "adapter_version": self.adapter_version,
+            "parameter_context_digest": self.parameter_context_digest,
+            "methodology_build_id": self.methodology_build_id,
+            "methodology_manifest_digest": self.methodology_manifest_digest,
+            "qualified_at": self.qualified_at,
+            "expires_at": self.expires_at,
+            "evidence_digest": self.evidence_digest,
+        }
+
+    def verify(self) -> None:
+        if self.record_digest != digest(self._preimage()):
+            raise AgentError("AGENT_PROVIDER_UNQUALIFIED", "qualification record digest changed")
 
     @classmethod
     def from_record(cls, record: Mapping[str, Any]) -> "ProviderQualification":
@@ -200,12 +240,14 @@ class ProviderQualification:
         *,
         provider_name: str,
         model: str,
+        provider_version: str | None,
         adapter_version: str,
         parameter_context_digest: str,
         methodology_build_id: str,
         methodology_manifest_digest: str,
         now: datetime | None = None,
     ) -> None:
+        self.verify()
         now = now or datetime.now(UTC)
         if not isinstance(now, datetime) or now.tzinfo is None:
             raise AgentError("AGENT_PROVIDER_UNQUALIFIED", "qualification validation time must be timezone-aware")
@@ -217,6 +259,7 @@ class ProviderQualification:
         expected = {
             "provider_name": provider_name,
             "model": model,
+            "provider_version": provider_version,
             "adapter_version": adapter_version,
             "parameter_context_digest": parameter_context_digest,
             "methodology_build_id": methodology_build_id,

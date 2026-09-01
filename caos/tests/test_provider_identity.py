@@ -57,6 +57,20 @@ def test_provider_identity_is_frozen_and_detects_self_digest_tampering():
         identity.verify()
 
 
+def test_provider_identity_round_trip_rejects_persisted_tampering():
+    identity = host_control_identity()
+    assert ProviderIdentity.from_dict(identity.as_dict()) == identity
+
+    tampered = {**identity.as_dict(), "model": "other"}
+    with pytest.raises(AgentError, match="AGENT_IDENTITY_MISMATCH"):
+        ProviderIdentity.from_dict(tampered)
+
+    incomplete = identity.as_dict()
+    incomplete.pop("qualification_status")
+    with pytest.raises(AgentError, match="AGENT_IDENTITY_MISMATCH"):
+        ProviderIdentity.from_dict(incomplete)
+
+
 def test_parameter_context_has_exactly_host_owned_policy_fields():
     context = parameter_context_metadata(
         provider_name="anthropic", model="claude-sonnet-4-6", provider_version=None,
@@ -88,13 +102,15 @@ def test_qualification_record_digest_and_binding_are_strict(tmp_path):
     qualification = ProviderQualification.from_path(path, digest(record))
     assert qualification.record_digest == digest(record)
     qualification.validate_binding(
-        provider_name="anthropic", model="claude-sonnet-4-6", adapter_version=ANTHROPIC_ADAPTER_VERSION,
+        provider_name="anthropic", model="claude-sonnet-4-6", provider_version=None,
+        adapter_version=ANTHROPIC_ADAPTER_VERSION,
         parameter_context_digest="a" * 64, methodology_build_id="deploy-v-test",
         methodology_manifest_digest="b" * 64,
     )
     with pytest.raises(AgentError, match="AGENT_PROVIDER_UNQUALIFIED"):
         qualification.validate_binding(
-            provider_name="anthropic", model="other", adapter_version=ANTHROPIC_ADAPTER_VERSION,
+            provider_name="anthropic", model="other", provider_version=None,
+            adapter_version=ANTHROPIC_ADAPTER_VERSION,
             parameter_context_digest="a" * 64, methodology_build_id="deploy-v-test",
             methodology_manifest_digest="b" * 64,
         )
@@ -105,6 +121,25 @@ def test_qualification_record_digest_and_binding_are_strict(tmp_path):
         ProviderQualification.from_path(path, "0" * 64)
 
 
+def test_qualification_binding_rechecks_record_integrity_and_provider_version():
+    qualification = ProviderQualification.from_record(_record())
+    object.__setattr__(qualification, "record_id", "changed-after-load")
+    with pytest.raises(AgentError, match="AGENT_PROVIDER_UNQUALIFIED"):
+        qualification.validate_binding(
+            provider_name="anthropic", model="claude-sonnet-4-6", provider_version=None,
+            adapter_version=ANTHROPIC_ADAPTER_VERSION, parameter_context_digest="a" * 64,
+            methodology_build_id="deploy-v-test", methodology_manifest_digest="b" * 64,
+        )
+
+    versioned = ProviderQualification.from_record(_record(provider_version="provider-build-7"))
+    with pytest.raises(AgentError, match="AGENT_PROVIDER_UNQUALIFIED"):
+        versioned.validate_binding(
+            provider_name="anthropic", model="claude-sonnet-4-6", provider_version=None,
+            adapter_version=ANTHROPIC_ADAPTER_VERSION, parameter_context_digest="a" * 64,
+            methodology_build_id="deploy-v-test", methodology_manifest_digest="b" * 64,
+        )
+
+
 @pytest.mark.parametrize(("record", "code"), [
     (_record(qualified_at=(datetime.now(UTC) + timedelta(minutes=1)).replace(microsecond=0).isoformat()), "AGENT_PROVIDER_UNQUALIFIED"),
     (_record(expires_at=(datetime.now(UTC) - timedelta(minutes=1)).replace(microsecond=0).isoformat()), "AGENT_QUALIFICATION_EXPIRED"),
@@ -113,7 +148,8 @@ def test_qualification_record_rejects_future_or_expired_bindings(record, code):
     qualification = ProviderQualification.from_record(record)
     with pytest.raises(AgentError) as excinfo:
         qualification.validate_binding(
-            provider_name="anthropic", model="claude-sonnet-4-6", adapter_version=ANTHROPIC_ADAPTER_VERSION,
+            provider_name="anthropic", model="claude-sonnet-4-6", provider_version=None,
+            adapter_version=ANTHROPIC_ADAPTER_VERSION,
             parameter_context_digest="a" * 64, methodology_build_id="deploy-v-test",
             methodology_manifest_digest="b" * 64,
         )
@@ -124,7 +160,8 @@ def test_qualification_rejects_a_naive_validation_clock():
     qualification = ProviderQualification.from_record(_record())
     with pytest.raises(AgentError, match="AGENT_PROVIDER_UNQUALIFIED"):
         qualification.validate_binding(
-            provider_name="anthropic", model="claude-sonnet-4-6", adapter_version=ANTHROPIC_ADAPTER_VERSION,
+            provider_name="anthropic", model="claude-sonnet-4-6", provider_version=None,
+            adapter_version=ANTHROPIC_ADAPTER_VERSION,
             parameter_context_digest="a" * 64, methodology_build_id="deploy-v-test",
             methodology_manifest_digest="b" * 64, now=datetime.now(),
         )
