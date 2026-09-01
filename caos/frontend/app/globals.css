@@ -237,7 +237,7 @@ dialog:not(.context-drawer) { width: min(680px, calc(100% - 32px)); max-width: 6
 .dialog-body .panel-header { margin: -16px -16px 0; border-radius: var(--radius-xl) var(--radius-xl) 0 0; }
 .accept-modules { margin: 0; padding: 0; list-style: none; display: grid; gap: var(--space-xs); }
 .accept-modules li { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-sm); }
-.run-acceptance { min-block-size: 132px; align-content: start; }
+.run-acceptance { min-block-size: 133px; align-content: start; }
 .run-acceptance p { margin: 0; }
 .run-progress { display: grid; gap: var(--space-sm); }
 .run-progress > div { display: flex; justify-content: space-between; gap: var(--space-md); color: var(--caos-muted); }
