@@ -122,6 +122,17 @@ export function humanizeCode(code: string) {
   return code.replaceAll("_", " ");
 }
 
+export function nodeStatusTone(status: string) {
+  switch (status) {
+    case "pending": case "ready": return "idle";
+    case "running": return "running";
+    case "blocked": case "cancelled": return "warning";
+    case "failed": return "critical";
+    case "succeeded": return "success";
+    default: return "warning";
+  }
+}
+
 // One date formatter for every surface — the topbar authority strip, the artifact
 // and audit tables, the model build history — so a timestamp reads the same way
 // wherever it appears.

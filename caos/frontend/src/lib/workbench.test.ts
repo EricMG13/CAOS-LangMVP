@@ -33,12 +33,26 @@ test("navigation and data captions use the four-role label taxonomy", () => {
   assert.doesNotMatch(styles, /\.state-block dt\s*\{/);
   assert.match(reportStudio, /report-authority-strip"><div><span className="meta-label">Model authority<\/span>/);
   assert.doesNotMatch(styles, /\.report-authority-strip div > span\s*\{/);
+  assert.match(workspace, /analysis-provenance"><dt className="meta-label">Artifact<\/dt>/);
+  assert.match(workspace, /loan-authority"><dl><dt className="meta-label">Workbook date<\/dt>/);
+  assert.doesNotMatch(styles, /[^{}]*\bdt\b[^{}]*\{[^{}]*(?:letter-spacing|text-transform)/);
 });
 
-test("DAG nodes use neutral containers and shape-coded visible statuses", () => {
+test("DAG nodes use neutral containers and shape-coded visible statuses", async () => {
+  const workbench = await import("./workbench.ts") as unknown as { nodeStatusTone?: (status: string) => string };
+  for (const [status, tone] of [
+    ["pending", "idle"],
+    ["ready", "idle"],
+    ["running", "running"],
+    ["blocked", "warning"],
+    ["cancelled", "warning"],
+    ["failed", "critical"],
+    ["succeeded", "success"],
+  ]) assert.equal(workbench.nodeStatusTone?.(status), tone, status);
   assert.doesNotMatch(styles, /\.dag-node\.(?:succeeded|running|failed)\s*\{/);
   assert.doesNotMatch(workspace, /className=\{`dag-node \$\{node\.status\}`\}/);
-  assert.match(workspace, /className=\{`status \$\{node\.status === "succeeded" \? "success" : node\.status === "failed" \? "critical" : "warning"\}`\}>\{node\.status\}<\/div>/);
+  assert.match(workspace, /className=\{`status \$\{nodeStatusTone\(node\.status\)\}`\}>\{node\.status\}<\/div>/);
+  assert.match(styles, /\.status\.running::before\s*\{/);
 });
 
 test("every route path keeps its trailing slash", () => {
