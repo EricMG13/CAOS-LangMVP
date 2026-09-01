@@ -157,6 +157,16 @@ class ProviderIdentity:
         if self.identity_digest != digest(self._preimage()):
             raise AgentError("AGENT_IDENTITY_MISMATCH", "provider identity digest changed")
 
+    def ensure_current(self, now: datetime | None = None) -> None:
+        self.verify()
+        if self.qualification_status != "qualified":
+            return
+        now = now or datetime.now(UTC)
+        if not isinstance(now, datetime) or now.tzinfo is None:
+            raise AgentError("AGENT_IDENTITY_MISMATCH", "provider identity validation time is invalid")
+        if now.astimezone(UTC) >= _timestamp(self.qualification_expires_at, "qualification expiry"):
+            raise AgentError("AGENT_QUALIFICATION_EXPIRED", "provider qualification has expired")
+
 
 @dataclass(frozen=True)
 class ProviderQualification:

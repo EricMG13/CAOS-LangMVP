@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from dataclasses import FrozenInstanceError
+from dataclasses import FrozenInstanceError, replace
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -69,6 +69,36 @@ def test_provider_identity_round_trip_rejects_persisted_tampering():
     incomplete.pop("qualification_status")
     with pytest.raises(AgentError, match="AGENT_IDENTITY_MISMATCH"):
         ProviderIdentity.from_dict(incomplete)
+
+
+def test_qualified_provider_identity_rechecks_expiry_without_reclassifying_host_controls():
+    now = datetime.now(UTC).replace(microsecond=0)
+    identity = ProviderIdentity(
+        provider_name="anthropic", model="claude-sonnet-4-6", provider_version=None,
+        adapter_version=ANTHROPIC_ADAPTER_VERSION, parameter_context_digest="a" * 64,
+        qualification_record_id="qualification-1", qualification_record_digest="b" * 64,
+        qualification_status="qualified", qualification_expires_at=(now + timedelta(minutes=1)).isoformat(),
+    )
+    identity.ensure_current(now)
+    with pytest.raises(AgentError) as excinfo:
+        identity.ensure_current(now + timedelta(minutes=1))
+    assert excinfo.value.code == "AGENT_QUALIFICATION_EXPIRED"
+    host_control_identity().ensure_current(now + timedelta(days=3650))
+
+
+def test_response_digest_preserves_safe_identity_fields_when_content_is_not_json():
+    from caos.engine.loop import provider_response_digest
+    from caos.engine.provider import ProviderBlock, ProviderMessage, ProviderUsage
+
+    first = ProviderMessage(
+        content=[ProviderBlock(type="tool_use", input={"invalid": {object()}})],
+        stop_reason="tool_use", usage=ProviderUsage(input_tokens=1, output_tokens=1),
+        request_id="request-1", observed_model="model-a",
+    )
+    usage = {"input_tokens": 1, "output_tokens": 1}
+    assert provider_response_digest(first, usage) != provider_response_digest(
+        replace(first, observed_model="model-b"), usage,
+    )
 
 
 def test_parameter_context_has_exactly_host_owned_policy_fields():

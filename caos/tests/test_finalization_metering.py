@@ -35,7 +35,10 @@ async def _start_full_run(tmp_path: Path):
         provider = ScriptedProvider(script=_agent_turns(source["id"], modules=10))
         engine = Engine.create(settings=settings, store=store,
                                checkpoint_path=tmp_path / "ck.db", provider=provider)
-        run = await engine.start_run(case_id=case["id"], pathway="FULL_CREDIT", depth="full", actor="analyst")
+        run = await engine.start_run_for_tests(
+            case_id=case["id"], pathway="FULL_CREDIT", depth="full", actor="analyst",
+            allow_placeholder_deterministic=True,
+        )
         return engine, store, settings, provider, run
     except BaseException:
         try:

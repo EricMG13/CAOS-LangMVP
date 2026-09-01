@@ -45,10 +45,22 @@ from .budget import (
 from .deterministic import build_deterministic_payload
 from .evidence import EvidenceReader
 from .loop import ProviderSlots, run_agent_module
-from .provider import AgentError, ProviderRequest
+from .provider import AgentError, ProviderIdentity, ProviderRequest
 
 
 MVP_PATHWAYS = {"FULL_CREDIT", "EARNINGS_UPDATE", "COVENANT_REFINANCING", "RELATIVE_VALUE"}
+
+
+def _is_placeholder_payload(payload: Any) -> bool:
+    provenance = payload.get("provenance") if isinstance(payload, dict) else None
+    return (
+        isinstance(payload, dict)
+        and payload.get("schema_version") == "caos.system_analysis.v1"
+        and isinstance(provenance, dict)
+        and provenance.get("executor") == "caos.engine.deterministic"
+    )
+
+
 # Shutdown must not wait forever for a task that ignores cancellation or a
 # foreign loop that cannot finish its waiter. Failed work stays registered so a
 # later close can retry once its owner can make progress.
@@ -97,6 +109,7 @@ class Engine:
         self.settings = settings
         self.store = store
         self.provider = provider
+        self._provider_identity = self._capture_provider_identity(provider)
         self.checkpoint_path = Path(checkpoint_path)
         self.runs = RunStore(store.engine)
         self.bundle = DeployVBundle(settings.deploy_v_root)
@@ -116,6 +129,7 @@ class Engine:
         self._slots = ProviderSlots(PROVIDER_CONCURRENCY_SLOTS)
         self._model_service: Any = None
         self._scripted_runs: set[str] = set()
+        self._placeholder_deterministic_runs: set[str] = set()
         self._readiness: tuple[float, dict[str, bool]] | None = None
         self._readiness_lock = threading.Lock()
         self._lifecycle_lock = threading.Lock()
@@ -164,6 +178,50 @@ class Engine:
     @classmethod
     def create(cls, *, settings: Settings, store: DomainStore, checkpoint_path: Path, provider: Any = None) -> "Engine":
         return cls(settings, store, checkpoint_path, provider)
+
+    @staticmethod
+    def _capture_provider_identity(provider: Any) -> ProviderIdentity | None:
+        if provider is None:
+            return None
+        try:
+            raw = provider.identity
+        except AttributeError:
+            return None
+        try:
+            identity = raw if isinstance(raw, ProviderIdentity) else ProviderIdentity.from_dict(raw)
+            identity.verify()
+        except (AgentError, TypeError, ValueError) as exc:
+            raise EngineError("AGENT_IDENTITY_MISMATCH", "provider identity is invalid") from exc
+        return identity
+
+    def _route_requires_agent(self, pathway: str, depth: str) -> bool:
+        from ..modules.registry import MODULES
+        from .graphs import compiled_route
+
+        route = compiled_route(pathway, depth, self.settings.deploy_v_root)
+        return any(
+            (MODULES[module_id].mode_full if depth == "full" else MODULES[module_id].mode_screen) == "agent"
+            for module_id in route.nodes
+        )
+
+    def _assert_run_provider_identity(self, run: dict[str, Any]) -> ProviderIdentity | None:
+        raw = run.get("provider_identity")
+        identity = ProviderIdentity.from_dict(raw) if raw is not None else None
+        if not self._route_requires_agent(run["pathway"], run["depth"]):
+            return identity
+        if identity is None or self._provider_identity is None:
+            raise AgentError("AGENT_IDENTITY_MISMATCH", "agent run has no current provider identity")
+        self._provider_identity.ensure_current()
+        if identity != self._provider_identity:
+            raise AgentError("AGENT_IDENTITY_MISMATCH", "stored provider identity differs from current binding")
+        return identity
+
+    async def _finalize_identity_failure(self, run_id: str, exc: AgentError) -> dict[str, Any]:
+        self.runs.finalize_failure(run_id, exc.code, None)
+        await self._delete_terminal_thread(run_id)
+        self._placeholder_deterministic_runs.discard(run_id)
+        self._scripted_runs.discard(run_id)
+        return self.get_run(run_id)
 
     # -- infrastructure ----------------------------------------------------
 
@@ -485,6 +543,10 @@ class Engine:
             finally:
                 self._active_invocations -= 1
                 await self._delete_terminal_thread(run_id)
+                if self.runs.get_run(run_id)["status"] == "failed":
+                    self._placeholder_deterministic_runs.discard(run_id)
+                if self.runs.get_run(run_id)["status"] in TERMINAL:
+                    self._scripted_runs.discard(run_id)
 
     # -- graph nodes -------------------------------------------------------
 
@@ -516,6 +578,7 @@ class Engine:
         plan["source_set_digest"] = state_mod.source_set_digest(current)
         # §12.6: the plan pins the integrity-manifest digest at gate exit.
         plan["manifest_digest"] = digest(self.bundle.integrity)
+        plan["provider_identity"] = run.get("provider_identity")
         # Invariant 1: a loan universe is workbook-derived analysis the host
         # lifts into CP-3's artifact without any evidence read, so it binds like
         # every other input — pinned here, once, and only when its own source is
@@ -555,6 +618,7 @@ class Engine:
             "module_id": module_id,
             "upstream_artifact_digests": upstream_digests,
             "source_set_digest": plan["source_set_digest"],
+            "provider_identity_digest": (plan.get("provider_identity") or {}).get("identity_digest"),
         })
 
     def _pinned_loan_universe(self, plan: dict[str, Any], case_id: str) -> dict[str, Any] | None:
@@ -616,10 +680,13 @@ class Engine:
         plan, plan_digest = state["plan"], state["plan_digest"]
         try:
             state_mod.assert_plan_integrity(plan, plan_digest)
+            run = self.runs.get_run(run_id)
+            if plan.get("provider_identity") != run.get("provider_identity"):
+                raise AgentError("AGENT_IDENTITY_MISMATCH", "plan identity differs from run")
             if plan["build_id"] != self._current_build_id():
                 raise AgentError("AGENT_AUTHORITY_MISMATCH", "pinned methodology build is not the active bundle")
             source_set = state_mod.verify_source_set_expectation(self.store, plan["source_set_id"], plan["source_set_digest"])
-            live_sources = self._live_sources(self.runs.get_run(run_id)["case_id"], source_set)
+            live_sources = self._live_sources(run["case_id"], source_set)
             upstream = self._upstream_digests(run_id, plan, module_id)
             fingerprint = self._input_fingerprint(plan, plan_digest, module_id, [a["digest"] for a in upstream])
 
@@ -629,6 +696,11 @@ class Engine:
             existing = self.runs.find_valid_artifact(run_id, module_id, fingerprint)
             self._charge_active_if_metered(run_id, self._clock() - started)
             if existing is not None:
+                if _is_placeholder_payload(existing.get("payload")) and run_id not in self._placeholder_deterministic_runs:
+                    raise AgentError(
+                        "DETERMINISTIC_EXECUTOR_UNAVAILABLE",
+                        "a placeholder artifact cannot be reused without its test capability",
+                    )
                 # Reuse-first relink (§10.1): zero provider calls, byte-identical link.
                 self.runs.complete_node(run_id, existing["case_id"], module_id, fingerprint,
                                         existing["payload"], existing["markdown"], existing["qa_status"], "system")
@@ -643,7 +715,9 @@ class Engine:
                 # (CP-3's universe binding included) runs its real
                 # deterministic path.
                 payload, markdown, qa_status = self._scripted_output(run_id, plan, module_id, fingerprint, upstream)
-            elif mode == "agent" and self.settings.agent_execution_enabled and run_id not in self._scripted_runs:
+            elif mode == "agent" and run_id not in self._scripted_runs:
+                if not self.settings.agent_execution_enabled:
+                    raise AgentError("AGENT_EXECUTION_DISABLED", "agent execution is disabled")
                 # The provider loop reports its own calls but is handed no
                 # identity at all, and the ledger knows the run without the
                 # module. Both get the pair from a ContextVar scoped to this
@@ -651,8 +725,8 @@ class Engine:
                 with run_context(run_id=run_id, module_id=module_id):
                     result = await self._execute_agent(run_id, plan, module_id, source_set, live_sources, fingerprint, upstream)
                 payload, markdown, qa_status = result["payload"], result["markdown"], result["qa_status"]
-            else:
-                universe = (self._pinned_loan_universe(plan, self.runs.get_run(run_id)["case_id"])
+            elif run_id in self._placeholder_deterministic_runs:
+                universe = (self._pinned_loan_universe(plan, run["case_id"])
                             if module_id == "CP-3" else None)
                 payload = build_deterministic_payload(
                     module_id, plan, input_fingerprint=fingerprint,
@@ -661,7 +735,13 @@ class Engine:
                     loan_universe=universe,
                 )
                 markdown, qa_status = None, "Passed"
+            else:
+                raise AgentError(
+                    "DETERMINISTIC_EXECUTOR_UNAVAILABLE",
+                    "the fixed deterministic payload is a host-control fixture only",
+                )
             run = self.runs.get_run(run_id)
+            payload = {**payload, "provider_identity": run.get("provider_identity")}
             started = self._clock()
             artifact = self.runs.complete_node(run_id, run["case_id"], module_id, fingerprint, payload, markdown, qa_status, run["created_by"])
             self._charge_active_if_metered(run_id, self._clock() - started)
@@ -703,6 +783,11 @@ class Engine:
         lock = self._agent_locks.setdefault((self._loop_key(), run_id), asyncio.Lock())
         async with lock:  # §10.2: agent execution serialises per run
             run = self.runs.get_run(run_id)
+            if run["status"] in TERMINAL:
+                raise AgentError((run.get("error") or {}).get("code", "RUN_NOT_READY"))
+            identity = self._assert_run_provider_identity(run)
+            if identity is None:  # guarded above for every agent route
+                raise AgentError("AGENT_IDENTITY_MISMATCH", "agent run identity is absent")
             agent_modules = [
                 node["module_id"] for node in plan["nodes"]
                 if MODULES[node["module_id"]].mode_full == "agent"
@@ -764,7 +849,11 @@ class Engine:
                 ),
             )
 
-            attempt_base = {"run_id": run_id, "module_id": module_id, "model": self.settings.anthropic_model}
+            attempt_base = {
+                "run_id": run_id,
+                "module_id": module_id,
+                "provider_identity": identity.as_dict(),
+            }
             provider_interacted = False
 
             def record(kind: str, **details: Any) -> None:
@@ -783,8 +872,17 @@ class Engine:
             def reserve(request_digest: str, input_tokens: int, output_tokens: int, retry: bool) -> None:
                 self.runs.reserve_provider(run_id, request_digest, input_tokens, output_tokens, retry)
 
-            def reconcile(request_digest: str, reserved_in: int, reserved_out: int, actual_in: int, actual_out: int) -> None:
-                self.runs.reconcile_provider(run_id, request_digest, reserved_in, reserved_out, actual_in, actual_out)
+            def reconcile(
+                request_digest: str, reserved_in: int, reserved_out: int,
+                actual_in: int, actual_out: int,
+            ) -> str | None:
+                try:
+                    self.runs.reconcile_provider(
+                        run_id, request_digest, reserved_in, reserved_out, actual_in, actual_out,
+                    )
+                except StoreConflict as exc:
+                    return exc.code
+                return None
 
             def before_create() -> None:
                 nonlocal provider_interacted
@@ -838,6 +936,7 @@ class Engine:
                     remaining_seconds=remaining_seconds,
                     before_create=before_create,
                     clock=self._clock,
+                    expected_identity=identity,
                 )
             except SimulatedCrash:
                 raise
@@ -885,10 +984,22 @@ class Engine:
             node = nodes.get(module_id)
             artifact = self.runs.get_artifact(node["artifact_id"]) if node and node["artifact_id"] else None
             if (
+                artifact is not None
+                and _is_placeholder_payload(artifact.get("payload"))
+                and run_id not in self._placeholder_deterministic_runs
+            ):
+                raise AgentError(
+                    "DETERMINISTIC_EXECUTOR_UNAVAILABLE",
+                    f"placeholder artifact cannot authorize finalization for {module_id}",
+                )
+            if (
                 artifact is None
+                or not isinstance(artifact.get("payload"), dict)
                 or artifact["run_id"] != run_id
                 or artifact["module_id"] != module_id
                 or digest(artifact["payload"]) != artifact["digest"]
+                or artifact.get("provider_identity") != run.get("provider_identity")
+                or artifact["payload"].get("provider_identity") != run.get("provider_identity")
             ):
                 raise ModuleFailure("RUN_NOT_READY", module_id, "module artifact failed finalization verification")
 
@@ -897,6 +1008,31 @@ class Engine:
     async def start_run(self, *, case_id: str, pathway: str, depth: str, actor: str,
                         focus_questions: list[str] | None = None,
                         upgraded_from_run_id: str | None = None) -> dict[str, Any]:
+        return await self._start_run(
+            case_id=case_id, pathway=pathway, depth=depth, actor=actor,
+            focus_questions=focus_questions, upgraded_from_run_id=upgraded_from_run_id,
+            allow_placeholder_deterministic=False, scripted=False,
+        )
+
+    async def start_run_for_tests(
+        self, *, case_id: str, pathway: str, depth: str, actor: str,
+        focus_questions: list[str] | None = None,
+        upgraded_from_run_id: str | None = None,
+        allow_placeholder_deterministic: bool = False,
+    ) -> dict[str, Any]:
+        return await self._start_run(
+            case_id=case_id, pathway=pathway, depth=depth, actor=actor,
+            focus_questions=focus_questions, upgraded_from_run_id=upgraded_from_run_id,
+            allow_placeholder_deterministic=allow_placeholder_deterministic, scripted=False,
+        )
+
+    async def _start_run(
+        self, *, case_id: str, pathway: str, depth: str, actor: str,
+        focus_questions: list[str] | None,
+        upgraded_from_run_id: str | None,
+        allow_placeholder_deterministic: bool,
+        scripted: bool,
+    ) -> dict[str, Any]:
         if pathway not in MVP_PATHWAYS:
             raise EngineError("PATHWAY_NOT_AVAILABLE", f"{pathway} is outside the MVP cut")
         depth = Depth(depth).value
@@ -907,10 +1043,24 @@ class Engine:
             raise EngineError("ADMISSION_BUSY", "active job ceiling reached")
         for question in focus_questions or []:
             state_mod.validate_boundary_text(question)
+        if self._route_requires_agent(pathway, depth):
+            if not self.settings.agent_execution_enabled:
+                raise EngineError("AGENT_EXECUTION_DISABLED", "agent execution is disabled")
+            if self.provider is None or self._provider_identity is None:
+                raise EngineError("AGENT_PROVIDER_UNAVAILABLE", "no provider identity is configured")
+            try:
+                self._provider_identity.ensure_current()
+            except AgentError as exc:
+                raise EngineError(exc.code, "provider identity is not current") from exc
         run = self.runs.create_run(case_id, pathway, depth, actor,
                                    focus_questions=focus_questions,
                                    upgraded_from_run_id=upgraded_from_run_id,
+                                   provider_identity=self._provider_identity,
                                    schema_version=state_mod.SCHEMA_VERSION)
+        if allow_placeholder_deterministic:
+            self._placeholder_deterministic_runs.add(run["id"])
+        if scripted:
+            self._scripted_runs.add(run["id"])
         # The case's workspace attaches to its latest execution; success does not
         # clear this — only a newer run moves it.
         self.store.update_case(case_id, current_execution_id=run["id"])
@@ -939,6 +1089,10 @@ class Engine:
         run = self.runs.get_run(run_id)
         if run is None:
             raise EngineError("RESUME_NOT_APPLIED", "run does not exist")
+        try:
+            self._assert_run_provider_identity(run)
+        except AgentError as exc:
+            return await self._finalize_identity_failure(run_id, exc)
         self._raw_schema_check(run_id)
         ticket = self.runs.latest_ticket(run_id)
         if ticket is not None:
@@ -955,6 +1109,10 @@ class Engine:
             raise EngineError("RUN_NOT_FOUND", run_id)
         if run["status"] in {"succeeded", "failed"}:
             return run
+        try:
+            self._assert_run_provider_identity(run)
+        except AgentError as exc:
+            return await self._finalize_identity_failure(run_id, exc)
         self._raw_schema_check(run_id)
         await self._drive(run_id, None)
         return self.get_run(run_id)
@@ -966,6 +1124,12 @@ class Engine:
         pending = self.runs.non_terminal_runs()
         log_event("recovery.started", runs=len(pending))
         for run in pending:
+            try:
+                self._assert_run_provider_identity(run)
+            except AgentError as exc:
+                await self._finalize_identity_failure(run["id"], exc)
+                log_event("recovery.run", run_id=run["id"], action="failed_identity", code=exc.code)
+                continue
             graph = await self._graph(run["pathway"], run["depth"])
             graph_state = await graph.aget_state(self._config(run["id"]))
             if any(task.interrupts for task in graph_state.tasks):
@@ -1054,6 +1218,7 @@ class Engine:
         if run["accepted_snapshot_id"]:
             snapshot = self.runs.get_snapshot(run["accepted_snapshot_id"])
             return self._snapshot_view(snapshot)
+        self._assert_run_provider_identity(run)
         if run["status"] != "succeeded":
             raise EngineError("RUN_NOT_READY", f"run status is {run['status']}")
         plan = run["plan"]
@@ -1070,10 +1235,22 @@ class Engine:
             node = nodes.get(module_id)
             artifact = self.runs.get_artifact(node["artifact_id"]) if node and node["artifact_id"] else None
             if (
+                artifact is not None
+                and _is_placeholder_payload(artifact.get("payload"))
+                and run_id not in self._placeholder_deterministic_runs
+            ):
+                raise EngineError(
+                    "DETERMINISTIC_EXECUTOR_UNAVAILABLE",
+                    f"placeholder artifact cannot authorize acceptance for {module_id}",
+                )
+            if (
                 artifact is None
+                or not isinstance(artifact.get("payload"), dict)
                 or artifact["run_id"] != run_id
                 or artifact["module_id"] != module_id
                 or digest(artifact["payload"]) != artifact["digest"]
+                or artifact.get("provider_identity") != run.get("provider_identity")
+                or artifact["payload"].get("provider_identity") != run.get("provider_identity")
             ):
                 raise EngineError("RUN_NOT_READY", f"artifact verification failed for {module_id}")
             if artifact.get("qa_status") == "Blocked":
@@ -1102,12 +1279,17 @@ class Engine:
         # advances the accepted pointer alone and divergence surfaces as
         # switch_required (misc spec, snapshot lens contract).
         self.store.update_case(run["case_id"], accepted_snapshot_id=snapshot["id"])
-        self.store.audit_event("snapshot.accepted", actor, case_id=run["case_id"], snapshot_id=snapshot["id"], run_id=run_id)
+        self.store.audit_event(
+            "snapshot.accepted", actor, case_id=run["case_id"], snapshot_id=snapshot["id"],
+            run_id=run_id,
+            provider_identity_digest=(run.get("provider_identity") or {}).get("identity_digest"),
+        )
         if self._model_service is not None:
             # Acceptance is durable first; a queue/dispatch failure never rolls
             # it back (§10.6 hook — accepted FULL_CREDIT auto-queues a build).
             with contextlib.suppress(Exception):
                 self._model_service.on_accepted(self.runs.get_run(run_id), actor)
+        self._placeholder_deterministic_runs.discard(run_id)
         return self._snapshot_view(snapshot)
 
     def _snapshot_view(self, snapshot: dict[str, Any]) -> dict[str, Any]:
@@ -1172,8 +1354,11 @@ class Engine:
         return payload, markdown, "Passed"
 
     async def run_scripted_for_tests(self, case_id: str, pathway: str = "FULL_CREDIT") -> dict[str, Any]:
-        run = await self.start_run(case_id=case_id, pathway=pathway, depth="full", actor="analyst")
-        self._scripted_runs.add(run["id"])
+        run = await self._start_run(
+            case_id=case_id, pathway=pathway, depth="full", actor="analyst",
+            focus_questions=None, upgraded_from_run_id=None,
+            allow_placeholder_deterministic=True, scripted=True,
+        )
         try:
             await self.wait(run["id"])
         finally:
@@ -1182,6 +1367,11 @@ class Engine:
         if record["status"] != "succeeded":
             raise EngineError((record.get("error") or {}).get("code", "RUN_NOT_READY"), "scripted run failed")
         return record
+
+    def _allow_placeholder_deterministic_for_tests(self, run_id: str) -> None:
+        if self.runs.get_run(run_id) is None:
+            raise EngineError("RUN_NOT_FOUND", run_id)
+        self._placeholder_deterministic_runs.add(run_id)
 
     def store_for_tests_delete_source_set(self, source_set_id: str) -> None:
         with self.store.engine.begin() as conn:
@@ -1302,9 +1492,12 @@ class Engine:
         upstream = self._upstream_digests(run_id, plan, module_id)
         fingerprint = self._input_fingerprint(plan, run["plan_digest"], module_id, [a["digest"] for a in upstream])
         source_set = state_mod.verify_source_set_expectation(self.store, plan["source_set_id"], plan["source_set_digest"])
+        universe = self._pinned_loan_universe(plan, run["case_id"]) if module_id == "CP-3" else None
         payload = build_deterministic_payload(module_id, plan, input_fingerprint=fingerprint,
                                               upstream_digests=[a["digest"] for a in upstream],
-                                              source_ids=source_set["source_ids"])
+                                              source_ids=source_set["source_ids"],
+                                              loan_universe=universe)
+        payload = {**payload, "provider_identity": run.get("provider_identity")}
         return {"module_id": module_id, "digest": digest(payload)}
 
     def write_legacy_schema_checkpoint_for_tests(self, *, schema_version: str) -> str:

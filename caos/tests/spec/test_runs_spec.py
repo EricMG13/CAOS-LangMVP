@@ -956,6 +956,457 @@ def test_provider_identity_schema_evolution_is_serialized_and_does_not_backfill(
         verify_engine.dispose()
 
 
+async def test_ordinary_deterministic_execution_refuses_without_creating_placeholder_artifacts(engine, store):
+    case, _source = seed_case_with_source(store)
+    run = await engine.start_run(
+        case_id=case["id"], pathway="FULL_CREDIT", depth="screen", actor="analyst",
+    )
+    await engine.wait(run["id"])
+
+    record = engine.get_run(run["id"])
+    assert record["status"] == "failed"
+    assert record["error"]["code"] == "DETERMINISTIC_EXECUTOR_UNAVAILABLE"
+    assert engine.artifacts_for_run(run["id"]) == []
+
+
+async def test_test_only_placeholder_capability_is_run_local_and_not_persisted(engine, store):
+    case, _source = seed_case_with_source(store)
+    permitted = await engine.start_run_for_tests(
+        case_id=case["id"], pathway="FULL_CREDIT", depth="screen", actor="analyst",
+        allow_placeholder_deterministic=True,
+    )
+    await engine.wait(permitted["id"])
+    assert engine.get_run(permitted["id"])["status"] == "succeeded"
+
+    ordinary = await engine.start_run(
+        case_id=case["id"], pathway="FULL_CREDIT", depth="screen", actor="analyst",
+    )
+    await engine.wait(ordinary["id"])
+    assert engine.get_run(ordinary["id"])["error"]["code"] == "DETERMINISTIC_EXECUTOR_UNAVAILABLE"
+    assert "placeholder" not in engine.runs.serialize_all_for_run(permitted["id"])
+
+
+async def test_placeholder_artifact_cannot_relink_after_restart_without_test_capability(
+    tmp_path, settings, store, provider,
+):
+    from caos.engine.runtime import Engine
+
+    checkpoint = tmp_path / "placeholder-relink.db"
+    original = Engine.create(settings=settings, store=store, checkpoint_path=checkpoint, provider=provider)
+    try:
+        case, _source = seed_case_with_source(store)
+        run = await original.start_run_for_tests(
+            case_id=case["id"], pathway="FULL_CREDIT", depth="screen", actor="analyst",
+            allow_placeholder_deterministic=True,
+        )
+        await original.crash_in_commit_gap_for_tests(run["id"], module_id="CP-0")
+    finally:
+        await original.aclose()
+
+    revived = Engine.create(settings=settings, store=store, checkpoint_path=checkpoint, provider=provider)
+    try:
+        await revived.recover()
+        await revived.wait(run["id"])
+        record = revived.get_run(run["id"])
+        assert record["status"] == "failed"
+        assert record["error"]["code"] == "DETERMINISTIC_EXECUTOR_UNAVAILABLE"
+    finally:
+        await revived.aclose()
+
+
+async def test_succeeded_placeholder_run_cannot_be_newly_accepted_after_restart(
+    tmp_path, settings, store, provider,
+):
+    from caos.engine.runtime import Engine, EngineError
+
+    checkpoint = tmp_path / "placeholder-accept.db"
+    original = Engine.create(settings=settings, store=store, checkpoint_path=checkpoint, provider=provider)
+    try:
+        case, _source = seed_case_with_source(store)
+        run = await original.start_run_for_tests(
+            case_id=case["id"], pathway="FULL_CREDIT", depth="screen", actor="analyst",
+            allow_placeholder_deterministic=True,
+        )
+        await original.wait(run["id"])
+        assert original.get_run(run["id"])["status"] == "succeeded"
+    finally:
+        await original.aclose()
+
+    revived = Engine.create(settings=settings, store=store, checkpoint_path=checkpoint, provider=provider)
+    try:
+        with pytest.raises(EngineError) as excinfo:
+            await revived.accept(run["id"], actor="analyst")
+        assert excinfo.value.code == "DETERMINISTIC_EXECUTOR_UNAVAILABLE"
+    finally:
+        await revived.aclose()
+
+
+async def test_full_run_preflight_refuses_disabled_or_absent_provider_without_a_run_row(
+    tmp_path, store,
+):
+    from datetime import UTC, datetime, timedelta
+
+    import sqlalchemy as sa
+
+    from caos.config import Settings
+    from caos.engine.provider import ProviderIdentity
+    from caos.engine.runtime import Engine, EngineError
+    from caos.storage.runs import runs
+
+    case, _source = seed_case_with_source(store)
+    disabled = Engine.create(
+        settings=Settings(storage_dir=tmp_path / "vault-disabled", agent_execution_enabled=False),
+        store=store, checkpoint_path=tmp_path / "disabled.db", provider=None,
+    )
+    absent = Engine.create(
+        settings=Settings(storage_dir=tmp_path / "vault-absent", agent_execution_enabled=True),
+        store=store, checkpoint_path=tmp_path / "absent.db", provider=None,
+    )
+    expired_identity = ProviderIdentity(
+        provider_name="anthropic", model="claude-sonnet-4-6", provider_version=None,
+        adapter_version="caos.anthropic.v1", parameter_context_digest="a" * 64,
+        qualification_record_id="qualification-1", qualification_record_digest="b" * 64,
+        qualification_status="qualified",
+        qualification_expires_at=(datetime.now(UTC) - timedelta(minutes=1)).isoformat(),
+    )
+    expired = Engine.create(
+        settings=Settings(storage_dir=tmp_path / "vault-expired", agent_execution_enabled=True),
+        store=store, checkpoint_path=tmp_path / "expired.db",
+        provider=type("ExpiredProvider", (), {"identity": expired_identity})(),
+    )
+    try:
+        with store.engine.connect() as conn:
+            before = conn.scalar(sa.select(sa.func.count()).select_from(runs))
+        with pytest.raises(EngineError) as disabled_error:
+            await disabled.start_run(
+                case_id=case["id"], pathway="FULL_CREDIT", depth="full", actor="analyst",
+            )
+        assert disabled_error.value.code == "AGENT_EXECUTION_DISABLED"
+        with pytest.raises(EngineError) as absent_error:
+            await absent.start_run(
+                case_id=case["id"], pathway="FULL_CREDIT", depth="full", actor="analyst",
+            )
+        assert absent_error.value.code == "AGENT_PROVIDER_UNAVAILABLE"
+        with pytest.raises(EngineError) as expired_error:
+            await expired.start_run(
+                case_id=case["id"], pathway="FULL_CREDIT", depth="full", actor="analyst",
+            )
+        assert expired_error.value.code == "AGENT_QUALIFICATION_EXPIRED"
+        with store.engine.connect() as conn:
+            assert conn.scalar(sa.select(sa.func.count()).select_from(runs)) == before
+        assert disabled.runs.active_admission_count() == absent.runs.active_admission_count() == 0
+    finally:
+        await disabled.aclose()
+        await absent.aclose()
+        await expired.aclose()
+
+
+async def test_response_identity_substitution_reconciles_and_audits_before_refusal(
+    tmp_path, settings, store,
+):
+    from caos.engine.provider import ProviderBlock, ProviderMessage, ProviderUsage, host_control_identity
+    from caos.engine.runtime import Engine
+
+    class SubstitutingProvider:
+        identity = host_control_identity()
+        create_requests: list[object] = []
+
+        def count_tokens(self, _request):
+            return 1
+
+        def create_message(self, request):
+            self.create_requests.append(request)
+            return ProviderMessage(
+                content=[ProviderBlock(
+                    type="tool_use", id="tool-substituted", name="read_evidence",
+                    input={"source_id": "must-not-be-read", "non_json": {object()}},
+                )], stop_reason="tool_use",
+                usage=ProviderUsage(input_tokens=1, output_tokens=1_000_000), request_id="req-substituted",
+                observed_model="other-model",
+            )
+
+    provider = SubstitutingProvider()
+    local = Engine.create(
+        settings=settings, store=store, checkpoint_path=tmp_path / "substitution.db",
+        provider=provider,
+    )
+    try:
+        case, _source = seed_case_with_source(store)
+        run = await local.start_run_for_tests(
+            case_id=case["id"], pathway="FULL_CREDIT", depth="full", actor="analyst",
+            allow_placeholder_deterministic=True,
+        )
+        await local.wait(run["id"])
+
+        record = local.get_run(run["id"])
+        budget = local.runs.get_budget(run["id"])
+        attempts = budget["attempts"]
+        assert record["status"] == "failed" and record["error"]["code"] == "AGENT_IDENTITY_MISMATCH"
+        assert budget["inflight_request_digest"] is None
+        billed = len(provider.create_requests)
+        assert budget["used"]["input_tokens"] == billed
+        assert budget["used"]["output_tokens"] == billed * 1_000_000
+        assert billed == 1 and budget["used"]["evidence_reads"] == 0
+        generations = [row for row in attempts if row["kind"] == "generation"]
+        assert len(generations) == billed
+        assert all(row["provider_identity"] == host_control_identity().as_dict() for row in generations)
+        assert all(row["observed_model"] == "other-model" for row in generations)
+        assert all(len(row["response_digest"]) == 64 for row in generations)
+        assert not any(artifact["module_id"] == "CP-1" for artifact in local.artifacts_for_run(run["id"]))
+    finally:
+        await local.aclose()
+
+
+async def test_provider_identity_is_read_once_and_bound_through_runtime_authority(
+    tmp_path, settings, store,
+):
+    from caos.contracts import digest
+    from caos.engine.provider import host_control_identity
+    from caos.engine.runtime import Engine
+
+    class CountingProvider:
+        accesses = 0
+        _identity = host_control_identity()
+
+        @property
+        def identity(self):
+            self.accesses += 1
+            return self._identity
+
+    provider = CountingProvider()
+    local = Engine.create(
+        settings=settings, store=store, checkpoint_path=tmp_path / "one-read.db", provider=provider,
+    )
+    try:
+        case, _source = seed_case_with_source(store)
+        first = await local.start_run_for_tests(
+            case_id=case["id"], pathway="FULL_CREDIT", depth="screen", actor="analyst",
+            allow_placeholder_deterministic=True,
+        )
+        await local.wait(first["id"])
+        second = await local.start_run_for_tests(
+            case_id=case["id"], pathway="FULL_CREDIT", depth="screen", actor="analyst",
+            allow_placeholder_deterministic=True,
+        )
+        await local.wait(second["id"])
+
+        assert provider.accesses == 1
+        run = local.get_run(first["id"])
+        identity = host_control_identity().as_dict()
+        assert run["provider_identity"] == run["plan"]["provider_identity"] == identity
+        assert all(
+            event["data"]["provider_identity_digest"] == identity["identity_digest"]
+            for event in local.events_after(first["id"], 0)
+        )
+        for artifact in local.artifacts_for_run(first["id"]):
+            assert artifact["provider_identity"] == artifact["payload"]["provider_identity"] == identity
+            assert digest(artifact["payload"]) == artifact["digest"]
+
+        snapshot = await local.accept(first["id"], actor="analyst")
+        assert snapshot["provider_identity"] == identity
+        accepted_event = next(
+            event for event in store.list_audit()
+            if event["action"] == "snapshot.accepted" and event["run_id"] == first["id"]
+        )
+        assert accepted_event["provider_identity_digest"] == identity["identity_digest"]
+        preimage = {
+            key: value for key, value in snapshot.items()
+            if key not in {"digest", "id", "previous_snapshot_id", "source_set"}
+        }
+        assert snapshot["digest"] == digest(preimage)
+    finally:
+        await local.aclose()
+
+
+async def test_recovery_rejects_changed_or_legacy_missing_agent_identity_before_provider_contact(
+    tmp_path, settings, store,
+):
+    from caos.engine.provider import host_control_identity
+    from caos.engine.runtime import Engine
+
+    class NoCallProvider:
+        def __init__(self, adapter_version: str):
+            self.identity = host_control_identity(adapter_version=adapter_version)
+            self.calls = 0
+
+        def count_tokens(self, _request):
+            self.calls += 1
+            raise AssertionError("provider contact must not occur")
+
+    case, _source = seed_case_with_source(store)
+    original_provider = NoCallProvider("caos.host-control.original")
+    original = Engine.create(
+        settings=settings, store=store, checkpoint_path=tmp_path / "recovery-identity.db",
+        provider=original_provider,
+    )
+    try:
+        run = await original.start_run_for_tests(
+            case_id=case["id"], pathway="FULL_CREDIT", depth="full", actor="analyst",
+            allow_placeholder_deterministic=True,
+        )
+    finally:
+        await original.aclose()
+
+    changed_provider = NoCallProvider("caos.host-control.changed")
+    changed = Engine.create(
+        settings=settings, store=store, checkpoint_path=tmp_path / "recovery-identity.db",
+        provider=changed_provider,
+    )
+    try:
+        legacy = changed.runs.create_run("case-legacy", "FULL_CREDIT", "full", "analyst")
+        await changed.recover()
+        assert changed.get_run(run["id"])["error"]["code"] == "AGENT_IDENTITY_MISMATCH"
+        assert changed.get_run(legacy["id"])["error"]["code"] == "AGENT_IDENTITY_MISMATCH"
+        assert changed_provider.calls == 0
+    finally:
+        await changed.aclose()
+
+
+async def test_recovery_durably_quarantines_malformed_stored_identity_without_provider_contact(
+    tmp_path, settings, store,
+):
+    from caos.engine.provider import host_control_identity
+    from caos.engine.runtime import Engine
+    from caos.storage.runs import runs
+
+    class NoCallProvider:
+        identity = host_control_identity()
+        calls = 0
+
+        def count_tokens(self, _request):
+            self.calls += 1
+            raise AssertionError("provider contact must not occur")
+
+    provider = NoCallProvider()
+    checkpoint = tmp_path / "malformed-identity.db"
+    case = store.create_case("Paused", "Issuer", "Services", "analyst")
+    original = Engine.create(
+        settings=settings, store=store, checkpoint_path=checkpoint, provider=provider,
+    )
+    try:
+        run = await original.start_run_for_tests(
+            case_id=case["id"], pathway="FULL_CREDIT", depth="full", actor="analyst",
+            allow_placeholder_deterministic=True,
+        )
+        assert original.get_run(run["id"])["status"] == "paused"
+    finally:
+        await original.aclose()
+
+    malformed = {**run["provider_identity"], "identity_digest": "0" * 64}
+    with store.engine.begin() as conn:
+        conn.execute(
+            runs.update().where(runs.c.id == run["id"]).values(provider_identity=malformed)
+        )
+
+    revived = Engine.create(
+        settings=settings, store=store, checkpoint_path=checkpoint, provider=provider,
+    )
+    try:
+        revived._allow_placeholder_deterministic_for_tests(run["id"])
+        await revived.recover()
+        record = revived.get_run(run["id"])
+        assert record["status"] == "failed"
+        assert record["error"] == {"code": "AGENT_IDENTITY_MISMATCH"}
+        assert _checkpoint_rows(checkpoint, run["id"]) == 0
+        assert run["id"] not in revived._placeholder_deterministic_runs
+        assert revived.runs.latest_ticket(run["id"]) is None
+        assert provider.calls == 0
+        failed = [event for event in revived.events_after(run["id"], 0) if event["event"] == "run.failed"]
+        assert failed[-1]["data"] == {"code": "AGENT_IDENTITY_MISMATCH"}
+    finally:
+        await revived.aclose()
+
+
+async def test_recovery_rechecks_qualification_currency_before_provider_contact(
+    tmp_path, settings, store, monkeypatch,
+):
+    from caos.engine.provider import AgentError, ProviderIdentity, host_control_identity
+    from caos.engine.runtime import Engine
+
+    class NoCallProvider:
+        identity = host_control_identity()
+        calls = 0
+
+        def count_tokens(self, _request):
+            self.calls += 1
+            raise AssertionError("provider contact must not occur")
+
+    provider = NoCallProvider()
+    case = store.create_case("Paused", "Issuer", "Services", "analyst")
+    original = Engine.create(
+        settings=settings, store=store, checkpoint_path=tmp_path / "expiry-recovery.db",
+        provider=provider,
+    )
+    try:
+        run = await original.start_run(
+            case_id=case["id"], pathway="FULL_CREDIT", depth="full", actor="analyst",
+        )
+        assert original.get_run(run["id"])["status"] == "paused"
+    finally:
+        await original.aclose()
+
+    revived = Engine.create(
+        settings=settings, store=store, checkpoint_path=tmp_path / "expiry-recovery.db",
+        provider=provider,
+    )
+    try:
+        def expired(_identity):
+            raise AgentError("AGENT_QUALIFICATION_EXPIRED")
+
+        monkeypatch.setattr(ProviderIdentity, "ensure_current", expired)
+        await revived.recover()
+        assert revived.get_run(run["id"])["error"]["code"] == "AGENT_QUALIFICATION_EXPIRED"
+        assert revived.runs.latest_ticket(run["id"]) is None
+        assert provider.calls == 0
+    finally:
+        await revived.aclose()
+
+
+async def test_resume_and_wait_persist_identity_expiry_before_provider_contact(
+    engine, store, provider, monkeypatch,
+):
+    from caos.engine.provider import AgentError, ProviderIdentity
+
+    first = store.create_case("Resume expiry", "Issuer", "Services", "analyst")
+    second = store.create_case("Wait expiry", "Issuer", "Services", "analyst")
+    resume_run = await engine.start_run(
+        case_id=first["id"], pathway="FULL_CREDIT", depth="full", actor="analyst",
+    )
+    wait_run = await engine.start_run(
+        case_id=second["id"], pathway="FULL_CREDIT", depth="full", actor="analyst",
+    )
+
+    def expired(_identity):
+        raise AgentError("AGENT_QUALIFICATION_EXPIRED")
+
+    monkeypatch.setattr(ProviderIdentity, "ensure_current", expired)
+    engine._placeholder_deterministic_runs.update({resume_run["id"], wait_run["id"]})
+    engine._scripted_runs.update({resume_run["id"], wait_run["id"]})
+    resumed = await engine.resume(resume_run["id"])
+    waited = await engine.wait(wait_run["id"])
+    assert resumed["status"] == waited["status"] == "failed"
+    assert resumed["error"]["code"] == waited["error"]["code"] == "AGENT_QUALIFICATION_EXPIRED"
+    assert provider.create_requests == []
+    assert not ({resume_run["id"], wait_run["id"]} & engine._placeholder_deterministic_runs)
+    assert not ({resume_run["id"], wait_run["id"]} & engine._scripted_runs)
+    assert _checkpoint_rows(engine.checkpoint_path, resume_run["id"]) == 0
+    assert _checkpoint_rows(engine.checkpoint_path, wait_run["id"]) == 0
+
+
+async def test_a_legacy_succeeded_agent_run_cannot_gain_new_acceptance_authority(engine, store):
+    from caos.engine.provider import AgentError
+    from caos.storage.runs import runs
+
+    case, _source = seed_case_with_source(store)
+    record = await engine.run_scripted_for_tests(case["id"])
+    with store.engine.begin() as conn:
+        conn.execute(runs.update().where(runs.c.id == record["id"]).values(provider_identity=None))
+
+    with pytest.raises(AgentError) as excinfo:
+        await engine.accept(record["id"], actor="analyst")
+    assert excinfo.value.code == "AGENT_IDENTITY_MISMATCH"
+
+
 # --- determinism and replay (invariant 10) ----------------------------------------
 
 
@@ -975,7 +1426,10 @@ async def test_replay_from_same_pinned_sources_and_build_is_equivalent_by_the_sa
     first = engine.get_run(run["id"])
     assert first["status"] == "succeeded"
 
-    replay = await engine.start_run(case_id=case["id"], pathway="FULL_CREDIT", depth="screen", actor="analyst")
+    replay = await engine.start_run_for_tests(
+        case_id=case["id"], pathway="FULL_CREDIT", depth="screen", actor="analyst",
+        allow_placeholder_deterministic=True,
+    )
     await engine.wait(replay["id"])
     second = engine.get_run(replay["id"])
     assert second["status"] == "succeeded"
@@ -1012,6 +1466,7 @@ async def test_worker_killed_mid_run_resumes_from_last_checkpoint_not_restart(tm
 
     revived = Engine.create(settings=settings, store=store, checkpoint_path=tmp_path / "ck.db", provider=provider)
     try:
+        revived._allow_placeholder_deterministic_for_tests(run["id"])
         await revived.recover()
         await revived.wait(run["id"])
         record = revived.get_run(run["id"])
@@ -1035,6 +1490,7 @@ async def test_crash_between_store_commit_and_checkpoint_write_yields_one_artifa
 
     revived = Engine.create(settings=settings, store=store, checkpoint_path=tmp_path / "ck.db", provider=provider)
     try:
+        revived._allow_placeholder_deterministic_for_tests(run["id"])
         await revived.recover()
         await revived.wait(run["id"])
         artifacts = [a for a in revived.artifacts_for_run(run["id"]) if a["module_id"] == "CP-0"]
@@ -1144,6 +1600,25 @@ async def test_snapshot_rejects_forged_succeeded_run(engine, store):
     case, source, run = await start_full_credit_run(engine, store, depth="screen")
     await engine.wait(run["id"])
     engine.forge_node_artifact_for_tests(run["id"], module_id="CP-0", digest="0" * 64)
+    with pytest.raises(Exception, match="RUN_NOT_READY"):
+        await engine.accept(run["id"], actor="analyst")
+
+
+@pytest.mark.parametrize("payload", [[], "not-an-artifact"])
+async def test_non_mapping_artifact_payload_fails_closed_at_finalization_and_acceptance(
+    engine, store, payload,
+):
+    from caos.contracts import digest
+    from caos.engine.provider import AgentError
+
+    case, _source, run = await start_full_credit_run(engine, store, depth="screen")
+    await engine.wait(run["id"])
+    engine.runs.update_artifact_for_tests(
+        run["id"], "CP-0", payload=payload, digest=digest(payload),
+    )
+
+    with pytest.raises(AgentError, match="RUN_NOT_READY"):
+        engine._verify_run_artifacts(run["id"], engine.get_run(run["id"])["plan"])
     with pytest.raises(Exception, match="RUN_NOT_READY"):
         await engine.accept(run["id"], actor="analyst")
 

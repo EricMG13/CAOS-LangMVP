@@ -276,3 +276,15 @@ def test_reconcile_commits_the_actual_usage_before_it_refuses_the_overage(tmp_pa
             store.reserve_provider(run_id, "digest-2", 1, 1, retry=False)
     finally:
         db.dispose()
+
+
+async def test_actual_usage_overage_still_records_the_returned_response(engine, store, provider):
+    provider.script = [text_message("ignored", input_tokens=1, output_tokens=1_000_000)]
+    case, _source, run = await start_full_credit_run(engine, store)
+    await engine.wait(run["id"])
+
+    record = engine.get_run(run["id"])
+    attempts = engine.runs.get_budget(run["id"])["attempts"]
+    generations = [attempt for attempt in attempts if attempt["kind"] == "generation"]
+    assert record["error"]["code"] == "AGENT_BUDGET_EXCEEDED"
+    assert len(generations) == 1 and len(generations[0]["response_digest"]) == 64

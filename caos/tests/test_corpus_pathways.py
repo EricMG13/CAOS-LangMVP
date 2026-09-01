@@ -165,11 +165,14 @@ class CorpusProvider:
     """Provider-port double for host controls; it is not an LLM qualification."""
 
     def __init__(self) -> None:
+        from caos.engine.provider import host_control_identity
+
         self.evidence: list[tuple[str, str]] = []
         self.current: tuple[str, str] | None = None
         self.delivered: set[tuple[str, str]] = set()
         self.calls = 0
         self.reads = 0
+        self.identity = host_control_identity()
 
     def bind(self, sources: list[dict]) -> None:
         self.evidence = [(source["id"], source["blocks"][0]["block_id"]) for source in sources]
@@ -311,12 +314,11 @@ async def test_supported_routes_complete_host_path_on_30_document_upload(client,
     for pathway, depth in ROUTES:
         calls_before = provider.calls
         delivered_before = set(provider.delivered)
-        started = client.post(
-            f"/api/cases/{case_id}/runs",
-            json={"pathway": pathway, "depth": depth.value},
+        started = await engine.start_run_for_tests(
+            case_id=case_id, pathway=pathway, depth=depth.value, actor="analyst",
+            allow_placeholder_deterministic=True,
         )
-        assert started.status_code == 201, started.text
-        run_id = started.json()["id"]
+        run_id = started["id"]
         await engine.wait(run_id)
         run = engine.get_run(run_id)
         assert run["status"] == "succeeded", run.get("error")

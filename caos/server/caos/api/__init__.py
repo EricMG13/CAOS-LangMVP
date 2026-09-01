@@ -585,7 +585,16 @@ def create_app(*, settings: Settings, store: DomainStore, engine: Any) -> FastAP
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         except RuntimeError as exc:
             code = getattr(exc, "code", "RUN_START_FAILED")
-            status = 409 if code == "ADMISSION_BUSY" else 422
+            if code == "ADMISSION_BUSY":
+                status = 409
+            elif code in {
+                "AGENT_EXECUTION_DISABLED", "AGENT_PROVIDER_UNAVAILABLE",
+                "AGENT_QUALIFICATION_MISSING", "AGENT_QUALIFICATION_EXPIRED",
+                "AGENT_PROVIDER_UNQUALIFIED", "AGENT_IDENTITY_MISMATCH",
+            }:
+                status = 503
+            else:
+                status = 422
             raise HTTPException(status_code=status, detail={"code": code}) from exc
         return _wire_run(run)
 

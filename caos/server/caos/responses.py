@@ -409,6 +409,7 @@ class AuditEventResponse(WireModel):
     preview_digest: str | None = None
     pathway: str | None = None
     comment: str | None = None
+    provider_identity_digest: str | None = None
 
 
 class ThesisResponse(WireModel):

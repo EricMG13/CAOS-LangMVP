@@ -12,11 +12,13 @@ import dataclasses
 import hashlib
 import inspect
 import json
+import math
 from typing import Any, Callable
 
+from ..contracts import digest
 from ..observability import log_event
 from .budget import PROVIDER_TIMEOUT_SECONDS, REPAIR_TEXT_LIMIT
-from .provider import AgentError, ProviderMessage, ProviderRequest
+from .provider import AgentError, ProviderIdentity, ProviderMessage, ProviderRequest
 
 
 def reservation_digest(request: ProviderRequest) -> str:
@@ -54,6 +56,69 @@ def validate_usage(usage: Any) -> dict[str, int]:
         if key.startswith("cache_") and value != 0:
             raise AgentError("AGENT_OUTPUT_INVALID", "unexpected cache token usage")
     return {"input_tokens": input_tokens, "output_tokens": output_tokens}
+
+
+def _digest_value(value: Any, *, depth: int = 0, seen: set[int] | None = None) -> Any:
+    if value is None or isinstance(value, (str, bool, int)):
+        return value
+    if isinstance(value, float):
+        return value if math.isfinite(value) else {"invalid_type": "nonfinite_float"}
+    if depth >= 32:
+        return {"invalid_type": "max_depth"}
+    if isinstance(value, (dict, list, tuple)):
+        seen = seen or set()
+        marker = id(value)
+        if marker in seen:
+            return {"invalid_type": "cycle"}
+        seen.add(marker)
+        try:
+            if isinstance(value, dict):
+                if all(isinstance(key, str) for key in value):
+                    return {
+                        key: _digest_value(item, depth=depth + 1, seen=seen)
+                        for key, item in value.items()
+                    }
+                return {
+                    "invalid_mapping": [
+                        [_digest_value(key, depth=depth + 1, seen=seen),
+                         _digest_value(item, depth=depth + 1, seen=seen)]
+                        for key, item in value.items()
+                    ]
+                }
+            return [_digest_value(item, depth=depth + 1, seen=seen) for item in value]
+        finally:
+            seen.remove(marker)
+    return {"invalid_type": type(value).__name__[:80]}
+
+
+def provider_response_digest(response: ProviderMessage, usage: dict[str, int]) -> str:
+    content = response.content
+    blocks = [
+        {
+            "type": getattr(block, "type", None),
+            "id": getattr(block, "id", None),
+            "name": getattr(block, "name", None),
+            "input": getattr(block, "input", None),
+            "text": getattr(block, "text", None),
+        }
+        for block in content
+    ] if isinstance(content, list) else {"invalid_type": type(content).__name__}
+    return digest(_digest_value({
+        "content": blocks,
+        "stop_reason": response.stop_reason,
+        "usage": usage,
+        "request_id": response.request_id,
+        "observed_model": response.observed_model,
+        "observed_provider_version": response.observed_provider_version,
+    }))
+
+
+def verify_response_identity(response: ProviderMessage, expected: ProviderIdentity) -> None:
+    observed_model = response.observed_model
+    if observed_model is None and expected.qualification_status == "host_control":
+        observed_model = expected.model
+    if observed_model != expected.model or response.observed_provider_version != expected.provider_version:
+        raise AgentError("AGENT_IDENTITY_MISMATCH", "provider response identity differs from run")
 
 
 class ProviderSlots:
@@ -130,13 +195,14 @@ async def run_agent_module(
     read_evidence: Callable[[str, list[str]], list[dict[str, Any]]],
     validate: Callable[[dict[str, Any]], Any],
     reserve: Callable[[str, int, int, bool], None],
-    reconcile: Callable[[str, int, int, int, int], None],
+    reconcile: Callable[[str, int, int, int, int], str | None],
     record: Callable[..., None],
     slots: ProviderSlots,
     charge_time: Callable[[float], None] | None = None,
     remaining_seconds: Callable[[], float] | None = None,
     before_create: Callable[[], None] | None = None,
     clock: Callable[[], float] | None = None,
+    expected_identity: ProviderIdentity | None = None,
 ) -> Any:
     """One module's provider interaction. Raises AgentError with the legacy
     taxonomy code on every failure path; non-AgentError exceptions escape for
@@ -179,17 +245,24 @@ async def run_agent_module(
 
         response: ProviderMessage | None = None
         usage: dict[str, int] | None = None
+        response_retry_index = 0
         while response is None:
             # Remaining wall clock is checked before a slot is held so an
             # exhausted budget can never leak a concurrency slot.
             timeout = min(PROVIDER_TIMEOUT_SECONDS, remaining_seconds()) if remaining_seconds else PROVIDER_TIMEOUT_SECONDS
             slots.acquire_or_deny()
             attempt_is_retry = retry_used
+            attribution = ({
+                "provider_name": expected_identity.provider_name,
+                "model": expected_identity.model,
+                "provider_identity_digest": expected_identity.identity_digest,
+            } if expected_identity is not None else {})
             # After the slot, never before: a denied slot is not a call, and a
             # start line with no finish has to mean a call that is still out.
             # Run id and module id ride the ambient run_context (runtime.py).
             log_event("provider.call.start", request_digest=request_digest, retry=attempt_is_retry,
-                      counted_input_tokens=counted, max_output_tokens=max_tokens, timeout=timeout)
+                      counted_input_tokens=counted, max_output_tokens=max_tokens, timeout=timeout,
+                      **attribution)
             started = now()
             outcome = "error"
             finish_fields: dict[str, Any] = {}
@@ -201,6 +274,7 @@ async def run_agent_module(
                     if dataclasses.is_dataclass(response.usage)
                     else response.usage
                 )
+                response_retry_index = int(attempt_is_retry)
                 outcome = "succeeded"
                 finish_fields = {
                     "request_id": response.request_id,
@@ -213,14 +287,14 @@ async def run_agent_module(
                 if retry_used:
                     raise AgentError("AGENT_PROVIDER_TIMEOUT", "provider timed out twice") from exc
                 retry_used = True
-                record("provider_retry", operation="create")
+                record("provider_retry", operation="create", request_digest=request_digest, retry_index=1)
                 reserve(request_digest, counted, max_tokens, True)  # byte-identical, budget-free
             except AgentError as exc:
                 outcome = "timeout" if exc.code == "AGENT_PROVIDER_TIMEOUT" else exc.code
                 if exc.code != "AGENT_PROVIDER_TIMEOUT" or retry_used:
                     raise
                 retry_used = True
-                record("provider_retry", operation="create")
+                record("provider_retry", operation="create", request_digest=request_digest, retry_index=1)
                 reserve(request_digest, counted, max_tokens, True)
             except Exception as exc:
                 outcome = type(exc).__name__
@@ -228,22 +302,36 @@ async def run_agent_module(
             finally:
                 try:
                     log_event("provider.call.finish", request_digest=request_digest,
-                              retry=attempt_is_retry, outcome=outcome, **finish_fields)
+                              retry=attempt_is_retry, outcome=outcome, **finish_fields, **attribution)
                 finally:
                     slots.release()
                     timed(started)
 
         if usage is None:  # defensive: a response cannot leave the loop without validated usage
             raise AgentError("AGENT_OUTPUT_INVALID", "provider usage is absent or unreadable")
-        reconcile(request_digest, counted, max_tokens, usage["input_tokens"], usage["output_tokens"])
+        reconcile_code = reconcile(
+            request_digest, counted, max_tokens, usage["input_tokens"], usage["output_tokens"],
+        )
+        response_hash = provider_response_digest(response, usage)
         record(
             "generation",
             request_digest=request_digest,
-            request_id=response.request_id,
+            response_digest=response_hash,
+            provider_request_id=response.request_id if isinstance(response.request_id, str) else None,
+            observed_model=response.observed_model if isinstance(response.observed_model, str) else None,
+            observed_provider_version=(
+                response.observed_provider_version
+                if isinstance(response.observed_provider_version, str) else None
+            ),
             input_tokens=usage["input_tokens"],
             output_tokens=usage["output_tokens"],
-            stop_reason=response.stop_reason,
+            stop_reason=response.stop_reason if isinstance(response.stop_reason, str) else None,
+            retry_index=response_retry_index,
         )
+        if expected_identity is not None:
+            verify_response_identity(response, expected_identity)
+        if reconcile_code is not None:
+            raise AgentError(reconcile_code)
 
         content = response.content
         if not isinstance(content, list):

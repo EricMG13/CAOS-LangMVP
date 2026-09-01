@@ -817,7 +817,10 @@ async def test_provider_failure_is_bounded_and_leaks_nothing_into_the_run(engine
         raise RuntimeError("provider-secret-XYZZY: internal stack")
 
     provider.script = [boom]
-    run = await engine.start_run(case_id=case["id"], pathway="FULL_CREDIT", depth="full", actor="analyst")
+    run = await engine.start_run_for_tests(
+        case_id=case["id"], pathway="FULL_CREDIT", depth="full", actor="analyst",
+        allow_placeholder_deterministic=True,
+    )
     await engine.wait(run["id"])
     record = engine.get_run(run["id"])
     assert record["status"] == "failed"

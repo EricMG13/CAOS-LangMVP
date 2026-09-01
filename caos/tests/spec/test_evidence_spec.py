@@ -399,10 +399,13 @@ class LoopingReadProvider:
     """Never volunteers a final answer — reads evidence for as long as it is let."""
 
     def __init__(self, source_id: str, block_id: str = "b00001", count: int = 1_000) -> None:
+        from caos.engine.provider import host_control_identity
+
         self.source_id = source_id
         self.block_id = block_id
         self.count = count
         self.turns = 0
+        self.identity = host_control_identity()
 
     def count_tokens(self, request) -> int:
         return self.count
@@ -426,7 +429,10 @@ async def test_an_unbounded_read_loop_is_stopped_by_the_run_evidence_read_ceilin
     engine = Engine.create(settings=settings, store=store,
                            checkpoint_path=tmp_path / "checkpoints.db", provider=provider)
     try:
-        run = await engine.start_run(case_id=case["id"], pathway="FULL_CREDIT", depth="full", actor="analyst")
+        run = await engine.start_run_for_tests(
+            case_id=case["id"], pathway="FULL_CREDIT", depth="full", actor="analyst",
+            allow_placeholder_deterministic=True,
+        )
         await engine.wait(run["id"])
 
         record = engine.get_run(run["id"])
@@ -458,8 +464,11 @@ class OneBadReadProvider:
     """Reads one source the host must refuse, then would keep going forever."""
 
     def __init__(self, source_id: str) -> None:
+        from caos.engine.provider import host_control_identity
+
         self.source_id = source_id
         self.create_requests: list = []
+        self.identity = host_control_identity()
 
     def count_tokens(self, request) -> int:
         return 1_000
@@ -485,7 +494,10 @@ async def test_a_refused_read_ends_the_module_instead_of_returning_a_reason_to_t
     engine = Engine.create(settings=settings, store=store,
                            checkpoint_path=tmp_path / "checkpoints.db", provider=provider)
     try:
-        run = await engine.start_run(case_id=case["id"], pathway="FULL_CREDIT", depth="full", actor="analyst")
+        run = await engine.start_run_for_tests(
+            case_id=case["id"], pathway="FULL_CREDIT", depth="full", actor="analyst",
+            allow_placeholder_deterministic=True,
+        )
         # Ingested after gate exit: live, same case, outside the pinned set.
         _ingest_text(store, case["id"], OUT_OF_SET_TEXT, source_id=outsider_id)
         await engine.wait(run["id"])

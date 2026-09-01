@@ -331,9 +331,10 @@ async def payloads(client, store, engine) -> dict:
         files={"file": ("evidence.txt", b"Revenue 1,160\nEBITDA 222", "text/plain")},
     ).json()
     assert source["blocks"], "the representative source must carry extracted blocks"
-    started = client.post(
-        f"/api/cases/{case_id}/runs", json={"pathway": "EARNINGS_UPDATE", "depth": "screen"}
-    ).json()
+    started = await engine.start_run_for_tests(
+        case_id=case_id, pathway="EARNINGS_UPDATE", depth="screen", actor="analyst",
+        allow_placeholder_deterministic=True,
+    )
     await engine.wait(started["id"])
     run = client.get(f"/api/runs/{started['id']}").json()
     assert run["status"] == "succeeded" and run["nodes"] and run["events"]
@@ -624,6 +625,44 @@ def test_focus_questions_and_thesis_items_are_bounded_per_item(client):
     assert under.status_code in {200, 201}
 
 
+def test_client_cannot_enable_the_placeholder_deterministic_test_seam(client):
+    case = client.post(
+        "/api/cases", json={"name": "No test seam", "issuer": "Issuer", "sector": "Services"}
+    ).json()
+    response = client.post(f"/api/cases/{case['id']}/runs", json={
+        "pathway": "FULL_CREDIT",
+        "depth": "screen",
+        "allow_placeholder_deterministic": True,
+    })
+    assert response.status_code == 422
+
+
+@pytest.mark.parametrize("code", [
+    "AGENT_EXECUTION_DISABLED",
+    "AGENT_PROVIDER_UNAVAILABLE",
+    "AGENT_QUALIFICATION_MISSING",
+    "AGENT_QUALIFICATION_EXPIRED",
+    "AGENT_PROVIDER_UNQUALIFIED",
+    "AGENT_IDENTITY_MISMATCH",
+])
+def test_provider_preflight_refusals_are_service_unavailable(client, engine, monkeypatch, code):
+    from caos.engine.runtime import EngineError
+
+    case = client.post(
+        "/api/cases", json={"name": "Provider preflight", "issuer": "Issuer", "sector": "Services"}
+    ).json()
+
+    async def refuse(**_kwargs):
+        raise EngineError(code)
+
+    monkeypatch.setattr(engine, "start_run", refuse)
+    response = client.post(
+        f"/api/cases/{case['id']}/runs", json={"pathway": "FULL_CREDIT", "depth": "full"}
+    )
+    assert response.status_code == 503
+    assert response.json() == {"detail": {"code": code}}
+
+
 def test_distinct_duplicate_note_promotion_is_a_structured_source_conflict(client):
     case = client.post(
         "/api/cases", json={"name": "Note conflict", "issuer": "Issuer", "sector": "Services"}
@@ -747,9 +786,10 @@ async def test_run_events_sse_tails_the_event_log_with_last_event_id_resume(clie
         f"/api/cases/{case_id}/sources",
         files={"file": ("evidence.txt", b"Revenue 1,160\nEBITDA 222", "text/plain")},
     )
-    started = client.post(
-        f"/api/cases/{case_id}/runs", json={"pathway": "EARNINGS_UPDATE", "depth": "screen"}
-    ).json()
+    started = await engine.start_run_for_tests(
+        case_id=case_id, pathway="EARNINGS_UPDATE", depth="screen", actor="analyst",
+        allow_placeholder_deterministic=True,
+    )
     await engine.wait(started["id"])
 
     def read_frames(headers: dict | None = None) -> list[tuple[int, str]]:
@@ -896,6 +936,42 @@ def test_generation_attempt_identity_is_never_synthesized_or_open_ended(client, 
     assert served["provider_identity"] == host_control_identity().as_dict()
     assert served["canonical_generation"]["attempts"][0]["provider_identity"] is None
     assert "raw_body" not in served["canonical_generation"]["attempts"][0]
+
+
+async def test_malformed_provider_attempt_scalars_remain_strictly_servable(
+    client, engine, store, provider,
+):
+    from caos.engine.provider import ProviderBlock, ProviderMessage, ProviderUsage
+
+    case = store.create_case("Malformed provider", "Issuer", "Services", "analyst")
+    body = b"evidence"
+    import hashlib
+
+    store.ingest({
+        "case_id": case["id"], "filename": "evidence.txt", "media_type": "text/plain",
+        "bytes": len(body), "sha256": hashlib.sha256(body).hexdigest(), "vault_path": None,
+        "blocks": [{"block_id": "b00001", "locator": {"line": 1}, "text": "evidence",
+                    "extractor_version": "builtin-v1", "confidence": "MEDIUM", "untrusted_data": True}],
+        "withdrawn": False,
+    }, "analyst")
+    provider.script = [ProviderMessage(
+        content=[ProviderBlock(type="text", text="ignored")],
+        stop_reason=7, usage=ProviderUsage(input_tokens=1, output_tokens=1),
+        request_id=8, observed_model=9, observed_provider_version=10,
+    )]
+    run = await engine.start_run_for_tests(
+        case_id=case["id"], pathway="FULL_CREDIT", depth="full", actor="analyst",
+        allow_placeholder_deterministic=True,
+    )
+    await engine.wait(run["id"])
+
+    response = client.get(f"/api/runs/{run['id']}")
+    assert response.status_code == 200
+    attempt = response.json()["canonical_generation"]["attempts"][0]
+    assert attempt["provider_request_id"] is None
+    assert attempt["observed_model"] is None
+    assert attempt["observed_provider_version"] is None
+    assert attempt["stop_reason"] is None
 
 
 # --- loan-universe import results are strict to the leaf --------------------------

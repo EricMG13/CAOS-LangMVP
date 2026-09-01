@@ -175,9 +175,16 @@ class RunStore:
     # -- events (always inside a caller transaction) ----------------------
 
     def _emit(self, conn: sa.Connection, run_id: str, event: str, **data: Any) -> None:
-        identity = _provider_identity(conn.execute(
-            sa.select(runs.c.provider_identity).where(runs.c.id == run_id)
-        ).scalar())
+        try:
+            identity = _provider_identity(conn.execute(
+                sa.select(runs.c.provider_identity).where(runs.c.id == run_id)
+            ).scalar())
+        except StoreConflict:
+            # An invalid identity must not roll back the terminal transition
+            # whose purpose is to quarantine that exact invalid identity.
+            if event != "run.failed" or data.get("code") != "AGENT_IDENTITY_MISMATCH":
+                raise
+            identity = None
         if identity is not None:
             data = {**data, "provider_identity_digest": identity["identity_digest"]}
         next_seq = conn.execute(
@@ -425,6 +432,11 @@ class RunStore:
                     sa.update(run_nodes)
                     .where(run_nodes.c.run_id == run_id, run_nodes.c.status == "running")
                     .values(status="cancelled")
+                )
+                conn.execute(
+                    sa.update(resume_tickets)
+                    .where(resume_tickets.c.thread_id == run_id, resume_tickets.c.consumed == 0)
+                    .values(consumed=1)
                 )
                 self._emit(conn, run_id, "run.failed", **error)
             return bool(changed)

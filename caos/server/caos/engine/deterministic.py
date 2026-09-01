@@ -1,8 +1,7 @@
-"""Deterministic host modules: the typed SYSTEM_ANALYSIS payload contract.
+"""Host-control deterministic placeholders for the typed SYSTEM_ANALYSIS contract.
 
-A payload is a pure function of (module_id, pinned plan context, pinned inputs)
-— no clock, no run identity — so replays from the same pin produce identical
-artifact digests (invariant 10; §12.4 single time authority).
+Ordinary runtime cannot call this builder. It exists behind an explicit,
+memory-only per-run test seam until source-computed executors replace it.
 """
 
 from __future__ import annotations

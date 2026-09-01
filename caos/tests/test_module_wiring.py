@@ -30,9 +30,12 @@ class ScriptedProvider:
     ProviderMessage steps; every request is recorded."""
 
     def __init__(self, script=(), count: int = 1_000):
+        from caos.engine.provider import host_control_identity
+
         self.script = list(script)
         self.count = count
         self.create_requests = []
+        self.identity = host_control_identity()
 
     def count_tokens(self, request) -> int:
         return self.count
@@ -102,7 +105,10 @@ async def _run_pathway(tmp_path: Path, pathway: str):
         provider = ScriptedProvider(script=_agent_turns(source["id"], modules=10))
         engine = Engine.create(settings=settings, store=store,
                                checkpoint_path=tmp_path / "ck.db", provider=provider)
-        run = await engine.start_run(case_id=case["id"], pathway=pathway, depth="full", actor="analyst")
+        run = await engine.start_run_for_tests(
+            case_id=case["id"], pathway=pathway, depth="full", actor="analyst",
+            allow_placeholder_deterministic=True,
+        )
         await engine.wait(run["id"])
         record = engine.get_run(run["id"])
         assert record["status"] == "succeeded", record.get("error")

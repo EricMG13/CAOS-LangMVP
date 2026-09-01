@@ -134,6 +134,8 @@ class ReadingProvider:
 
     def __init__(self, source_id: str, *, count: int = 1_000, read_source_id: str | None = None,
                  read_block_ids: list[str] | None = None, poison: bool = False) -> None:
+        from caos.engine.provider import host_control_identity
+
         self.source_id = source_id
         self.read_source_id = read_source_id or source_id
         self.read_block_ids = read_block_ids or ["b00001"]
@@ -143,6 +145,7 @@ class ReadingProvider:
         self.count_requests: list[Any] = []
         self.create_requests: list[Any] = []
         self.reads = 0
+        self.identity = host_control_identity()
 
     def count_tokens(self, request) -> int:
         self.count_requests.append(request)
@@ -202,7 +205,10 @@ async def _sentinel_agent_run(build_engine, store, **provider_kwargs):
     pinned = ingest_sentinel_document(store, case["id"])
     provider = ReadingProvider(pinned["id"], **provider_kwargs)
     engine = build_engine(provider)
-    run = await engine.start_run(case_id=case["id"], pathway="FULL_CREDIT", depth="full", actor="analyst")
+    run = await engine.start_run_for_tests(
+        case_id=case["id"], pathway="FULL_CREDIT", depth="full", actor="analyst",
+        allow_placeholder_deterministic=True,
+    )
     await engine.wait(run["id"])
     return engine, provider, case, pinned, engine.get_run(run["id"])
 
@@ -241,7 +247,10 @@ async def test_a_refused_read_logs_its_typed_code_and_none_of_the_document(build
     pinned = ingest_sentinel_document(store, case["id"])
     provider = ReadingProvider(pinned["id"], read_source_id="src-neverpinned00001")
     engine = build_engine(provider)
-    run = await engine.start_run(case_id=case["id"], pathway="FULL_CREDIT", depth="full", actor="analyst")
+    run = await engine.start_run_for_tests(
+        case_id=case["id"], pathway="FULL_CREDIT", depth="full", actor="analyst",
+        allow_placeholder_deterministic=True,
+    )
 
     # In the case, outside the pinned set: refused by membership (invariant 1).
     ingest_sentinel_document(store, case["id"], filename="restated.txt",
@@ -421,7 +430,10 @@ async def test_a_denied_provider_slot_logs_no_call_that_never_happened(build_eng
     provider = ReadingProvider(pinned["id"])
     engine = build_engine(provider)
     engine._slots = NeverReturnsTheSlot()
-    run = await engine.start_run(case_id=case["id"], pathway="FULL_CREDIT", depth="full", actor="analyst")
+    run = await engine.start_run_for_tests(
+        case_id=case["id"], pathway="FULL_CREDIT", depth="full", actor="analyst",
+        allow_placeholder_deterministic=True,
+    )
     await engine.wait(run["id"])
 
     record = engine.get_run(run["id"])
