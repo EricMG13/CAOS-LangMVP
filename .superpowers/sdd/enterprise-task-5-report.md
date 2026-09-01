@@ -138,3 +138,56 @@ By design / deferred:
 - Live qualified Anthropic execution remains `BLOCKED EXTERNAL` until a genuine protected qualification record and credential are supplied in Tasks 11/13.
 - Source-computed deterministic executors are required before ordinary pathway success; that work is pulled forward into the pathway/model packets rather than restoring false success.
 - No rewrite tournament was run because the user explicitly prohibited rewrite tournaments for this session.
+
+## Task 5D — enterprise startup and final phase gate
+
+Delivered:
+
+- Production startup now accepts only one enabled, current, digest-bound qualified Anthropic identity. It refuses ambiguous credentials, OpenRouter, incomplete qualification configuration, missing credentials, and mismatched or expired authority without fallback.
+- `run.py` is production-only and `dev.py` is development-only. Shared runtime validation runs before files, logging, stores, providers, or network listeners are owned.
+- The app and worker share the PostgreSQL/password gate, including blank and percent-encoded placeholder refusal. Only the HTTP app receives edge/session, ClamAV, provider, and qualification settings; the export worker receives database and vault settings only.
+- Direct production `Engine` construction rejects every non-Anthropic or unqualified provider identity. Placeholder/scripted test capabilities additionally require a verified development `host_control` identity, so an in-process caller cannot turn production or a real development provider into fixture success.
+- Normal and failed server shutdown closes the engine and async provider on the same event loop that served requests. A lock-acquisition failure before serving closes unused async resources separately; the synchronous store always closes while the originating failure is preserved.
+- Deployment examples, buyer-facing data handling, threat model, README, CLAUDE guidance, and the quality ledger now state the enabled/disabled qualification boundary, provider-attempt limitations, checkpoint backend, worker secret boundary, placeholder refusal, and remaining external evidence honestly.
+
+Verification:
+
+```text
+Focused startup/lifecycle gate
+44 passed, 2 PostgreSQL-dependent tests skipped
+
+Independent settled Task 5D gate
+373 passed, 2 PostgreSQL-dependent tests skipped, 1 third-party Starlette deprecation warning
+
+Full backend regression after the final code change
+766 passed, 2 PostgreSQL-dependent tests skipped, 1 third-party Starlette deprecation warning in 283.91s
+
+run_sec_audit.py
+50 routes, 42 case-boundary routes, 0 failures
+
+ruff check caos
+All checks passed!
+
+quality_ledger_coverage.py
+45 routes, 232 product files, 120 features; complete
+
+git diff --check
+passed
+```
+
+Final confidence review:
+
+1. **Startup ordering and rollback.** Invalid environment, database, secret, provider, and qualification states are refused before progressively owned resources; construction and lock-acquisition failures close everything already owned.
+2. **Async lifecycle affinity.** Independent review reproduced provider close on a second loop. Cleanup now runs inside the serving loop on both normal and exceptional exits, with a regression asserting identical loop identity for service, engine close, and provider close.
+3. **Provider ambiguity and disabled behavior.** Empty/whitespace credentials, dual keys, partial qualification pairs, OpenRouter in production, and clean disabled configurations were adversarially exercised. Disabled execution creates no provider; it does not silently validate or claim a live qualification.
+4. **Test-capability escape.** All three fixture-success entry points refuse production engines and real development providers; only a verified development `host_control` identity can use them.
+5. **Database credential parsing.** Blank and percent-encoded documented placeholders are decoded and refused at the shared app/worker gate.
+6. **Truth and privacy.** Two independent read-only reviews traced documentation claims to current code. Usage-invalid responses are described as terminal-code-only; token-count calls are bounded but not falsely described as durable attempts or logs; full identities and digest-only events are distinguished.
+
+`BLOCKED EXTERNAL`:
+
+- The two live-PostgreSQL tests require `CAOS_TEST_POSTGRES_URL`; their skips are not counted as passes.
+- No genuine protected Anthropic credential and qualification record are available, so live qualified execution remains blocked until Tasks 11 and 13.
+- Host-control and corpus fixture runs are not candidate qualification evidence.
+
+No rewrite tournament was run because the user explicitly prohibited rewrite tournaments for this session.

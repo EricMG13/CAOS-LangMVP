@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import hashlib
+from pathlib import Path
 
 import pytest
+import yaml
 
 from caos.atomic_files import (
     VaultFileIntegrityError,
@@ -40,7 +42,56 @@ def test_production_fails_closed_without_postgres_and_secrets():
     with pytest.raises(RuntimeError, match="PostgreSQL"):
         Settings(environment="production").validate_runtime()
     with pytest.raises(RuntimeError, match="EDGE_PROXY_SECRET"):
-        Settings(environment="production", database_url="postgresql://x/y").validate_runtime()
+        Settings(
+            environment="production",
+            database_url="postgresql://caos:real-password@db/caos",
+        ).validate_runtime()
+
+
+def test_worker_runtime_validation_remains_provider_independent():
+    Settings(
+        environment="production",
+        database_url="postgresql://caos:real-password@db/caos",
+        openrouter_api_key="development-only-key",
+        agent_execution_enabled=True,
+    ).validate_worker_runtime()
+
+
+@pytest.mark.parametrize(
+    "database_url",
+    (
+        "postgresql://caos@db/caos",
+        "postgresql://caos:@db/caos",
+        "postgresql://caos:%70assword@db/caos",
+    ),
+)
+def test_worker_runtime_rejects_missing_or_encoded_placeholder_password(database_url):
+    with pytest.raises(RuntimeError, match="POSTGRES_PASSWORD"):
+        Settings(environment="production", database_url=database_url).validate_worker_runtime()
+
+
+def test_deployment_wires_qualification_only_to_the_app_and_documents_empty_values():
+    root = Path(__file__).resolve().parents[1]
+    services = yaml.safe_load(
+        (root / "deploy" / "docker-compose.yml").read_text(encoding="utf-8")
+    )["services"]
+    app = services["app"]["environment"]
+    worker = services["worker"]["environment"]
+    example = dict(
+        line.split("=", 1)
+        for line in (root / ".env.example").read_text(encoding="utf-8").splitlines()
+        if line and not line.startswith("#")
+    )
+
+    for name in (
+        "EDGE_PROXY_SECRET", "SESSION_SECRET", "CLAMAV_HOST", "CLAMAV_PORT",
+        "ANTHROPIC_MODEL", "ANTHROPIC_API_KEY", "AGENT_EXECUTION_ENABLED",
+        "CAOS_PROVIDER_QUALIFICATION_PATH", "CAOS_PROVIDER_QUALIFICATION_DIGEST",
+    ):
+        assert name in app
+        assert name not in worker
+    assert example["CAOS_PROVIDER_QUALIFICATION_PATH"] == ""
+    assert example["CAOS_PROVIDER_QUALIFICATION_DIGEST"] == ""
 
 
 def test_vault_publish_and_verified_read_round_trip(tmp_path):

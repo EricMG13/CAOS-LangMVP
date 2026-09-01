@@ -110,6 +110,14 @@ class Engine:
         self.store = store
         self.provider = provider
         self._provider_identity = self._capture_provider_identity(provider)
+        if settings.environment == "production" and self._provider_identity is not None:
+            identity = self._provider_identity
+            if identity.provider_name != "anthropic" or identity.qualification_status != "qualified":
+                raise EngineError("AGENT_PROVIDER_UNQUALIFIED", "production requires qualified Anthropic")
+            try:
+                identity.ensure_current()
+            except AgentError as exc:
+                raise EngineError(exc.code, "production provider identity is not current") from exc
         self.checkpoint_path = Path(checkpoint_path)
         self.runs = RunStore(store.engine)
         self.bundle = DeployVBundle(settings.deploy_v_root)
@@ -1020,6 +1028,7 @@ class Engine:
         upgraded_from_run_id: str | None = None,
         allow_placeholder_deterministic: bool = False,
     ) -> dict[str, Any]:
+        self._require_host_control_for_tests()
         return await self._start_run(
             case_id=case_id, pathway=pathway, depth=depth, actor=actor,
             focus_questions=focus_questions, upgraded_from_run_id=upgraded_from_run_id,
@@ -1354,6 +1363,7 @@ class Engine:
         return payload, markdown, "Passed"
 
     async def run_scripted_for_tests(self, case_id: str, pathway: str = "FULL_CREDIT") -> dict[str, Any]:
+        self._require_host_control_for_tests()
         run = await self._start_run(
             case_id=case_id, pathway=pathway, depth="full", actor="analyst",
             focus_questions=None, upgraded_from_run_id=None,
@@ -1369,9 +1379,28 @@ class Engine:
         return record
 
     def _allow_placeholder_deterministic_for_tests(self, run_id: str) -> None:
+        self._require_host_control_for_tests()
         if self.runs.get_run(run_id) is None:
             raise EngineError("RUN_NOT_FOUND", run_id)
         self._placeholder_deterministic_runs.add(run_id)
+
+    def _require_host_control_for_tests(self) -> None:
+        identity = self._provider_identity
+        try:
+            if identity is not None:
+                identity.verify()
+        except AgentError as exc:
+            raise EngineError("DETERMINISTIC_EXECUTOR_UNAVAILABLE", "host control is invalid") from exc
+        if (
+            self.settings.environment != "development"
+            or identity is None
+            or identity.provider_name != "host_control"
+            or identity.qualification_status != "host_control"
+        ):
+            raise EngineError(
+                "DETERMINISTIC_EXECUTOR_UNAVAILABLE",
+                "host-control test capability is unavailable",
+            )
 
     def store_for_tests_delete_source_set(self, source_set_id: str) -> None:
         with self.store.engine.begin() as conn:

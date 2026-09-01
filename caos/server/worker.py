@@ -68,7 +68,7 @@ def run_pending(service: ModelService) -> int:
 
 def main() -> None:
     settings = Settings.from_env()
-    settings.validate_runtime()
+    settings.validate_worker_runtime()
     configure_logging(settings)
     data = Path(os.getenv("CAOS_DATA_DIR", str(settings.storage_dir))).resolve()
     data.mkdir(parents=True, exist_ok=True)

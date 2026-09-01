@@ -101,12 +101,15 @@ def test_freeze_retry_across_a_second_boundary_converges_on_one_record(tmp_path)
 async def test_queue_build_shares_the_admission_ceiling(tmp_path):
     from caos.config import Settings
     from caos.engine.budget import MAX_ACTIVE_JOBS
+    from caos.engine.provider import host_control_identity
     from caos.engine.runtime import Engine
     from caos.models.service import ModelService
+    from types import SimpleNamespace
 
     store = DomainStore.from_url(f"sqlite:///{tmp_path / 'c.db'}")
     engine = Engine.create(settings=Settings(storage_dir=tmp_path / "vault", agent_execution_enabled=True),
-                           store=store, checkpoint_path=tmp_path / "ck.db", provider=None)
+                           store=store, checkpoint_path=tmp_path / "ck.db",
+                           provider=SimpleNamespace(identity=host_control_identity()))
     try:
         models = ModelService(store=store, vault_dir=tmp_path / "vault", engine=engine)
         models.fail_next_queue_for_tests()  # suppress the accept-time auto-queue

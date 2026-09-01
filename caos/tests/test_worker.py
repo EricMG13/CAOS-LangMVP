@@ -6,6 +6,7 @@ never publishes under an identity it was not computed from."""
 from __future__ import annotations
 
 import sys
+from dataclasses import replace
 from pathlib import Path
 
 SERVER = Path(__file__).resolve().parents[1] / "server"
@@ -20,7 +21,7 @@ from caos.models.service import ModelService  # noqa: E402
 import pytest  # noqa: E402
 
 sys.path.insert(0, str(Path(__file__).resolve().parent / "spec"))
-from spec_helpers import seed_case_with_source  # noqa: E402
+from spec_helpers import ScriptedProvider, seed_case_with_source  # noqa: E402
 
 
 def _service(tmp_path, settings, store) -> ModelService:
@@ -66,10 +67,15 @@ def _service_on(engine, settings, store) -> ModelService:
     return ModelService(store=store, vault_dir=settings.storage_dir, engine=engine)
 
 
-async def test_a_lost_claim_never_computes_and_never_touches_the_winner(tmp_path, settings, store):
-    from caos.engine.runtime import Engine
+def _engine_for_scripted_model(tmp_path, settings, store) -> Engine:
+    return Engine.create(
+        settings=replace(settings, agent_execution_enabled=True), store=store,
+        checkpoint_path=tmp_path / "ck.db", provider=ScriptedProvider(),
+    )
 
-    engine = Engine.create(settings=settings, store=store, checkpoint_path=tmp_path / "ck.db")
+
+async def test_a_lost_claim_never_computes_and_never_touches_the_winner(tmp_path, settings, store):
+    engine = _engine_for_scripted_model(tmp_path, settings, store)
     try:
         models = _service_on(engine, settings, store)
         queued = await _queued_build(models, engine, store)
@@ -86,9 +92,7 @@ async def test_a_lost_claim_never_computes_and_never_touches_the_winner(tmp_path
 
 
 async def test_a_repointed_build_never_publishes_the_abandoned_calculation(tmp_path, settings, store):
-    from caos.engine.runtime import Engine
-
-    engine = Engine.create(settings=settings, store=store, checkpoint_path=tmp_path / "ck.db")
+    engine = _engine_for_scripted_model(tmp_path, settings, store)
     try:
         models = _service_on(engine, settings, store)
         queued = await _queued_build(models, engine, store)
@@ -116,9 +120,7 @@ async def test_a_repointed_build_never_publishes_the_abandoned_calculation(tmp_p
 async def test_a_crashing_pass_never_fails_a_row_that_was_repointed_under_it(tmp_path, settings, store):
     """The loop's own fallback is an identity-bound write too: a calculation that
     dies after a re-point must not drag the requeued build down with it."""
-    from caos.engine.runtime import Engine
-
-    engine = Engine.create(settings=settings, store=store, checkpoint_path=tmp_path / "ck.db")
+    engine = _engine_for_scripted_model(tmp_path, settings, store)
     try:
         models = _service_on(engine, settings, store)
         queued = await _queued_build(models, engine, store)
@@ -142,9 +144,7 @@ async def test_a_crashing_pass_never_fails_a_row_that_was_repointed_under_it(tmp
 async def test_a_crashing_export_pass_never_clobbers_an_export_published_under_it(tmp_path, settings, store):
     """Same rule on the export half: the fallback writes the whole export blob,
     so without a CAS a dead pass overwrites a READY export with FAILED."""
-    from caos.engine.runtime import Engine
-
-    engine = Engine.create(settings=settings, store=store, checkpoint_path=tmp_path / "ck.db")
+    engine = _engine_for_scripted_model(tmp_path, settings, store)
     try:
         models = _service_on(engine, settings, store)
         queued = await _queued_build(models, engine, store)

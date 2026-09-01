@@ -20,7 +20,10 @@ async def test_newer_accepted_run_sets_switch_required_until_explicit_switch(eng
     case, source, run = await start_full_credit_run(engine, store, depth="screen")
     await engine.wait(run["id"])
     first = await engine.accept(run["id"], actor="analyst")
-    second_run = await engine.start_run(case_id=case["id"], pathway="FULL_CREDIT", depth="screen", actor="analyst")
+    second_run = await engine.start_run_for_tests(
+        case_id=case["id"], pathway="FULL_CREDIT", depth="screen", actor="analyst",
+        allow_placeholder_deterministic=True,
+    )
     await engine.wait(second_run["id"])
     second = await engine.accept(second_run["id"], actor="analyst")
     await engine.switch_visible(case["id"], first["id"], actor="analyst")

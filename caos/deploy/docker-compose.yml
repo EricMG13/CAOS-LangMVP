@@ -58,6 +58,8 @@ services:
       ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-claude-sonnet-4-6}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       AGENT_EXECUTION_ENABLED: ${AGENT_EXECUTION_ENABLED:-false}
+      CAOS_PROVIDER_QUALIFICATION_PATH: ${CAOS_PROVIDER_QUALIFICATION_PATH:-}
+      CAOS_PROVIDER_QUALIFICATION_DIGEST: ${CAOS_PROVIDER_QUALIFICATION_DIGEST:-}
     volumes:
       - vault-data:/vault
     security_opt: ["no-new-privileges:true"]
@@ -85,13 +87,6 @@ services:
       ENVIRONMENT: production
       DATABASE_URL: postgresql+psycopg://caos:${POSTGRES_PASSWORD}@db:5432/caos
       CAOS_STORAGE_DIR: /vault
-      EDGE_PROXY_SECRET: ${EDGE_PROXY_SECRET:?set EDGE_PROXY_SECRET}
-      SESSION_SECRET: ${SESSION_SECRET:?set SESSION_SECRET}
-      CLAMAV_HOST: clamav
-      CLAMAV_PORT: "3310"
-      ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-claude-sonnet-4-6}
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
-      AGENT_EXECUTION_ENABLED: ${AGENT_EXECUTION_ENABLED:-false}
     volumes:
       - vault-data:/vault
     security_opt: ["no-new-privileges:true"]

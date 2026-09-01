@@ -171,7 +171,10 @@ def test_qualification_binding_rechecks_record_integrity_and_provider_version():
 
 
 @pytest.mark.parametrize(("record", "code"), [
-    (_record(qualified_at=(datetime.now(UTC) + timedelta(minutes=1)).replace(microsecond=0).isoformat()), "AGENT_PROVIDER_UNQUALIFIED"),
+    (_record(
+        qualified_at=(datetime.now(UTC) + timedelta(days=1)).replace(microsecond=0).isoformat(),
+        expires_at=(datetime.now(UTC) + timedelta(days=2)).replace(microsecond=0).isoformat(),
+    ), "AGENT_PROVIDER_UNQUALIFIED"),
     (_record(expires_at=(datetime.now(UTC) - timedelta(minutes=1)).replace(microsecond=0).isoformat()), "AGENT_QUALIFICATION_EXPIRED"),
 ])
 def test_qualification_record_rejects_future_or_expired_bindings(record, code):

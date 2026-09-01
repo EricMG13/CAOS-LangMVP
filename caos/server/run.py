@@ -23,17 +23,55 @@ from caos.storage.store import DomainStore
 
 
 def build_provider(settings: Settings):
-    """Anthropic first: it is the only binding that can count tokens before it
-    calls, which is what the budget reserves against. OpenRouter is used when it
-    is the only key configured, and its reservation is a local estimate."""
-    if settings.anthropic_api_key:
+    """Build one explicit provider binding; production requires qualified Anthropic."""
+    from caos.engine.provider import AgentError, ProviderQualification
+
+    anthropic_configured = bool(settings.anthropic_api_key.strip())
+    openrouter_configured = bool(settings.openrouter_api_key.strip())
+    if anthropic_configured and openrouter_configured:
+        raise AgentError("AGENT_PROVIDER_UNQUALIFIED", "multiple provider credentials are configured")
+    qualification_configured = (
+        settings.provider_qualification_path is not None
+        or bool(settings.provider_qualification_digest)
+    )
+    if qualification_configured and (
+        settings.provider_qualification_path is None
+        or not settings.provider_qualification_digest
+    ):
+        raise AgentError("AGENT_QUALIFICATION_MISSING", "qualification path and digest are both required")
+    if settings.environment == "production" and openrouter_configured:
+        raise AgentError("AGENT_PROVIDER_UNQUALIFIED", "OpenRouter is development-only")
+    if not settings.agent_execution_enabled:
+        return None
+    if settings.environment == "production" and not anthropic_configured:
+        raise AgentError("AGENT_PROVIDER_UNAVAILABLE", "ANTHROPIC_API_KEY is not configured")
+
+    qualification = None
+    if qualification_configured:
+        qualification = ProviderQualification.from_path(
+            settings.provider_qualification_path,
+            settings.provider_qualification_digest,
+        )
+    if settings.environment == "production" and qualification is None:
+        raise AgentError("AGENT_QUALIFICATION_MISSING", "production agent execution requires qualification")
+
+    if anthropic_configured:
         from caos.engine.anthropic import AnthropicProvider
 
-        return AnthropicProvider(settings.anthropic_api_key, settings.anthropic_model)
-    if settings.openrouter_api_key:
+        return AnthropicProvider(
+            settings.anthropic_api_key,
+            settings.anthropic_model,
+            qualification=qualification,
+            methodology_root=settings.deploy_v_root,
+        )
+    if openrouter_configured:
         from caos.engine.openrouter import OpenRouterProvider
 
-        return OpenRouterProvider(settings.openrouter_api_key, settings.openrouter_model)
+        return OpenRouterProvider(
+            settings.openrouter_api_key,
+            settings.openrouter_model,
+            qualification=qualification,
+        )
     return None
 
 
@@ -41,6 +79,13 @@ def build(settings: Settings, data: Path) -> tuple[FastAPI, Engine]:
     """Assemble the combined app: store, engine (auto-continue on), API, and the
     static export when one is present (./static in the image, ../frontend/out
     after `npm run build`). API routes are registered first, so they win."""
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        pass
+    else:
+        raise RuntimeError("run.build must be called outside an active event loop")
+    settings.validate_runtime()
     configure_logging(settings)  # JSON on stdout; registers the secrets to redact
     data.mkdir(parents=True, exist_ok=True)
     store = DomainStore.from_url(settings.database_url or f"sqlite:///{data / 'caos.db'}")
@@ -77,10 +122,18 @@ def build(settings: Settings, data: Path) -> tuple[FastAPI, Engine]:
 
 def serve(app: FastAPI, engine: Engine, *, host: str, port: int) -> None:
     async def _serve() -> None:
-        # §10.5 startup recovery on the serving loop (engine state is loop-bound):
-        # re-admit runs stranded by a restart before accepting traffic.
-        await engine.recover()
-        await uvicorn.Server(uvicorn.Config(app, host=host, port=port)).serve()
+        try:
+            # §10.5 startup recovery on the serving loop (engine state is loop-bound):
+            # re-admit runs stranded by a restart before accepting traffic.
+            await engine.recover()
+            await uvicorn.Server(uvicorn.Config(app, host=host, port=port)).serve()
+        except BaseException:
+            try:
+                await _close_owned(engine)
+            except BaseException:
+                pass
+            raise
+        await _close_owned(engine)
 
     asyncio.run(_serve())
 
@@ -102,33 +155,29 @@ async def _close_owned(engine: Engine | None, provider: object | None = None) ->
         await close_provider()
 
 
-def shutdown(engine: Engine) -> None:
+def main() -> None:
+    settings = Settings.from_env()
+    if settings.environment != "production":
+        raise RuntimeError("run.py requires ENVIRONMENT=production; use dev.py for development")
+    data = Path(os.getenv("CAOS_DATA_DIR", str(settings.storage_dir))).resolve()
+    app, engine = build(settings, data)
+    serve_owns_async_resources = False
     try:
-        asyncio.run(_close_owned(engine))
+        with engine.store.single_instance("app"):
+            serve_owns_async_resources = True
+            serve(app, engine, host=os.getenv("HOST", "0.0.0.0"), port=settings.port)
     except BaseException:
+        if not serve_owns_async_resources:
+            try:
+                asyncio.run(_close_owned(engine))
+            except BaseException:
+                pass
         try:
             engine.store.close()
         except BaseException:
             pass
         raise
     engine.store.close()
-
-
-def main() -> None:
-    settings = Settings.from_env()
-    settings.validate_runtime()
-    data = Path(os.getenv("CAOS_DATA_DIR", str(settings.storage_dir))).resolve()
-    app, engine = build(settings, data)
-    try:
-        with engine.store.single_instance("app"):
-            serve(app, engine, host=os.getenv("HOST", "0.0.0.0"), port=settings.port)
-    except BaseException:
-        try:
-            shutdown(engine)
-        except BaseException:
-            pass
-        raise
-    shutdown(engine)
 
 
 if __name__ == "__main__":
