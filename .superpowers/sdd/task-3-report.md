@@ -162,9 +162,133 @@ Anti-pattern verdict: pass. The detector's `border-accent-on-rounded` warning is
 ## Commit
 
 - Task 3 implementation: `df03d8dc27b1a1eb92eece7610423c3000929f91` (`feat(frontend): unify commit rituals`)
+- Task 3 authority correction: `7fe186406b9797114fbd7b3ed019a67d93e52d9a` (`fix(frontend): bind acceptance to latest authority`)
 
 ## Remaining risks
 
 - The full combined-app browser journey did not finish in this checkpoint; Task 6 should run `npm run test:workbench` in its final assembled environment and inspect both target viewports.
 - The browser geometry assertion is intentionally exact. It now reserves both the acceptance panel and DAG output row, but real-browser confirmation remains deferred with the suite.
 - `.dev-data/` remains untracked user/runtime state and was intentionally untouched.
+
+## Review correction — latest acceptance and the visible lens
+
+### Summary
+
+- Acceptance replacement counts, the exact predecessor digest, and accepted-run identity now bind to `SnapshotView.latest_accepted`, which is the same pointer the server replaces. `SnapshotView.accepted` remains the effective visible/pinned reader lens.
+- A run matching the latest acceptance always renders as accepted and never re-offers the action. When `switch_required` is true, Run Console names the visible snapshot that remains pinned, while the shell labels its snapshot and source-set values as the visible lens and warns that the latest acceptance differs.
+- Accept remains a bodyless POST. No visible snapshot is switched implicitly, and the existing explicit switch route remains the only client action that changes a pinned lens.
+- The bounded browser fixture now synthesizes queued, running, succeeded-not-accepted, accepted, failed, and paused acceptance regions. Its accepted phase serves matching run and snapshot authority ids. The full combined-app browser journey remains owned by Task 6.
+
+### Correction files
+
+- `caos/frontend/scripts/workbench-smoke.mjs`
+- `caos/frontend/src/components/WorkbenchShell.tsx`
+- `caos/frontend/src/components/Workspace.tsx`
+- `caos/frontend/src/lib/workbench.test.ts`
+- `caos/frontend/src/lib/workbench.ts`
+
+### TDD and verification
+
+- TDD red: `node --test src/lib/workbench.test.ts` — 13/17 passed and the four new latest-authority, switch-required, visible-label, and six-state fixture assertions failed for the intended missing behavior.
+- Focused green: `node --test src/lib/workbench.test.ts` — 17/17 passed; existing `MODULE_TYPELESS_PACKAGE_JSON` warning only.
+- Full frontend unit suite: `npm run test:unit` — 100/100 passed; existing module-type warnings only.
+- Strict lint: `npm run lint` — passed.
+- Local TypeScript: `./node_modules/.bin/tsc --noEmit` — passed.
+- Production build: `npm run build` — passed; all 12 static pages generated.
+- Server acceptance/switch regressions: five focused pytest cases covering missing historical sources, forged artifacts, idempotent acceptance, blocked QA, and newer-accepted/visible-switch divergence — 5/5 passed.
+- `git diff --check`, staged-path audit, and trailer audit — passed. No server file or acceptance request body changed.
+- Browser execution was not started for this correction; the fixture is source-verified here and Task 6 retains the full assembled-environment run.
+
+### Rewrite tournament — correction
+
+#### `RunStatus` accepted-authority branch
+
+- **Winner**: Incumbent holds in `caos/frontend/src/components/Workspace.tsx` (`RunStatus`, accepted branch).
+- **Justification**:
+  - The explicit accepted-first branch preserves the required precedence over the succeeded action, so a latest-accepted run cannot fall through to “Ready for acceptance.”
+  - Separate `acceptedSnapshotId`, `visibleSnapshotId`, and `switchRequired` inputs mirror the server contract without introducing client authority inference or a new component abstraction.
+  - Speed-, allocation-, and terseness-oriented challengers either retained the same branch work or obscured the fail-closed state ordering; none improved verified behavior or maintainability.
+- **Final code**:
+
+```tsx
+if (acceptedSnapshotId) {
+  acceptance = <>
+    <span className="status success">Latest accepted authority</span>
+    <span className="mono muted">{acceptedSnapshotId}</span>
+    {switchRequired
+      ? <p>Visible lens remains on <span className="mono">{visibleSnapshotId || "a different snapshot"}</span> until explicitly switched.</p>
+      : <p>Visible lens matches the latest accepted authority.</p>}
+  </>;
+}
+```
+
+- **Verification**: `node --test src/lib/workbench.test.ts` — 17/17 passed; `./node_modules/.bin/tsc --noEmit -p .` passed. Impact-set grep found one `RunStatus` definition and one `RunConsole` call; the caller compiles with all three authority inputs.
+
+#### `acceptanceRunFixture`
+
+- **Winner**: Incumbent holds in `caos/frontend/scripts/workbench-smoke.mjs` (`acceptanceRunFixture`).
+- **Justification**:
+  - The fixture keeps the accepted snapshot-id assignment directly visible beside its phase condition, which is the source-verifiable contract requested for this bounded checkpoint.
+  - A readability challenger cached phase booleans, but the focused source test rejected it (16/17 passed); it was restored with `apply_patch` rather than weakening the regression.
+  - The six-state list is tiny, so alternate lookup tables or helpers add allocation or indirection without a meaningful runtime gain.
+- **Final code**:
+
+```js
+const acceptanceRunFixture = () => ({
+  ...nextRunState,
+  status: acceptanceRunPhase === "accepted" ? "succeeded" : acceptanceRunPhase,
+  accepted_snapshot_id: acceptanceRunPhase === "accepted" ? acceptanceSnapshot.id : null,
+  error: acceptanceRunPhase === "failed"
+    ? { code: "GEOMETRY_FAILURE", message: "Controlled fixture failure." }
+    : acceptanceRunPhase === "paused"
+      ? { code: "SOURCE_SET_EMPTY", message: "Controlled fixture pause." }
+      : null,
+  nodes: nextRunState.nodes.map((node, index) => ({
+    ...node,
+    status: acceptanceRunPhase === "succeeded" || acceptanceRunPhase === "accepted" ? "succeeded"
+      : acceptanceRunPhase === "failed" ? index === 0 ? "failed" : "pending"
+      : acceptanceRunPhase === "running" ? index === 0 ? "succeeded" : index === 1 ? "running" : "pending"
+        : "pending",
+    artifact_id: acceptanceRunPhase === "succeeded" || acceptanceRunPhase === "accepted" ? node.artifact_id : index === 0 && acceptanceRunPhase === "running" ? node.artifact_id : null,
+  })),
+});
+```
+
+- **Verification**: the readability challenger failed the exact accepted-id source contract at 16/17; restoring the incumbent returned the focused result to 17/17. The only runtime caller is the scoped run-route fulfiller, and the subsequent TypeScript/build checks stayed green.
+
+### Confidence review — authority correction
+
+Least confident about (ranked):
+
+1. A pinned visible snapshot could still be mistaken for the acceptance predecessor.
+   investigated → traced `/api/cases/{case_id}/snapshot`, runtime acceptance, `SnapshotView`, every `accepted`/`latest_accepted` caller, and the dialog/aftermath wiring. The server advances `accepted_snapshot_id`; the API exposes that record as `latest_accepted` while `accepted` resolves `visible_snapshot_id` first.
+   verdict     → CONFIRMED bug in the reviewed Task 3 implementation.
+   patch       → replacement slots/digest and accepted-run matching now use `latest_accepted`; visible-lens labels and switch-required disclosure remain separate.
+2. A latest-accepted run might still expose the irreversible action when the visible lens trails it.
+   investigated → constructed `snap_visible`/`snap_latest` divergence in the focused test, verified the match against latest succeeds and the match against visible fails, and pinned the accepted branch to contain neither the Ready label nor the action.
+   verdict     → fine after correction (focused regression plus accepted-first branch inspection).
+   patch       → accepted identity now receives latest, visible, and switch-required inputs independently.
+3. The smoke fixture might claim accepted coverage without serving matching authority.
+   investigated → the accepted phase now sets `run.accepted_snapshot_id` to `acceptanceSnapshot.id` and serves that same object as both visible and latest snapshot authority; failed and paused phases carry controlled error codes that select their real UI branches.
+   verdict     → fine (source-verifiable fixture contract).
+   patch       → added the scoped snapshot route and all six phases.
+4. The correction could have altered acceptance transport or weakened server revalidation.
+   investigated → zero changed server paths; the staged Workspace diff contains no request change; the accept call remains `POST` with no body. Runtime still verifies the pinned source set, artifact ownership/digests, and QA before advancing the accepted pointer. Five focused server regressions passed.
+   verdict     → fine.
+   patch       → n/a.
+5. The larger accepted disclosure could break the exact browser geometry invariant.
+   investigated → the existing acceptance panel retains its 132px reserved block size and shared approval grammar; the fixture now asserts all six boxes, but the combined browser environment was intentionally not started in this checkpoint.
+   verdict     → open.
+   patch       → n/a; Task 6 must run the full workbench smoke.
+
+Fixed: latest-versus-visible authority conflation; incomplete smoke state coverage.
+
+Verified fine: Reader fail-closed gating; bodyless acceptance request; server digest/source/QA revalidation; explicit-only visible switch; export-polling checkpoint isolation.
+
+By-design: `accepted` remains the server wire name for the visible lens; semantic comments and UI labels prevent treating it as the acceptance ledger.
+
+Still open: real-browser six-state geometry in the final assembled environment, owned by Task 6.
+
+### Impeccable correction audit
+
+The correction reuses `.approval-panel`, `.state-facts`, `.status`, native dialog behavior, existing tokens, and the current focus contract. It adds no CSS, color, motion, card, gradient, or decorative vocabulary. Visible/latest authority is now stated in plain text rather than communicated by color alone. No new accessibility, responsive, theming, or anti-pattern finding was introduced.
