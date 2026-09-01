@@ -155,6 +155,14 @@ export function resolveDraftDiscard(request: { confirm: () => void; cancel?: () 
   else request.cancel?.();
 }
 
+export function historyStateForExternalReplace(state: unknown) {
+  if (!state || typeof state !== "object" || Array.isArray(state)) return {};
+  const externalState = { ...(state as Record<string, unknown>) };
+  delete externalState.__NA;
+  delete externalState._N;
+  return externalState;
+}
+
 export type DraftHistoryTraversal = {
   token: number;
   kind: "confirmed" | "retire" | "restore";

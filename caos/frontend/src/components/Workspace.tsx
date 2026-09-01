@@ -12,7 +12,7 @@ import { displayValue, flattenValue, markdownBlocks, normalizeEvidenceRefs, type
 import { initialAuthorityState, matchesAuthority, requestContext, workspaceAuthorityReducer, type AuthorityEvent } from "../lib/workspaceAuthority";
 
 import WorkbenchShell, { type DrawerState } from "./WorkbenchShell";
-import { type Destination, type DraftHistoryTraversal, type Snapshot, type SnapshotView, acceptanceSlotSummary, acceptedAuthorityMatch, beginDraftHistoryTraversal, destinationFromSlug, destinationMeta, draftHistoryEntryId, draftHistoryNeedsRearm, finishDraftHistoryTraversal, formatBlockLocator, formatDate, humanizeCode, isSameTabPrimaryGesture, moduleLabel, nodeStatusTone, observeDraftHistoryPop, protectDirtyDraftUnload, resolveDraftDiscard, routeDestinations, selectConclusionArtifact, withQuery } from "../lib/workbench";
+import { type Destination, type DraftHistoryTraversal, type Snapshot, type SnapshotView, acceptanceSlotSummary, acceptedAuthorityMatch, beginDraftHistoryTraversal, destinationFromSlug, destinationMeta, draftHistoryEntryId, draftHistoryNeedsRearm, finishDraftHistoryTraversal, formatBlockLocator, formatDate, historyStateForExternalReplace, humanizeCode, isSameTabPrimaryGesture, moduleLabel, nodeStatusTone, observeDraftHistoryPop, protectDirtyDraftUnload, resolveDraftDiscard, routeDestinations, selectConclusionArtifact, withQuery } from "../lib/workbench";
 
 type WriteAccess = "yes" | "no" | "unknown";
 type DraftDiscardRequest = { detail: string; confirm: () => void; cancel?: () => void };
@@ -112,6 +112,7 @@ export default function Workspace({ destination, children }: { destination?: Des
   const discardPromptRef = useRef<DraftDiscardRequest | null>(null);
   const replayingDraftLinkRef = useRef(false);
   const pendingDraftLinkRef = useRef<string | null>(null);
+  const confirmedAuthoritySyncRef = useRef(false);
   const modelHistoryGuardRef = useRef(false);
   const historyTraversalRef = useRef<DraftHistoryTraversal | null>(null);
   const historyTraversalTokenRef = useRef(0);
@@ -206,6 +207,7 @@ export default function Workspace({ destination, children }: { destination?: Des
   }, [beginHistoryTraversal]);
 
   const releaseCleanDraftGuard = useCallback(() => {
+    if (confirmedAuthoritySyncRef.current) return;
     const from = pendingDraftLinkRef.current;
     pendingDraftLinkRef.current = null;
     if (typeof window !== "undefined" && from !== null && window.location.href !== from) {
@@ -233,8 +235,12 @@ export default function Workspace({ destination, children }: { destination?: Des
     const entryId = draftHistoryEntryId(state);
     const previous = lastHistoryEntryRef.current;
     const copiedIntoNewRoute = Boolean(previous && previous.href !== href && entryId === previous.id);
+    const ownsGuard = Boolean(state.caosModelDraftGuard || state.caosReportDraftGuard);
+    const routeChangeConfirmed = confirmedAuthoritySyncRef.current || pendingDraftLinkRef.current !== null;
+    if (copiedIntoNewRoute && ownsGuard && (modelDraftDirtyRef.current || reportDraftDirtyRef.current) && !routeChangeConfirmed) return;
     if (!entryId || copiedIntoNewRoute) {
       const id = newHistoryEntryId();
+      const previousId = copiedIntoNewRoute ? state.caosDraftHistoryPreviousId : previous?.id;
       const nextState = copiedIntoNewRoute || (previous && previous.href !== href)
         ? Object.fromEntries(Object.entries(state).filter(([key]) => ![
           "caosDraftHistoryEntryId",
@@ -248,9 +254,13 @@ export default function Workspace({ destination, children }: { destination?: Des
       window.history.replaceState({
         ...nextState,
         caosDraftHistoryEntryId: id,
-        ...(previous ? { caosDraftHistoryPreviousId: previous.id } : {}),
+        ...(previousId ? { caosDraftHistoryPreviousId: previousId } : {}),
       }, "", href);
       lastHistoryEntryRef.current = { id, href };
+      if (copiedIntoNewRoute && confirmedAuthoritySyncRef.current) {
+        confirmedAuthoritySyncRef.current = false;
+        modelHistoryGuardRef.current = false;
+      }
       return;
     }
     lastHistoryEntryRef.current = { id: entryId, href };
@@ -299,7 +309,10 @@ export default function Workspace({ destination, children }: { destination?: Des
   const selectCase = useCallback((nextCaseId: string, availableCases = cases) => {
     const currentCaseId = authorityRef.current.caseId || "";
     if (nextCaseId === currentCaseId) return true;
-    return requestDraftDiscard(draftDiscardDetail("before changing case"), () => commitCaseSelection(nextCaseId, availableCases));
+    return requestDraftDiscard(draftDiscardDetail("before changing case"), () => {
+      if (modelDraftDirtyRef.current || reportDraftDirtyRef.current) confirmedAuthoritySyncRef.current = true;
+      commitCaseSelection(nextCaseId, availableCases);
+    });
   }, [cases, commitCaseSelection, draftDiscardDetail, requestDraftDiscard]);
 
   const refreshCases = async (signal?: AbortSignal) => {
@@ -529,7 +542,7 @@ export default function Workspace({ destination, children }: { destination?: Des
           const url = new URL(window.location.href);
           if (caseId) url.searchParams.set("case", caseId); else url.searchParams.delete("case");
           if (runId) url.searchParams.set("run", runId); else url.searchParams.delete("run");
-          window.history.replaceState(window.history.state, "", `${url.pathname}${url.search}${url.hash}`);
+          window.history.replaceState(historyStateForExternalReplace(window.history.state), "", `${url.pathname}${url.search}${url.hash}`);
           return;
         }
         if (requestedRunId) {
@@ -629,7 +642,7 @@ export default function Workspace({ destination, children }: { destination?: Des
     // or a case switch can be reverted by its own stale query string and the previous
     // issuer's run re-attached after the analyst has already moved on.
     routeAuthorityRef.current = `${caseId}\u0000${runId}`;
-    window.history.replaceState(window.history.state, "", `${url.pathname}${url.search}${url.hash}`);
+    window.history.replaceState(historyStateForExternalReplace(window.history.state), "", `${url.pathname}${url.search}${url.hash}`);
   }, [hydrated, caseId, runId]);
 
   useEffect(() => {

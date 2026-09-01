@@ -286,22 +286,31 @@ try {
   assert.equal(firstSentinel.caosDraftHistoryPreviousId, firstSentinel.caosDraftHistoryBaseId, "armed sentinel did not point at its real base entry");
 
   const caseSelect = workspacePage.getByRole("combobox", { name: "Select case" });
-  const synchronizedWriteStart = await workspacePage.evaluate(() => window.__caosHistoryWrites.length);
   const synchronizedCallStart = await workspacePage.evaluate(() => window.__caosWorkspaceReplaceCalls.length);
   await caseSelect.selectOption("history-case-b");
   const discardDialog = workspacePage.getByRole("dialog", { name: "Discard draft changes?" });
   await discardDialog.getByRole("button", { name: "Discard changes" }).click();
-  await workspacePage.waitForFunction(() => new URL(location.href).searchParams.get("case") === "history-case-b");
-  const synchronizedWrites = await workspacePage.evaluate((from) => window.__caosHistoryWrites.slice(from).filter((write) => new URL(write.href).searchParams.get("case") === "history-case-b"), synchronizedWriteStart);
-  assert.ok(synchronizedWrites.length > 0, "authority query sync made no observable history write");
-  assert.ok(synchronizedWrites.every((write) => write.state?.caosDraftHistoryEntryId === firstSentinel.caosDraftHistoryEntryId), "authority query sync erased the current sentinel entry id");
-  assert.ok(synchronizedWrites.every((write) => write.state?.caosDraftHistoryBaseId === firstSentinel.caosDraftHistoryBaseId), "authority query sync erased the sentinel base destination");
+  await workspacePage.waitForFunction(({ replacedId, realPredecessorId }) => {
+    const state = history.state;
+    return new URL(location.href).searchParams.get("case") === "history-case-b"
+      && state?.caosDraftHistoryEntryId
+      && state.caosDraftHistoryEntryId !== replacedId
+      && state.caosDraftHistoryPreviousId === realPredecessorId
+      && !state.caosDraftHistoryBaseId
+      && !state.caosModelDraftGuard
+      && !state.caosReportDraftGuard;
+  }, { replacedId: firstSentinel.caosDraftHistoryEntryId, realPredecessorId: firstSentinel.caosDraftHistoryBaseId });
   const synchronizedCalls = await workspacePage.evaluate((from) => window.__caosWorkspaceReplaceCalls.slice(from).filter((write) => new URL(write.href).searchParams.get("case") === "history-case-b"), synchronizedCallStart);
   assert.ok(synchronizedCalls.length > 0, "authority query sync did not call replaceState");
-  assert.ok(synchronizedCalls.every((write) => write.state?.caosDraftHistoryEntryId === firstSentinel.caosDraftHistoryEntryId), "authority query sync passed metadata-erasing state into replaceState");
+  assert.ok(synchronizedCalls.some((write) => write.state?.caosDraftHistoryEntryId === firstSentinel.caosDraftHistoryEntryId && !("__NA" in write.state) && !("_N" in write.state)), "authority query sync bypassed Next URL restoration");
+  const normalizedCaseB = await workspacePage.evaluate(() => structuredClone(history.state));
+  assert.equal(normalizedCaseB.caosDraftHistoryPreviousId, firstSentinel.caosDraftHistoryBaseId, "normalized route pointed at the replaced sentinel instead of its real predecessor");
 
   releaseCaseBLoad();
   await reportEditor.waitFor();
+  await workspacePage.waitForTimeout(1100);
+  assert.equal(new URL(workspacePage.url()).searchParams.get("case"), "history-case-b", "clean Report retirement traversed back to the old case");
+  assert.equal(await workspacePage.evaluate(() => history.state.caosDraftHistoryEntryId), normalizedCaseB.caosDraftHistoryEntryId, "clean Report retirement replaced the normalized route entry");
   await reportEditor.fill("Dirty rollback history integration");
   await workspacePage.waitForFunction(() => history.state?.caosReportDraftGuard === true);
   const rollbackSentinel = await workspacePage.evaluate(() => structuredClone(history.state));
@@ -310,7 +319,10 @@ try {
   await workspacePage.evaluate(() => {
     const url = new URL(location.href);
     url.searchParams.set("case", "history-case-a");
-    history.replaceState(history.state, "", url);
+    const externalState = { ...history.state };
+    delete externalState.__NA;
+    delete externalState._N;
+    history.replaceState(externalState, "", url);
   });
   await discardDialog.waitFor();
   await workspacePage.waitForFunction(() => new URL(location.href).searchParams.get("case") === "history-case-b");
@@ -320,8 +332,15 @@ try {
   assert.ok(rollbackWrites.every((write) => write.state?.caosDraftHistoryBaseId === rollbackSentinel.caosDraftHistoryBaseId), "dirty authority rollback erased the sentinel base destination");
   const rollbackCalls = await workspacePage.evaluate((from) => window.__caosWorkspaceReplaceCalls.slice(from).filter((write) => new URL(write.href).searchParams.get("case") === "history-case-b"), replaceCallCount);
   assert.ok(rollbackCalls.length > 0, "dirty authority rollback did not call replaceState");
-  assert.ok(rollbackCalls.every((write) => write.state?.caosDraftHistoryEntryId === rollbackSentinel.caosDraftHistoryEntryId), "dirty authority rollback passed metadata-erasing state into replaceState");
+  assert.ok(rollbackCalls.some((write) => write.state?.caosDraftHistoryEntryId === rollbackSentinel.caosDraftHistoryEntryId && !("__NA" in write.state) && !("_N" in write.state)), "dirty authority rollback bypassed Next URL restoration");
   await discardDialog.getByRole("button", { name: "Keep editing" }).click();
+  assert.equal(new URL(workspacePage.url()).searchParams.get("case"), "history-case-b", "keeping dirty rollback changed visible authority");
+  assert.equal(await reportEditor.inputValue(), "Dirty rollback history integration", "keeping dirty rollback lost the editor value");
+  assert.deepEqual(await workspacePage.evaluate(() => ({ id: history.state.caosDraftHistoryEntryId, base: history.state.caosDraftHistoryBaseId, guarded: history.state.caosReportDraftGuard === true })), {
+    id: rollbackSentinel.caosDraftHistoryEntryId,
+    base: rollbackSentinel.caosDraftHistoryBaseId,
+    guarded: true,
+  });
 } finally {
   if (workspaceServer) await new Promise((resolve, reject) => workspaceServer.close((error) => error ? reject(error) : resolve()));
   await browser.close();

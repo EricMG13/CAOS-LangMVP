@@ -408,7 +408,92 @@ Still open: Task 6 retains ownership of the complete combined-app smoke; this co
 - Correction subjects: `fix(frontend): preserve dirty draft navigation`; `fix(frontend): serialize draft history traversal`
 - Observable-state correction subject: `fix(frontend): match draft history destinations`
 - URL-state correction subject: `fix(frontend): preserve history state during authority sync`
+- Next external-state correction subject: `fix(frontend): restore authority history normalization`
 - Trailer: `Co-Authored-By: Codex Opus 4.8 <noreply@anthropic.com>`
+
+## Next external-state and route-normalization correction
+
+The installed Next 16.3.3 App Router treats a `replaceState` payload containing
+`__NA` or `_N` as its own internal write. That branch deliberately skips both
+the URL restore dispatch and the internal-state copy. Workspace now sends an
+external payload that retains every application key while omitting only those
+two loop markers. Next then restores `useSearchParams` and copies its current
+`__NA` and router tree back into the final state.
+
+Confirmed in-place authority changes also normalize the copied sentinel into a
+normal route entry. The replacement receives a new entry ID, retains the
+sentinel's real base ID as its predecessor, and drops all guard metadata. A
+one-shot confirmed-authority ref prevents keyed Report Studio cleanup from
+retiring the old sentinel before that normalization occurs. Dirty external
+query changes remain unconfirmed, so Workspace rolls the URL back while keeping
+the exact active sentinel and draft protection.
+
+### TDD and executable integration evidence
+
+- RED: `node --test --experimental-strip-types --test-name-pattern='external history writes|draft navigation uses' src/lib/workbench.test.ts` failed because the external-state helper and its two Workspace call sites did not exist.
+- GREEN: the same focused command passed 2/2 after the helper was integrated.
+- The freshly rebuilt `node scripts/draft-history-smoke.mjs` route passed twice. It mounted the actual built `/report-studio/` Workspace, edited the real Report Studio field, and confirmed dirty case A to case B through the rendered native dialog.
+- The browser asserted that the case-B entry had a new ID, pointed to the old sentinel's real base ID, and carried no base or dirty-owner markers. After releasing the delayed case-B draft load and waiting beyond the history fence, Report cleanup did not traverse back to case A.
+- A second dirty edit followed by an external case-A query exercised Workspace rollback. The visible authority stayed on B, the exact case-B sentinel/base IDs remained active, Keep Editing preserved the editor text, and the external `replaceState` payload contained CAOS keys but neither Next loop marker.
+- Final gates: 113/113 units, lint, local TypeScript, production build of all 12 pages, both smoke syntax checks, focused Chromium, and `git diff --check` passed. Node's existing module-type warning is unchanged.
+
+### Final capped rewrite tournament
+
+- **Winner**: Incumbent holds for `caos/frontend/src/lib/workbench.ts:158-165` and the route-normalization region in `caos/frontend/src/components/Workspace.tsx:232-266`.
+- **Justification**:
+  - The speed challenger used rest destructuring, but retained the same clone allocation and added unused loop-marker bindings without improving an event-dominated path.
+  - The memory challenger filtered entries into a new object, adding array and tuple allocation compared with the incumbent's single shallow copy and two deletes.
+  - The readability challenger extracted the effect's normalization into another state/ref-aware helper, widening the impact set and obscuring the ordering between confirmed cleanup, URL observation, and guard release.
+- **Final code**:
+
+```ts
+export function historyStateForExternalReplace(state: unknown) {
+  if (!state || typeof state !== "object" || Array.isArray(state)) return {};
+  const externalState = { ...(state as Record<string, unknown>) };
+  delete externalState.__NA;
+  delete externalState._N;
+  return externalState;
+}
+
+const previousId = copiedIntoNewRoute
+  ? state.caosDraftHistoryPreviousId
+  : previous?.id;
+```
+
+- **Verification**: focused 2/2 units, 113/113 full units, lint, local TypeScript, production build, and the freshly rebuilt Chromium route passed. The impact set comprises the two Workspace authority writes, the route-tagging effect, the helper unit contract, and the built Workspace smoke; all rechecked without signature or state-shape drift.
+
+### Final correction confidence review
+
+Least confident about (ranked):
+
+1. The external payload might still bypass Next or lose its router tree.
+   investigated → installed `app-router.js` returns early only for incoming `__NA`/`_N`; otherwise it copies the current `__NA` and `__PRIVATE_NEXTJS_INTERNALS_TREE`, dispatches `ACTION_RESTORE`, and performs the replacement. The browser observed CAOS metadata in the marker-free incoming payload and then a normalized routed state.
+   verdict     → fine by installed-source trace and built-browser evidence.
+   patch       → remove only Next's two loop markers at the two external authority writes.
+2. Confirmed Report Studio cleanup could retire the sentinel before case-B route normalization.
+   investigated → keyed unmount can report clean before the search-param effect observes B. The one-shot confirmed-authority ref blocks only clean retirement during that interval; the copied-route effect clears it while removing the guard. The browser delayed case-B loading, then waited beyond the traversal fence without returning to A.
+   verdict     → fine after one-shot ordering guard.
+   patch       → defer clean release until confirmed copied-route normalization.
+3. A normalized route could reference the replaced sentinel as a nonexistent predecessor.
+   investigated → in-place replacement removes the current sentinel ID, so the only real predecessor is `caosDraftHistoryPreviousId` already stored on that sentinel. The built browser asserted exact equality with the original base ID.
+   verdict     → fine.
+   patch       → carry the stored predecessor on copied-route replacement.
+4. Dirty external query rollback could be mistaken for a confirmed route and strip protection.
+   investigated → the copied-route effect declines normalization while a guard is dirty and neither confirmed-authority nor confirmed-link ownership is present. The authority effect rewrites B through the external-state helper, and the browser retained the exact sentinel/base pair plus editor value after Keep Editing.
+   verdict     → fine by executable rollback trace.
+   patch       → gate copied dirty-route normalization on explicit confirmed ownership.
+5. The one-shot ref could remain set if Next never reports the changed search params.
+   investigated → the helper follows Next's documented installed external branch, and the built route observed and cleared it. If a replacement itself fails, retaining the ref fails closed by preventing a stale guard retirement; it does not clear either child dirty ref or bypass `beforeunload`.
+   verdict     → by-design fail-closed error behavior.
+   patch       → n/a.
+
+Fixed: Next restore bypass, nonexistent normalized predecessor, premature clean retirement, and dirty rollback normalization.
+
+Verified fine: Next internal-state recopy, confirmed case normalization, delayed autosave cleanup, dirty rollback/Keep Editing, units, lint, TypeScript, build, smoke syntax, and focused Chromium.
+
+By-design: a failed external replacement retains the one-shot ownership flag and avoids destructive retirement until another confirmed normalization; native unload protection still reads the live dirty refs.
+
+Still open: Task 6 owns the complete combined-app browser suite; this bounded built Workspace route is complete.
 
 ## Remaining risks
 

@@ -64,6 +64,7 @@ test("draft navigation uses one focus-returning native dialog and preserves befo
   assert.match(workspace, /<dialog[^>]+aria-labelledby="discard-dialog-title"[^>]+onClose=\{close\}/);
   assert.match(workspace, /window\.addEventListener\("beforeunload", guardUnload\)/);
   assert.doesNotMatch(workspace, /history\.replaceState\(null/);
+  assert.equal(workspace.match(/historyStateForExternalReplace\(window\.history\.state\)/g)?.length, 2);
   assert.match(workspace, /requestDraftDiscard/);
   assert.match(workspace, /if \(discardPromptRef\.current\) \{ cancel\?\.\(\); return false; \}/);
   assert.match(workspace, /if \(state\?\.caosModelDraftGuard \|\| state\?\.caosReportDraftGuard\) \{ modelHistoryGuardRef\.current = true; return; \}/);
@@ -102,6 +103,26 @@ test("discard resolution invokes one deferred callback without changing caller-o
   assert.deepEqual({ protectedDraft, confirms, cancels }, { protectedDraft: true, confirms: 1, cancels: 0 });
   workbenchModule.resolveDraftDiscard?.(request, false);
   assert.deepEqual({ protectedDraft, confirms, cancels }, { protectedDraft: true, confirms: 1, cancels: 1 });
+});
+
+test("external history writes preserve application state without bypassing Next URL restore", async () => {
+  const workbenchModule = await import("./workbench.ts") as unknown as { historyStateForExternalReplace?: (state: unknown) => Record<string, unknown> };
+  assert.equal(typeof workbenchModule.historyStateForExternalReplace, "function");
+  if (!workbenchModule.historyStateForExternalReplace) return;
+  const tree = { segment: "report-studio" };
+  const state = workbenchModule.historyStateForExternalReplace({
+    __NA: true,
+    _N: true,
+    __PRIVATE_NEXTJS_INTERNALS_TREE: tree,
+    caosDraftHistoryEntryId: "sentinel",
+    caosDraftHistoryBaseId: "base",
+  });
+  assert.deepEqual(state, {
+    __PRIVATE_NEXTJS_INTERNALS_TREE: tree,
+    caosDraftHistoryEntryId: "sentinel",
+    caosDraftHistoryBaseId: "base",
+  });
+  assert.deepEqual(workbenchModule.historyStateForExternalReplace(null), {});
 });
 
 test("Workspace settles history moves only at their tagged destination entry", () => {
