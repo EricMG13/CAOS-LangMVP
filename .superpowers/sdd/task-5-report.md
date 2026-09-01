@@ -20,6 +20,7 @@
 - `caos/frontend/src/components/report/ReportStudio.test.ts`
 - `caos/frontend/src/components/report/ReportStudio.tsx`
 - `caos/frontend/src/lib/workbench.test.ts`
+- `caos/frontend/src/lib/workbench.ts`
 
 ## TDD and verification
 
@@ -113,6 +114,93 @@ Fixed: overlapping history restoration; duplicate native guard adoption; bounded
 Verified fine: focus-pattern parity, no nested palette dialog, controlled RV disclosure state, 27-column caption, Report Studio governed lifecycle retention, Cases `aria-current`, and unchanged `beforeunload` protection.
 
 Still open: assembled-app execution of the bounded browser journey, intentionally assigned to Task 6.
+
+## Review correction
+
+The follow-up review's five Important findings and one Minor finding are resolved:
+
+1. `finishDraftDiscard` no longer clears either child dirty ref or logical history ownership before invoking a deferred action. The child now retires protection only when it reports clean or unmounts; a same-route link or boundary Back no-op therefore remains protected.
+2. Capture-phase internal-link interception now accepts only an unmodified primary same-tab gesture. Middle, Cmd/Ctrl, Shift, Alt, `_blank`, and other browsing-context targets retain native behavior without prompting the dirty original tab. Browsing-context keywords are handled ASCII case-insensitively.
+3. Report Studio reports clean on actual unmount. A confirmed same-URL pathway change reports clean before changing pathway, so it retires exactly the one current sentinel rather than clearing ownership early.
+4. Cmd/Ctrl+K checks for an already-open native dialog and cannot stack the command palette over discard or another modal.
+5. The bounded smoke source now covers dirty case, link, palette, pathway, and history cancel/confirm branches; Escape and focus return; modified-click bypass; same-route protection; one-boundary history confirmation; and nested-palette prevention. Pure unit checks cover gesture disposition and single deferred callback resolution.
+6. Cases filtered-empty state now has a primary **Reset filters** action that clears search and restores the all-authority filter.
+
+### Correction TDD and gates
+
+- Focused RED: four intended failures pinned the missing reset action, premature discard ownership clearing, gesture helper, and callback resolver. A tournament edge case then failed for uppercase `_SELF`.
+- Focused GREEN: `npm run test:unit -- --test-name-pattern='Cases makes|draft navigation uses|draft link interception|discard resolution|Workspace owns'` — 111 tests discovered, all passed; the direct `_SELF` run passed 27/27.
+- Full frontend units after the tournament: `npm run test:unit` — 111/111 passed; existing `MODULE_TYPELESS_PACKAGE_JSON` warnings only.
+- Lint: `npm run lint` — passed.
+- Local TypeScript: `./node_modules/.bin/tsc --noEmit` — passed.
+- Production build: `npm run build` — passed; all 12 static pages generated.
+- Static journey syntax: `node --check scripts/workbench-smoke.mjs` — passed.
+- `git diff --check` — passed.
+
+### Bounded history trace
+
+A focused standalone Chromium trace pushed a same-URL guard entry, then observed the first Back emit exactly one `popstate` to the prior state. The confirmed second Back crossed the document and destroyed the page execution context. This validates the implementation split: confirmed same-document traversal is consumed by the `popstate` branch; confirmed cross-document traversal is admitted by the one-shot `beforeunload` branch. The existing one-second fence is used only when neither event occurs, where it re-arms a still-dirty owner. The assembled CAOS route remains unavailable because the process on `:8000` is API-only; Task 6 owns the combined-app smoke execution.
+
+### Correction rewrite tournament
+
+- **Target 1**: `Workspace` pending-link release within the draft/history orchestration. **Winner: Snippet B**, replacing the one-property `{ from }` ref with the origin URL string. It preserves the exact ownership side effects while removing one allocation/property lookup and making the comparison direct.
+- **Target 2**: `isSameTabPrimaryGesture`. **Winner: Snippet B**, combining the modifier predicate and normalizing the target keyword for ASCII case-insensitive `_self`. It remains allocation-free for the common empty target, preserves every bypass branch, and fixes uppercase `_SELF` under a focused red/green test.
+- **Impact-set re-check**: Workspace model/report callbacks, case selection, Next link replay, `popstate`, `beforeunload`, Report Studio pathway selection, unit contracts, TypeScript, and production build all pass without signature changes.
+- **Final code**:
+
+```ts
+const pendingDraftLinkRef = useRef<string | null>(null);
+
+const releaseCleanDraftGuard = useCallback(() => {
+  const from = pendingDraftLinkRef.current;
+  pendingDraftLinkRef.current = null;
+  if (typeof window !== "undefined" && from !== null && window.location.href !== from) {
+    modelHistoryGuardRef.current = false;
+    return;
+  }
+  retireOwnedHistoryGuard();
+}, [retireOwnedHistoryGuard]);
+
+export function isSameTabPrimaryGesture(event: DraftLinkGesture, target = "") {
+  return event.button === 0
+    && !(event.metaKey || event.ctrlKey || event.shiftKey || event.altKey)
+    && (!target || target.toLowerCase() === "_self");
+}
+```
+
+### Correction confidence review
+
+Least confident about (ranked):
+
+1. Confirmed browser Back could either double-traverse or drop protection at a boundary.
+   investigated → the Chromium trace proved the sentinel Back emits one same-document `popstate` and the confirmed second Back can cross documents; the code consumes exactly one confirmed event and re-arms only after a no-event fence while the child is still dirty.
+   verdict     → fine after event-driven trace and focused source coverage.
+   patch       → explicit confirmed-pop/beforeunload branches plus bounded no-event re-arm.
+2. A same-route confirmed link could be treated as a completed discard.
+   investigated → replay does not mutate dirty refs; without URL change or child cleanup, the owner and `beforeunload` fence remain live. The next case change still prompts in the smoke source.
+   verdict     → fine.
+   patch       → pending-origin comparison; no optimistic clearing in `finishDraftDiscard`.
+3. Report pathway confirm might retire zero or two sentinels.
+   investigated → `change()` reports clean synchronously once before `setPathway`; later load/cleanup reports are idempotent because retirement is already in flight or ownership is false.
+   verdict     → fine.
+   patch       → unmount cleanup plus clean-state-owned retirement.
+4. Modified gestures or a modal shortcut could create an unwanted same-tab/nested flow.
+   investigated → every modifier/button/target branch has a pure check; command opening is guarded by the native `dialog[open]` condition and the bounded smoke asserts both behaviors.
+   verdict     → fine.
+5. The tournament simplification could desynchronize source coverage.
+   investigated → the full unit gate caught the stale `{ from }` regex after the string-ref winner was applied.
+   verdict     → CONFIRMED test-contract drift.
+   patch       → updated the sentinel ownership assertion; 111/111 now pass.
+6. The expanded smoke could be syntactically valid but still race an assembled app.
+   investigated → syntax passes and interactions use bounded Playwright waits, but no combined frontend/backend route is currently available.
+   verdict     → open by assignment.
+   patch       → n/a; Task 6 executes the full combined journey.
+
+Fixed: premature discard clearing, history no-op re-arm, modified-link interception, Report cleanup/retirement, nested palette opening, Cases filtered-empty recovery, and tournament test-contract drift.
+
+Verified fine: one-boundary history event ordering, same-route protection, same-URL pathway retirement, focus/native dialog pattern, `beforeunload`, and all compile/build contracts.
+
+Still open: combined-app execution of the expanded smoke journey, owned by Task 6.
 
 ## Commit
 

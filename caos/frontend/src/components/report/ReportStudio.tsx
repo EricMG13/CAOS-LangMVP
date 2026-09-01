@@ -272,6 +272,8 @@ export default function ReportStudio({ caseId, role, selectedCase, onDraftStateC
     } finally { if (generation === loadGeneration.current) setLoading(false); }
   }, [caseId, onDraftStateChange, pathway]);
 
+  useEffect(() => () => onDraftStateChange(false), [onDraftStateChange]);
+
   useEffect(() => {
     loadGeneration.current += 1; draftGeneration.current = 0; saveGeneration.current = 0; savedVersion.current = 0; unsavedDraft.current = false; saveChain.current = Promise.resolve();
     lifecycleGeneration.current += 1; lifecycleInFlight.current = false; currentScope.current = `${caseId}\u0000${pathway}`;

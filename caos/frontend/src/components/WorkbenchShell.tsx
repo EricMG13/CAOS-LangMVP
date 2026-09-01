@@ -123,6 +123,7 @@ export default function WorkbenchShell({
   const resultCount = caseItems.length + workflowItems.length + toolItems.length + (exactEvidenceKind ? 1 : 0);
 
   const openPalette = () => {
+    if (document.querySelector("dialog[open]")) return;
     setPaletteOpen(true);
     setQuery("");
     setActiveResult(0);

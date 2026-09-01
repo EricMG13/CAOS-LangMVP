@@ -6,13 +6,13 @@ import { FormEvent, ReactNode, useCallback, useEffect, useMemo, useReducer, useR
 import EvidenceChip from "./EvidenceChip";
 import ModelBuilder from "./model/ModelBuilder";
 import ReportStudio from "./report/ReportStudio";
-import { EmptyPanel, IdentityValue, LoadState, MutationReceipt, StateBlock, StateNote, Unavailable } from "./states";
+import { EmptyBlock, EmptyPanel, IdentityValue, LoadState, MutationReceipt, StateBlock, StateNote, Unavailable } from "./states";
 import { api as request, firstErrorMessage, isUnavailableRoute, type ArtifactRecord, type CaseRecord, type LoanFinding, type LoanRow, type LoanUniverseResponse, type ResearchPlan, type RunRecord, type SourceRecord } from "../lib/api";
 import { displayValue, flattenValue, markdownBlocks, normalizeEvidenceRefs, type NormalizedEvidenceRef } from "../lib/artifactReader";
 import { initialAuthorityState, matchesAuthority, requestContext, workspaceAuthorityReducer, type AuthorityEvent } from "../lib/workspaceAuthority";
 
 import WorkbenchShell, { type DrawerState } from "./WorkbenchShell";
-import { type Destination, type Snapshot, type SnapshotView, acceptanceSlotSummary, acceptedAuthorityMatch, destinationFromSlug, destinationMeta, formatBlockLocator, formatDate, humanizeCode, moduleLabel, nodeStatusTone, routeDestinations, selectConclusionArtifact, withQuery } from "../lib/workbench";
+import { type Destination, type Snapshot, type SnapshotView, acceptanceSlotSummary, acceptedAuthorityMatch, destinationFromSlug, destinationMeta, formatBlockLocator, formatDate, humanizeCode, isSameTabPrimaryGesture, moduleLabel, nodeStatusTone, resolveDraftDiscard, routeDestinations, selectConclusionArtifact, withQuery } from "../lib/workbench";
 
 type WriteAccess = "yes" | "no" | "unknown";
 type DraftDiscardRequest = { detail: string; confirm: () => void; cancel?: () => void };
@@ -100,10 +100,14 @@ export default function Workspace({ destination, children }: { destination?: Des
   const modelDraftDirtyRef = useRef(false);
   const reportDraftDirtyRef = useRef(false);
   const discardPromptRef = useRef<DraftDiscardRequest | null>(null);
+  const replayingDraftLinkRef = useRef(false);
+  const pendingDraftLinkRef = useRef<string | null>(null);
   const modelHistoryGuardRef = useRef(false);
   const historyGuardRetiringRef = useRef(false);
   const historyGuardRearmRef = useRef(false);
   const suppressNextModelHistoryPopRef = useRef(false);
+  const confirmedHistoryPopRef = useRef(false);
+  const confirmedHistoryRearmFrameRef = useRef<number | null>(null);
   const modelHistoryPopFenceTimerRef = useRef<number | null>(null);
   const focusedBeforeRef = useRef<HTMLElement | null>(null);
   const lastDestinationRef = useRef(active);
@@ -142,17 +146,27 @@ export default function Workspace({ destination, children }: { destination?: Des
     }, 1000);
   }, []);
 
+  const releaseCleanDraftGuard = useCallback(() => {
+    const from = pendingDraftLinkRef.current;
+    pendingDraftLinkRef.current = null;
+    if (typeof window !== "undefined" && from !== null && window.location.href !== from) {
+      modelHistoryGuardRef.current = false;
+      return;
+    }
+    retireOwnedHistoryGuard();
+  }, [retireOwnedHistoryGuard]);
+
   const onModelDraftStateChange = useCallback((dirty: boolean) => {
     modelDraftDirtyRef.current = dirty;
     if (dirty) armOwnedHistoryGuard("model");
-    else if (!modelDraftDirtyRef.current && !reportDraftDirtyRef.current) retireOwnedHistoryGuard();
-  }, [armOwnedHistoryGuard, retireOwnedHistoryGuard]);
+    else if (!modelDraftDirtyRef.current && !reportDraftDirtyRef.current) releaseCleanDraftGuard();
+  }, [armOwnedHistoryGuard, releaseCleanDraftGuard]);
 
   const onReportDraftStateChange = useCallback((dirty: boolean) => {
     reportDraftDirtyRef.current = dirty;
     if (dirty) armOwnedHistoryGuard("report");
-    else if (!modelDraftDirtyRef.current && !reportDraftDirtyRef.current) retireOwnedHistoryGuard();
-  }, [armOwnedHistoryGuard, retireOwnedHistoryGuard]);
+    else if (!modelDraftDirtyRef.current && !reportDraftDirtyRef.current) releaseCleanDraftGuard();
+  }, [armOwnedHistoryGuard, releaseCleanDraftGuard]);
 
   const draftDiscardDetail = useCallback((action: string) => {
     const drafts = modelDraftDirtyRef.current && reportDraftDirtyRef.current
@@ -175,16 +189,9 @@ export default function Workspace({ destination, children }: { destination?: Des
     if (!prompt) return;
     discardPromptRef.current = null;
     setDiscardPrompt(null);
-    if (!confirmed) {
-      prompt.cancel?.();
-      if (!prompt.cancel && !modelDraftDirtyRef.current && !reportDraftDirtyRef.current) retireOwnedHistoryGuard();
-      return;
-    }
-    modelDraftDirtyRef.current = false;
-    reportDraftDirtyRef.current = false;
-    modelHistoryGuardRef.current = false;
-    prompt.confirm();
-  }, [retireOwnedHistoryGuard]);
+    resolveDraftDiscard(prompt, confirmed);
+    if (!confirmed && !prompt.cancel && !modelDraftDirtyRef.current && !reportDraftDirtyRef.current) releaseCleanDraftGuard();
+  }, [releaseCleanDraftGuard]);
 
   const commitCaseSelection = useCallback((nextCaseId: string, availableCases = cases) => {
     dispatchAuthority({ type: "selectCase", caseId: nextCaseId || null });
@@ -303,25 +310,61 @@ export default function Workspace({ destination, children }: { destination?: Des
     }
   };
 
+  const rearmAfterConfirmedHistory = useCallback(() => {
+    if (confirmedHistoryRearmFrameRef.current !== null) window.cancelAnimationFrame(confirmedHistoryRearmFrameRef.current);
+    confirmedHistoryRearmFrameRef.current = window.requestAnimationFrame(() => {
+      confirmedHistoryRearmFrameRef.current = null;
+      if (!modelDraftDirtyRef.current && !reportDraftDirtyRef.current) return;
+      modelHistoryGuardRef.current = false;
+      armOwnedHistoryGuard(modelDraftDirtyRef.current ? "model" : "report");
+    });
+  }, [armOwnedHistoryGuard]);
+
   useEffect(() => {
     // URL-derived state is hydrated after the server render to keep the shell deterministic.
     dispatchAuthority({ type: "hydrate", caseId: requestedCaseId || null, runId: requestedRunId || null });
     const controller = new AbortController();
     const guardDraftNavigation = (event: MouseEvent) => {
+      if (replayingDraftLinkRef.current) { replayingDraftLinkRef.current = false; return; }
       const target = event.target instanceof Element ? event.target.closest<HTMLElement>("a[href]") : null;
       const href = target?.getAttribute("href") || "";
-      if (!target || !href.startsWith("/") || target.getAttribute("download") !== null) return;
+      if (!target || !href.startsWith("/") || target.getAttribute("download") !== null || !isSameTabPrimaryGesture(event, target.getAttribute("target") || "")) return;
       if (!modelDraftDirtyRef.current && !reportDraftDirtyRef.current) return;
       event.preventDefault();
       event.stopImmediatePropagation();
       target.closest<HTMLDialogElement>("dialog[open]")?.close();
-      requestDraftDiscard(draftDiscardDetail("and leave this page"), () => target.click());
+      requestDraftDiscard(draftDiscardDetail("and leave this page"), () => {
+        pendingDraftLinkRef.current = window.location.href;
+        replayingDraftLinkRef.current = true;
+        target.click();
+        replayingDraftLinkRef.current = false;
+      });
+    };
+    const startConfirmedHistoryTraversal = () => {
+      confirmedHistoryPopRef.current = true;
+      suppressNextModelHistoryPopRef.current = true;
+      window.history.back();
+      if (modelHistoryPopFenceTimerRef.current !== null) window.clearTimeout(modelHistoryPopFenceTimerRef.current);
+      modelHistoryPopFenceTimerRef.current = window.setTimeout(() => {
+        if (!confirmedHistoryPopRef.current) return;
+        confirmedHistoryPopRef.current = false;
+        suppressNextModelHistoryPopRef.current = false;
+        modelHistoryPopFenceTimerRef.current = null;
+        rearmAfterConfirmedHistory();
+      }, 1000);
     };
     const guardBrowserHistory = (event: PopStateEvent) => {
       if (suppressNextModelHistoryPopRef.current) {
+        const confirmed = confirmedHistoryPopRef.current;
+        confirmedHistoryPopRef.current = false;
         suppressNextModelHistoryPopRef.current = false;
         if (modelHistoryPopFenceTimerRef.current !== null) window.clearTimeout(modelHistoryPopFenceTimerRef.current);
         modelHistoryPopFenceTimerRef.current = null;
+        if (confirmed) {
+          modelHistoryGuardRef.current = false;
+          rearmAfterConfirmedHistory();
+          return;
+        }
         if (historyGuardRetiringRef.current) {
           historyGuardRetiringRef.current = false;
           const rearm = historyGuardRearmRef.current || modelDraftDirtyRef.current || reportDraftDirtyRef.current;
@@ -345,9 +388,17 @@ export default function Workspace({ destination, children }: { destination?: Des
           modelHistoryPopFenceTimerRef.current = null;
         }, 1000);
       };
-      requestDraftDiscard(draftDiscardDetail("and use browser history"), () => window.history.back(), restoreHistoryGuard);
+      requestDraftDiscard(draftDiscardDetail("and use browser history"), startConfirmedHistoryTraversal, restoreHistoryGuard);
     };
     const guardUnload = (event: BeforeUnloadEvent) => {
+      if (confirmedHistoryPopRef.current) {
+        confirmedHistoryPopRef.current = false;
+        suppressNextModelHistoryPopRef.current = false;
+        modelHistoryGuardRef.current = false;
+        if (modelHistoryPopFenceTimerRef.current !== null) window.clearTimeout(modelHistoryPopFenceTimerRef.current);
+        modelHistoryPopFenceTimerRef.current = null;
+        return;
+      }
       if (!modelDraftDirtyRef.current && !reportDraftDirtyRef.current) return;
       event.preventDefault();
       event.returnValue = "";
@@ -365,10 +416,10 @@ export default function Workspace({ destination, children }: { destination?: Des
       }
     });
     const timer = window.setTimeout(() => void refreshCases(controller.signal), 0);
-    return () => { controller.abort(); window.clearTimeout(timer); if (modelHistoryPopFenceTimerRef.current !== null) window.clearTimeout(modelHistoryPopFenceTimerRef.current); suppressNextModelHistoryPopRef.current = false; historyGuardRetiringRef.current = false; historyGuardRearmRef.current = false; modelHistoryPopFenceTimerRef.current = null; document.removeEventListener("click", guardDraftNavigation, true); window.removeEventListener("popstate", guardBrowserHistory, true); window.removeEventListener("beforeunload", guardUnload); };
+    return () => { controller.abort(); window.clearTimeout(timer); if (modelHistoryPopFenceTimerRef.current !== null) window.clearTimeout(modelHistoryPopFenceTimerRef.current); if (confirmedHistoryRearmFrameRef.current !== null) window.cancelAnimationFrame(confirmedHistoryRearmFrameRef.current); suppressNextModelHistoryPopRef.current = false; confirmedHistoryPopRef.current = false; confirmedHistoryRearmFrameRef.current = null; historyGuardRetiringRef.current = false; historyGuardRearmRef.current = false; modelHistoryPopFenceTimerRef.current = null; document.removeEventListener("click", guardDraftNavigation, true); window.removeEventListener("popstate", guardBrowserHistory, true); window.removeEventListener("beforeunload", guardUnload); };
     // The selected case is intentionally not a fetch dependency.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [armOwnedHistoryGuard, draftDiscardDetail, requestDraftDiscard]);
+  }, [armOwnedHistoryGuard, draftDiscardDetail, rearmAfterConfirmedHistory, requestDraftDiscard]);
 
   useEffect(() => {
     if (!hydrated) return;
@@ -784,8 +835,9 @@ function CasesView({ writeAccess, cases, casesLoading, selectedCase, caseId, cre
       || (snapshotFilter === "accepted" ? Boolean(item.accepted_snapshot_id) : !item.accepted_snapshot_id);
     return matchesSearch && matchesFilter;
   }), [cases, search, snapshotFilter]);
+  const resetFilters = () => { setSearch(""); setSnapshotFilter("all"); };
   return <div className="grid cases-layout">
-    <section className="panel cases-register"><div className="panel-header"><h2>Monitored credits</h2><span className="panel-meta">{casesLoading ? "Loading…" : `${visibleCases.length} of ${cases.length}`}</span></div><div className="worklist-toolbar"><div className="field"><label htmlFor="case-search">Search credits</label><input id="case-search" type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Issuer, case, or sector" /></div><div className="field"><label htmlFor="case-snapshot-filter">Authority</label><select id="case-snapshot-filter" value={snapshotFilter} onChange={(event) => setSnapshotFilter(event.target.value as "all" | "accepted" | "unaccepted")}><option value="all">All credits</option><option value="accepted">Accepted authority</option><option value="unaccepted">No accepted authority</option></select></div></div><div className="panel-body table-wrap" tabIndex={0} role="region" aria-label="Monitored credit register"><table><thead><tr><th scope="col">Credit</th><th scope="col">Case</th><th scope="col">Evidence</th><th scope="col">Authority</th><th scope="col">Action</th></tr></thead><tbody>{visibleCases.map((item) => <tr aria-current={caseId === item.id ? "true" : undefined} className={caseId === item.id ? "selected-row" : undefined} key={item.id}><td><strong>{item.issuer}</strong><div className="muted">{item.sector}</div></td><td>{item.name}</td><td className="num">{item.source_count == null ? "Unavailable" : `${item.source_count} source${item.source_count === 1 ? "" : "s"}`}</td><td>{item.accepted_snapshot_id ? <span className="status success">Accepted</span> : <span className="status warning">Not accepted</span>}</td><td><Link className="button small primary" href={withQuery("/command-center", { case: item.id })}>Open credit</Link></td></tr>)}</tbody></table>{!visibleCases.length && <LoadState loading={casesLoading} empty={cases.length ? "No credits match this search and filter." : "No credits yet. Create the first case to establish the context boundary."} />}</div></section>
+    <section className="panel cases-register"><div className="panel-header"><h2>Monitored credits</h2><span className="panel-meta">{casesLoading ? "Loading…" : `${visibleCases.length} of ${cases.length}`}</span></div><div className="worklist-toolbar"><div className="field"><label htmlFor="case-search">Search credits</label><input id="case-search" type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Issuer, case, or sector" /></div><div className="field"><label htmlFor="case-snapshot-filter">Authority</label><select id="case-snapshot-filter" value={snapshotFilter} onChange={(event) => setSnapshotFilter(event.target.value as "all" | "accepted" | "unaccepted")}><option value="all">All credits</option><option value="accepted">Accepted authority</option><option value="unaccepted">No accepted authority</option></select></div></div><div className="panel-body table-wrap" tabIndex={0} role="region" aria-label="Monitored credit register"><table><thead><tr><th scope="col">Credit</th><th scope="col">Case</th><th scope="col">Evidence</th><th scope="col">Authority</th><th scope="col">Action</th></tr></thead><tbody>{visibleCases.map((item) => <tr aria-current={caseId === item.id ? "true" : undefined} className={caseId === item.id ? "selected-row" : undefined} key={item.id}><td><strong>{item.issuer}</strong><div className="muted">{item.sector}</div></td><td>{item.name}</td><td className="num">{item.source_count == null ? "Unavailable" : `${item.source_count} source${item.source_count === 1 ? "" : "s"}`}</td><td>{item.accepted_snapshot_id ? <span className="status success">Accepted</span> : <span className="status warning">Not accepted</span>}</td><td><Link className="button small primary" href={withQuery("/command-center", { case: item.id })}>Open credit</Link></td></tr>)}</tbody></table>{!visibleCases.length && (cases.length ? <EmptyBlock><p>No credits match this search and filter.</p><button className="button primary" type="button" onClick={resetFilters}>Reset filters</button></EmptyBlock> : <LoadState loading={casesLoading} empty="No credits yet. Create the first case to establish the context boundary." />)}</div></section>
     <section className="panel cases-create"><div className="panel-header"><h2>Create case</h2></div><div className="panel-body">{writeAccess === "yes" ? <form onSubmit={createCase}><div className="field"><label htmlFor="case-name">Case name</label><input id="case-name" name="name" autoComplete="off" required placeholder="Q3 credit review…" /></div><div className="field"><label htmlFor="issuer">Issuer</label><input id="issuer" name="issuer" autoComplete="organization" required placeholder="Issuer legal name…" /></div><div className="field"><label htmlFor="sector">Sector</label><input id="sector" name="sector" autoComplete="off" placeholder="Business services…" /></div><button className={`button ${selectedCase ? "" : "primary"}`} type="submit" disabled={pendingAction === "create-case"}>{pendingAction === "create-case" ? "Creating…" : "Create case"}</button></form> : <WriteBlocked access={writeAccess} action="case creation" />}</div></section>
     {/* Fit truth: render the served fit when the wire carries one; claim NEEDS_SOURCE
         only when the case verifiably has zero sources (the server's own rule); stay

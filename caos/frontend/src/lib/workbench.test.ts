@@ -46,6 +46,7 @@ test("Cases makes opening the selected credit primary and keeps portfolio limits
   const register = workspace.slice(workspace.indexOf('className="panel cases-register"'), workspace.indexOf('className="panel cases-create"'));
   assert.match(register, /<tr aria-current=\{caseId === item\.id \? "true" : undefined\}/);
   assert.match(register, /className="button small primary"[^>]*>Open credit/);
+  assert.match(register, /className="button primary"[^>]*>Reset filters/);
   assert.ok(workspace.indexOf('id="portfolio-contract-title"') > workspace.indexOf('className="panel cases-fit"'), "portfolio limitation did not follow the primary work");
 });
 
@@ -65,6 +66,41 @@ test("draft navigation uses one focus-returning native dialog and preserves befo
   assert.match(workspace, /requestDraftDiscard/);
   assert.match(workspace, /if \(discardPromptRef\.current\) \{ cancel\?\.\(\); return false; \}/);
   assert.match(workspace, /if \(state\?\.caosModelDraftGuard \|\| state\?\.caosReportDraftGuard\) \{ modelHistoryGuardRef\.current = true; return; \}/);
+  const finish = workspace.slice(workspace.indexOf("const finishDraftDiscard"), workspace.indexOf("const commitCaseSelection"));
+  assert.doesNotMatch(finish, /(?:model|report)DraftDirtyRef\.current = false|modelHistoryGuardRef\.current = false/);
+  assert.match(reportStudio, /useEffect\(\(\) => \(\) => onDraftStateChange\(false\), \[onDraftStateChange\]\)/);
+  assert.match(workbenchShell, /document\.querySelector\("dialog\[open\]"\)/);
+  for (const proof of ["modified dirty link was intercepted", "dirty same-route confirmation dropped protection", "command shortcut opened a nested modal", "dirty pathway cancel changed pathway", "dirty pathway confirm did not change pathway", "confirming browser history did not traverse exactly one boundary"]) assert.match(smoke, new RegExp(proof));
+});
+
+test("draft link interception accepts only an unmodified primary same-tab gesture", async () => {
+  const workbenchModule = await import("./workbench.ts") as unknown as { isSameTabPrimaryGesture?: (event: { button: number; metaKey: boolean; ctrlKey: boolean; shiftKey: boolean; altKey: boolean }, target?: string) => boolean };
+  assert.equal(typeof workbenchModule.isSameTabPrimaryGesture, "function");
+  const gesture = { button: 0, metaKey: false, ctrlKey: false, shiftKey: false, altKey: false };
+  assert.equal(workbenchModule.isSameTabPrimaryGesture?.(gesture), true);
+  for (const change of [
+    { button: 1 },
+    { metaKey: true },
+    { ctrlKey: true },
+    { shiftKey: true },
+    { altKey: true },
+  ]) assert.equal(workbenchModule.isSameTabPrimaryGesture?.({ ...gesture, ...change }), false, JSON.stringify(change));
+  assert.equal(workbenchModule.isSameTabPrimaryGesture?.(gesture, "_blank"), false);
+  assert.equal(workbenchModule.isSameTabPrimaryGesture?.(gesture, "_self"), true);
+  assert.equal(workbenchModule.isSameTabPrimaryGesture?.(gesture, "_SELF"), true);
+});
+
+test("discard resolution invokes one deferred callback without changing caller-owned protection", async () => {
+  const workbenchModule = await import("./workbench.ts") as unknown as { resolveDraftDiscard?: (request: { confirm: () => void; cancel?: () => void }, confirmed: boolean) => void };
+  assert.equal(typeof workbenchModule.resolveDraftDiscard, "function");
+  const protectedDraft = true;
+  let confirms = 0;
+  let cancels = 0;
+  const request = { confirm: () => { confirms += 1; }, cancel: () => { cancels += 1; } };
+  workbenchModule.resolveDraftDiscard?.(request, true);
+  assert.deepEqual({ protectedDraft, confirms, cancels }, { protectedDraft: true, confirms: 1, cancels: 0 });
+  workbenchModule.resolveDraftDiscard?.(request, false);
+  assert.deepEqual({ protectedDraft, confirms, cancels }, { protectedDraft: true, confirms: 1, cancels: 1 });
 });
 
 test("DAG nodes use neutral containers and shape-coded visible statuses", async () => {

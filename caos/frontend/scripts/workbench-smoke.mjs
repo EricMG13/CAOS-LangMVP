@@ -1029,12 +1029,19 @@ try {
   assert.notEqual(modelRevisions[0].outputs.total_leverage, 4.2, "forecast assumption did not change the signed forward output");
   assert.equal(await historicalWorksheetCell.innerText(), historicalWorksheetValue, "forecast assumption changed a historical source cell");
   assert.equal(await calculatedWorksheetCell.innerText(), calculatedWorksheetValue, "forecast assumption changed a calculated historical cell");
+  await page.evaluate(() => {
+    const url = new URL(window.location.href);
+    url.searchParams.set("task5-history", "prior");
+    window.history.pushState({ task5History: "prior" }, "", url);
+  });
   await firstAssumption.fill("0.06");
   await firstAssumption.press("Enter");
   const discardDraftDialog = () => page.getByRole("dialog", { name: "Discard draft changes?" });
   const caseSelect = page.getByRole("combobox", { name: "Select case" });
   await caseSelect.selectOption(raceCase.id);
   await discardDraftDialog().waitFor();
+  await page.keyboard.press(process.platform === "darwin" ? "Meta+K" : "Control+K");
+  assert.equal(await page.getByRole("dialog", { name: "Command palette" }).isVisible(), false, "command shortcut opened a nested modal");
   assert.ok(page.url().includes(`case=${caseRecord.id}`), "dismissed dirty-draft warning changed the selected case");
   await discardDraftDialog().getByRole("button", { name: "Keep editing" }).click();
   assert.equal(await caseSelect.evaluate((element) => document.activeElement === element), true, "canceling a case discard did not return focus to the case selector");
@@ -1045,6 +1052,19 @@ try {
   await discardDraftDialog().getByRole("button", { name: "Keep editing" }).click();
   assert.equal(page.url(), dirtyURL, "dismissed dirty-draft warning allowed internal workspace navigation");
   assert.equal(await sourcesLink.evaluate((element) => document.activeElement === element), true, "canceling link navigation did not return focus to its trigger");
+  for (const gesture of [{ ctrlKey: true, button: 0 }, { button: 1 }, { button: 0, target: "_blank" }]) {
+    const intercepted = await sourcesLink.evaluate((element, candidate) => {
+      const originalTarget = element.getAttribute("target");
+      if (candidate.target) element.setAttribute("target", candidate.target);
+      let preventedBeforeTarget = true;
+      element.addEventListener("click", (event) => { preventedBeforeTarget = event.defaultPrevented; event.preventDefault(); }, { once: true });
+      element.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, button: candidate.button, ctrlKey: candidate.ctrlKey === true }));
+      if (originalTarget === null) element.removeAttribute("target"); else element.setAttribute("target", originalTarget);
+      return preventedBeforeTarget;
+    }, gesture);
+    assert.equal(intercepted, false, `modified dirty link was intercepted: ${JSON.stringify(gesture)}`);
+  }
+  assert.equal(await discardDraftDialog().isVisible(), false, "modified dirty link opened the discard dialog");
   const commandTrigger = page.getByRole("button", { name: "Open command palette" });
   await commandTrigger.click();
   const dirtyDraftPalette = page.getByRole("dialog", { name: "Command palette" });
@@ -1062,6 +1082,18 @@ try {
   assert.equal(page.url(), dirtyURL, "dismissed dirty-draft warning allowed browser history navigation");
   assert.equal(await firstAssumption.inputValue(), "0.06", "browser history restoration dropped the dirty local forecast value");
   assert.equal(await firstAssumption.evaluate((element) => document.activeElement === element), true, "Escape did not return focus to the dirty editor after browser history cancelation");
+  await page.evaluate(() => window.history.back());
+  await discardDraftDialog().waitFor();
+  await discardDraftDialog().getByRole("button", { name: "Discard changes" }).click();
+  await page.waitForURL((url) => url.searchParams.get("task5-history") === null);
+  assert.equal(await firstAssumption.inputValue(), "0.06", "confirming browser history cleared the draft before its owning editor changed state");
+  assert.equal(new URL(page.url()).searchParams.has("task5-history"), false, "confirming browser history did not traverse exactly one boundary");
+  const sameRouteModelLink = page.getByRole("link", { name: "Model", exact: true }).first();
+  await sameRouteModelLink.click();
+  await discardDraftDialog().waitFor();
+  await discardDraftDialog().getByRole("button", { name: "Discard changes" }).click();
+  await discardDraftDialog().waitFor({ state: "hidden" });
+  assert.equal(await firstAssumption.inputValue(), "0.06", "dirty same-route confirmation dropped protection");
   await caseSelect.selectOption(raceCase.id);
   await discardDraftDialog().waitFor();
   await discardDraftDialog().getByRole("button", { name: "Discard changes" }).click();
@@ -1439,6 +1471,22 @@ try {
 
   await page.goto(`${baseURL}/report-studio/?case=${caseRecord.id}`, { waitUntil: "networkidle" });
   await page.getByRole("combobox", { name: "Pathway template" }).selectOption("EARNINGS_UPDATE");
+  const pathwaySelect = page.getByRole("combobox", { name: "Pathway template" });
+  const dirtyPathwayEditor = page.getByRole("textbox", { name: "Credit Snapshot" });
+  await dirtyPathwayEditor.fill("Dirty pathway fence value");
+  await page.getByText("Unsaved changes", { exact: true }).waitFor();
+  await pathwaySelect.selectOption("FULL_CREDIT");
+  await discardDraftDialog().waitFor();
+  assert.equal(await pathwaySelect.inputValue(), "EARNINGS_UPDATE", "dirty pathway cancel changed pathway before confirmation");
+  await discardDraftDialog().getByRole("button", { name: "Keep editing" }).click();
+  assert.equal(await pathwaySelect.evaluate((element) => document.activeElement === element), true, "dirty pathway cancel did not return focus to the pathway selector");
+  await pathwaySelect.selectOption("FULL_CREDIT");
+  await discardDraftDialog().waitFor();
+  await discardDraftDialog().getByRole("button", { name: "Discard changes" }).click();
+  await reportTitle("Investment Committee Credit Memo").waitFor();
+  assert.equal(await pathwaySelect.inputValue(), "FULL_CREDIT", "dirty pathway confirm did not change pathway");
+  await pathwaySelect.selectOption("EARNINGS_UPDATE");
+  await reportTitle("Earnings Update").waitFor();
   const dirtyHistoryEditor = page.getByRole("textbox", { name: "Credit Snapshot" });
   await dirtyHistoryEditor.fill("Dirty history fence value");
   await page.getByText("Unsaved changes", { exact: true }).waitFor();
@@ -1702,7 +1750,10 @@ try {
     (await registerMeta.innerText()).startsWith("0 of "),
     "case register count did not follow the search filter",
   );
-  await caseSearch.fill("");
+  await page.getByRole("button", { name: "Reset filters" }).click();
+  assert.equal(await caseSearch.inputValue(), "", "case filter recovery did not clear search");
+  assert.equal(await page.getByRole("combobox", { name: "Authority" }).inputValue(), "all", "case filter recovery did not restore all authority states");
+  await page.locator(".cases-register tbody tr").first().waitFor();
   const snapshotFilter = page.getByRole("combobox", { name: "Authority" });
   await snapshotFilter.selectOption("accepted");
   await page.locator(".cases-register tbody tr").first().waitFor();

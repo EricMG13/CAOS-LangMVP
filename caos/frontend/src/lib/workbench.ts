@@ -142,6 +142,19 @@ export function compactIdentity(value: string, leading = 12, trailing = 4) {
   return value.length <= leading + trailing ? value : `${value.slice(0, leading)}…${trailing ? value.slice(-trailing) : ""}`;
 }
 
+export type DraftLinkGesture = Pick<MouseEvent, "button" | "metaKey" | "ctrlKey" | "shiftKey" | "altKey">;
+
+export function isSameTabPrimaryGesture(event: DraftLinkGesture, target = "") {
+  return event.button === 0
+    && !(event.metaKey || event.ctrlKey || event.shiftKey || event.altKey)
+    && (!target || target.toLowerCase() === "_self");
+}
+
+export function resolveDraftDiscard(request: { confirm: () => void; cancel?: () => void }, confirmed: boolean) {
+  if (confirmed) request.confirm();
+  else request.cancel?.();
+}
+
 type ConclusionArtifact = {
   module_id: string;
   markdown?: string | null;
