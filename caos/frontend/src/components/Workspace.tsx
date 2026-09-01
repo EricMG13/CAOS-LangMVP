@@ -15,7 +15,7 @@ import WorkbenchShell, { type DrawerState } from "./WorkbenchShell";
 import { type Destination, type DraftHistoryTraversal, type Snapshot, type SnapshotView, acceptanceSlotSummary, acceptedAuthorityMatch, beginDraftHistoryTraversal, destinationFromSlug, destinationMeta, draftHistoryEntryId, draftHistoryNeedsRearm, finishDraftHistoryTraversal, formatBlockLocator, formatDate, historyStateForExternalReplace, humanizeCode, isSameTabPrimaryGesture, moduleLabel, nodeStatusTone, observeDraftHistoryPop, protectDirtyDraftUnload, resolveDraftDiscard, routeDestinations, selectConclusionArtifact, withQuery } from "../lib/workbench";
 
 type WriteAccess = "yes" | "no" | "unknown";
-type DraftDiscardRequest = { detail: string; confirm: () => void; cancel?: () => void };
+type DraftDiscardRequest = { detail: string; confirm: () => void; cancel?: () => void; trigger: HTMLElement | null };
 type RequestDraftDiscard = (detail: string, confirm: () => void, cancel?: () => void) => boolean;
 type DraftHistoryState = {
   caosDraftHistoryEntryId?: string;
@@ -276,7 +276,8 @@ export default function Workspace({ destination, children }: { destination?: Des
   const requestDraftDiscard = useCallback<RequestDraftDiscard>((detail, confirm, cancel) => {
     if (!modelDraftDirtyRef.current && !reportDraftDirtyRef.current) { confirm(); return true; }
     if (discardPromptRef.current) { cancel?.(); return false; }
-    const next = { detail, confirm, cancel };
+    const active = document.activeElement;
+    const next = { detail, confirm, cancel, trigger: active instanceof HTMLElement && active !== document.body ? active : focusedBeforeRef.current };
     discardPromptRef.current = next;
     setDiscardPrompt(next);
     return false;
@@ -927,7 +928,7 @@ export default function Workspace({ destination, children }: { destination?: Des
       <div key={`${active}:${caseId}`}>{routeIsKnown ? <>{renderDestination()}{children}</> : children}</div>
     </WorkbenchShell>
     <AcceptDialog open={acceptPrompt} run={run} replaces={authority?.latest_accepted ?? null} pending={pendingAction === "accept-run"} onConfirm={confirmAccept} onClose={() => setAcceptPrompt(false)} />
-    <DraftDiscardDialog open={discardPrompt !== null} detail={discardPrompt?.detail || ""} onConfirm={() => finishDraftDiscard(true)} onClose={() => finishDraftDiscard(false)} />
+    <DraftDiscardDialog open={discardPrompt !== null} detail={discardPrompt?.detail || ""} trigger={discardPrompt?.trigger || null} onConfirm={() => finishDraftDiscard(true)} onClose={() => finishDraftDiscard(false)} />
   </>;
 }
 
@@ -1151,7 +1152,7 @@ function AcceptDialog({ open, run, replaces, pending, onConfirm, onClose }: { op
   </dialog>;
 }
 
-function DraftDiscardDialog({ open, detail, onConfirm, onClose }: { open: boolean; detail: string; onConfirm: () => void; onClose: () => void }) {
+function DraftDiscardDialog({ open, detail, trigger, onConfirm, onClose }: { open: boolean; detail: string; trigger: HTMLElement | null; onConfirm: () => void; onClose: () => void }) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const headingRef = useRef<HTMLHeadingElement>(null);
   const triggerRef = useRef<HTMLElement | null>(null);
@@ -1163,12 +1164,12 @@ function DraftDiscardDialog({ open, detail, onConfirm, onClose }: { open: boolea
       return;
     }
     if (!dialog.open) {
-      triggerRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+      triggerRef.current = trigger || (document.activeElement instanceof HTMLElement ? document.activeElement : null);
       dialog.showModal();
     }
     const frame = window.requestAnimationFrame(() => headingRef.current?.focus());
     return () => window.cancelAnimationFrame(frame);
-  }, [open]);
+  }, [open, trigger]);
   const close = () => {
     onClose();
     const trigger = triggerRef.current;
