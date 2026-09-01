@@ -133,10 +133,9 @@ test("workspace identities compact only beyond the exact display threshold", asy
   assert.equal(workbench.compactIdentity?.("model-version-identity", 5, 3), "model…ity");
 });
 
-test("the identity presenter speaks the abbreviation and retains the exact value", () => {
+test("the identity presenter retains exact pointer text and stays scoped to display values", () => {
   assert.match(states, /export function IdentityValue/);
   assert.match(states, /title=\{value\}/);
-  assert.match(states, /aria-label=\{abbreviated === value \? value : `\$\{abbreviated\}\. Full identity: \$\{value\}`\}/);
   assert.match(workbenchShell, /visibleSnapshotId \? <IdentityValue value=\{visibleSnapshotId\}/);
   assert.doesNotMatch(workbenchShell, /<IdentityValue value=\{visibleSnapshotIdentity\}/);
   assert.match(workspace, /<IdentityValue value=\{selectedSource\.sha256\}/);

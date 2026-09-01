@@ -29,7 +29,8 @@ export { humanizeCode };
 
 export function IdentityValue({ value, className = "mono" }: { value: string; className?: string }) {
   const abbreviated = compactIdentity(value);
-  return <span className={className} title={value} aria-label={abbreviated === value ? value : `${abbreviated}. Full identity: ${value}`}>{abbreviated}</span>;
+  const spoken = abbreviated === value ? value : `${abbreviated}. Full identity: ${value}`;
+  return <span className={className} title={value}><span aria-hidden="true">{abbreviated}</span><span className="sr-only">{spoken}</span></span>;
 }
 
 function liveProps(live?: StateLive) {
