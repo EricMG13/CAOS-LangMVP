@@ -10,6 +10,7 @@ CAS on the build row, so a concurrent duplicate worker loses the race cleanly.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import sys
@@ -72,21 +73,29 @@ def main() -> None:
     data = Path(os.getenv("CAOS_DATA_DIR", str(settings.storage_dir))).resolve()
     data.mkdir(parents=True, exist_ok=True)
     store = DomainStore.from_url(settings.database_url or f"sqlite:///{data / 'caos.db'}")
-    # The engine here only lends the model service its snapshot/artifact reads
-    # and admission accounting; this process never drives run graphs, so the
-    # checkpoint file is never opened.
-    engine = Engine.create(settings=settings, store=store, checkpoint_path=data / "checkpoints.db")
-    service = ModelService(store=store, vault_dir=settings.storage_dir, engine=engine)
-    poll_seconds = float(os.getenv("WORKER_POLL_SECONDS", "2"))
-    once = "--once" in sys.argv[1:]
-    with store.single_instance("worker"):
-        while True:
-            processed = run_pending(service)
-            if once:
-                print({"processed": processed})
-                return
-            if not processed:
-                time.sleep(poll_seconds)
+    engine = None
+    try:
+        # The engine here only lends the model service its snapshot/artifact reads
+        # and admission accounting; this process never drives run graphs, so the
+        # checkpoint file is never opened.
+        engine = Engine.create(settings=settings, store=store, checkpoint_path=data / "checkpoints.db")
+        service = ModelService(store=store, vault_dir=settings.storage_dir, engine=engine)
+        poll_seconds = float(os.getenv("WORKER_POLL_SECONDS", "2"))
+        once = "--once" in sys.argv[1:]
+        with store.single_instance("worker"):
+            while True:
+                processed = run_pending(service)
+                if once:
+                    print({"processed": processed})
+                    return
+                if not processed:
+                    time.sleep(poll_seconds)
+    finally:
+        try:
+            if engine is not None:
+                asyncio.run(engine.aclose())
+        finally:
+            store.close()
 
 
 if __name__ == "__main__":

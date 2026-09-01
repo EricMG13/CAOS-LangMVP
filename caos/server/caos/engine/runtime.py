@@ -219,13 +219,11 @@ class Engine:
         error: BaseException | None = None
         try:
             if initializations:
-                await asyncio.gather(*initializations, return_exceptions=True)
+                await self._drain_tasks(initializations)
 
             continuations = tuple(task for task in self._continuations if task is not current)
-            for task in continuations:
-                task.cancel()
             if continuations:
-                await asyncio.gather(*continuations, return_exceptions=True)
+                await self._drain_tasks(continuations, cancel=True)
             self._continuations.clear()
 
             with self._lifecycle_lock:
@@ -262,6 +260,40 @@ class Engine:
                         waiter_loop.call_soon_threadsafe(self._finish_close_waiter, close_waiter, error)
                 except RuntimeError:
                     pass
+
+    async def _drain_tasks(self, tasks: tuple[asyncio.Task[Any], ...], *, cancel: bool = False) -> None:
+        """Wait for tasks on the loop that owns each task, cancelling when asked."""
+        loop = asyncio.get_running_loop()
+        local: list[asyncio.Task[Any]] = []
+        foreign: list[asyncio.Future[Any]] = []
+        for task in tasks:
+            if task.done():
+                continue
+            owner = task.get_loop()
+            if owner is loop:
+                if cancel:
+                    task.cancel()
+                local.append(task)
+                continue
+            if (
+                owner.is_closed()
+                or not owner.is_running()
+                or getattr(owner, "_thread_id", None) == threading.get_ident()
+            ):
+                raise RuntimeError("cannot close a task without a runnable owner loop")
+            if cancel:
+                owner.call_soon_threadsafe(task.cancel)
+            foreign.append(asyncio.wrap_future(
+                asyncio.run_coroutine_threadsafe(self._wait_for_task(task), owner)
+            ))
+        if local:
+            await asyncio.gather(*local, return_exceptions=True)
+        if foreign:
+            await asyncio.gather(*foreign, return_exceptions=True)
+
+    @staticmethod
+    async def _wait_for_task(task: asyncio.Task[Any]) -> None:
+        await asyncio.gather(task, return_exceptions=True)
 
     @staticmethod
     def _finish_close_waiter(waiter: asyncio.Future[None], error: BaseException | None) -> None:

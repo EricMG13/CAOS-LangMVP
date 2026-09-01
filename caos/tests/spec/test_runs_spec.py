@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import sqlite3
+import threading
 from contextlib import closing
 
 import pytest
@@ -180,6 +181,109 @@ async def test_engine_close_catches_a_saver_initializing_concurrently(
         release.set()
         await asyncio.gather(initializing, *(task for task in (closing,) if task is not None), return_exceptions=True)
         await engine.aclose()
+
+
+async def test_engine_close_drains_foreign_loop_continuation(tmp_path, settings, store):
+    from caos.engine.runtime import Engine
+
+    started = threading.Event()
+    finished = threading.Event()
+    cancelled = threading.Event()
+    engine = Engine.create(settings=settings, store=store, checkpoint_path=tmp_path / "foreign-loop.db")
+
+    def own_continuation() -> None:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+
+        async def pending_continuation() -> None:
+            started.set()
+            try:
+                await asyncio.Event().wait()
+            finally:
+                cancelled.set()
+
+        async def run() -> None:
+            continuation = asyncio.create_task(pending_continuation())
+            engine._continuations.add(continuation)
+            await asyncio.gather(continuation, return_exceptions=True)
+
+        try:
+            loop.run_until_complete(run())
+        finally:
+            loop.close()
+            finished.set()
+
+    owner = threading.Thread(target=own_continuation)
+    owner.start()
+    try:
+        await asyncio.to_thread(started.wait)
+        await engine.aclose()
+
+        assert cancelled.is_set()
+        assert engine._continuations == set()
+    finally:
+        await engine.aclose()
+        await asyncio.to_thread(owner.join)
+        assert finished.is_set()
+
+
+async def test_engine_close_drains_foreign_loop_saver_initialization(
+    tmp_path, settings, store, monkeypatch,
+):
+    from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
+
+    from caos.engine.runtime import Engine
+
+    setup_started = threading.Event()
+    draining = threading.Event()
+    release_setup = threading.Event()
+    finished = threading.Event()
+    outcome = {}
+    real_setup = AsyncSqliteSaver.setup
+
+    async def paused_setup(saver):
+        setup_started.set()
+        await asyncio.to_thread(release_setup.wait)
+        await real_setup(saver)
+
+    async def wait_for_task(task):
+        draining.set()
+        await asyncio.gather(task, return_exceptions=True)
+
+    monkeypatch.setattr(AsyncSqliteSaver, "setup", paused_setup)
+    engine = Engine.create(settings=settings, store=store, checkpoint_path=tmp_path / "foreign-loop.db")
+    monkeypatch.setattr(engine, "_wait_for_task", wait_for_task)
+
+    def initialize_saver() -> None:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+
+        async def run() -> None:
+            initializing = asyncio.create_task(engine._ensure_saver())
+            outcome["initialization"] = (await asyncio.gather(initializing, return_exceptions=True))[0]
+
+        try:
+            loop.run_until_complete(run())
+        finally:
+            loop.close()
+            finished.set()
+
+    owner = threading.Thread(target=initialize_saver)
+    owner.start()
+    try:
+        await asyncio.to_thread(setup_started.wait)
+        closing = asyncio.create_task(engine.aclose())
+        await asyncio.to_thread(draining.wait)
+        release_setup.set()
+        await closing
+
+        assert engine._savers == {}
+        assert isinstance(outcome["initialization"], RuntimeError)
+    finally:
+        release_setup.set()
+        await engine.aclose()
+        await asyncio.to_thread(owner.join)
+        assert finished.is_set()
 
 
 # --- the offered cut is the startable cut ----------------------------------------

@@ -235,6 +235,9 @@ class _LockTracker:
         finally:
             self.held.remove(role)
 
+    def close(self) -> None:
+        pass
+
 
 def _settings(tmp_path: Path):
     return SimpleNamespace(database_url="", storage_dir=tmp_path, port=8000, validate_runtime=lambda: None)
@@ -243,7 +246,12 @@ def _settings(tmp_path: Path):
 def test_app_entrypoint_holds_the_app_lock_while_serving(monkeypatch, tmp_path):
     tracker = _LockTracker()
     settings = _settings(tmp_path)
-    engine = SimpleNamespace(store=tracker)
+    engine = SimpleNamespace(store=tracker, provider=None)
+
+    async def close_engine():
+        pass
+
+    engine.aclose = close_engine
     monkeypatch.setattr(run.Settings, "from_env", classmethod(lambda cls: settings))
     monkeypatch.setattr(run, "build", lambda _settings, _data: (object(), engine))
     monkeypatch.setattr(run, "serve", lambda *_args, **_kwargs: tracker.held == ["app"] or pytest.fail("app lock not held"))
@@ -257,9 +265,169 @@ def test_worker_entrypoint_holds_the_worker_lock_while_polling(monkeypatch, tmp_
     monkeypatch.setattr(worker.Settings, "from_env", classmethod(lambda cls: settings))
     monkeypatch.setattr(worker, "configure_logging", lambda _settings: None, raising=False)
     monkeypatch.setattr(worker.DomainStore, "from_url", classmethod(lambda cls, _url: tracker))
-    monkeypatch.setattr(worker.Engine, "create", classmethod(lambda cls, **_kwargs: object()))
+    async def close_engine():
+        pass
+
+    monkeypatch.setattr(worker.Engine, "create", classmethod(
+        lambda cls, **_kwargs: SimpleNamespace(aclose=close_engine),
+    ))
     monkeypatch.setattr(worker, "ModelService", lambda **_kwargs: object())
     monkeypatch.setattr(worker, "run_pending", lambda _service: tracker.held == ["worker"] or pytest.fail("worker lock not held"))
     monkeypatch.setattr(sys, "argv", ["worker.py", "--once"])
 
     worker.main()
+
+
+@pytest.mark.parametrize("raises", (False, True))
+def test_app_entrypoint_closes_owned_resources_in_reverse_order(monkeypatch, tmp_path, raises):
+    events = []
+
+    class Store(_LockTracker):
+        def close(self) -> None:
+            events.append("store.close")
+
+    class Provider:
+        async def aclose(self) -> None:
+            events.append("provider.close")
+
+    class Engine:
+        def __init__(self) -> None:
+            self.store = Store()
+            self.provider = Provider()
+
+        async def aclose(self) -> None:
+            events.append("engine.close")
+
+    settings = _settings(tmp_path)
+    engine = Engine()
+    monkeypatch.setattr(run.Settings, "from_env", classmethod(lambda cls: settings))
+    monkeypatch.setattr(run, "build", lambda _settings, _data: (object(), engine))
+
+    def serve(*_args, **_kwargs) -> None:
+        events.append("serve")
+        if raises:
+            raise RuntimeError("serve failed")
+
+    monkeypatch.setattr(run, "serve", serve)
+    if raises:
+        with pytest.raises(RuntimeError, match="serve failed"):
+            run.main()
+    else:
+        run.main()
+
+    assert events[-3:] == ["engine.close", "provider.close", "store.close"]
+
+
+@pytest.mark.parametrize("raises", (False, True))
+def test_worker_entrypoint_closes_owned_resources_in_reverse_order(monkeypatch, tmp_path, raises):
+    events = []
+
+    class Store(_LockTracker):
+        def close(self) -> None:
+            events.append("store.close")
+
+    class Engine:
+        async def aclose(self) -> None:
+            events.append("engine.close")
+
+    settings = _settings(tmp_path)
+    store = Store()
+    monkeypatch.setattr(worker.Settings, "from_env", classmethod(lambda cls: settings))
+    monkeypatch.setattr(worker, "configure_logging", lambda _settings: None)
+    monkeypatch.setattr(worker.DomainStore, "from_url", classmethod(lambda cls, _url: store))
+    monkeypatch.setattr(worker.Engine, "create", classmethod(lambda cls, **_kwargs: Engine()))
+    monkeypatch.setattr(worker, "ModelService", lambda **_kwargs: object())
+    monkeypatch.setattr(sys, "argv", ["worker.py", "--once"])
+
+    def run_once(_service) -> int:
+        events.append("run")
+        if raises:
+            raise RuntimeError("worker failed")
+        return 0
+
+    monkeypatch.setattr(worker, "run_pending", run_once)
+    if raises:
+        with pytest.raises(RuntimeError, match="worker failed"):
+            worker.main()
+    else:
+        worker.main()
+
+    assert events[-2:] == ["engine.close", "store.close"]
+
+
+def test_app_entrypoint_closes_store_when_provider_shutdown_fails(monkeypatch, tmp_path):
+    events = []
+
+    class Store(_LockTracker):
+        def close(self) -> None:
+            events.append("store.close")
+
+    class Provider:
+        async def aclose(self) -> None:
+            events.append("provider.close")
+            raise RuntimeError("provider close failed")
+
+    class Engine:
+        def __init__(self) -> None:
+            self.store = Store()
+            self.provider = Provider()
+
+        async def aclose(self) -> None:
+            events.append("engine.close")
+
+    settings = _settings(tmp_path)
+    engine = Engine()
+    monkeypatch.setattr(run.Settings, "from_env", classmethod(lambda cls: settings))
+    monkeypatch.setattr(run, "build", lambda _settings, _data: (object(), engine))
+    monkeypatch.setattr(run, "serve", lambda *_args, **_kwargs: None)
+
+    with pytest.raises(RuntimeError, match="provider close failed"):
+        run.main()
+
+    assert events[-2:] == ["provider.close", "store.close"]
+
+
+def test_app_build_rolls_back_owned_store_and_provider_on_construction_failure(monkeypatch, tmp_path):
+    events = []
+
+    class Store:
+        def close(self) -> None:
+            events.append("store.close")
+
+    class Provider:
+        async def aclose(self) -> None:
+            events.append("provider.close")
+
+    settings = _settings(tmp_path)
+    monkeypatch.setattr(run, "configure_logging", lambda _settings: None)
+    monkeypatch.setattr(run.DomainStore, "from_url", classmethod(lambda cls, _url: Store()))
+    monkeypatch.setattr(run, "build_provider", lambda _settings: Provider())
+    monkeypatch.setattr(run.Engine, "create", classmethod(
+        lambda cls, **_kwargs: (_ for _ in ()).throw(RuntimeError("engine construction failed")),
+    ))
+
+    with pytest.raises(RuntimeError, match="engine construction failed"):
+        run.build(settings, tmp_path)
+
+    assert events == ["provider.close", "store.close"]
+
+
+def test_worker_construction_failure_closes_its_owned_store(monkeypatch, tmp_path):
+    events = []
+
+    class Store:
+        def close(self) -> None:
+            events.append("store.close")
+
+    settings = _settings(tmp_path)
+    monkeypatch.setattr(worker.Settings, "from_env", classmethod(lambda cls: settings))
+    monkeypatch.setattr(worker, "configure_logging", lambda _settings: None)
+    monkeypatch.setattr(worker.DomainStore, "from_url", classmethod(lambda cls, _url: Store()))
+    monkeypatch.setattr(worker.Engine, "create", classmethod(
+        lambda cls, **_kwargs: (_ for _ in ()).throw(RuntimeError("engine construction failed")),
+    ))
+
+    with pytest.raises(RuntimeError, match="engine construction failed"):
+        worker.main()
+
+    assert events == ["store.close"]
