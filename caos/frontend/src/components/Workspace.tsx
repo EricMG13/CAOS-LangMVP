@@ -529,7 +529,7 @@ export default function Workspace({ destination, children }: { destination?: Des
           const url = new URL(window.location.href);
           if (caseId) url.searchParams.set("case", caseId); else url.searchParams.delete("case");
           if (runId) url.searchParams.set("run", runId); else url.searchParams.delete("run");
-          window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
+          window.history.replaceState(window.history.state, "", `${url.pathname}${url.search}${url.hash}`);
           return;
         }
         if (requestedRunId) {
@@ -629,7 +629,7 @@ export default function Workspace({ destination, children }: { destination?: Des
     // or a case switch can be reverted by its own stale query string and the previous
     // issuer's run re-attached after the analyst has already moved on.
     routeAuthorityRef.current = `${caseId}\u0000${runId}`;
-    window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
+    window.history.replaceState(window.history.state, "", `${url.pathname}${url.search}${url.hash}`);
   }, [hydrated, caseId, runId]);
 
   useEffect(() => {

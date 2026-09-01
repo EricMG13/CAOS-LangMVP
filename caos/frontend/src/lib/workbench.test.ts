@@ -63,6 +63,7 @@ test("draft navigation uses one focus-returning native dialog and preserves befo
   assert.match(workspace, /function DraftDiscardDialog/);
   assert.match(workspace, /<dialog[^>]+aria-labelledby="discard-dialog-title"[^>]+onClose=\{close\}/);
   assert.match(workspace, /window\.addEventListener\("beforeunload", guardUnload\)/);
+  assert.doesNotMatch(workspace, /history\.replaceState\(null/);
   assert.match(workspace, /requestDraftDiscard/);
   assert.match(workspace, /if \(discardPromptRef\.current\) \{ cancel\?\.\(\); return false; \}/);
   assert.match(workspace, /if \(state\?\.caosModelDraftGuard \|\| state\?\.caosReportDraftGuard\) \{ modelHistoryGuardRef\.current = true; return; \}/);

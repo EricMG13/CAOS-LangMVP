@@ -357,11 +357,57 @@ By-design: cross-document history confirmation may show the browser-native promp
 
 Still open: Task 6 owns the full combined-app journey; the focused real-history Chromium trace is complete.
 
+## Authority URL-state preservation correction
+
+The two Workspace authority URL writes no longer call `history.replaceState(null, ...)`. Both the dirty-route rollback and the case/run query synchronization now pass `window.history.state`, preserving Next's router tree together with the current CAOS entry, base, sentinel, previous-destination, and dirty-owner metadata.
+
+All six Workspace history writes were audited:
+
+- current-entry tagging spreads the existing state before adding an entry ID;
+- guard arming spreads the tagged base into both the base replacement and sentinel push;
+- route transitions deliberately remove only CAOS metadata when a copied ID enters a genuinely new URL, retaining framework state;
+- dirty authority rollback and normal case/run URL sync now preserve the complete current state.
+
+### URL-state TDD and built-app evidence
+
+- RED: the focused source contract failed because both `history.replaceState(null, ...)` calls were present.
+- GREEN: the same focused contract passed after both sites used `window.history.state`.
+- The focused Chromium script now serves the actual built static export from `out/`, mounts Workspace and Report Studio, mocks only their API seams, and records post-hydration history calls.
+- Actual Report Studio editing armed a sentinel whose previous ID equalled its real base ID. A confirmed case switch exercised authority query synchronization and retained the exact entry/base IDs. A second dirty edit then exercised an external case-query request plus Workspace rollback and retained the exact replacement sentinel IDs.
+- `npm run test:unit` passed 112/112; lint, local TypeScript, production build, both smoke syntax checks, `git diff --check`, and the focused built-app Chromium journey passed.
+
+Rewrite tournament: skipped because the production correction changes two arguments with no new branch, symbol, allocation, or control flow; it is below the skill's materiality threshold.
+
+### URL-state confidence review
+
+Least confident about (ranked):
+
+1. Passing the current state could preserve a stale sentinel on a genuinely new route.
+   investigated → these two writes replace only the query string of the current authority entry; the separate route-tagging effect owns new-route ID normalization. The built case switch and rollback retained one exact current sentinel rather than manufacturing a predecessor.
+   verdict     → fine by mounted Workspace trace.
+   patch       → preserve current state only at the two same-entry URL writes.
+2. `window.history.state` could be null at authority synchronization.
+   investigated → current-entry tagging is the earlier Workspace effect, while authority synchronization requires the later hydrated state; dirty rollback additionally requires an already-armed sentinel. At either behavior under test the state is tagged and non-null.
+   verdict     → fine by effect ordering and browser state assertions.
+3. Another Workspace history write could still erase framework or CAOS metadata.
+   investigated → every `replaceState`/`pushState` call was enumerated. Four spread the current/tagged state, the new-route path removes only the six named CAOS keys while retaining Next keys, and the two correction sites now pass current state unchanged.
+   verdict     → fine by source audit, Next build, and mounted trace.
+4. The static-export fixture could test ideal helpers instead of the integration.
+   investigated → the new scenario loads built `out/report-studio/index.html`, edits the rendered Report Studio textarea, uses the rendered case selector and native discard dialog, and observes actual post-hydration history methods.
+   verdict     → fine.
+
+Fixed: authority query synchronization and dirty rollback metadata erasure.
+
+Verified fine: all Workspace history writes, effect ordering, actual Report dirty arming, sentinel destination identity, Next state retention, units, lint, TypeScript, build, smoke syntax, and focused Chromium.
+
+Still open: Task 6 retains ownership of the complete combined-app smoke; this correction's bounded built static-export route is complete.
+
 ## Commit
 
 - Subject: `feat(frontend): reduce workspace cognitive load`
 - Correction subjects: `fix(frontend): preserve dirty draft navigation`; `fix(frontend): serialize draft history traversal`
 - Observable-state correction subject: `fix(frontend): match draft history destinations`
+- URL-state correction subject: `fix(frontend): preserve history state during authority sync`
 - Trailer: `Co-Authored-By: Codex Opus 4.8 <noreply@anthropic.com>`
 
 ## Remaining risks
