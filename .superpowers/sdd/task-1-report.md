@@ -79,3 +79,26 @@ Verified fine: authorization boundaries, automatic discovery, nightly hard-fail 
 By design: existing deprecation/module-type warnings remain recorded and are not suppressed.
 
 Still open: candidate qualification and warning cleanup belong to later execution-plan tasks.
+
+## Reviewer correction
+
+A fresh review found one P2 documentation defect: the five updated `F-MODEL-*` rows listed newly served routes while retaining generic or pre-route test evidence, stale edge cases, and 2026-08-30 dates. The ledger now names the dedicated worksheet, build-export, one-way, tornado, rebase, revision-export/status, and revision-download tests exactly, records the verified 2026-09-01 focused run (`119 passed`), and labels that evidence as focused host-contract proof rather than live-provider or browser qualification.
+
+### Confidence review — ledger evidence correction
+
+Least confident about (ranked):
+
+1. A route might be credited to a test that does not exercise it.
+   - Investigated: read each named test and matched its literal route and assertions to `F-MODEL-04`, `05`, `08`, `09`, or `10`.
+   - Verdict: fine; every newly listed route has a dedicated named HTTP test, with service-level edge tests cited only where their assertions apply.
+2. The date/count might imply broader qualification than was run.
+   - Investigated: reconciled the Task 1 acceptance output and scope.
+   - Verdict: fine; each row says `119 passed` on 2026-09-01 and explicitly limits the result to focused host-contract evidence.
+
+Fixed: stale ledger evidence, edge cases, notes, and last-tested dates for the five reviewed model rows.
+
+Verified fine: route-to-test mappings and the recorded focused-run scope.
+
+By design: `rewrite-tournament` remains skipped because this correction changes documentation/test records only.
+
+Still open: live-provider and browser qualification remain later-plan work.

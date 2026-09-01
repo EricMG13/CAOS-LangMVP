@@ -5,7 +5,7 @@ Plan: `docs/superpowers/plans/2026-09-01-enterprise-testing-readiness-execution.
 
 | Task | Status | Implementer | Reviewer | Evidence |
 | --- | --- | --- | --- | --- |
-| 1. Truthful green development baseline | implemented; awaiting review | Codex implementer | pending | Baseline 10+10 preserved; audit 0 failures; ledger complete; Ruff clean; backend 119 passed; frontend 113 passed; YAML loaded |
+| 1. Truthful green development baseline | implemented; awaiting re-review | Codex implementer | pending | Baseline 10+10 preserved; audit 0 failures; ledger complete; Ruff clean; backend 119 passed; frontend 113 passed; YAML loaded |
 | 2. Remove EDGAR acquisition dependencies | pending | — | — | — |
 | 3. Remove external font dependency | pending | — | — | — |
 | 4. Close resource leaks | pending | — | — | — |
