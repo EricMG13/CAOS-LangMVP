@@ -163,6 +163,7 @@ Anti-pattern verdict: pass. The detector's `border-accent-on-rounded` warning is
 
 - Task 3 implementation: `df03d8dc27b1a1eb92eece7610423c3000929f91` (`feat(frontend): unify commit rituals`)
 - Task 3 authority correction: `7fe186406b9797114fbd7b3ed019a67d93e52d9a` (`fix(frontend): bind acceptance to latest authority`)
+- Task 3 terminal-progress correction: `42c4524bc2d45d8cda1265ac7bccd786dd2d0d5b` (`fix(frontend): align terminal run progress`)
 
 ## Remaining risks
 
@@ -292,3 +293,53 @@ Still open: real-browser six-state geometry in the final assembled environment, 
 ### Impeccable correction audit
 
 The correction reuses `.approval-panel`, `.state-facts`, `.status`, native dialog behavior, existing tokens, and the current focus contract. It adds no CSS, color, motion, card, gradient, or decorative vocabulary. Visible/latest authority is now stated in plain text rather than communicated by color alone. No new accessibility, responsive, theming, or anti-pattern finding was introduced.
+
+## Final review correction — terminal run progress
+
+### Summary
+
+- `RunStatus` now selects a running or pending current module only while the run itself is queued or running.
+- Failed and paused runs retain their served pending nodes for DAG inspection, but the progress heading now says `Execution stopped` or `Execution paused`, and `aria-valuetext` no longer appends a contradictory pending-module suffix.
+- The change does not alter run polling, acceptance state, requests, server code, or the existing progress announcer.
+
+### TDD and verification
+
+- TDD red: `node --test src/lib/workbench.test.ts` — 17/18 passed; the new terminal-progress contract failed against the unconditional pending-node selection.
+- Focused green: `node --test src/lib/workbench.test.ts` — 18/18 passed; existing `MODULE_TYPELESS_PACKAGE_JSON` warning only.
+- Full frontend unit suite: `npm run test:unit` — 101/101 passed; existing module-type warnings only.
+- Strict lint: `npm run lint` — passed.
+- Local TypeScript: `./node_modules/.bin/tsc --noEmit -p .` — passed.
+- `git diff --check` and explicit staged-path/trailer checks — passed.
+
+### Rewrite tournament
+
+Skipped under the skill's trivial-edit rule: the production change is a three-line status guard with no new loop, parser, signature, side effect, or abstraction. The existing `RunStatus` tournament and its state-ordering rationale remain applicable.
+
+### Confidence review — terminal progress
+
+Least confident about (ranked):
+
+1. The gate might omit a real non-terminal server status.
+   investigated → traced the server `RunStatus` enum: queued, running, paused, succeeded, and failed are the complete set. Only queued and running can truthfully name a current module.
+   verdict     → fine (server contract trace plus TypeScript/build checks).
+   patch       → n/a.
+2. The visible heading could be corrected while assistive text remained contradictory.
+   investigated → both `progressLabel` and the progressbar's `aria-valuetext` derive their optional module detail from the same gated `current` value; the focused regression pins both consumers.
+   verdict     → fine after correction.
+   patch       → gated `current` before either consumer.
+3. Removing terminal current-node selection could hide useful failure detail.
+   investigated → terminal node statuses and links remain visible in the DAG, while failed/paused error details remain in their existing `StateNote` and acceptance-remedy regions. Only the false “current pending module” claim is removed.
+   verdict     → by-design.
+   patch       → n/a.
+4. The change could interfere with progress announcements during live execution.
+   investigated → queued/running selection is unchanged, and `RunProgressAnnouncer` independently announces only an actually running node. Full frontend units, lint, and TypeScript passed.
+   verdict     → fine.
+   patch       → n/a.
+
+Fixed: terminal progress and accessibility text contradicting failed/paused state.
+
+Verified fine: live queued/running progress; terminal DAG/error detail; acceptance behavior; polling and request contracts.
+
+By-design: terminal runs may retain pending nodes in the immutable route, but none is presented as currently executing.
+
+Still open: only the previously documented full combined-app browser run, owned by Task 6.
