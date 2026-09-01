@@ -227,7 +227,7 @@ try {
   await page.goto(`${baseURL}/command-center/?case=${caseRecord.id}`, { waitUntil: "domcontentloaded" });
   await authorityDetailSeen;
   const visibleAuthority = page.getByRole("region", { name: "Visible authority" });
-  await visibleAuthority.getByText(/Accepted:\s*Loading authority/).waitFor();
+  await visibleAuthority.getByText(/Visible snapshot:\s*Loading authority/).waitFor();
   await visibleAuthority.getByText(/Source set:\s*Loading authority/).waitFor();
   releaseAuthorityDetail();
   await visibleAuthority.getByText(/Source set:\s*v1/).waitFor();
@@ -264,7 +264,7 @@ try {
   expectedAuthorityFailureURL = `${baseURL}/api/cases/${failedCase.id}`;
   expectedAuthorityFailureSeen = false;
   await page.getByRole("combobox", { name: "Select case" }).selectOption(failedCase.id);
-  await visibleAuthority.getByText(/Accepted:\s*Authority unavailable/).waitFor();
+  await visibleAuthority.getByText(/Visible snapshot:\s*Authority unavailable/).waitFor();
   await visibleAuthority.getByText(/Source set:\s*Authority unavailable/).waitFor();
   assert.equal(expectedAuthorityFailureSeen, true, "controlled authority 503 did not emit the expected console error");
   await page.unroute(failedAuthorityDetail, failAuthorityDetail);
@@ -599,41 +599,60 @@ try {
   // Its box may change contents, but it must not make the execution panel jump as
   // progress crosses the irreversible-action boundary.
   let acceptanceRunPhase = "queued";
+  const acceptanceSnapshot = { ...accepted, id: `snap_acceptance_${fixtureSuffix}`, run_id: nextRun.id };
   const acceptanceRunPath = (url) => url.pathname === `/api/runs/${nextRun.id}`;
   const acceptanceEventsPath = (url) => url.pathname === `/api/runs/${nextRun.id}/events`;
+  const acceptanceAuthorityPath = (url) => url.pathname === `/api/cases/${caseRecord.id}/snapshot`;
   const acceptanceRunFixture = () => ({
     ...nextRunState,
-    status: acceptanceRunPhase,
-    accepted_snapshot_id: null,
+    status: acceptanceRunPhase === "accepted" ? "succeeded" : acceptanceRunPhase,
+    accepted_snapshot_id: acceptanceRunPhase === "accepted" ? acceptanceSnapshot.id : null,
+    error: acceptanceRunPhase === "failed"
+      ? { code: "GEOMETRY_FAILURE", message: "Controlled fixture failure." }
+      : acceptanceRunPhase === "paused"
+        ? { code: "SOURCE_SET_EMPTY", message: "Controlled fixture pause." }
+        : null,
     nodes: nextRunState.nodes.map((node, index) => ({
       ...node,
-      status: acceptanceRunPhase === "succeeded" ? "succeeded"
+      status: acceptanceRunPhase === "succeeded" || acceptanceRunPhase === "accepted" ? "succeeded"
+        : acceptanceRunPhase === "failed" ? index === 0 ? "failed" : "pending"
         : acceptanceRunPhase === "running" ? index === 0 ? "succeeded" : index === 1 ? "running" : "pending"
           : "pending",
-      artifact_id: acceptanceRunPhase === "succeeded" ? node.artifact_id : index === 0 && acceptanceRunPhase === "running" ? node.artifact_id : null,
+      artifact_id: acceptanceRunPhase === "succeeded" || acceptanceRunPhase === "accepted" ? node.artifact_id : index === 0 && acceptanceRunPhase === "running" ? node.artifact_id : null,
     })),
   });
+  const acceptanceAuthorityFixture = () => {
+    const visible = acceptanceRunPhase === "accepted" ? acceptanceSnapshot : accepted;
+    return { accepted: visible, latest_accepted: visible, switch_required: false, diff: { changed: false } };
+  };
   await page.route(acceptanceRunPath, (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(acceptanceRunFixture()) }));
   await page.route(acceptanceEventsPath, (route) => route.fulfill({ status: 200, contentType: "text/event-stream", body: "retry: 60000\n\n" }));
+  await page.route(acceptanceAuthorityPath, (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(acceptanceAuthorityFixture()) }));
   const acceptanceBoxes = [];
-  for (const phase of ["queued", "running", "succeeded"]) {
+  const acceptancePhases = ["queued", "running", "succeeded", "accepted", "failed", "paused"];
+  for (const phase of acceptancePhases) {
     acceptanceRunPhase = phase;
     await page.reload({ waitUntil: "networkidle" });
     const region = page.locator("[data-run-acceptance]");
-    await region.getByText(phase === "succeeded" ? "Ready for acceptance" : "Acceptance waiting", { exact: true }).waitFor();
+    const expectedState = phase === "accepted" ? "Latest accepted authority"
+      : phase === "succeeded" ? "Ready for acceptance"
+        : phase === "failed" || phase === "paused" ? "Acceptance blocked"
+          : "Acceptance waiting";
+    await region.getByText(expectedState, { exact: true }).waitFor();
     acceptanceBoxes.push(await region.boundingBox());
   }
   assert.ok(acceptanceBoxes.every(Boolean), "an execution state omitted the acceptance region");
   assert.deepEqual(
     acceptanceBoxes.map(({ x, y, width, height }) => [Math.round(x), Math.round(y), Math.round(width), Math.round(height)]),
-    Array.from({ length: 3 }, () => {
+    Array.from({ length: acceptancePhases.length }, () => {
       const { x, y, width, height } = acceptanceBoxes[0];
       return [Math.round(x), Math.round(y), Math.round(width), Math.round(height)];
     }),
-    "acceptance-region geometry changed between queued, running, and succeeded",
+    "acceptance-region geometry changed between waiting, ready, accepted, failed, and paused states",
   );
   await page.unroute(acceptanceRunPath);
   await page.unroute(acceptanceEventsPath);
+  await page.unroute(acceptanceAuthorityPath);
   await page.reload({ waitUntil: "networkidle" });
   const acceptTrigger = page.getByRole("button", { name: "Accept analytical snapshot" });
   await acceptTrigger.waitFor();
@@ -701,7 +720,7 @@ try {
   }));
   const authority = page.getByRole("region", { name: "Visible authority" });
   await authority.getByText(new RegExp(`Credit:\\s*${raceIssuer}`)).waitFor();
-  await authority.getByText("No accepted snapshot").waitFor();
+  await authority.getByText("No visible snapshot").waitFor();
   assert.equal(await authority.getByText(/Source set:\s*v1/).count(), 0);
   assert.deepEqual(
     forbiddenAuthorityRequests,
@@ -714,7 +733,7 @@ try {
   // the DAG panel renders the accepted state, keyed on run.accepted_snapshot_id
   // matching the case authority, and the accept button must not render.
   await page.goto(`${baseURL}/run-console/?case=${caseRecord.id}&run=${nextRun.id}`, { waitUntil: "networkidle" });
-  await page.getByText("Accepted — visible authority", { exact: true }).waitFor();
+  await page.getByText("Latest accepted authority", { exact: true }).waitFor();
   assert.equal(await page.getByRole("button", { name: "Accept analytical snapshot" }).count(), 0, "an accepted run still offers a live acceptance action");
 
   // Module progress lives in the DAG tiles, which are not a live region: without this

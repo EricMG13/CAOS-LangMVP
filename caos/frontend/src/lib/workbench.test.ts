@@ -7,6 +7,7 @@ const workbenchShell = readFileSync(new URL("../components/WorkbenchShell.tsx", 
 const workspace = readFileSync(new URL("../components/Workspace.tsx", import.meta.url), "utf8");
 const reportStudio = readFileSync(new URL("../components/report/ReportStudio.tsx", import.meta.url), "utf8");
 const styles = readFileSync(new URL("../../app/globals.css", import.meta.url), "utf8");
+const smoke = readFileSync(new URL("../../scripts/workbench-smoke.mjs", import.meta.url), "utf8");
 
 test("approved workspace labels preserve the existing routes", () => {
   assert.deepEqual(workflows.map(({ label, href }) => [label, href]), [
@@ -122,6 +123,37 @@ test("acceptance aftermath binds to the matching snapshot id", () => {
   assert.equal(acceptedAuthorityMatch(null, "snap_a", "snap_a"), "snap_a", "the locally returned snapshot covers a server without the run field");
   assert.equal(acceptedAuthorityMatch("snap_a", "snap_b", "snap_a"), "snap_a", "the served run field wins over local state");
   assert.equal(acceptedAuthorityMatch("snap_a", "snap_b", "snap_b"), "", "local state never overrides a served mismatch");
+});
+
+test("acceptance replacement and aftermath use the latest accepted authority", () => {
+  assert.match(workspace, /authority\?\.latest_accepted\?\.id/);
+  assert.match(workspace, /replaces=\{authority\?\.latest_accepted \?\? null\}/);
+  assert.doesNotMatch(workspace, /replaces=\{authority\?\.accepted \?\? null\}/);
+});
+
+test("a switch-required accepted run stays accepted while the visible lens is disclosed separately", () => {
+  const visibleSnapshotId = "snap_visible";
+  const latestAcceptedId = "snap_latest";
+  assert.equal(acceptedAuthorityMatch(latestAcceptedId, "", latestAcceptedId), latestAcceptedId);
+  assert.equal(acceptedAuthorityMatch(latestAcceptedId, "", visibleSnapshotId), "", "the visible lens is not the acceptance ledger");
+  assert.match(workspace, /switchRequired=\{authority\?\.switch_required === true\}/);
+  const acceptedBranch = workspace.slice(workspace.indexOf("if (acceptedSnapshotId)"), workspace.indexOf("else if (run.status === \"succeeded\")"));
+  assert.match(acceptedBranch, /Latest accepted authority/);
+  assert.match(acceptedBranch, /Visible lens remains/);
+  assert.doesNotMatch(acceptedBranch, /Ready for acceptance|Accept analytical snapshot/);
+});
+
+test("the shell names the visible lens instead of conflating it with latest acceptance", () => {
+  assert.match(workbenchShell, /<b>Visible snapshot:<\/b>/);
+  assert.doesNotMatch(workbenchShell, /<b>Accepted:<\/b>/);
+});
+
+test("the browser geometry fixture covers every acceptance-region state", () => {
+  assert.match(smoke, /\["queued", "running", "succeeded", "accepted", "failed", "paused"\]/);
+  assert.match(smoke, /accepted_snapshot_id: acceptanceRunPhase === "accepted" \? acceptanceSnapshot\.id : null/);
+  for (const state of ["Accepted", "Acceptance blocked", "Ready for acceptance", "Acceptance waiting"]) {
+    assert.match(smoke, new RegExp(state));
+  }
 });
 
 test("acceptance review classifies authority slots without claiming artifact byte changes", () => {

@@ -190,24 +190,26 @@ export default function WorkbenchShell({
     case: caseId || undefined,
     run: destination === "Run Console" ? runId || undefined : undefined,
   });
-  const accepted = authority?.accepted;
+  // SnapshotView.accepted is the effective visible/pinned reader lens. Keep its
+  // name honest here because latest_accepted may move while this lens remains.
+  const visible = authority?.accepted;
   const authorityPending = Boolean(caseId) && (authorityStatus === "idle" || authorityStatus === "loading");
-  const acceptedSnapshotIdentity = !caseId
+  const visibleSnapshotIdentity = !caseId
     ? "No case selected"
     : authorityPending
     ? "Loading authority…"
     : authorityStatus === "error"
       ? "Authority unavailable"
-      : accepted?.id ?? "No accepted snapshot";
-  const acceptedSourceSetIdentity = !caseId
+      : visible?.id ?? "No visible snapshot";
+  const visibleSourceSetIdentity = !caseId
     ? "Not applicable"
     : authorityPending
     ? "Loading authority…"
     : authorityStatus === "error"
       ? "Authority unavailable"
-      : accepted
-        ? accepted.source_set_version == null ? "Version unavailable" : `v${accepted.source_set_version}`
-        : "No accepted source set";
+      : visible
+        ? visible.source_set_version == null ? "Version unavailable" : `v${visible.source_set_version}`
+        : "No visible source set";
   const drawerTitle = drawer ? `Evidence ${drawer.evidenceId}` : "Context";
   let drawerBody: ReactNode = null;
   if (drawer) {
@@ -216,8 +218,8 @@ export default function WorkbenchShell({
         <dt className="meta-label">Stable ID</dt><dd className="mono">{drawer.evidenceId}</dd>
         <dt className="meta-label">Filename</dt><dd>{drawer.source.filename}</dd>
         <dt className="meta-label">SHA-256</dt><dd className="mono">{drawer.source.sha256}</dd>
-        <dt className="meta-label">Accepted snapshot</dt><dd className="mono">{acceptedSnapshotIdentity}</dd>
-        <dt className="meta-label">Accepted source set</dt><dd className="mono">{acceptedSourceSetIdentity}</dd>
+        <dt className="meta-label">Visible snapshot</dt><dd className="mono">{visibleSnapshotIdentity}</dd>
+        <dt className="meta-label">Visible source set</dt><dd className="mono">{visibleSourceSetIdentity}</dd>
       </dl>
       <p className="status warning">Source-level reference; no block locator supplied by this artifact.</p>
       <h3>Available source text</h3>
@@ -292,10 +294,12 @@ export default function WorkbenchShell({
         <div role="region" className="authority-strip" aria-label="Visible authority" tabIndex={0}>
           <span className="authority-dot" aria-hidden="true" />
           <span><b>Credit:</b> {selectedCase ? selectedCase.issuer : "None selected"}</span>
-          <span><b>Accepted:</b> {acceptedSnapshotIdentity}</span>
+          <span><b>Visible snapshot:</b> {visibleSnapshotIdentity}</span>
           <span><b>Selected run:</b> {runId ? `${runId}${runIsLive ? " · live" : ""}` : "None"}</span>
-          <span><b>Source set:</b> {acceptedSourceSetIdentity}</span>
-          {(authority?.switch_required || authority?.diff?.changed) && <span className="status warning">Review required</span>}
+          <span><b>Source set:</b> {visibleSourceSetIdentity}</span>
+          {authority?.switch_required
+            ? <span className="status warning">Latest accepted differs</span>
+            : authority?.diff?.changed ? <span className="status warning">Review required</span> : null}
         </div>
         {/* `tabIndex={-1}` is what makes this landmark a real focus target. Without
             it the skip link moved the scroll and the browser's sequential focus

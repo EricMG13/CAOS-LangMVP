@@ -40,7 +40,11 @@ export type Snapshot = {
 };
 
 export type SnapshotView = {
+  // The server wire calls the effective visible/pinned reader lens `accepted`.
+  // It may intentionally trail the acceptance ledger after an explicit pin.
   accepted: Snapshot | null;
+  // Acceptance replacement, digest comparison and accepted-run identity bind to
+  // the newest ledger entry, regardless of which snapshot the reader lens shows.
   latest_accepted: Snapshot | null;
   switch_required: boolean;
   diff?: { changed?: boolean } | null;
@@ -191,9 +195,9 @@ export function withQuery(path: string, values: Record<string, string | undefine
   return `${pathname}${query.size ? `?${query}` : ""}`;
 }
 
-// Acceptance aftermath: a run's snapshot reads as the case's standing authority only
+// Acceptance aftermath: a run's snapshot reads as the case's latest accepted authority only
 // when the id the run carries (or, on a server that does not serve it, the id its
-// acceptance just returned locally) matches the authority strip's accepted snapshot.
+// acceptance just returned locally) matches the newest accepted ledger entry.
 // Returns the matched snapshot id, or "" while the accept action must stay live.
 export function acceptedAuthorityMatch(
   runSnapshotId: string | null | undefined,

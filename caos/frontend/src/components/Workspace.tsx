@@ -611,7 +611,7 @@ export default function Workspace({ destination, children }: { destination?: Des
       setLocalAccepted({ runId, snapshotId: accepted.id });
       // The id itself is announced by the accepted-authority line this unblocks; naming
       // it twice makes a screen reader read twenty characters of hash for no gain.
-      setNotice("Snapshot accepted. It is the visible authority for this case.");
+      setNotice("Snapshot accepted as the latest authority. A pinned visible lens moves only through an explicit switch.");
       await refreshCase(caseId); await refreshRun(runId);
     } catch (caught) {
       if (!matchesAuthority(authorityRef.current, context)) return;
@@ -689,9 +689,10 @@ export default function Workspace({ destination, children }: { destination?: Des
     }
   };
 
-  // The run's snapshot reads as the standing authority only while it matches the
-  // same state that feeds the shell's authority strip.
-  const acceptedRunSnapshotId = run ? acceptedAuthorityMatch(run.accepted_snapshot_id, localAccepted && localAccepted.runId === run.id ? localAccepted.snapshotId : "", authority?.accepted?.id) : "";
+  // Acceptance identity follows the server's newest acceptance ledger entry.
+  // `authority.accepted` is deliberately different: it is the visible/pinned
+  // reader lens and may trail this id until an explicit snapshot switch.
+  const acceptedRunSnapshotId = run ? acceptedAuthorityMatch(run.accepted_snapshot_id, localAccepted && localAccepted.runId === run.id ? localAccepted.snapshotId : "", authority?.latest_accepted?.id) : "";
 
   // The rail's LIVE badge is honest only while the selected case's run is genuinely
   // executing (queued or running — paused and terminal runs are not live).
@@ -716,7 +717,7 @@ export default function Workspace({ destination, children }: { destination?: Des
     switch (active) {
       case "Cases": return <CasesView writeAccess={writeAccess} cases={cases} casesLoading={casesLoading} selectedCase={selectedCase} caseId={caseId} createCase={createCase} pendingAction={pendingAction} />;
       case "Sources": return <SourcesView writeAccess={writeAccess} selectedCase={selectedCase} artifactId={routeArtifactId} sourceId={routeSourceId} upload={upload} pendingAction={pendingAction} onOpenEvidence={(evidenceId, source) => setDrawer({ kind: "evidence", evidenceId, source })} />;
-      case "Run Console": return <RunConsole writeAccess={writeAccess} caseId={caseId} selectedCase={selectedCase} run={run} runLoading={runLoading} runError={runError} startRun={startRun} acceptRun={acceptRun} acceptedSnapshotId={acceptedRunSnapshotId} approveResearchPlan={approveResearchPlan} approvalUnavailable={approvalUnavailable} pendingAction={pendingAction} resumeSlot={resumeSlot} />;
+      case "Run Console": return <RunConsole writeAccess={writeAccess} caseId={caseId} selectedCase={selectedCase} run={run} runLoading={runLoading} runError={runError} startRun={startRun} acceptRun={acceptRun} acceptedSnapshotId={acceptedRunSnapshotId} visibleSnapshotId={authority?.accepted?.id || ""} switchRequired={authority?.switch_required === true} approveResearchPlan={approveResearchPlan} approvalUnavailable={approvalUnavailable} pendingAction={pendingAction} resumeSlot={resumeSlot} />;
       case "Deep-Dive": return <DeepDive writeAccess={writeAccess} selectedCase={selectedCase} question={routeQuestion} caseId={caseId} run={run} onSwitchSnapshot={switchSnapshot} />;
       case "RV Screener": return <RVView key={caseId} writeAccess={writeAccess} caseId={caseId} />;
       case "Command Center": return <CommandView caseId={caseId} question={routeQuestion} />;
@@ -747,7 +748,7 @@ export default function Workspace({ destination, children }: { destination?: Des
       {notice ? <MutationReceipt>{notice}</MutationReceipt> : null}
       <div key={`${active}:${caseId}`}>{routeIsKnown ? <>{renderDestination()}{children}</> : children}</div>
     </WorkbenchShell>
-    <AcceptDialog open={acceptPrompt} run={run} replaces={authority?.accepted ?? null} pending={pendingAction === "accept-run"} onConfirm={confirmAccept} onClose={() => setAcceptPrompt(false)} />
+    <AcceptDialog open={acceptPrompt} run={run} replaces={authority?.latest_accepted ?? null} pending={pendingAction === "accept-run"} onConfirm={confirmAccept} onClose={() => setAcceptPrompt(false)} />
   </>;
 }
 
@@ -919,7 +920,7 @@ function RunProgressAnnouncer({ run }: { run: RunRecord | null }) {
 }
 
 // The acceptance ceremony: a digest-bound <dialog> stating exactly what becomes the
-// case's visible authority and what it replaces. Open/close follows the WorkbenchShell
+// case's latest accepted authority and what it replaces. Open/close follows the WorkbenchShell
 // drawer pattern — capture the trigger before showModal(), rAF-focus the heading,
 // restore focus on close. The primary button keeps the DAG trigger's accessible name.
 function AcceptDialog({ open, run, replaces, pending, onConfirm, onClose }: { open: boolean; run: RunRecord | null; replaces: Snapshot | null; pending: boolean; onConfirm: () => void; onClose: () => void }) {
@@ -960,7 +961,7 @@ function AcceptDialog({ open, run, replaces, pending, onConfirm, onClose }: { op
           <dt>Slots removed</dt><dd><strong className="num">{slots.removed.length}</strong><div className="mono muted">{slots.removed.join(" · ") || "None"}</div></dd>
           <dt>Replaces snapshot digest</dt><dd>{replaces ? <><span className="mono">{replaces.digest}</span><div className="muted">Source set {replaces.source_set_version == null ? "Unavailable" : `v${replaces.source_set_version}`}{replaces.source_set_id ? ` · ${replaces.source_set_id}` : ""}</div></> : <span className="muted">No accepted snapshot</span>}</dd>
         </dl>
-        <p>Accepting binds these module slots as the case&apos;s visible authority. Artifact digests are verified by the server at acceptance.</p>
+        <p>Accepting binds these module slots as the case&apos;s latest accepted authority. Artifact digests are verified by the server at acceptance. The visible lens remains separately governed; a pinned lens moves only through an explicit switch.</p>
         <div className="top-actions">
           <button className="button primary" type="button" disabled={pending} onClick={onConfirm}>Accept analytical snapshot</button>
           <button className="button small" type="button" onClick={() => dialogRef.current?.close()}>Cancel</button>
@@ -981,7 +982,7 @@ function ModuleIdentity({ moduleId }: { moduleId: string }) {
 // Shared by Run Console and the inline panels on Cases and Deep-Dive. `approvalSlot`
 // is how Run Console injects the full ResearchPlanView; inline surfaces route to it
 // instead, since plan approval is a Run Console responsibility.
-function RunStatus({ writeAccess, caseId, run, runLoading, runError, acceptRun, acceptedSnapshotId, pendingAction, approvalSlot, resumeSlot }: { writeAccess: WriteAccess; caseId: string; run: RunRecord | null; runLoading: boolean; runError: string; acceptRun: () => void; acceptedSnapshotId: string; pendingAction: string; approvalSlot: ReactNode; resumeSlot: ReactNode }) {
+function RunStatus({ writeAccess, caseId, run, runLoading, runError, acceptRun, acceptedSnapshotId, visibleSnapshotId, switchRequired, pendingAction, approvalSlot, resumeSlot }: { writeAccess: WriteAccess; caseId: string; run: RunRecord | null; runLoading: boolean; runError: string; acceptRun: () => void; acceptedSnapshotId: string; visibleSnapshotId: string; switchRequired: boolean; pendingAction: string; approvalSlot: ReactNode; resumeSlot: ReactNode }) {
   if (!run) return <LoadState loading={runLoading} error={runError} empty="No current execution. Select a purpose and depth to create an immutable plan." />;
   const complete = run.nodes.filter((node) => node.status === "succeeded").length;
   const current = run.nodes.find((node) => node.status === "running") || run.nodes.find((node) => node.status === "pending");
@@ -990,8 +991,11 @@ function RunStatus({ writeAccess, caseId, run, runLoading, runError, acceptRun, 
   let acceptance: ReactNode;
   if (acceptedSnapshotId) {
     acceptance = <>
-      <span className="status success">Accepted — visible authority</span>
+      <span className="status success">Latest accepted authority</span>
       <span className="mono muted">{acceptedSnapshotId}</span>
+      {switchRequired
+        ? <p>Visible lens remains on <span className="mono">{visibleSnapshotId || "a different snapshot"}</span> until explicitly switched.</p>
+        : <p>Visible lens matches the latest accepted authority.</p>}
     </>;
   } else if (run.status === "succeeded") {
     acceptance = <>
@@ -1032,7 +1036,7 @@ function RunStatus({ writeAccess, caseId, run, runLoading, runError, acceptRun, 
   </div>;
 }
 
-function RunConsole({ writeAccess, caseId, selectedCase, run, runLoading, runError, startRun, acceptRun, acceptedSnapshotId, approveResearchPlan, approvalUnavailable, pendingAction, resumeSlot }: { writeAccess: WriteAccess; caseId: string; selectedCase: CaseRecord | null; run: RunRecord | null; runLoading: boolean; runError: string; startRun: (event: FormEvent<HTMLFormElement>) => void; acceptRun: () => void; acceptedSnapshotId: string; approveResearchPlan: (planHash: string) => void; approvalUnavailable: boolean; pendingAction: string; resumeSlot: ReactNode }) {
+function RunConsole({ writeAccess, caseId, selectedCase, run, runLoading, runError, startRun, acceptRun, acceptedSnapshotId, visibleSnapshotId, switchRequired, approveResearchPlan, approvalUnavailable, pendingAction, resumeSlot }: { writeAccess: WriteAccess; caseId: string; selectedCase: CaseRecord | null; run: RunRecord | null; runLoading: boolean; runError: string; startRun: (event: FormEvent<HTMLFormElement>) => void; acceptRun: () => void; acceptedSnapshotId: string; visibleSnapshotId: string; switchRequired: boolean; approveResearchPlan: (planHash: string) => void; approvalUnavailable: boolean; pendingAction: string; resumeSlot: ReactNode }) {
   const [pathway, setPathway] = useState("EARNINGS_UPDATE");
   const [depth, setDepth] = useState("screen");
   const deepResearchAvailable = selectedCase?.deep_research_available === true;
@@ -1080,7 +1084,7 @@ function RunConsole({ writeAccess, caseId, selectedCase, run, runLoading, runErr
     </section>
     <section className="panel span-8">
       <div className="panel-header"><h2>Execution route</h2><RunStatusBadge run={run} /></div>
-      <div className="panel-body flow"><RunStatus writeAccess={writeAccess} caseId={caseId} run={run} runLoading={runLoading} runError={runError} acceptRun={acceptRun} acceptedSnapshotId={acceptedSnapshotId} pendingAction={pendingAction} resumeSlot={resumeSlot} approvalSlot={approvalPlan && approvalHash ? <ResearchPlanView plan={approvalPlan} planHash={approvalHash} approving={pendingAction === "approve-research-plan"} approvalUnavailable={approvalUnavailable} onApprove={approveResearchPlan} /> : <StateBlock tone="warning" live="status" code="PLAN_APPROVAL_REQUIRED" body="The persisted approval plan is unavailable; approval remains blocked." />} /></div>
+      <div className="panel-body flow"><RunStatus writeAccess={writeAccess} caseId={caseId} run={run} runLoading={runLoading} runError={runError} acceptRun={acceptRun} acceptedSnapshotId={acceptedSnapshotId} visibleSnapshotId={visibleSnapshotId} switchRequired={switchRequired} pendingAction={pendingAction} resumeSlot={resumeSlot} approvalSlot={approvalPlan && approvalHash ? <ResearchPlanView plan={approvalPlan} planHash={approvalHash} approving={pendingAction === "approve-research-plan"} approvalUnavailable={approvalUnavailable} onApprove={approveResearchPlan} /> : <StateBlock tone="warning" live="status" code="PLAN_APPROVAL_REQUIRED" body="The persisted approval plan is unavailable; approval remains blocked." />} /></div>
     </section>
   </div>;
 }
