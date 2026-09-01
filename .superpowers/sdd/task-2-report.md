@@ -134,3 +134,49 @@ The challenger demonstrated four concrete gaps: a symlinked bundle root passed, 
 Least-confident areas were the regex boundary, ordering/newline behavior, tracked-file enumeration, tree validation order, and accidental identity drift. The focused positive and negative cases verified the detector boundary and order independence; NUL-delimited enumeration and full-text decoding were reviewed directly; temporary repositories exercised every rejected tree shape from pristine passing copies; and both standalone `--check` and an empty generated-identity diff confirmed that canonical identities did not change.
 
 Residual maintenance constraint: `ROOT_ENTRIES` is deliberately closed. Any intentional new bundle-root file must be added to that set and covered by the normal regeneration review.
+
+## Remaining re-review blocker and CP-1C authority correction
+
+The next re-review proved that the generic detector was not fully order-independent and that the deployed CP-1C authority contradicted the runtime's existing `supplied_only` pin. Shared canon granted a CP-1C public-research exception, and CP-1C instructions still directed automatic peer discovery, external-source queries, scraping provenance, and provisional externally sourced tiers.
+
+Detector corrections:
+
+- Give acquisition verb, generic public/external location, and filing/exhibit object their own independent sentence-bounded lookaheads.
+- Correct the verb family to match `browse`, `browses`, `browsed`, and `browsing`.
+- Pin `Search filings from external sources.`, `Filings from external sources should be downloaded.`, and `Browsing SEC exhibits is required.` through source-safe composition.
+- Preserve the negative `public-private` peer-profile case, which the stronger generic matcher initially exposed as a false positive.
+- Add a direct all-files assertion over the deployed CP-1C slug for discovery/scraping vocabulary, automatic discovery defaults, externally sourced tiers, and external filing-query instructions.
+
+CP-1C authority corrections:
+
+- Replace the shared-canon public-research exception with a supplied-evidence boundary aligned to `MODULES["CP-1C"].source_mode == "supplied_only"`.
+- Limit candidate selection to analyst-uploaded peer lists and peer entities disclosed in supplied bytes. A peer list remains selection input, not metric evidence.
+- Require every peer metric to resolve to a supplied source file and locator. Public/regulatory filings and other source types remain usable only when their exact bytes were supplied to the active run.
+- Replace automatic discovery and scraping tables with a supplied Peer Candidate Source Register. No peer evidence produces `PEER_SET_NOT_SUPPLIED` and `Blocked`; insufficient benchmark data produces a typed limitation or blocked dependent calculation.
+- Replace scraping-specific provenance tiers, exclusion rules, validation wording, and script comments with supplied-primary/supplied-secondary evidence rules.
+- Preserve all substantive peer analysis: the 15 core formulas, 16 comparability dimensions, alignment standard, minimum-N rules, outlier analysis, valuation calculations/tables, creditor implications, gaps ledger, and downstream handoffs.
+
+Regenerated identities:
+
+- Deploy V build ID: `1912cb03a21a750ec995e623de9b9a8973aa6e0160cc4b0d8c36f4a863c5c001`.
+- Independent approved-release pin: 319 files, `1f1a71d3388070f57cfeafd220c060c411fff426cf21b8c1b02a5270e5718200`.
+- CP-1C assembled-authority pin: `6a472b9802a1fc21784d1fee1f306b051701860c80e57f459819b46d9600ce42`.
+
+### Final acceptance after CP-1C correction
+
+1. Focused detector and direct CP-1C authority tests: `3 passed in 38.26s`.
+2. Exact bundle/spec suite: `26 passed in 1.70s`.
+3. Standalone integrity check: `Deploy V integrity is current`.
+4. Module consistency: `26 modules checked, 0 with drift.`
+5. Ruff over server/tests excluding vendored methodology: `All checks passed!`
+6. Quality-ledger coverage: 45 routes, 230 product files, 120 features; all documented.
+7. CP-1C acquisition-vocabulary search: zero matches.
+8. `git diff --check`: exit 0.
+
+### Final confidence review
+
+Least-confident areas were detector false positives, incomplete removal through shared authority, accidental loss of peer-analysis rules, and hand-updated identity mistakes. The `public-private` regression now proves the generic boundary; the tracked-tree detector plus direct recursive CP-1C assertion and zero-result search cover the complete authority surface; diff review confirmed the formulas, registers, thresholds, valuation/outlier logic, and downstream semantics remain; and the exact suite independently verifies the regenerated bundle bytes and assembled authority. A second non-mutating regeneration check is current.
+
+The only remaining `web_only`/`hybrid` tokens inside the CP-1C directory belong to a generic validator branch explicitly gated on `module_id == "CP-DR"`, duplicated across methodology packages. They are not CP-1C authority or an acquisition instruction and were deliberately left unchanged to avoid creating a divergent validator clone outside this correction's scope.
+
+Rewrite tournament was skipped under the skill's test-only/trivial-change exception: no non-trivial executable function changed in this correction. The peer-statistics edits are comments, the registry edit is a regenerated literal pin, and the detector change is test-policy logic covered by the adversarial cases above.

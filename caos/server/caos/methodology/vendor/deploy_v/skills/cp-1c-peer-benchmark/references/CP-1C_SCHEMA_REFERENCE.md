@@ -17,10 +17,10 @@
 ## Conditional Table (1)
 | ID | Table | Key Columns | Required When |
 |----|-------|-------------|---------------|
-| T4.D1 | Peer Discovery Source Register | Candidate, Query / Source, URL or Source Locator, Retrieval Date, Dimensions Assessed, Promotion Decision, Evidence Tag, Limitation | Auto-discovery or optional web discovery runs |
+| T4.D1 | Peer Candidate Source Register | Candidate, Supplied Source File, Source Locator, Selection Basis, Dimensions Assessed, Inclusion Decision, Evidence Tag, Limitation | Candidate selection requires supplied-evidence documentation |
 
 ## QA Checklist
-- [ ] CP-1 data foundation confirmed  - [ ] Peer Universe Register complete with provenance tags  - [ ] All 11 alignment points assessed  - [ ] Comparability status before statistics  - [ ] Peer Statistic Rules enforced (N stated)  - [ ] Outliers classified with 6-dim credit translation  - [ ] Valuation multiples sourced with date  - [ ] Implied EV stated as context only  - [ ] Web-discovery runs populate T4.D1 and selected peers carry evidence tags in T4.1  - [ ] No JSON/DOCX/other sidecar created  - [ ] Gaps Ledger cumulative  - [ ] Peer provenance stated in Overall View  - [ ] Confidence Score (0-100) computed per CP_CONFIDENCE_SCORE.md, band derived  - [ ] Canonical Markdown valid; the Markdown handoff pass view-appropriate parity
+- [ ] CP-1 data foundation confirmed  - [ ] Peer Universe Register complete with provenance tags  - [ ] All 11 alignment points assessed  - [ ] Comparability status before statistics  - [ ] Peer Statistic Rules enforced (N stated)  - [ ] Outliers classified with 6-dim credit translation  - [ ] Valuation multiples sourced with date  - [ ] Implied EV stated as context only  - [ ] Supplied candidate evidence populates T4.D1 and supported peers carry evidence tags in T4.1  - [ ] Missing peer evidence produces a typed gap and limited or blocked status  - [ ] No JSON/DOCX/other sidecar created  - [ ] Gaps Ledger cumulative  - [ ] Peer provenance stated in Overall View  - [ ] Confidence Score (0-100) computed per CP_CONFIDENCE_SCORE.md, band derived  - [ ] Canonical Markdown valid; the Markdown handoff pass view-appropriate parity
 
 ## Export
 

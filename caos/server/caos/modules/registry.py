@@ -32,12 +32,12 @@ class ModuleSpec:
 
 
 # digest({"authority": assemble_authority(module_id)}) over the pinned
-# deploy_v build, recorded 2026-08-26.
+# deploy_v build, recorded 2026-09-01.
 GOLDEN_AUTHORITY_DIGESTS = {
     "CP-1": "71dd70efc79410edd80af7648572782cd694f05aa754d1abd03b6dcb93885cd6",
     "CP-1A": "9157ed912eb73e21cd51479abe8fc446f895949da673a3e366df8f7c76a9eede",
     "CP-1B": "1d2757874da74caa48ac88d2474d1d5b4ff48982414bb53ba785296f3e684bc1",
-    "CP-1C": "01f2787934b06e900125cd3119324621c8436e51683b7a5644db7b77dc75342c",
+    "CP-1C": "6a472b9802a1fc21784d1fee1f306b051701860c80e57f459819b46d9600ce42",
     "CP-1D": "0d2841369e275c430434d0c5287ef223dd2ec3c0d404ac1660efc8f028697939",
     "CP-2": "5fb286e7d673de8f621df805948409062da8dd469930bc8df83a92044e440e41",
     "CP-2A": "842663c8c017297102b9abd8569e782103f982d8b62cfafe52a2e9f8c3b390ef",

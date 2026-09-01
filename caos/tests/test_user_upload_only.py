@@ -9,15 +9,19 @@ from pathlib import Path
 
 
 REPO = Path(__file__).resolve().parents[2]
+CP1C_ROOT = (
+    REPO
+    / "caos/server/caos/methodology/vendor/deploy_v/skills/cp-1c-peer-benchmark"
+)
 ACQUISITION_VERBS = "|".join((
     "sear" + "ch(?:es|ed|ing)?", "fet" + "ch(?:es|ed|ing)?",
     "down" + "load(?:s|ed|ing)?", "pu" + "ll(?:s|ed|ing)?",
     "retr" + "iev(?:e|es|ed|ing)", "acq" + "uir(?:e|es|ed|ing)",
-    "va" + "ult(?:s|ed|ing)?", "brow" + "se(?:s|d|ing)?",
+    "va" + "ult(?:s|ed|ing)?", "brow" + "s(?:e|es|ed|ing)",
     "que" + "ry|queries|queried|querying", "loc" + "at(?:e|es|ed|ing)",
 ))
 FILING_LOCATIONS = "|".join(("S" + "EC(?:\\s+(?:web\\s+)?site)?", "ED" + "GAR"))
-GENERIC_LOCATIONS = "|".join(("pub" + "lic", "exter" + "nal"))
+GENERIC_LOCATIONS = "|".join(("pub" + r"lic(?!-)", "exter" + r"nal(?!-)"))
 FILING_OBJECTS = "|".join(("fil" + "ings?", "exhi" + "bits?", "10-[KQ]"))
 SEC_HOST = (
     r"(?<![A-Za-z0-9-])(?:[A-Za-z0-9-]+\.)*s" + r"ec\.gov"
@@ -30,7 +34,8 @@ RETRIEVAL_CLAUSE = (
 )
 GENERIC_RETRIEVAL_CLAUSE = (
     rf"(?=[^.!?]{{0,120}}\b(?:{ACQUISITION_VERBS})\b)"
-    rf"(?=[^.!?]{{0,120}}\b(?:{GENERIC_LOCATIONS})\b[^.!?]{{0,30}}\b(?:{FILING_OBJECTS})\b)"
+    rf"(?=[^.!?]{{0,120}}\b(?:{GENERIC_LOCATIONS})\b)"
+    rf"(?=[^.!?]{{0,120}}\b(?:{FILING_OBJECTS})\b)"
     r"[^.!?]{1,120}"
 )
 FORBIDDEN = re.compile("|".join((
@@ -48,6 +53,16 @@ FORBIDDEN = re.compile("|".join((
     RETRIEVAL_CLAUSE,
     GENERIC_RETRIEVAL_CLAUSE,
 )), re.IGNORECASE | re.DOTALL)
+CP1C_FORBIDDEN = re.compile("|".join((
+    r"w" + r"eb\s*-?\s*discovery",
+    r"w" + r"eb\s*-?\s*scrap\w*",
+    r"scr" + r"ape\s+URL",
+    "auto_" + "discover",
+    "reputable_" + "public_web",
+    r"w" + r"eb\s*-?\s*sourced",
+    rf"\b(?:{ACQUISITION_VERBS})\b[^.!?]{{0,120}}"
+    rf"\b(?:{GENERIC_LOCATIONS})\b[^.!?]{{0,120}}\b(?:{FILING_OBJECTS})\b",
+)), re.IGNORECASE | re.DOTALL)
 
 
 def test_detector_catches_reviewer_variants():
@@ -58,9 +73,34 @@ def test_detector_catches_reviewer_variants():
         "Retr" + "ieve from https://www.sec" + ".gov/ixviewer/doc/action?doc=x",
         "Pub" + "lic fil" + "ings may be down" + "loaded.",
         "Sear" + "ch for fil" + "ings on the S" + "EC site.",
+        "Sear" + "ch fil" + "ings from exter" + "nal sources.",
+        "Fil" + "ings from exter" + "nal sources should be down" + "loaded.",
+        "Brow" + "sing S" + "EC exhi" + "bits is required.",
     )
     assert all(FORBIDDEN.search(variant) for variant in variants)
     assert not FORBIDDEN.search("not" + "sec.gov.example.com")
+    assert not FORBIDDEN.search(
+        "Que" + "ry a pub" + "lic-private peer set from regulatory fil" + "ings."
+    )
+
+
+def test_deployed_cp1c_has_no_external_peer_acquisition_lane():
+    matches = []
+    for path in sorted(CP1C_ROOT.rglob("*")):
+        if not path.is_file():
+            continue
+        data = path.read_bytes()
+        if b"\0" in data:
+            continue
+        try:
+            text = data.decode("utf-8")
+        except UnicodeDecodeError:
+            continue
+        for match in CP1C_FORBIDDEN.finditer(text):
+            relative = path.relative_to(REPO)
+            line_number = text.count("\n", 0, match.start()) + 1
+            matches.append(f"{relative}:{line_number}: {' '.join(match.group().split())}")
+    assert not matches, "CP-1C external peer acquisition is forbidden:\n" + "\n".join(matches)
 
 
 def test_tracked_product_sources_prohibit_external_filing_acquisition():

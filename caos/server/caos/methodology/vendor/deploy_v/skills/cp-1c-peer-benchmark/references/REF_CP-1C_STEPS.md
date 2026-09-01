@@ -8,16 +8,16 @@ Original files, in this bundle: REF_CP-1C_00_PeerDiscoveryGate.md, REF_CP-1C_01_
 
 ## REF_CP-1C_00_PeerDiscoveryGate.md
 <!-- REF_CP-1C_00 (T2) | 2026-06-02 -->
-<step_reference module="CP-1C" step="00" name="Peer Discovery Gate">
-<input>CP-1 borrower profile + input payload</input>
-<gate>User peer list present?</gate>
+<step_reference module="CP-1C" step="00" name="Peer Evidence Gate">
+<input>CP-1 borrower profile + analyst-uploaded peer list and supplied evidence</input>
+<gate>Supplied evidence establishes peer candidates?</gate>
 
 ## Instructions
-IF NO user list → Execute web discovery: construct queries from CP-1 profile (sector/geography/revenue scale/business model/capital structure/public-private/key product), query 6 source types (regulatory filings, rating disclosures, industry DBs, LevFin databases, financial news, IR pages), promote if ≥3/16 dimensions assessable, and tag all promoted candidates `Web-Scraped — Unverified`. Record candidate, query/source, URL or source locator, retrieval date, dimensions assessed, promotion decision and limitation in T4.D1 inside the canonical Markdown appendix. Carry selected peers into T4.1; do not create a JSON sidecar.
-IF YES → Proceed to Step 1. Web scrape optional supplement.
+Use only an analyst-uploaded peer list or peer entities disclosed in supplied evidence. A peer list selects candidates but is not metric evidence. Record each candidate, supplied source file and locator, selection basis, dimensions assessable, inclusion decision, evidence tag, and limitation in T4.D1 inside the canonical Markdown appendix. Carry supported candidates into T4.1; do not create a JSON sidecar.
+If supplied evidence establishes no peer candidates, record `PEER_SET_NOT_SUPPLIED`, set Module Status = Blocked, and STOP. Do not discover or substitute peers outside the supplied corpus.
 
 ## Output
-Conditional T4.D1 Peer Discovery Source Register inside the canonical Markdown handoff when discovery runs; otherwise record that discovery was not required. No separate artifact.
+Conditional T4.D1 Peer Candidate Source Register inside the canonical Markdown handoff. If no peer set is established, record the typed gap and blocked status. No separate artifact.
 </step_reference>
 ## REF_CP-1C_01_PeerDataGate.md
 <!-- REF_CP-1C_01 (T2) | 2026-06-02 -->
@@ -26,7 +26,7 @@ Conditional T4.D1 Peer Discovery Source Register inside the canonical Markdown h
 <gate>Sufficient peer data</gate>
 
 ## Instructions
-Validate each candidate has accessible financial data. If web-scraped, confirm data beyond entity identification. Identify all peer source materials by name/type/period/evidence quality/provenance. Confirm CP-1 borrower data available. Flag if insufficient.
+Validate that each candidate has supplied financial data beyond entity identification. Identify all supplied peer source materials by filename/type/period/evidence quality/provenance. Confirm CP-1 borrower data available. If supplied data is insufficient for a candidate or benchmark, record the typed gap and return `Ready with Limitations` or `Blocked` as the dependent gates require.
 
 ## Output
 Data sufficiency assessment. Status: Full Run / Ready with Limitations / Blocked.
@@ -39,7 +39,7 @@ Data sufficiency assessment. Status: Full Run / Ready with Limitations / Blocked
 <gate>Peer-First Gate</gate>
 
 ## Instructions
-Apply Peer Source Hierarchy. Per peer: entity name, category label, source provenance, scrape URL/date (if web-scraped), 16 dimensions assessed, strengths, limitations, data availability, evidence quality, usability scope. Apply 13 exclusion rules. Log excluded with reasons.
+Apply Peer Source Hierarchy. Per peer: entity name, category label, supplied source file and locator, source provenance, 16 dimensions assessed, strengths, limitations, data availability, evidence quality, usability scope. Apply the exclusion rules. Log excluded candidates with reasons.
 
 ## Output
 T4.1: `Entity Name`|`Peer Category Label`|`Source of Selection`|`Dimensions Assessed`|`Strengths`|`Limitations`|`Data Availability`|`Evidence Quality Tier`|`Usable For`|`Exclusion Reason`
@@ -51,7 +51,7 @@ T4.1: `Entity Name`|`Peer Category Label`|`Source of Selection`|`Dimensions Asse
 <gate>T4.1 complete</gate>
 
 ## Instructions
-For every planned comparison, apply 11-point alignment standard. Assign comparability status. Log limitations. Web-scraped vs audited = provenance gap flag.
+For every planned comparison, apply 11-point alignment standard. Assign comparability status. Log limitations. Supplied secondary-source data versus supplied audited data is a provenance gap flag.
 
 Apply the 9 Non-Comparability Triggers in REF_CP-1C_ValuationAndOutlierRules.md when assigning Not Comparable / Comparable with Limitations.
 
@@ -146,7 +146,7 @@ T4.9: `Txn Name`|`Date`|`Type`|`Buyer/Seller`|`TV`|`TV/Rev`|`TV/EBITDA`|`Period 
 <gate>Sufficient multiples</gate>
 
 ## Instructions
-Calculate implied EV: 4 methods (EV/EBITDA, EV/Revenue, TV/EBITDA, TV/Revenue) + range (Low/Median/High) using the Implied EV Formulas and Valuation Calculation Constraints in REF_CP-1C_ValuationAndOutlierRules.md. Each calculation states: multiple source, borrower metric used, period, definition, calculation status. State: indicative context ONLY, NOT recovery estimate (recovery belongs to CP-4 / CP-4A). Web-scraped multiples → 'Provisional — Web-Sourced' if not cross-checked.
+Calculate implied EV: 4 methods (EV/EBITDA, EV/Revenue, TV/EBITDA, TV/Revenue) + range (Low/Median/High) using the Implied EV Formulas and Valuation Calculation Constraints in REF_CP-1C_ValuationAndOutlierRules.md. Each calculation states: multiple source, borrower metric used, period, definition, calculation status. State: indicative context ONLY, NOT recovery estimate (recovery belongs to CP-4 / CP-4A). Supplied secondary-source multiples remain `Provisional — Supplied Secondary Source` unless corroborated by supplied primary evidence.
 
 ## Output
 T4.10: `Method`|`Multiple Source`|`Multiple Value`|`Borrower Metric`|`Period`|`Implied EV`|`Low`|`Median`|`High`|`Calc Status`|`Limitations`
@@ -170,7 +170,7 @@ Peer-interpretation narrative in `## Analysis` of the canonical Markdown handoff
 <gate>Always</gate>
 
 ## Instructions
-Comprehensive cumulative ledger. Web scrape provenance rules: (a) count by provenance, (b) list unverified peers, (c) downstream impact. All web-scraped + uncorroborated → severity=High.
+Comprehensive cumulative ledger. Count peers by supplied provenance; list unsupported candidates and missing benchmark evidence; state downstream impact. An uncorroborated supplied secondary-source figure is `Provisional`, excluded from aggregates, and recorded with severity proportionate to downstream impact.
 
 ## Output
 T4.11: `Gap`|`Affected Metric/Section`|`Affected Peer(s)`|`Downstream Impact`|`Severity`|`Recommended Action`
@@ -201,8 +201,8 @@ Module summary narrative in the canonical Markdown handoff.
 5. No forced conclusions from incomplete data
 6. No peer statistics where insufficient comparable datapoints
 7. No mixing financial bases (IFRS/GAAP, FYE, perimeters, currencies) without flagging
-8. No treating web-scraped peers as equivalent to analyst-selected
-9. No suppressing "Web-Scraped — Unverified" evidence tag
+8. No treating an analyst-selected peer as evidence without supplied supporting data
+9. No suppressing missing-peer or insufficient-peer-data limitations
 </library_reference>
 ## REF_CP-1C_ValuationAndOutlierRules.md
 <!-- REF_CP-1C_ValuationAndOutlierRules (T2 Library) | 2026-06-10 | Restored from CP-1C__SUPPORT__Metric_Alignment_Calculation_Outlier_and_Valuation_Rules §2.6.3, 2.7.3–2.7.4, 2.8, 2.9.5 -->
@@ -293,12 +293,10 @@ the borrower where the peer set is incomplete or definitions differ materially.
 ## Style (relocated from ACTIVE_PROMPT 2026-07-11)
 Institutional-grade, committee-ready, creditor-first, evidence-led. Tables for numeric benchmarking. Prose for narrative. No filler. No equity-upside framing.
 
-## Web Scrape Discovery Protocol (relocated from ACTIVE_PROMPT 2026-07-11)
-Trigger: Auto when no user list. Optional supplement when user list present.
-Scrape Params (from CP-1): Sector/sub-sector, geography, revenue scale band, business model, capital structure, public/private, key product/service.
-Permitted Sources (ranked): (1) Regulatory filings (2) Rating agency disclosures (3) Industry classification DBs (4) LevFin deal databases (5) Financial news (6) Company IR pages.
-Promotion: ≥3 of 16 comparability dimensions assessable. Evidence floor: "Web-Scraped — Unverified".
-Output: conditional T4.D1 Peer Discovery Source Register in the canonical Markdown appendix. Carry promoted peers into T4.1. Do not create a JSON sidecar.
+## Supplied Peer Evidence Protocol (relocated from ACTIVE_PROMPT 2026-07-11)
+Candidate inputs: analyst-uploaded peer lists and peer entities disclosed in supplied evidence. Public or regulatory filings, rating disclosures, industry data, transaction data, financial news, and company materials are usable only when their exact source bytes were supplied to the active run.
+Selection: assess the 16 comparability dimensions supported by supplied evidence. A candidate list is selection input, not metric evidence. No supplied candidate evidence produces `PEER_SET_NOT_SUPPLIED` and a blocked status; insufficient benchmark data produces a typed limitation or blocked dependent calculation.
+Output: conditional T4.D1 Peer Candidate Source Register in the canonical Markdown appendix. Carry supported peers into T4.1. Do not create a JSON sidecar.
 
 ## Execution Rules (relocated from ACTIVE_PROMPT 2026-07-11)
 1. Peer-First Gate: No benchmark tables until Peer Universe Register + Metric Alignment Register complete.
@@ -311,16 +309,15 @@ Min 3 for median, 4 for quartile, 5 for average. <2 → no statistics. Exclude n
 ## 15 Core Formulas — inherited from CP-1 (relocated from ACTIVE_PROMPT 2026-07-11)
 1 Gross Margin = Gross Profit / Revenue | 2 EBITDA Margin = EBITDA / Revenue | 3 EBIT Margin = EBIT / Revenue | 4 Net Income Margin = Net Income / Revenue | 5 Revenue Growth = (Current − Prior Revenue) / Prior Revenue | 6 EBITDA Growth = (Current − Prior EBITDA) / Prior EBITDA | 7 Total Leverage = Total Debt / EBITDA | 8 Net Leverage = Net Debt / EBITDA | 9 Senior Secured Leverage = Senior Secured Debt / EBITDA | 10 Interest Coverage = EBITDA / Cash Interest Paid | 11 Adjusted Interest Coverage = (EBITDA − Capex) / Cash Interest Paid | 12 FFO / Total Debt | 13 FCF Conversion = FCF / EBITDA | 14 Capex / Revenue | 15 Liquidity = Cash + Undrawn Committed Facilities
 
-## Peer Source Hierarchy — 7 Tiers (relocated from ACTIVE_PROMPT 2026-07-11)
+## Peer Source Hierarchy — 6 Tiers (relocated from ACTIVE_PROMPT 2026-07-11)
 | Tier | Source | Evidence Quality |
 |------|--------|-----------------|
-| 1 | Web-scraped discovery (auto when no user list) | Web-Scraped — Unverified |
-| 2 | User-provided peer list (analyst instruction) | Highest override |
-| 3 | Document-disclosed (LP, OM, rating report) | Document-Disclosed |
-| 4 | Internal sector review / portfolio screening | Internal |
-| 5 | Public-company peers (sector/product overlap) | Public Sources |
-| 6 | Transaction comparables (deal databases) | Transaction Sources |
-| 7 | Broader sector comparables (directional only) | Contextual |
+| 1 | Analyst-uploaded peer list | Candidate selection only |
+| 2 | Supplied document-disclosed peers (LP, OM, rating report) | Document-Disclosed |
+| 3 | Supplied internal sector review / portfolio screening | Internal |
+| 4 | Supplied public-company evidence (sector/product overlap) | Supplied Public Source |
+| 5 | Supplied transaction comparables | Supplied Transaction Source |
+| 6 | Supplied broader-sector comparables (directional only) | Contextual |
 
 ## 16 Comparability Dimensions (relocated from ACTIVE_PROMPT 2026-07-11)
 Product/service similarity | Revenue model | End-market exposure | Geography | Customer type/concentration | Contract structure | Margin structure | Capex intensity | Working-capital dynamics | Leverage/capital structure | Public vs private | Accounting standard | Fiscal-period alignment | Data availability | Valuation relevance | Source provenance
@@ -329,7 +326,7 @@ Product/service similarity | Revenue model | End-market exposure | Geography | C
 Borrower/Issuer | Direct Operating Peer | Sector Peer | Rating/Leverage Peer | Public Trading Comp | Transaction Comp | Internal RV Peer | Excluded/Not Comparable
 
 ## Exclusion Rules — 13 Triggers (relocated from ACTIVE_PROMPT 2026-07-11)
-No overlapping periods | Irreconcilable accounting | Different business model | Data >18mo stale | Insufficient data | Distress distortion | Irreconcilable perimeter | Irreconcilable currency/unit | Misleading to committee | [Web Scrape] Unverifiable | [Web Scrape] Sector overlap unconfirmed | [Web Scrape] Data contradicted | [Web Scrape] Financials behind paywall
+No overlapping periods | Irreconcilable accounting | Different business model | Data >18mo stale | Insufficient data | Distress distortion | Irreconcilable perimeter | Irreconcilable currency/unit | Misleading to committee | Supplied source unverifiable | Sector overlap unconfirmed by supplied evidence | Supplied sources conflict | Required peer financials not supplied
 
 ## 11-Point Alignment Standard — ACTIVE_PROMPT form (relocated from ACTIVE_PROMPT 2026-07-11)
 (1) Metric definition (2) Adjustment basis (3) Reporting period (4) Period length (5) Accounting standard (6) Currency (7) Unit (8) Perimeter (9) Data source quality (10) Calculation status (11) Source provenance parity

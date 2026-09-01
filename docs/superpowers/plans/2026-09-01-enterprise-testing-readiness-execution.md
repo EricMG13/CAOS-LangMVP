@@ -49,23 +49,26 @@
 
 **Step 6 — Verify.** Run the two repaired gates, Ruff, targeted model/observability tests, frontend unit tests, and YAML syntax/loading. Expected: zero audit/ledger failures and no new skips.
 
-## Task 2: Remove every EDGAR acquisition dependency
+## Task 2: Remove every external filing and peer-discovery acquisition dependency
 
 **Files:**
 - Modify: `caos/server/caos/methodology/vendor/deploy_v/skills/cp-4-legal-covenant-interpreter/SKILL.md`
 - Modify: `caos/server/caos/methodology/vendor/deploy_v/skills/cp-4-legal-covenant-interpreter/references/CP-4_RUNBOOK.md`
 - Modify: `caos/server/caos/methodology/vendor/deploy_v/skills/cp-4-legal-covenant-interpreter/references/REF_CP-4B_STEPS.md`
 - Modify: `caos/server/caos/methodology/vendor/deploy_v/skills/cp-4-legal-covenant-interpreter/references/REF_CP-4_STEPS.md`
+- Modify: `caos/server/caos/methodology/vendor/deploy_v/CANON_SHARED.md`
+- Modify: deployed `cp-1c-peer-benchmark` skill and references to require supplied peer evidence only
 - Modify: vendored bundle manifest/digests through `caos/scripts/regenerate_deploy_v_integrity.py`
 - Add: `caos/scripts/regenerate_deploy_v_integrity.py` because the distributed package omits its original builder
 - Modify: `docs/quality_ledger_coverage.py` to map the replacement command to existing methodology-integrity features
 - Test: `caos/tests/test_bundle.py`
 - Test: `caos/tests/spec/test_modules_spec.py`
+- Modify: `caos/server/caos/modules/registry.py` only for the regenerated CP-1C assembled-authority pin
 - Test: add the smallest tracked-text prohibition test beside the bundle tests
 
-**Step 1 — Add a failing prohibition test.** Assert the deployed methodology and tracked product text contain no EDGAR name, SEC retrieval endpoint, `EDGAR_USER_AGENT`, `/api/edgar`, or agent acquisition instruction. Exclude immutable issuer PDF bytes only.
+**Step 1 — Add a failing prohibition test.** Assert the deployed methodology and tracked product text contain no EDGAR name, SEC retrieval endpoint, `EDGAR_USER_AGENT`, `/api/edgar`, agent acquisition instruction, or CP-1C peer-discovery/scraping lane. Exclude immutable issuer PDF bytes only.
 
-**Step 2 — Delete the acquisition lane.** Remove the EDGAR reference section and every instruction that asks an agent to search, fetch, or vault external filings. Replace only necessary legal-gate wording with “use supplied governing documents; otherwise record a typed evidence gap.”
+**Step 2 — Delete the acquisition lanes.** Remove the EDGAR reference section and every instruction that asks an agent to search, fetch, or vault external filings. Remove the shared CP-1C public-web exception and all deployed peer-discovery/scraping instructions. Preserve CP-1C benchmarking with analyst-uploaded lists or peers disclosed in supplied evidence; absent or insufficient peer evidence produces a typed gap and limited or blocked status.
 
 **Step 3 — Regenerate integrity metadata.** The distributed package does not ship its original builder. Use the minimal stdlib `caos/scripts/regenerate_deploy_v_integrity.py` replacement; never hand-edit a digest without regenerating its preimage.
 

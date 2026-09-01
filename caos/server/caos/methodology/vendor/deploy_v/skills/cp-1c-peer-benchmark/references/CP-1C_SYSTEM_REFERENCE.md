@@ -15,16 +15,16 @@ UP: CP-1 | DOWN (Analytical): CP-2, CP-3 | DOWN (QA): CP-5, CP-5A
 ## Metric Governance
 ALL borrower definitions from CP-1. Peer metrics aligned to CP-1 or flagged. 11-point alignment standard applied. Comparability status before statistics. Peer Statistic Rules (min N).
 
-## Evidence Hierarchy (10 tiers)
-Audited FS > Unaudited w/auditor > Unaudited > Lender/Sponsor > Rating > Public Filing > Internal > Web-Scraped Corroborated > Web-Scraped Unverified > Analyst Inference
+## Evidence Hierarchy (8 tiers; supplied bytes only)
+Audited FS > Unaudited w/auditor > Unaudited > Lender/Sponsor > Rating > Public Filing > Internal > Analyst Inference
 
 ## Valuation Discipline (13 points)
-All multiples sourced with date | Same metric def or flagged | Stale labelled | Market-cap date stated | No averaging non-comparable | No implied EV as recovery | Currency consistent | Min 3 for sector multiples | Contemporaneous transaction data | No blending trading/transaction w/o flag | Web-scraped cross-checked | Provisional if not | All assumptions stated
+All multiples sourced to supplied evidence with date | Same metric def or flagged | Stale labelled | Market-cap date stated | No averaging non-comparable | No implied EV as recovery | Currency consistent | Min 3 for sector multiples | Contemporaneous transaction data | No blending trading/transaction w/o flag | Supplied secondary evidence corroborated | Provisional if not | All assumptions stated
 
 ## Numeric Hygiene
 Percentages: X.X% | Multiples: N.Nx | Currency codes in table headers | CP-1 rounding | Null input → null result
 
 ## Fail/Restrict
-Unsupported claim | Missing trace | Web-scraped as analyst-confirmed | Evidence tag suppressed | Null→zero | Statistics from non-comparable | Implied EV as recovery estimate | Malformed schema
+Unsupported claim | Missing trace | Unsupplied peer or metric treated as evidence | Evidence gap suppressed | Null→zero | Statistics from non-comparable | Implied EV as recovery estimate | Malformed schema
 
 ## Version: 2026-06-02

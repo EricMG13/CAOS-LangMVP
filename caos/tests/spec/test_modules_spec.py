@@ -64,7 +64,7 @@ def test_vendored_bundle_is_the_approved_unmodified_release(settings):
         digest.update(len(data).to_bytes(8, "big"))
         digest.update(data)
     assert len(paths) == 319
-    assert digest.hexdigest() == "0df950e68e0e8caaa5d825ed382c6090c1bc8e8e4bd673a6effd147777461d67"
+    assert digest.hexdigest() == "1f1a71d3388070f57cfeafd220c060c411fff426cf21b8c1b02a5270e5718200"
 
 
 def test_authority_assembly_matches_golden_digests():

@@ -105,10 +105,10 @@ CALCULATION_STATUSES = {
     "reported", "calculated", "derived", "provisional",
     "not comparable", "insufficient information",
 }
-# CANON_SHARED.md, "Controlled Public-Web Exception — CP-1C": "A material
-# secondary-source figure requires primary-source confirmation or independent
-# reputable corroboration; otherwise it remains `Provisional` and is excluded
-# from aggregate statistics."
+# CANON_SHARED.md, "Supplied-Evidence Boundary — CP-1C": a material
+# secondary-source figure requires confirmation from supplied primary evidence
+# or supplied independent corroboration; otherwise it remains `Provisional`
+# and is excluded from aggregate statistics.
 #
 # This is a SECOND exclusion filter on N, independent of comparability, and it
 # lives in canon rather than in CP-1C's own references -- which is why it is
@@ -278,8 +278,8 @@ def analyse(payload):
         "n_included": len(included),
         "excluded_non_comparable": excluded_non_comparable,
         "excluded_null_value": null_valued,
-        # Uncorroborated secondary-source figures stay Provisional and are kept
-        # out of aggregates (CANON_SHARED, public-web exception).
+        # Uncorroborated supplied secondary-source figures stay Provisional and
+        # are kept out of aggregates (CANON_SHARED, supplied-evidence boundary).
         "excluded_by_calculation_status": excluded_by_status,
         # AP11 admits "Comparable with Limitations" as well as "Comparable".
         # Both enter the statistics, but a set carrying limited comparables is

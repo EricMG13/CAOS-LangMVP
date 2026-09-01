@@ -461,30 +461,30 @@
     {
       "aliases": [],
       "companion_count": 9,
-      "entry_bytes": 21921,
-      "entry_sha256": "6741d02da12847f8895652c8bcb21e6e0aed523b0561ea2aef44245c4c77f690",
+      "entry_bytes": 22074,
+      "entry_sha256": "a260a71ab616269126566b16d832dfaf67774469d4873782e5a6225d93981fe1",
       "folder_slug": "cp-1c-peer-benchmark",
       "module_id": "CP-1C",
       "relative_file_hashes": {
         "SKILL.md": {
-          "bytes": 21921,
-          "sha256": "6741d02da12847f8895652c8bcb21e6e0aed523b0561ea2aef44245c4c77f690"
+          "bytes": 22074,
+          "sha256": "a260a71ab616269126566b16d832dfaf67774469d4873782e5a6225d93981fe1"
         },
         "references/CP-1C_SCHEMA_REFERENCE.md": {
-          "bytes": 3163,
-          "sha256": "b85719891c3b688f49dd636416f02460d1d9b71e33d8fa01a6bc42ef335f7aad"
+          "bytes": 3269,
+          "sha256": "eecd8555ea5204e633506e2f04c4450d70dcb83d925d95d9c143660ae8e1f5b4"
         },
         "references/CP-1C_SYSTEM_REFERENCE.md": {
-          "bytes": 1962,
-          "sha256": "d85a1cc17ec9a079054a58761efba98ccacef58cd0a15ed084e39b5b38104048"
+          "bytes": 1979,
+          "sha256": "3bd7ed0fd5f9f9f4384a2f0a8d4f55d95a8a7b793c5ad70893b76074b37d4260"
         },
         "references/CP-1C__PeerBenchmark__payload.schema.txt": {
           "bytes": 698,
           "sha256": "76de802455505ba43735873a84d9d87ade3b9c673493738f4194e3605d8081e5"
         },
         "references/REF_CP-1C_STEPS.md": {
-          "bytes": 24735,
-          "sha256": "d2077d8e0a8936f26023313ca46e2b4b86d8650a3642afedd71457a5aafbafe7"
+          "bytes": 25153,
+          "sha256": "a630be1ba396c06ba74bdb786dda589f87f96019d9abcfe6db7e1084d9aced30"
         },
         "scripts/completeness_check.py": {
           "bytes": 17807,
@@ -499,8 +499,8 @@
           "sha256": "e8286e65b0356e486e822f7bb255c188ac1e6557a7d7e00973970a690642a520"
         },
         "scripts/peer_statistics.py": {
-          "bytes": 27264,
-          "sha256": "00922ebf0eef9c25a53b2af538e5a774638a97d464bee707706ffdbf88f8c96a"
+          "bytes": 27287,
+          "sha256": "dcdf78f65739dc036e9f59dee0152d9a9ff7f7847b12ca84634c2134e4cad219"
         },
         "scripts/validate_handoff.py": {
           "bytes": 35004,

@@ -47,7 +47,7 @@ the declared package-root path, which may be a sibling of the selected
 index URL after proving it belongs to the same tenant, drive, and Deploy V
 package as the selected base folder; never derive a parent or child URL from
 the base URL. Require `INDEX_BUILD_ID:
-cc8decc567c55037db1b54573f836ea3e0326e2cdd1337ca657d8b49af910aa9` before using any per-skill URL. A missing,
+1912cb03a21a750ec995e623de9b9a8973aa6e0160cc4b0d8c36f4a863c5c001` before using any per-skill URL. A missing,
 stale, or unverified index stops dispatch; do not recursively scan sibling
 skills or derive URLs from the base URL.
 
