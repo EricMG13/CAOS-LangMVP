@@ -169,6 +169,60 @@ Verified fine: injected `serve` ownership boundary, borrowed store/provider beha
 
 Still open: real PostgreSQL integration remains unavailable without `CAOS_TEST_POSTGRES_URL`; the unrelated third-party Starlette deprecation remains. Independent approval is not claimed here.
 
+## Lifecycle hardening correction
+
+Implementation commit: `209b2df`. This correction addresses the independent review findings against `6550449`; independent approval remains pending.
+
+- `AnthropicProvider.aclose()` now closes the real `ChatAnthropic._async_client` through its documented async `close()` API. It marks itself closed only after success, so a failure is retryable and a successful double-close is a no-op. `run` still calls only the provider adapter lifecycle API.
+- App, worker, and development entrypoints preserve the primary serve/poll exception while attempting every owned cleanup. With no primary exception, Engine cleanup remains the observable first failure even if provider or store cleanup also fails. `worker --once` now reaches its normal cleanup path rather than returning from inside it.
+- Foreign-loop task draining has an explicit operational safety bound: `CLOSE_DRAIN_TIMEOUT_SECONDS = 5.0`. A thread-safe bridge tracks the owner-loop waiter. On expiry, bridge and waiter cancellation are best effort, a typed `RuntimeError` is raised, `_closed` remains false, and the source task stays registered for retry. A stopped-loop handoff is rejected immediately; owner-loop waiter creation errors are propagated rather than swallowed by `gather(return_exceptions=True)`.
+
+The bound is product behavior, not a test-only timeout: a stopped event loop cannot complete its queued task waiter, so shutdown must fail retryably rather than wait indefinitely. The zero-bound regression injects the named product constant and uses event handshakes; it does not sleep or use a test timeout as proof.
+
+Final strict lifecycle command:
+
+`/private/tmp/caos-enterprise-baseline-20260901/bin/python -m pytest caos/tests/test_anthropic_provider.py caos/tests/spec/test_runs_spec.py caos/tests/test_single_instance.py caos/tests/test_worker.py -q -W error::ResourceWarning`
+
+Result: `61 passed, 2 skipped, 1 warning in 5.25s`. The sole warning is the existing third-party Starlette TestClient deprecation. There were zero first-party ResourceWarnings.
+
+Bridge-only strict regressions:
+
+`/private/tmp/caos-enterprise-baseline-20260901/bin/python -m pytest caos/tests/spec/test_runs_spec.py::test_engine_close_propagates_foreign_waiter_creation_failure caos/tests/spec/test_runs_spec.py::test_engine_close_timeout_survives_stopped_owner_waiter_cleanup caos/tests/spec/test_runs_spec.py::test_engine_close_foreign_drain_timeout_preserves_retry_and_waiters caos/tests/spec/test_runs_spec.py::test_engine_close_refuses_owner_loop_stopped_during_waiter_handoff -q -W error::ResourceWarning`
+
+Result: `4 passed in 0.17s`.
+
+Post-review checks:
+
+- Ruff on each changed Python file — `All checks passed!`.
+- `git diff --check` — passed before the implementation commit.
+- No warning suppression, dependency, sleep, garbage-collection proof, or rewrite tournament was added. Rewrite tournament remains explicitly prohibited for this session.
+
+## Confidence review — lifecycle hardening correction
+
+Least confident about, ranked:
+
+1. The Anthropic adapter could call the wrong lifecycle API or make a close failure permanent.
+   - Investigated the installed SDK: `AsyncAnthropic.close()` is awaitable and `aclose` does not exist. A production-shaped `chat._async_client` double fails once, then verifies retry and idempotent success.
+   - Verdict: fixed.
+2. Nested cleanup could still mask the primary operation failure, or a cleanup failure could mask an earlier cleanup failure when no operation failed.
+   - Investigated with combined serve/poll, engine, provider, and store failures. Each cleanup ran; serve/poll errors won when present, and engine close won when it was the first failure.
+   - Verdict: fixed.
+3. A foreign bridge could remain pending when the owner stopped after the initial liveness check.
+   - Investigated with a deterministic owner-loop stop between cancellation submission and waiter handoff, plus a zero-bound operational-drain injection. Both preserve `_closed == False` and the registered task for retry; retry succeeds after owner cleanup.
+   - Verdict: fixed with the named five-second product bound.
+4. `return_exceptions=True` could swallow a failed owner-loop waiter creation or timeout cancellation bookkeeping could replace the intended error.
+   - Investigated with injected owner `create_task` failure and a stopped-loop `call_soon_threadsafe(waiter.cancel)` failure. The first bridge error now propagates; the timeout remains the typed drain error while bookkeeping is best effort.
+   - Verdict: fixed.
+5. The new normal worker path could bypass cleanup on `--once`.
+   - Investigated from the actual `return` control flow; it bypassed `try`/`except` normal shutdown in the first draft.
+   - Verdict: confirmed bug and fixed by breaking to the common shutdown path. Final strict suite exercises it.
+
+Fixed: real Anthropic provider close, primary-error precedence, worker `--once` cleanup, foreign waiter failure propagation, and bounded foreign-loop drain timeout/stop handoff behavior.
+
+Verified fine: borrowed `serve` seam, construction rollback primary error preservation, provider retry/double-close, normal entrypoint resource order, concurrent close error propagation, retry after foreign drain failure, and retained running-owner-loop success.
+
+Still open: PostgreSQL advisory-lock integration is blocked externally by absent `CAOS_TEST_POSTGRES_URL`; the third-party Starlette deprecation remains. No independent approval is claimed.
+
 ## Files
 
 Product lifecycle:
