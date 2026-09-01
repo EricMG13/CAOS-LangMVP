@@ -103,74 +103,14 @@ test("discard resolution invokes one deferred callback without changing caller-o
   assert.deepEqual({ protectedDraft, confirms, cancels }, { protectedDraft: true, confirms: 1, cancels: 1 });
 });
 
-type HistoryTraversal = { token: number; kind: "confirmed" | "retire" | "restore" };
-type HistoryTraversalHelpers = {
-  beginDraftHistoryTraversal?: (active: HistoryTraversal | null, token: number, kind: HistoryTraversal["kind"]) => { active: HistoryTraversal; started: boolean };
-  finishDraftHistoryTraversal?: (active: HistoryTraversal | null, token: number) => { active: HistoryTraversal | null; completed: HistoryTraversal | null };
-  draftHistoryNeedsRearm?: (completed: HistoryTraversal, dirty: boolean) => boolean;
-  isConfirmedDraftHistoryTraversal?: (active: HistoryTraversal | null) => boolean;
-};
-
-test("confirmed history owns the traversal while an autosave reports clean", async () => {
-  const workbenchModule = await import("./workbench.ts") as unknown as HistoryTraversalHelpers;
-  assert.equal(typeof workbenchModule.beginDraftHistoryTraversal, "function");
-  if (!workbenchModule.beginDraftHistoryTraversal) return;
-  const confirmed = workbenchModule.beginDraftHistoryTraversal(null, 1, "confirmed");
-  const retirement = workbenchModule.beginDraftHistoryTraversal(confirmed.active, 2, "retire");
-  assert.equal(confirmed.started, true);
-  assert.equal(retirement.started, false);
-  assert.strictEqual(retirement.active, confirmed.active);
-  assert.equal(retirement.active.kind, "confirmed");
-});
-
-test("history pop settles exactly its own traversal token once", async () => {
-  const workbenchModule = await import("./workbench.ts") as unknown as HistoryTraversalHelpers;
-  assert.equal(typeof workbenchModule.beginDraftHistoryTraversal, "function");
-  assert.equal(typeof workbenchModule.finishDraftHistoryTraversal, "function");
-  if (!workbenchModule.beginDraftHistoryTraversal || !workbenchModule.finishDraftHistoryTraversal) return;
-  const first = workbenchModule.beginDraftHistoryTraversal(null, 1, "confirmed").active;
-  const popped = workbenchModule.finishDraftHistoryTraversal(first, 1);
-  const duplicatePop = workbenchModule.finishDraftHistoryTraversal(popped.active, 1);
-  assert.deepEqual(popped, { active: null, completed: first });
-  assert.deepEqual(duplicatePop, { active: null, completed: null });
-
-  const newer = workbenchModule.beginDraftHistoryTraversal(null, 2, "restore").active;
-  const staleFence = workbenchModule.finishDraftHistoryTraversal(newer, 1);
-  assert.strictEqual(staleFence.active, newer);
-  assert.equal(staleFence.completed, null);
-});
-
-test("a confirmed boundary timeout clears unload permission before rearming", async () => {
-  const workbenchModule = await import("./workbench.ts") as unknown as HistoryTraversalHelpers;
-  assert.equal(typeof workbenchModule.beginDraftHistoryTraversal, "function");
-  assert.equal(typeof workbenchModule.finishDraftHistoryTraversal, "function");
-  assert.equal(typeof workbenchModule.isConfirmedDraftHistoryTraversal, "function");
-  if (!workbenchModule.beginDraftHistoryTraversal || !workbenchModule.finishDraftHistoryTraversal || !workbenchModule.isConfirmedDraftHistoryTraversal) return;
-  const boundary = workbenchModule.beginDraftHistoryTraversal(null, 7, "confirmed").active;
-  assert.equal(workbenchModule.isConfirmedDraftHistoryTraversal(boundary), true);
-  const timedOut = workbenchModule.finishDraftHistoryTraversal(boundary, 7);
-  assert.equal(workbenchModule.isConfirmedDraftHistoryTraversal(timedOut.active), false, "unrelated unload remained authorized after the no-event fence");
-  const rearmed = workbenchModule.beginDraftHistoryTraversal(timedOut.active, 8, "retire");
-  assert.equal(rearmed.started, true);
-  assert.equal(rearmed.active.token, 8);
-});
-
-test("history completion rearms only the traversal that still needs protection", async () => {
-  const workbenchModule = await import("./workbench.ts") as unknown as HistoryTraversalHelpers;
-  assert.equal(typeof workbenchModule.draftHistoryNeedsRearm, "function");
-  if (!workbenchModule.draftHistoryNeedsRearm) return;
-  assert.equal(workbenchModule.draftHistoryNeedsRearm({ token: 1, kind: "confirmed" }, false), false, "autosave-clean confirmation rearmed a guard");
-  assert.equal(workbenchModule.draftHistoryNeedsRearm({ token: 1, kind: "confirmed" }, true), true);
-  assert.equal(workbenchModule.draftHistoryNeedsRearm({ token: 2, kind: "retire" }, false), false, "a clean owner was rearmed after retirement completed");
-  assert.equal(workbenchModule.draftHistoryNeedsRearm({ token: 2, kind: "retire" }, true), true);
-  assert.equal(workbenchModule.draftHistoryNeedsRearm({ token: 3, kind: "restore" }, true), false);
-});
-
-test("Workspace binds every history move to the single traversal token", () => {
+test("Workspace settles history moves only at their tagged destination entry", () => {
   assert.match(workspace, /historyTraversalRef/);
   assert.match(workspace, /beginDraftHistoryTraversal/);
-  assert.match(workspace, /finishDraftHistoryTraversal/);
-  assert.match(workspace, /isConfirmedDraftHistoryTraversal/);
+  assert.match(workspace, /observeDraftHistoryPop\(activeTraversal, event\.state\)/);
+  assert.match(workspace, /draftHistoryEntryId\(window\.history\.state\) !== activeTraversal\.expectedDestinationId/);
+  assert.match(workspace, /caosDraftHistorySentinelId/);
+  assert.match(workspace, /protectDirtyDraftUnload\(event, modelDraftDirtyRef\.current \|\| reportDraftDirtyRef\.current\)/);
+  assert.doesNotMatch(workspace, /isConfirmedDraftHistoryTraversal/);
   assert.doesNotMatch(workspace, /historyGuardRetiringRef|historyGuardRearmRef|suppressNextModelHistoryPopRef|confirmedHistoryPopRef/);
 });
 

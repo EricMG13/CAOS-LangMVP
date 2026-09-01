@@ -287,10 +287,81 @@ By-design: a bounded no-event fence is required because History API does not sig
 
 Still open: assembled-app execution of the full smoke journey remains Task 6.
 
+## Observable destination-state correction
+
+The final review removes the remaining time-window and provenance assumptions. Every CAOS-owned history entry now carries a unique `caosDraftHistoryEntryId`; the base and sentinel cross-reference their exact expected destinations. A traversal changes from `pending` to `observed` only when the real `PopStateEvent.state` names that destination. A mismatched, delayed, or duplicate pop cannot settle the active traversal, and the animation-frame settlement rechecks the browser's current `history.state` before completion.
+
+`beforeunload` no longer exempts any active custom traversal. It always protects a dirty Model Builder or Report Studio draft. A tagged same-document destination is handled by the custom dialog and state match; an untagged cross-document predecessor deliberately retains the browser-native prompt as the safe fallback. At a proven direct-load boundary, `navigation.canGoBack === false` progressively re-arms the sentinel without clearing either child dirty ref. When the API is unavailable, the implementation fails closed through `beforeunload` rather than opening an unload-permission timer.
+
+### Observable-state TDD and browser evidence
+
+- RED: `node scripts/draft-history-smoke.mjs` failed before browser launch because the exact production `draftHistoryEntryId` observer contract did not exist.
+- GREEN: the focused Chromium script completed in 5.0 seconds using real `history.replaceState`/`pushState`, `history.back`/`forward`, `PopStateEvent.state`, and browser `beforeunload` dialogs.
+- A captured old pop was delivered after a newer traversal began and did not settle it; the later event carrying the expected destination did.
+- A synchronous duplicate expected-state pop matched once because the first match moved the traversal into `observed` phase.
+- A direct-load base emitted no pop at its true Back boundary, then an unrelated reload still raised the dirty native prompt.
+- A cross-document Back raised the native dirty prompt and remained on the editor when dismissed.
+- Sentinel Back/Forward restoration and confirmed single-Back settlement used the actual tagged base, sentinel, and prior entry states.
+
+Final gates: `npm run test:unit` passed 112/112; `npm run lint`, `npx tsc --noEmit`, `npm run build`, `node --check scripts/draft-history-smoke.mjs`, `node --check scripts/workbench-smoke.mjs`, and `git diff --check` all passed. The build generated all 12 static pages. Existing `MODULE_TYPELESS_PACKAGE_JSON` warnings remain unchanged.
+
+### Observable-state rewrite tournament
+
+- **Winner**: Incumbent holds for `caos/frontend/src/lib/workbench.ts:179-190` and `caos/frontend/src/components/Workspace.tsx:401-418`.
+- **Justification**:
+  - Speed challengers could inline entry parsing, but duplicated the trust-boundary check and did not improve the event-dominated path measurably.
+  - Memory challengers could mutate the active traversal to avoid one small object, but that weakens caller-visible phase transitions and makes duplicate handling harder to audit.
+  - Readability challengers extracted more predicates, increasing the history orchestration surface without reducing branches or preserving a clearer impact set.
+- **Final code**:
+
+```ts
+export function observeDraftHistoryPop(active: DraftHistoryTraversal | null, state: unknown) {
+  if (!active || active.phase !== "pending" || draftHistoryEntryId(state) !== active.expectedDestinationId) {
+    return { active, matched: false };
+  }
+  return { active: { ...active, phase: "observed" as const }, matched: true };
+}
+```
+
+- **Verification**: `node scripts/draft-history-smoke.mjs` passed the real-entry Chromium interleavings; the impact set (`Workspace` caller, smoke injection, unit source contract) passed 112 units, TypeScript, lint, and the production build with no signature drift.
+
+### Observable-state confidence review
+
+Least confident about (ranked):
+
+1. Next App Router could overwrite or copy a CAOS entry ID during navigation.
+   investigated → Next 16.3.3's installed `HistoryUpdater` spreads custom state when requested and writes navigation state before Workspace effects. The route-tagging effect detects a copied current ID at a changed URL, removes only CAOS metadata, assigns a new ID, and preserves Next's `__NA`/router tree.
+   verdict     → fine by installed-source trace, TypeScript, and build.
+   patch       → route-specific ID normalization.
+2. Autosave clean between confirmed Back and pop could start another retirement.
+   investigated → retirement returns while one traversal is active; matching completion reads the current child dirty refs only after the browser-state/rAF check. The focused delayed-pop trace kept the newer owner intact.
+   verdict     → fine.
+   patch       → expected-destination phase owner replaces unload permission.
+3. A delayed or duplicate pop could settle the wrong move.
+   investigated → the observer compares `event.state` to the active expected ID and accepts only `pending`; the focused Chromium trace exercised both an old delayed state and a synchronous duplicate.
+   verdict     → fine.
+   patch       → observable state match plus `observed` duplicate fence.
+4. A direct-load or cross-document boundary could lose the draft after custom confirmation.
+   investigated → no custom traversal bypasses `beforeunload`; direct-load no-op and cross-document Back both raised later/native protection in Chromium.
+   verdict     → fine, with browser-native cross-document confirmation by design.
+   patch       → removed the one-second unload exemption entirely.
+5. Settlement could run after the browser moved again between pop and animation frame.
+   investigated → settlement re-reads `window.history.state` and refuses a different destination; the token-bound no-event fence then reconciles current sentinel/dirty state safely.
+   verdict     → fine by path trace and full gates.
+
+Fixed: unobservable pop provenance, duplicate settlement, direct-boundary unload window, cross-document unsafe exemption, and stale autosave retirement.
+
+Verified fine: Next custom-state coexistence, exact base/sentinel/prior matching, no-event dirty protection, source/unit contracts, lint, TypeScript, build, and smoke syntax.
+
+By-design: cross-document history confirmation may show the browser-native prompt after the custom dialog because native protection is the only causally safe fallback.
+
+Still open: Task 6 owns the full combined-app journey; the focused real-history Chromium trace is complete.
+
 ## Commit
 
 - Subject: `feat(frontend): reduce workspace cognitive load`
 - Correction subjects: `fix(frontend): preserve dirty draft navigation`; `fix(frontend): serialize draft history traversal`
+- Observable-state correction subject: `fix(frontend): match draft history destinations`
 - Trailer: `Co-Authored-By: Codex Opus 4.8 <noreply@anthropic.com>`
 
 ## Remaining risks

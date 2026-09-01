@@ -12,11 +12,20 @@ import { displayValue, flattenValue, markdownBlocks, normalizeEvidenceRefs, type
 import { initialAuthorityState, matchesAuthority, requestContext, workspaceAuthorityReducer, type AuthorityEvent } from "../lib/workspaceAuthority";
 
 import WorkbenchShell, { type DrawerState } from "./WorkbenchShell";
-import { type Destination, type DraftHistoryTraversal, type Snapshot, type SnapshotView, acceptanceSlotSummary, acceptedAuthorityMatch, beginDraftHistoryTraversal, destinationFromSlug, destinationMeta, draftHistoryNeedsRearm, finishDraftHistoryTraversal, formatBlockLocator, formatDate, humanizeCode, isConfirmedDraftHistoryTraversal, isSameTabPrimaryGesture, moduleLabel, nodeStatusTone, resolveDraftDiscard, routeDestinations, selectConclusionArtifact, withQuery } from "../lib/workbench";
+import { type Destination, type DraftHistoryTraversal, type Snapshot, type SnapshotView, acceptanceSlotSummary, acceptedAuthorityMatch, beginDraftHistoryTraversal, destinationFromSlug, destinationMeta, draftHistoryEntryId, draftHistoryNeedsRearm, finishDraftHistoryTraversal, formatBlockLocator, formatDate, humanizeCode, isSameTabPrimaryGesture, moduleLabel, nodeStatusTone, observeDraftHistoryPop, protectDirtyDraftUnload, resolveDraftDiscard, routeDestinations, selectConclusionArtifact, withQuery } from "../lib/workbench";
 
 type WriteAccess = "yes" | "no" | "unknown";
 type DraftDiscardRequest = { detail: string; confirm: () => void; cancel?: () => void };
 type RequestDraftDiscard = (detail: string, confirm: () => void, cancel?: () => void) => boolean;
+type DraftHistoryState = {
+  caosDraftHistoryEntryId?: string;
+  caosDraftHistoryPreviousId?: string;
+  caosDraftHistorySentinelId?: string;
+  caosDraftHistoryBaseId?: string;
+  caosModelDraftGuard?: boolean;
+  caosReportDraftGuard?: boolean;
+  [key: string]: unknown;
+};
 
 // One sentence per blocked write, and it distinguishes the two reasons: identity
 // not yet confirmed, versus confirmed and read-only.
@@ -49,6 +58,7 @@ export default function Workspace({ destination, children }: { destination?: Des
   const routeQuestion = searchParams.get("q") || "";
   const routeArtifactId = searchParams.get("artifact") || "";
   const routeSourceId = searchParams.get("source") || "";
+  const routeSearch = searchParams.toString();
   const [cases, setCases] = useState<CaseRecord[]>([]);
   const [authorityState, reducerDispatch] = useReducer(workspaceAuthorityReducer, initialAuthorityState);
   const authorityRef = useRef(initialAuthorityState);
@@ -107,6 +117,8 @@ export default function Workspace({ destination, children }: { destination?: Des
   const historyTraversalTokenRef = useRef(0);
   const historyTraversalFenceRef = useRef<{ token: number; timer: number } | null>(null);
   const historyRearmFrameRef = useRef<number | null>(null);
+  const historyEntrySequenceRef = useRef(0);
+  const lastHistoryEntryRef = useRef<{ id: string; href: string } | null>(null);
   const focusedBeforeRef = useRef<HTMLElement | null>(null);
   const lastDestinationRef = useRef(active);
   const selectedCase = useMemo(() => cases.find((item) => item.id === caseId) || null, [cases, caseId]);
@@ -124,9 +136,9 @@ export default function Workspace({ destination, children }: { destination?: Des
     return result.completed;
   }, []);
 
-  const beginHistoryTraversal = useCallback((kind: DraftHistoryTraversal["kind"], navigate: () => void, onNoEvent?: (traversal: DraftHistoryTraversal) => void) => {
+  const beginHistoryTraversal = useCallback((kind: DraftHistoryTraversal["kind"], expectedDestinationId: string, navigate: () => void, onNoEvent?: (traversal: DraftHistoryTraversal) => void) => {
     const token = historyTraversalTokenRef.current + 1;
-    const result = beginDraftHistoryTraversal(historyTraversalRef.current, token, kind);
+    const result = beginDraftHistoryTraversal(historyTraversalRef.current, token, kind, expectedDestinationId);
     if (!result.started) return null;
     historyTraversalTokenRef.current = token;
     historyTraversalRef.current = result.active;
@@ -139,22 +151,58 @@ export default function Workspace({ destination, children }: { destination?: Des
     return token;
   }, [finishHistoryTraversal]);
 
+  const newHistoryEntryId = useCallback(() => {
+    historyEntrySequenceRef.current += 1;
+    return typeof window.crypto?.randomUUID === "function"
+      ? window.crypto.randomUUID()
+      : `caos-${Date.now()}-${historyEntrySequenceRef.current}`;
+  }, []);
+
+  const ensureCurrentHistoryEntry = useCallback(() => {
+    const state = (window.history.state || {}) as DraftHistoryState;
+    const existingId = draftHistoryEntryId(state);
+    if (existingId) {
+      lastHistoryEntryRef.current = { id: existingId, href: window.location.href };
+      return { id: existingId, state };
+    }
+    const id = newHistoryEntryId();
+    const previousId = lastHistoryEntryRef.current?.id;
+    const nextState = { ...state, caosDraftHistoryEntryId: id, ...(previousId ? { caosDraftHistoryPreviousId: previousId } : {}) };
+    window.history.replaceState(nextState, "", window.location.href);
+    lastHistoryEntryRef.current = { id, href: window.location.href };
+    return { id, state: nextState };
+  }, [newHistoryEntryId]);
+
   const armOwnedHistoryGuard = useCallback((marker: "model" | "report") => {
     if (typeof window === "undefined") return;
     if (historyTraversalRef.current) return;
-    const state = window.history.state as { caosModelDraftGuard?: boolean; caosReportDraftGuard?: boolean } | null;
+    const state = (window.history.state || {}) as DraftHistoryState;
     if (state?.caosModelDraftGuard || state?.caosReportDraftGuard) { modelHistoryGuardRef.current = true; return; }
     if (!modelHistoryGuardRef.current) {
-      window.history.pushState({ ...state, [marker === "model" ? "caosModelDraftGuard" : "caosReportDraftGuard"]: true }, "", window.location.href);
+      const base = ensureCurrentHistoryEntry();
+      const sentinelId = newHistoryEntryId();
+      window.history.replaceState({ ...base.state, caosDraftHistorySentinelId: sentinelId }, "", window.location.href);
+      window.history.pushState({
+        ...base.state,
+        caosDraftHistoryEntryId: sentinelId,
+        caosDraftHistoryPreviousId: base.id,
+        caosDraftHistoryBaseId: base.id,
+        [marker === "model" ? "caosModelDraftGuard" : "caosReportDraftGuard"]: true,
+      }, "", window.location.href);
+      lastHistoryEntryRef.current = { id: sentinelId, href: window.location.href };
       modelHistoryGuardRef.current = true;
     }
-  }, []);
+  }, [ensureCurrentHistoryEntry, newHistoryEntryId]);
 
   const retireOwnedHistoryGuard = useCallback(() => {
     if (typeof window === "undefined" || discardPromptRef.current || modelDraftDirtyRef.current || reportDraftDirtyRef.current || !modelHistoryGuardRef.current || historyTraversalRef.current) return;
-    modelHistoryGuardRef.current = false;
-    const token = beginHistoryTraversal("retire", () => window.history.back(), () => { modelHistoryGuardRef.current = true; });
-    if (token === null) modelHistoryGuardRef.current = true;
+    const state = (window.history.state || {}) as DraftHistoryState;
+    const baseId = state.caosDraftHistoryBaseId;
+    if (!baseId) { modelHistoryGuardRef.current = false; return; }
+    beginHistoryTraversal("retire", baseId, () => window.history.back(), () => {
+      const current = (window.history.state || {}) as DraftHistoryState;
+      modelHistoryGuardRef.current = Boolean(current.caosModelDraftGuard || current.caosReportDraftGuard);
+    });
   }, [beginHistoryTraversal]);
 
   const releaseCleanDraftGuard = useCallback(() => {
@@ -178,6 +226,35 @@ export default function Workspace({ destination, children }: { destination?: Des
     if (dirty) armOwnedHistoryGuard("report");
     else if (!modelDraftDirtyRef.current && !reportDraftDirtyRef.current) releaseCleanDraftGuard();
   }, [armOwnedHistoryGuard, releaseCleanDraftGuard]);
+
+  useEffect(() => {
+    const href = window.location.href;
+    const state = (window.history.state || {}) as DraftHistoryState;
+    const entryId = draftHistoryEntryId(state);
+    const previous = lastHistoryEntryRef.current;
+    const copiedIntoNewRoute = Boolean(previous && previous.href !== href && entryId === previous.id);
+    if (!entryId || copiedIntoNewRoute) {
+      const id = newHistoryEntryId();
+      const nextState = copiedIntoNewRoute || (previous && previous.href !== href)
+        ? Object.fromEntries(Object.entries(state).filter(([key]) => ![
+          "caosDraftHistoryEntryId",
+          "caosDraftHistoryPreviousId",
+          "caosDraftHistorySentinelId",
+          "caosDraftHistoryBaseId",
+          "caosModelDraftGuard",
+          "caosReportDraftGuard",
+        ].includes(key))) as DraftHistoryState
+        : state;
+      window.history.replaceState({
+        ...nextState,
+        caosDraftHistoryEntryId: id,
+        ...(previous ? { caosDraftHistoryPreviousId: previous.id } : {}),
+      }, "", href);
+      lastHistoryEntryRef.current = { id, href };
+      return;
+    }
+    lastHistoryEntryRef.current = { id: entryId, href };
+  }, [newHistoryEntryId, pathname, routeSearch]);
 
   const draftDiscardDetail = useCallback((action: string) => {
     const drafts = modelDraftDirtyRef.current && reportDraftDirtyRef.current
@@ -321,16 +398,31 @@ export default function Workspace({ destination, children }: { destination?: Des
     }
   };
 
-  const rearmAfterConfirmedHistory = useCallback((completed: DraftHistoryTraversal) => {
+  const settleObservedHistory = useCallback((observed: DraftHistoryTraversal) => {
     if (historyRearmFrameRef.current !== null) window.cancelAnimationFrame(historyRearmFrameRef.current);
     historyRearmFrameRef.current = window.requestAnimationFrame(() => {
       historyRearmFrameRef.current = null;
-      if (historyTraversalRef.current || historyTraversalTokenRef.current !== completed.token) return;
+      const activeTraversal = historyTraversalRef.current;
+      if (!activeTraversal || activeTraversal.token !== observed.token || activeTraversal.phase !== "observed") return;
+      if (draftHistoryEntryId(window.history.state) !== activeTraversal.expectedDestinationId) return;
+      const completed = finishHistoryTraversal(activeTraversal.token);
+      if (!completed) return;
+      const state = (window.history.state || {}) as DraftHistoryState;
+      const ownsSentinel = Boolean(state.caosModelDraftGuard || state.caosReportDraftGuard);
+      modelHistoryGuardRef.current = ownsSentinel;
       const dirty = modelDraftDirtyRef.current || reportDraftDirtyRef.current;
-      if (!draftHistoryNeedsRearm(completed, dirty)) return;
+      if (!draftHistoryNeedsRearm(completed, dirty) || ownsSentinel) return;
       modelHistoryGuardRef.current = false;
       armOwnedHistoryGuard(modelDraftDirtyRef.current ? "model" : "report");
     });
+  }, [armOwnedHistoryGuard, finishHistoryTraversal]);
+
+  const reconcileHistoryWithoutPop = useCallback(() => {
+    const state = (window.history.state || {}) as DraftHistoryState;
+    const ownsSentinel = Boolean(state.caosModelDraftGuard || state.caosReportDraftGuard);
+    modelHistoryGuardRef.current = ownsSentinel;
+    if (ownsSentinel || (!modelDraftDirtyRef.current && !reportDraftDirtyRef.current)) return;
+    armOwnedHistoryGuard(modelDraftDirtyRef.current ? "model" : "report");
   }, [armOwnedHistoryGuard]);
 
   useEffect(() => {
@@ -354,25 +446,31 @@ export default function Workspace({ destination, children }: { destination?: Des
       });
     };
     const startConfirmedHistoryTraversal = () => {
-      beginHistoryTraversal("confirmed", () => window.history.back(), (completed) => {
-        modelHistoryGuardRef.current = false;
-        rearmAfterConfirmedHistory(completed);
-      });
+      const state = (window.history.state || {}) as DraftHistoryState;
+      const previousId = state.caosDraftHistoryPreviousId;
+      modelHistoryGuardRef.current = false;
+      if (previousId) {
+        const token = beginHistoryTraversal("confirmed", previousId, () => window.history.back(), reconcileHistoryWithoutPop);
+        if (token === null && (modelDraftDirtyRef.current || reportDraftDirtyRef.current)) armOwnedHistoryGuard(modelDraftDirtyRef.current ? "model" : "report");
+        return;
+      }
+      const navigation = (window as Window & { navigation?: { canGoBack?: boolean } }).navigation;
+      if (navigation?.canGoBack === false) {
+        if (modelDraftDirtyRef.current || reportDraftDirtyRef.current) armOwnedHistoryGuard(modelDraftDirtyRef.current ? "model" : "report");
+        return;
+      }
+      // An untagged predecessor may be another document. Let its native
+      // beforeunload prompt remain the last-resort protection for that boundary.
+      window.history.back();
     };
     const guardBrowserHistory = (event: PopStateEvent) => {
+      const eventEntryId = draftHistoryEntryId(event.state);
+      if (eventEntryId) lastHistoryEntryRef.current = { id: eventEntryId, href: window.location.href };
       const activeTraversal = historyTraversalRef.current;
       if (activeTraversal) {
-        const completed = finishHistoryTraversal(activeTraversal.token);
-        if (!completed) return;
-        if (completed.kind === "confirmed") {
-          modelHistoryGuardRef.current = false;
-          rearmAfterConfirmedHistory(completed);
-          return;
-        }
-        if (completed.kind === "retire") {
-          const rearm = draftHistoryNeedsRearm(completed, modelDraftDirtyRef.current || reportDraftDirtyRef.current);
-          if (rearm) armOwnedHistoryGuard(modelDraftDirtyRef.current ? "model" : "report");
-        }
+        const observation = observeDraftHistoryPop(activeTraversal, event.state);
+        historyTraversalRef.current = observation.active;
+        if (observation.matched && observation.active) settleObservedHistory(observation.active);
         return;
       }
       if (!modelDraftDirtyRef.current && !reportDraftDirtyRef.current) return;
@@ -383,21 +481,19 @@ export default function Workspace({ destination, children }: { destination?: Des
           modelHistoryGuardRef.current = false;
           return;
         }
-        beginHistoryTraversal("restore", () => window.history.forward());
+        const state = (window.history.state || {}) as DraftHistoryState;
+        const sentinelId = state.caosDraftHistorySentinelId;
+        if (sentinelId) {
+          beginHistoryTraversal("restore", sentinelId, () => window.history.forward(), reconcileHistoryWithoutPop);
+          return;
+        }
+        modelHistoryGuardRef.current = false;
+        armOwnedHistoryGuard(modelDraftDirtyRef.current ? "model" : "report");
       };
       requestDraftDiscard(draftDiscardDetail("and use browser history"), startConfirmedHistoryTraversal, restoreHistoryGuard);
     };
     const guardUnload = (event: BeforeUnloadEvent) => {
-      const activeTraversal = historyTraversalRef.current;
-      if (isConfirmedDraftHistoryTraversal(activeTraversal)) {
-        const completed = finishHistoryTraversal(activeTraversal.token);
-        if (!completed) return;
-        modelHistoryGuardRef.current = false;
-        return;
-      }
-      if (!modelDraftDirtyRef.current && !reportDraftDirtyRef.current) return;
-      event.preventDefault();
-      event.returnValue = "";
+      protectDirtyDraftUnload(event, modelDraftDirtyRef.current || reportDraftDirtyRef.current);
     };
     document.addEventListener("click", guardDraftNavigation, true);
     window.addEventListener("popstate", guardBrowserHistory, true);
@@ -415,7 +511,7 @@ export default function Workspace({ destination, children }: { destination?: Des
     return () => { controller.abort(); window.clearTimeout(timer); if (historyTraversalFenceRef.current) window.clearTimeout(historyTraversalFenceRef.current.timer); if (historyRearmFrameRef.current !== null) window.cancelAnimationFrame(historyRearmFrameRef.current); historyTraversalRef.current = null; historyTraversalFenceRef.current = null; historyRearmFrameRef.current = null; document.removeEventListener("click", guardDraftNavigation, true); window.removeEventListener("popstate", guardBrowserHistory, true); window.removeEventListener("beforeunload", guardUnload); };
     // The selected case is intentionally not a fetch dependency.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [armOwnedHistoryGuard, beginHistoryTraversal, draftDiscardDetail, finishHistoryTraversal, rearmAfterConfirmedHistory, requestDraftDiscard]);
+  }, [armOwnedHistoryGuard, beginHistoryTraversal, draftDiscardDetail, reconcileHistoryWithoutPop, requestDraftDiscard, settleObservedHistory]);
 
   useEffect(() => {
     if (!hydrated) return;
