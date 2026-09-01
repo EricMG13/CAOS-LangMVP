@@ -33,7 +33,7 @@ docker run -d --name caos-qa-pg -e POSTGRES_PASSWORD=qa-local-only-not-a-secret-
   -e POSTGRES_DB=caos -p 55433:5432 postgres:17-alpine
 docker run -d --name caos-qa-clamav --platform linux/amd64 -p 33100:3310 \
   -v "$PWD/caos/deploy/clamd.conf:/etc/clamav/clamd.conf:ro" \
-  clamav/clamav:1.4@sha256:761f6c99b8d9134b39431f8c200189cda749b17310091561bfa8b732f32bfada
+  clamav/clamav:1.5@sha256:0e85467cb0d6e7d860a45035707741cd5ffc032ffefc6002a3510c75b6d07027
 source qa/env.sh                                   # production-mode settings
 export CAOS_DATA_DIR=.qa-data CAOS_STORAGE_DIR=.qa-vault
 (cd caos/frontend && npm run build)

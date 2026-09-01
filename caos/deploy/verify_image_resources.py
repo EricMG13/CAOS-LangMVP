@@ -4,8 +4,6 @@ import sys
 import tempfile
 from pathlib import Path
 
-from openpyxl import load_workbook
-
 root = Path(__file__).resolve().parent
 source_server = root.parent / "server"
 if (source_server / "caos").is_dir():
@@ -37,6 +35,8 @@ if runtime == "worker" and office is None:
     raise RuntimeError("LibreOffice is required in the export worker image")
 smoke: dict[str, object] = {}
 if runtime == "worker":
+    from openpyxl import load_workbook
+
     fixture = Path("/image-fixtures/cp_model")
     paths = {
         module_id: fixture / f"{module_id.lower().replace('-', '')}.md"

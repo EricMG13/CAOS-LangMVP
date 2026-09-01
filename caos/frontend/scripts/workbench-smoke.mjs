@@ -364,7 +364,7 @@ try {
     && url.searchParams.get("case") === caseRecord.id
     && url.searchParams.get("artifact") === artifact.id);
   const evidenceFocus = page.getByRole("heading", { name: "Evidence focus" }).locator("../..");
-  await evidenceFocus.getByText(artifact.digest, { exact: true }).waitFor();
+  await evidenceFocus.getByTitle(artifact.digest, { exact: true }).waitFor();
 
   const deepDiveQuestion = "What changed in refinancing capacity?";
   await page.evaluate(({ caseId, question }) => {
