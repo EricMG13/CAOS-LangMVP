@@ -458,10 +458,8 @@ def _valid_canonical_payload(
         or set(host_identity["calculator_ids"])
         != {record["calculator_id"] for record in payload["calculations"]}
         | {item["calculator_id"] for item in payload["calculation_limitations"]}
-        or any(
-            f"host:calculation_incomplete:{item['calculator_id']}" not in handoff.limitation_flags
-            for item in payload["calculation_limitations"]
-        )
+        or {flag for flag in handoff.limitation_flags if flag.startswith("host:")}
+        != {f"host:calculation_incomplete:{item['calculator_id']}" for item in payload["calculation_limitations"]}
     ):
         return False
     expected_source_projection = {

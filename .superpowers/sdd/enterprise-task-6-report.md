@@ -168,3 +168,26 @@ task's change, and is noted for the browser-health loop.
 - The C21 stressed pack, C22 research pack and licensed market marks: Task 11.
 - PostgreSQL two-connection evidence for acceptance and publication races:
   Task 12.
+
+## Confidence review, second pass (patched)
+
+- A provider could emit a `host:calculation_incomplete:<id>` limitation flag
+  of its own and have it recorded as host provenance. Confirmed by a failing
+  test (`test_provider_cannot_forge_a_host_limitation_flag`); fixed at the
+  root: the runtime refuses any `host:`-prefixed provider flag as invalid
+  output, and the store requires the set of `host:` flags on an artifact to
+  equal exactly the host-declared limitations.
+- The incomplete tool result did not tell the model whether a retry was still
+  allowed, so a model that retried after the allowance was spent would end the
+  module with `METHODOLOGY_CALCULATOR_NOT_ALLOWED`. Fixed: the result carries
+  `retry_available`; pinned by
+  `test_incomplete_tool_result_reports_whether_a_retry_is_still_available`
+  (`[True, False]` across two incomplete attempts, module still completes with
+  the limitation).
+- §14.13's explanation of the 310 image checks named "three top-level
+  manifests"; the extra checks are the baseline, manifest and child-schema-
+  registry files verified against the integrity source hashes. Wording fixed.
+- Verified fine: `queue_export` refusals reach the wire through `model_error`
+  (typed, not 500); `sa.exists` live-source condition compiles on SQLite and
+  is dialect-neutral; `_valid_calculation_refs` covers assigned = delivered ∪
+  limited with the two sets disjoint.

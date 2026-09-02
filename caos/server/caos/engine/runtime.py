@@ -1476,6 +1476,7 @@ class Engine:
                         "complete": False,
                         "code": CALCULATION_INCOMPLETE,
                         "input_digest": calculation["input_digest"],
+                        "retry_available": not repair_state["used"],
                         "reason": "the pinned calculator returned no usable result for these inputs",
                     }
                 incomplete_calculators.pop(calculator_id, None)
@@ -1490,6 +1491,10 @@ class Engine:
 
             def validate(decoded: dict[str, Any]) -> dict[str, Any]:
                 output = CanonicalModuleOutput.model_validate(decoded)
+                if any(flag.startswith("host:") for flag in output.limitation_flags):
+                    # `host:` flags are host-derived provenance; a provider may
+                    # not label its own text as a host finding.
+                    raise ValueError("provider limitation flags may not carry the host prefix")
                 validate_citations([ref.model_dump() for ref in output.evidence_refs], reader.delivered())
                 limited = tuple(
                     calculator_id for calculator_id in spec.calculators

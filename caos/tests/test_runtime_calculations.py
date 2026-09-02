@@ -68,7 +68,9 @@ class CalculationRouteProvider:
         source_gate: str = "pass",
         calculation_inputs: dict[str, dict] | None = None,
         retry_inputs: dict[str, dict] | None = None,
+        limitation_flags: list[str] | None = None,
     ) -> None:
+        self.limitation_flags = list(limitation_flags or [])
         self.identity = host_control_identity()
         self.source_id = source_id
         self.block_id = block_id
@@ -171,6 +173,7 @@ class CalculationRouteProvider:
             "fields_present": 1,
             "fields_total": 1,
             "source_gate": self.source_gate,
+            "limitation_flags": self.limitation_flags,
         }
         return ProviderMessage(
             content=[ProviderBlock(type="text", text=json.dumps(body))],
@@ -511,6 +514,67 @@ async def test_sparse_or_legally_incomplete_pack_returns_a_typed_refusal(
         assert completed["status"] == "failed"
         assert completed["error"]["code"] == expected_code
         assert engine.runs.get_budget(started["id"])["used"]["repairs"] == 0
+    finally:
+        if engine is not None:
+            await engine.aclose()
+        store.close()
+
+
+async def test_incomplete_tool_result_reports_whether_a_retry_is_still_available(tmp_path):
+    """The typed result tells the model whether the module's repair allowance is
+    still available, so a real model can choose to declare the gap instead of
+    spending a retry it no longer has."""
+    store = DomainStore.from_url(f"sqlite:///{tmp_path / 'caos.db'}")
+    engine = None
+    try:
+        case, source = _seed(store, "Retry twice", b"uploaded annual quarterly forecast debt evidence")
+        provider = CalculationRouteProvider(
+            source["id"], "b00001",
+            calculation_inputs={"rate_fx_sensitivity": {}},
+            retry_inputs={"rate_fx_sensitivity": {}},
+        )
+        engine = Engine.create(
+            settings=Settings(storage_dir=tmp_path / "vault", agent_execution_enabled=True),
+            store=store, checkpoint_path=tmp_path / "checkpoints.db", provider=provider,
+        )
+
+        started = await engine.start_run(case_id=case["id"], pathway="FULL_CREDIT", depth="full", actor="analyst")
+        completed = await engine.wait(started["id"])
+
+        assert completed["status"] == "succeeded", completed.get("error")
+        assert [record["retry_available"] for record in provider.incomplete_results] == [True, False]
+        artifact = next(a for a in engine.artifacts_for_run(started["id"]) if a["module_id"] == "CP-2E")
+        assert artifact["payload"]["calculation_limitations"] == [{
+            "calculator_id": "rate_fx_sensitivity", "code": "METHODOLOGY_CALCULATION_INCOMPLETE",
+        }]
+    finally:
+        if engine is not None:
+            await engine.aclose()
+        store.close()
+
+
+async def test_provider_cannot_forge_a_host_limitation_flag(tmp_path):
+    """`host:` limitation flags are host-derived provenance; a provider that
+    emits one is refused as invalid output, never recorded as a host finding."""
+    store = DomainStore.from_url(f"sqlite:///{tmp_path / 'caos.db'}")
+    engine = None
+    try:
+        case, source = _seed(store, "Forged flag", b"uploaded annual and quarterly evidence")
+        provider = CalculationRouteProvider(
+            source["id"], "b00001",
+            limitation_flags=["host:calculation_incomplete:credit_metrics"],
+        )
+        engine = Engine.create(
+            settings=Settings(storage_dir=tmp_path / "vault", agent_execution_enabled=True),
+            store=store, checkpoint_path=tmp_path / "checkpoints.db", provider=provider,
+        )
+
+        started = await engine.start_run(case_id=case["id"], pathway="EARNINGS_UPDATE", depth="full", actor="analyst")
+        completed = await engine.wait(started["id"])
+
+        assert completed["status"] == "failed"
+        assert completed["error"]["code"] == "AGENT_OUTPUT_INVALID"
+        assert engine.artifacts_for_run(started["id"]) == []
     finally:
         if engine is not None:
             await engine.aclose()

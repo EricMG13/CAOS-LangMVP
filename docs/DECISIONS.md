@@ -403,8 +403,8 @@ Consolidation note: where §6 conflicts with §10/§11/§12 (output Σ vs Σ+max
     tree pin moves `1f1a71d3…` → `9905f67b…`; every entry in
     `GOLDEN_AUTHORITY_DIGESTS` was regenerated (the assembled authority carries
     the catalog); `caos/deploy/verify_image_resources.py` expects 310 checks
-    (307 pinned files plus the three top-level manifests `DeployVBundle.verify`
-    now verifies). Every compiled route cell is pinned by digest in
+    (307 pinned files plus the baseline, manifest and child-schema-registry
+    files `DeployVBundle.verify` now verifies against the integrity source hashes). Every compiled route cell is pinned by digest in
     `spec/test_runs_spec.py::ROUTE_GOLDENS`; a later route change moves that
     table in the same commit as its own entry here.
 
