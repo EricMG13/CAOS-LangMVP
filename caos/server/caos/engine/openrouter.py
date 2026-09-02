@@ -142,16 +142,14 @@ class OpenRouterProvider:
     # -- request shaping ---------------------------------------------------
 
     @staticmethod
-    def _tool_definition() -> dict[str, Any]:
-        from .provider import READ_EVIDENCE_TOOL
-
+    def _tool_definition(definition: dict[str, Any]) -> dict[str, Any]:
         return {
             "type": "function",
             "function": {
-                "name": READ_EVIDENCE_TOOL["name"],
-                "description": READ_EVIDENCE_TOOL["description"],
-                "parameters": READ_EVIDENCE_TOOL["input_schema"],
-                "strict": READ_EVIDENCE_TOOL["strict"],
+                "name": definition["name"],
+                "description": definition["description"],
+                "parameters": definition["input_schema"],
+                "strict": definition["strict"],
             },
         }
 
@@ -206,8 +204,9 @@ class OpenRouterProvider:
             "model": self.model,
             "messages": self._wire_messages(request.system, request.messages),
         }
-        if request.tools_enabled:
-            payload["tools"] = [self._tool_definition()]
+        tools = request.effective_tools()
+        if tools:
+            payload["tools"] = [self._tool_definition(tool) for tool in tools]
             payload["tool_choice"] = "auto"
             payload["parallel_tool_calls"] = False
         else:

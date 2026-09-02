@@ -1,11 +1,19 @@
 ---
 name: cp-0-source-readiness
-description: "Start-of-message trigger: Run CP-0 or bare CP-0. Embedded, quoted, filename, comparison, and output mentions are inert. Consumes CP-PARSE and emits the separate source_readiness_register."
+description: "Start-of-message trigger: Run CP-PARSE, bare CP-PARSE, Run CP-0, or bare CP-0. Embedded, quoted, filename, comparison, and output mentions are inert. CP-PARSE emits document_parse_manifest; CP-0 consumes it and emits source_readiness_register."
 ---
 
-# CP-0 — SourceReadiness
+# CP-PARSE / CP-0 — DataPreparation and SourceReadiness
 
-**Dependencies — CP-0.** No upstream module is required; this is an entry point. Feeds CP-1, CP-1A, CP-1B, CP-1C, CP-1D, CP-2, CP-2A, CP-2E (+10 more).
+## Profile selection — hard gate
+
+- `Run CP-PARSE` or bare `CP-PARSE` runs only the CP-PARSE DataPreparation profile. It consumes the user-supplied source pack and authors the canonical `document_parse_manifest` handoff.
+- `Run CP-0` or bare `CP-0` runs only the CP-0 SourceReadiness profile. It requires and consumes the canonical CP-PARSE `document_parse_manifest` handoff and authors the separate `source_readiness_register` handoff.
+- Never merge the two profiles, their governed registers, or their canonical Markdown handoffs. Embedded, quoted, filename, comparison, and output mentions do not select a profile.
+
+**Dependencies — CP-PARSE.** The user-supplied source pack is the entry point. Feeds CP-0 through the validated `document_parse_manifest` and active representations.
+
+**Dependencies — CP-0.** Requires CP-PARSE `document_parse_manifest` and active representations. Feeds CP-1, CP-1A, CP-1B, CP-1C, CP-1D, CP-2, CP-2A, CP-2E (+10 more).
 
 Run order comes from the route, not from the ID. Letter suffixes are labels, not a sequence: `FULL_CREDIT_ASSESSMENT` runs CP-3D before CP-3 and CP-4B before CP-4A, and both are optional orderings — running strictly in ID order satisfies every required dependency in the FULL pathways. Follow the route the orchestrator gives you; when you run this module directly, what must already exist is listed above.
 
@@ -15,12 +23,10 @@ schema_path: `./references/CP-0_SCHEMA_REFERENCE.md`
 
 payload_schema_path: `./references/CP-0__SourceReadiness__payload.schema.txt`
 
-Also answers `Run CP-PARSE`.
-
-## Canon Core — binding on every CP-0 run
+## Canon Core — binding on both runnable profiles
 1. Every run=full workflow+outputs+QA; no reduced mode.
 2. Markdown only→validate identity/contract, fail closed→Markdown completes run and is the sole analytical artifact/handoff. Chat is non-canonical.
-3. Filename=`[SubjectKey]_CP-0_[YYYYMMDD].md` from front-matter `issuer_id`(CP-DR:`scope_key`)/`module_id`/`analysis_date`; never period/name/alias. Validate name pre-completion; cannot create→Blocked. YAML=`qa_status`, Confidence Score/band, six H2s. `## Analysis` leads conclusion-first with compact tables; complete registers lossless below `### Analytical appendix — complete canonical registers`. Compact=placement, not budget; omit no workflow step. No DOCX/PDF/HTML/slide/JSON/dashboard.
+3. Filename=`[PackKey]_CP-PARSE_[YYYYMMDD].md` for CP-PARSE and `[IssuerID]_CP-0_[YYYYMMDD].md` for CP-0, derived from front-matter identity/`module_id`/`analysis_date`; never period/name/alias. Validate name pre-completion; cannot create→Blocked. YAML=`qa_status`, Confidence Score/band, six H2s. `## Analysis` leads conclusion-first with compact tables; complete registers lossless below `### Analytical appendix — complete canonical registers`. Compact=placement, not budget; omit no workflow step. No DOCX/PDF/HTML/slide/JSON/dashboard.
 4. upstream re-anchor module/run/entity/period scope/values. Missing/Blocked/mismatch→`[Insufficient Information]`+stop/no inference. Figure=file+locator or null+gap; null≠zero; keep rows/`—`; never fabricate/reconcile.
 5. Debt=BS carrying value(current+long-term, net issuance costs); log gross delta. finance-company/financing sub: split industrial vs finance cash/debt/CFO/capex/liquidity/FCF; matched-funding debt≠industrial leverage; state perimeter/definition/conflicts.
 6. Multi-figure event: all figures+roles, one conflict row; never silently choose.
@@ -29,7 +35,7 @@ Also answers `Run CP-PARSE`.
 9. Show source vs normalized one-offs; label normalization+Analyst Judgement. Never infer covenant capacity; absent inputs=`Not Calculable`.
 10. `committee_status`∈Committee Ready|Draft Only|Requires More Work|Insufficient Information|Restricted|Blocked. `qa_status` Restricted→score≤59/band Low; Blocked→≤39.
 
-## Analytical depth — binding on every run
+## Analytical depth — binding on every CP-0 run
 
 Compressed from `../../CANON_SHARED.md § CP_AB_EXPORT_SPEC.md`. Restated inline because
 it binds every run, and canon is opened only to resolve a named ambiguity.
@@ -55,6 +61,8 @@ it binds every run, and canon is opened only to resolve a named ambiguity.
 Depth is evidence-proportionate: missing evidence produces explicit gaps and bounded
 conclusions, never shorter reasoning or invented filler.
 
+## CP-0 runnable profile
+
 ## Output profile — binding on CP-0's canonical Markdown
 
 - **analytical_validation**: implemented
@@ -62,7 +70,7 @@ conclusions, never shorter reasoning or invented filler.
   - **conditional_register_ids**: none
   - **heading**: ### Analytical appendix — complete canonical registers
   - **lossless**: True
-  - **required_register_ids**: T1; T2; T3; T4; T5; T6; T7; T8; P1; P2; P3; P4; P5; P6; P7; P8
+  - **required_register_ids**: T1; T2; T3; T4; T5; T6; T7; T8
   - **schema_path**: ./references/CP-0_SCHEMA_REFERENCE.md
 - **completeness_contract**: structured below
   - **conditional_stable_tables_by_consumer**: structured below
@@ -74,46 +82,6 @@ conclusions, never shorter reasoning or invented filler.
     - **frontmatter_limitation_flags**: INTEGRATION_FIXTURE_ONLY; PRESENTATION_FIXTURE_NOT_CURRENT_GOLDEN; SOURCE_LIMITED_NOT_COMMITTEE_READY; SYNTHETIC_FORWARD_ASSUMPTIONS
     - **frontmatter_validation_warnings**: FULL_UNDERWRITING_SOURCE_SET_NOT_RETAINED; INTEGRATION_FIXTURE_ONLY; PRESENTATION_FIXTURE; TEST_ONLY_FORECAST_ASSUMPTIONS
   - **required_registers**: structured below
-    - **P1**: structured below
-      - **columns**: none
-      - **critical_columns**: identical to columns
-      - **disqualifier_exempt_columns**: none
-      - **minimum_body_rows**: 1
-    - **P2**: structured below
-      - **columns**: none
-      - **critical_columns**: identical to columns
-      - **disqualifier_exempt_columns**: none
-      - **minimum_body_rows**: 1
-    - **P3**: structured below
-      - **columns**: none
-      - **critical_columns**: identical to columns
-      - **disqualifier_exempt_columns**: none
-      - **minimum_body_rows**: 1
-    - **P4**: structured below
-      - **columns**: none
-      - **critical_columns**: identical to columns
-      - **disqualifier_exempt_columns**: none
-      - **minimum_body_rows**: 1
-    - **P5**: structured below
-      - **columns**: none
-      - **critical_columns**: identical to columns
-      - **disqualifier_exempt_columns**: none
-      - **minimum_body_rows**: 1
-    - **P6**: structured below
-      - **columns**: none
-      - **critical_columns**: identical to columns
-      - **disqualifier_exempt_columns**: none
-      - **minimum_body_rows**: 1
-    - **P7**: structured below
-      - **columns**: none
-      - **critical_columns**: identical to columns
-      - **disqualifier_exempt_columns**: none
-      - **minimum_body_rows**: 1
-    - **P8**: structured below
-      - **columns**: none
-      - **critical_columns**: identical to columns
-      - **disqualifier_exempt_columns**: none
-      - **minimum_body_rows**: 1
     - **T1**: structured below
       - **columns**: none
       - **critical_columns**: identical to columns
@@ -263,15 +231,13 @@ Workflow order is not reading order: open `## Analysis` with `### Analytical rea
 
 </module>
 
-## Absorbed phase — CP-PARSE, binding on every CP-0 run
+## CP-PARSE runnable profile
 
-CP-0 absorbs the document parse and fidelity-verification phase that used to run as its own stage immediately before this one. CP-PARSE is no longer a separate stage: its registers are part of this module's output contract and are authored on every CP-0 run, not on request. `Run CP-PARSE` still dispatches here, and a handoff that names CP-PARSE as upstream resolves to this module's artifact.
-
-The phase keeps its own method and its own registers. Those registers are already in `## Output profile` above — merged into CP-0's single contract, which is what makes this one module with one export. They are deliberately NOT restated here: two copies of a register definition in one entry is one copy too many, and the second is the one that goes stale.
+CP-PARSE is the separately runnable stage-0 preparation profile. It owns its method, P1-P8 registers, `document_parse_manifest`, and canonical CP-PARSE Markdown handoff. CP-0 begins only after that handoff validates; CP-0 does not re-author or merge CP-PARSE's registers.
 
 ### CP-PARSE binding rules
 
-CP-PARSE's binding rules are CP-0's: the same canon, and every rule in `## Canon Core` above governs this phase. The one line that differed named `CP-PARSE` in the filename rule, which is no longer true — this run authors CP-0's artifact, under CP-0's name. Nothing further is specific to this phase.
+CP-PARSE uses the same canon, evidence discipline, confidence rules and QA gates above. The CP-PARSE identity, filename, owned object, governed registers, workflow and prohibited conclusions in this runnable profile override CP-0-specific output-profile fields; every other substantive shared rule remains binding.
 
 ### CP-PARSE method
 
@@ -332,7 +298,7 @@ Follow `CP_AB_EXPORT_SPEC.md`. Preserve the canonical YAML plus six H2 sections.
 </module>
 
 
-### CP-PARSE output rules
+## Output profile — binding on CP-PARSE's canonical Markdown
 
 - **analytical_validation**: implemented
 - **appendix_contract**: structured below
@@ -358,7 +324,47 @@ Follow `CP_AB_EXPORT_SPEC.md`. Preserve the canonical YAML plus six H2 sections.
       - INTEGRATION_FIXTURE_ONLY; PRESENTATION_FIXTURE_NOT_CURRENT_GOLDEN; SOURCE_LIMITED_NOT_COMMITTEE_READY; SYNTHETIC_FORWARD_ASSUMPTIONS
     - **frontmatter_validation_warnings**: structured below
       - FULL_UNDERWRITING_SOURCE_SET_NOT_RETAINED; INTEGRATION_FIXTURE_ONLY; PRESENTATION_FIXTURE; TEST_ONLY_FORECAST_ASSUMPTIONS
-  - **required_registers**: merged into the host's `## Output profile` above; not restated here
+  - **required_registers**: structured below
+    - **P1**: structured below
+      - **columns**: none
+      - **critical_columns**: identical to columns
+      - **disqualifier_exempt_columns**: none
+      - **minimum_body_rows**: 1
+    - **P2**: structured below
+      - **columns**: none
+      - **critical_columns**: identical to columns
+      - **disqualifier_exempt_columns**: none
+      - **minimum_body_rows**: 1
+    - **P3**: structured below
+      - **columns**: none
+      - **critical_columns**: identical to columns
+      - **disqualifier_exempt_columns**: none
+      - **minimum_body_rows**: 1
+    - **P4**: structured below
+      - **columns**: none
+      - **critical_columns**: identical to columns
+      - **disqualifier_exempt_columns**: none
+      - **minimum_body_rows**: 1
+    - **P5**: structured below
+      - **columns**: none
+      - **critical_columns**: identical to columns
+      - **disqualifier_exempt_columns**: none
+      - **minimum_body_rows**: 1
+    - **P6**: structured below
+      - **columns**: none
+      - **critical_columns**: identical to columns
+      - **disqualifier_exempt_columns**: none
+      - **minimum_body_rows**: 1
+    - **P7**: structured below
+      - **columns**: none
+      - **critical_columns**: identical to columns
+      - **disqualifier_exempt_columns**: none
+      - **minimum_body_rows**: 1
+    - **P8**: structured below
+      - **columns**: none
+      - **critical_columns**: identical to columns
+      - **disqualifier_exempt_columns**: none
+      - **minimum_body_rows**: 1
   - **semantic_rules**: structured below
     - none
   - **status_by_evidence_class**: structured below
@@ -405,6 +411,5 @@ For the `CP-PARSE` invocation:
 - **Method bundle `./references/REF_CP-PARSE_STEPS.md`** — 4 method references, each byte-identical under its own `## <filename>` heading. Open one step section when its workflow step begins; do not read ahead of the active step and do not open the bundle whole. Contains: REF_CP-PARSE_A_TriageAndSelection.md, REF_CP-PARSE_B_DocumentProfiles.md, REF_CP-PARSE_C_ExtractionAndFidelity.md, REF_CP-PARSE_D_PackagingAndQA.md.
 - `./references/CP-PARSE_SCHEMA_REFERENCE.md` — governed output sections, tables and QA checklist.
 
-Carried with the `CP-PARSE` phase:
-- `./references/CP-PARSE__DataPreparation__payload.schema.txt` — companion of the absorbed CP-PARSE phase.
-
+Carried with the `CP-PARSE` profile:
+- `./references/CP-PARSE__DataPreparation__payload.schema.txt` — companion payload schema for the separately runnable CP-PARSE profile.

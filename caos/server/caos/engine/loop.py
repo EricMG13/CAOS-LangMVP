@@ -27,7 +27,7 @@ def reservation_digest(request: ProviderRequest) -> str:
         "system": request.system,
         "messages": request.messages,
         "schema": request.schema,
-        "tools_enabled": request.tools_enabled,
+        "tools": request.effective_tools(),
         "max_tokens": request.max_tokens,
     }
     encoded = json.dumps(preimage, sort_keys=True, default=lambda value: vars(value)).encode("utf-8")
@@ -178,6 +178,21 @@ def _evidence_call(block: Any) -> tuple[str, list[str]]:
     return source_id, block_ids
 
 
+def _host_tool_call(block: Any, allowed: set[str]) -> tuple[str, dict[str, Any]]:
+    name, arguments = getattr(block, "name", None), getattr(block, "input", None)
+    if not isinstance(name, str) or name not in allowed or not isinstance(arguments, dict):
+        raise AgentError("AGENT_OUTPUT_INVALID", "unexpected or malformed tool call")
+    return name, arguments
+
+
+async def _invoke_tool(handler: Callable[[str, dict[str, Any]], Any], name: str,
+                       arguments: dict[str, Any]) -> Any:
+    result = handler(name, arguments)
+    if inspect.isawaitable(result):
+        result = await result
+    return result
+
+
 async def _call(provider_method: Callable[[ProviderRequest], Any], request: ProviderRequest) -> Any:
     result = provider_method(request)
     if inspect.isawaitable(result):
@@ -193,6 +208,8 @@ async def run_agent_module(
     schema: dict[str, Any],
     max_tokens: int,
     read_evidence: Callable[[str, list[str]], list[dict[str, Any]]],
+    tools: tuple[dict[str, Any], ...] | None = None,
+    call_tool: Callable[[str, dict[str, Any]], Any] | None = None,
     validate: Callable[[dict[str, Any]], Any],
     reserve: Callable[[str, int, int, bool], None],
     reconcile: Callable[[str, int, int, int, int], str | None],
@@ -203,6 +220,7 @@ async def run_agent_module(
     before_create: Callable[[], None] | None = None,
     clock: Callable[[], float] | None = None,
     expected_identity: ProviderIdentity | None = None,
+    repair_state: dict[str, Any] | None = None,
 ) -> Any:
     """One module's provider interaction. Raises AgentError with the legacy
     taxonomy code on every failure path; non-AgentError exceptions escape for
@@ -212,7 +230,10 @@ async def run_agent_module(
     now = clock or _time.monotonic
     messages: list[dict[str, Any]] = [{"role": "user", "content": user}]
     tools_enabled = True
-    repair_used = False
+    # One bounded repair per module, shared with the host tool dispatcher: a
+    # calculator retried after an incomplete result spends the same allowance
+    # as a corrected final answer (DECISIONS §14 D6).
+    repair = repair_state if repair_state is not None else {"used": False}
     retry_used = False
 
     def timed(started: float) -> None:
@@ -220,7 +241,10 @@ async def run_agent_module(
             charge_time(max(0.0, now() - started))
 
     while True:
-        request = ProviderRequest(system=system, messages=messages, schema=schema, tools_enabled=tools_enabled, max_tokens=max_tokens)
+        request = ProviderRequest(
+            system=system, messages=messages, schema=schema,
+            tools_enabled=tools_enabled, tools=tools, max_tokens=max_tokens,
+        )
 
         # count_tokens never charges a turn; §12.15: every provider await —
         # count included — runs inside the clamped asyncio.timeout.
@@ -345,12 +369,19 @@ async def run_agent_module(
 
         if stop_reason == "tool_use":
             calls = [block for block in content if getattr(block, "type", None) == "tool_use"]
-            if not tools_enabled or len(calls) != 1:
-                raise AgentError("AGENT_OUTPUT_INVALID", "exactly one evidence tool call is allowed")
-            source_id, block_ids = _evidence_call(calls[0])
+            if not tools_enabled or len(content) != 1 or len(calls) != 1:
+                raise AgentError("AGENT_OUTPUT_INVALID", "exactly one host tool call is allowed")
+            allowed = {tool.get("name") for tool in request.effective_tools() if isinstance(tool.get("name"), str)}
+            name, arguments = _host_tool_call(calls[0], allowed)
             started = now()
             try:
-                rows = read_evidence(source_id, block_ids)
+                if name == "read_evidence":
+                    source_id, block_ids = _evidence_call(calls[0])
+                    rows = read_evidence(source_id, block_ids)
+                elif call_tool is not None:
+                    rows = await _invoke_tool(call_tool, name, arguments)
+                else:
+                    raise AgentError("AGENT_OUTPUT_INVALID", "host tool has no dispatcher")
             finally:
                 timed(started)
             messages.append({"role": "assistant", "content": content})
@@ -375,9 +406,9 @@ async def run_agent_module(
         except AgentError:
             raise
         except (ValueError, TypeError) as exc:
-            if repair_used:
+            if repair["used"]:
                 raise AgentError("AGENT_OUTPUT_INVALID", "local validation failed after repair") from exc
-            repair_used = True
+            repair["used"] = True
             tools_enabled = False
             record("repair_reserve")
             errors = str(exc).replace("\n", " ")[:REPAIR_TEXT_LIMIT]

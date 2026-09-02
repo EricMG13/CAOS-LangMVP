@@ -17,6 +17,14 @@ from pathlib import Path
 from typing import Any, Mapping, Protocol
 
 from ..contracts import digest
+from ..methodology.canonical import MAX_EVIDENCE_ID_CHARS, MAX_EVIDENCE_REFS_PER_MODULE
+from ..methodology.execution import (
+    MAX_CALCULATION_INPUT_BYTES,
+    MAX_RECOVERY_WATERFALL_WORK_UNITS,
+)
+
+
+MAX_EVIDENCE_BLOCKS_PER_READ = 50
 
 
 READ_EVIDENCE_TOOL = {
@@ -26,13 +34,56 @@ READ_EVIDENCE_TOOL = {
     "input_schema": {
         "type": "object",
         "properties": {
-            "source_id": {"type": "string"},
-            "block_ids": {"type": "array", "items": {"type": "string"}},
+            "source_id": {"type": "string", "minLength": 1, "maxLength": MAX_EVIDENCE_ID_CHARS},
+            "block_ids": {
+                "type": "array",
+                "items": {"type": "string", "minLength": 1, "maxLength": MAX_EVIDENCE_ID_CHARS},
+                "minItems": 1,
+                "maxItems": MAX_EVIDENCE_BLOCKS_PER_READ,
+                "uniqueItems": True,
+            },
         },
         "required": ["source_id", "block_ids"],
         "additionalProperties": False,
     },
 }
+
+RUN_METHODOLOGY_CALCULATION_TOOL = {
+    "name": "run_methodology_calculation",
+    "description": (
+        "Run one calculation assigned to the current verified methodology module. "
+        "Returns the host-pinned calculation record, or {\"complete\": false, "
+        "\"code\": \"METHODOLOGY_CALCULATION_INCOMPLETE\"} when the inputs did not yield a "
+        "usable result; that calculator may then be run once more with corrected inputs."
+    ),
+    "strict": True,
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "calculator_id": {"type": "string"},
+            "input_json": {"type": "string", "maxLength": MAX_CALCULATION_INPUT_BYTES},
+        },
+        "required": ["calculator_id", "input_json"],
+        "additionalProperties": False,
+    },
+}
+
+
+def methodology_calculation_tool(calculator_ids: tuple[str, ...]) -> dict[str, Any]:
+    """Bind the generic calculation shape to this module's static allowlist."""
+    if not calculator_ids or any(not _IDENTIFIER.fullmatch(item) for item in calculator_ids):
+        raise ValueError("calculator IDs must be bounded identifiers")
+    schema = RUN_METHODOLOGY_CALCULATION_TOOL["input_schema"]
+    return {
+        **RUN_METHODOLOGY_CALCULATION_TOOL,
+        "input_schema": {
+            **schema,
+            "properties": {
+                **schema["properties"],
+                "calculator_id": {"type": "string", "enum": list(calculator_ids)},
+            },
+        },
+    }
 
 
 class AgentError(RuntimeError):
@@ -310,7 +361,14 @@ def parameter_context_metadata(
     """The allowlisted, host-only provider-policy preimage; never request data."""
     from ..methodology.canonical import CanonicalModuleOutput
     from ..modules.registry import MODULES
-    from .budget import PROVIDER_TIMEOUT_SECONDS, REPAIRS, PROVIDER_RETRIES
+    from .budget import (
+        EVIDENCE_BYTES_PER_MODULE,
+        EVIDENCE_READS_PER_MODULE,
+        MAX_ATTEMPT_RECORDS,
+        PROVIDER_RETRIES,
+        PROVIDER_TIMEOUT_SECONDS,
+        REPAIRS,
+    )
 
     return {
         "provider": {"name": provider_name, "model": model, "version": provider_version},
@@ -325,16 +383,26 @@ def parameter_context_metadata(
             "streaming": False,
             "parallel_tool_calls": False,
         },
-        "tool": {"digest": digest(READ_EVIDENCE_TOOL)},
+        "budget": {
+            "evidence_reads_per_module": EVIDENCE_READS_PER_MODULE,
+            "evidence_bytes_per_module": EVIDENCE_BYTES_PER_MODULE,
+            "evidence_refs_per_module": MAX_EVIDENCE_REFS_PER_MODULE,
+            "max_attempt_records": MAX_ATTEMPT_RECORDS,
+        },
+        "calculation": {
+            "max_input_bytes": MAX_CALCULATION_INPUT_BYTES,
+            "max_recovery_waterfall_work_units": MAX_RECOVERY_WATERFALL_WORK_UNITS,
+        },
+        "tool": {"digest": digest([READ_EVIDENCE_TOOL, RUN_METHODOLOGY_CALCULATION_TOOL])},
         "schema": {"canonical_output_digest": digest(CanonicalModuleOutput.model_json_schema())},
         "modules": {
             module_id: {
                 "mode_full": spec.mode_full,
                 "mode_screen": spec.mode_screen,
                 "max_output_tokens": spec.max_output_tokens,
-                "authority_digest": spec.authority_digest if spec.module_id in MODULES and spec.module_id in {
-                    "CP-1", "CP-1A", "CP-1B", "CP-1C", "CP-1D", "CP-2", "CP-2A", "CP-2G", "CP-5"
-                } else None,
+                "authority_digest": spec.authority_digest
+                if spec.mode_full == "agent" or spec.mode_screen == "agent" else None,
+                "calculators": spec.calculators,
                 "source_mode": spec.source_mode,
             }
             for module_id, spec in sorted(MODULES.items())
@@ -405,8 +473,14 @@ class ProviderRequest:
     messages: list[dict[str, Any]]
     schema: dict[str, Any]
     tools_enabled: bool
+    tools: tuple[dict[str, Any], ...] | None = None
     max_tokens: int | None = None
     timeout: float | None = None
+
+    def effective_tools(self) -> tuple[dict[str, Any], ...]:
+        if not self.tools_enabled:
+            return ()
+        return self.tools if self.tools is not None else (READ_EVIDENCE_TOOL,)
 
 
 class Provider(Protocol):

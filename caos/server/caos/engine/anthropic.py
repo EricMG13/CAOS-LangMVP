@@ -117,16 +117,15 @@ class AnthropicProvider:
         self._closed = True
 
     def _payload(self, request: ProviderRequest) -> dict[str, Any]:
-        from .provider import READ_EVIDENCE_TOOL
-
         payload: dict[str, Any] = {
             "model": self.model,
             "system": request.system,
             "messages": [self._wire_message(message) for message in request.messages],
             "output_config": {"format": {"type": "json_schema", "schema": request.schema}},
         }
-        if request.tools_enabled:
-            payload["tools"] = [READ_EVIDENCE_TOOL]
+        tools = request.effective_tools()
+        if tools:
+            payload["tools"] = list(tools)
             payload["tool_choice"] = {"type": "auto", "disable_parallel_tool_use": True}
         if request.max_tokens is not None:
             payload["max_tokens"] = request.max_tokens

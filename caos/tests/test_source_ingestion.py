@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import hashlib
+from pathlib import Path
+
 import pytest
 from fastapi import HTTPException
 
@@ -249,3 +252,22 @@ async def test_public_source_reads_hide_storage_private_fields(store, vault, cas
     assert "vault_path" not in fetched
     raw = store.read_source_bytes(result["id"], limit=1024)
     assert raw == b"the evidence"
+
+
+async def test_existing_source_vault_corruption_is_never_reused_or_read(
+    store,
+    vault,
+    case_id,
+):
+    content = b"the evidence"
+    result = await ingest(store, vault, case_id, "doc.txt", content)
+    private = store.get_source_private(result["id"])
+    path = Path(private["vault_path"])
+    path.write_bytes(b"bad evidence")
+
+    with pytest.raises(ValueError, match="source vault integrity mismatch"):
+        vault.verify(private)
+    with pytest.raises(ValueError, match="existing source identity mismatch"):
+        vault.put(content, hashlib.sha256(content).hexdigest())
+    with pytest.raises(ValueError, match="SOURCE_BYTES_INTEGRITY_MISMATCH"):
+        store.read_source_bytes(result["id"], limit=1024)

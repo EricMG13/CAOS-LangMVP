@@ -10,6 +10,7 @@ import asyncio
 import sqlite3
 import threading
 from contextlib import closing
+from pathlib import Path
 
 import pytest
 
@@ -755,6 +756,16 @@ async def test_acceptance_refuses_missing_historical_source_set(engine, store):
         await engine.accept(run["id"], actor="analyst")
 
 
+async def test_acceptance_refuses_a_source_withdrawn_after_run_completion(engine, store):
+    case, source, run = await start_full_credit_run(engine, store, depth="screen")
+    completed = await engine.wait(run["id"])
+    assert completed["status"] == "succeeded"
+    store.withdraw(case["id"], source["id"], "analyst")
+
+    with pytest.raises(Exception, match="SOURCE_SET_CHANGED"):
+        await engine.accept(run["id"], actor="analyst")
+
+
 async def test_withdrawing_pinned_source_mid_run_fails_the_run_closed(engine, store):
     """Invariant 1: withdrawn or mutated sources fail the run rather than degrading it."""
     case, source, run = await start_full_credit_run(engine, store)
@@ -779,6 +790,27 @@ async def test_withdrawing_pinned_source_fails_a_screen_run_on_the_deterministic
     assert record["error"]["code"] in {"AGENT_AUTHORITY_MISMATCH", "SOURCE_SET_CHANGED"}
     assert not [node for node in record["nodes"] if node["artifact_id"]], \
         "no artifact may be minted from withdrawn evidence"
+
+
+async def test_withdrawal_in_the_last_pre_finalization_gap_fails_the_run(engine, store, monkeypatch):
+    """The terminal gate must re-read live source authority after every module
+    has finished, not merely trust the last module's earlier read."""
+    real_verify = engine._verify_run_artifacts
+    authority: dict[str, str] = {}
+
+    def withdraw_then_verify(run_id, plan):
+        store.withdraw(authority["case_id"], authority["source_id"], "analyst")
+        real_verify(run_id, plan)
+
+    monkeypatch.setattr(engine, "_verify_run_artifacts", withdraw_then_verify)
+    case, source, run = await start_full_credit_run(engine, store, depth="screen")
+    authority.update(case_id=case["id"], source_id=source["id"])
+
+    await engine.wait(run["id"])
+
+    record = engine.get_run(run["id"])
+    assert record["status"] == "failed"
+    assert record["error"]["code"] == "AGENT_AUTHORITY_MISMATCH"
 
 
 async def test_reuse_relink_on_resume_revalidates_live_sources(tmp_path, settings, store, provider):
@@ -852,8 +884,9 @@ def test_run_store_copies_one_provider_identity_through_run_artifact_snapshot_an
     import sqlalchemy as sa
 
     from caos.contracts import digest
+    from caos.engine.deterministic import build_deterministic_payload
     from caos.engine.provider import host_control_identity
-    from caos.storage.runs import RunStore, StoreConflict
+    from caos.storage.runs import RunStore, StoreConflict, artifact_input_fingerprint
 
     db = sa.create_engine(f"sqlite:///{tmp_path / 'authority.db'}")
     store = RunStore(db)
@@ -865,15 +898,20 @@ def test_run_store_copies_one_provider_identity_through_run_artifact_snapshot_an
         assert run["provider_identity"] == identity
         assert store.events_after(run["id"], 0)[0]["data"]["provider_identity_digest"] == identity["identity_digest"]
 
-        store.pin_plan(
-            run["id"],
-            {"nodes": [{"module_id": "CP-0", "stage": 0, "dependencies": []}]},
-            "plan-digest",
-        )
+        plan = {
+            "build_id": "deploy-v-test-build",
+            "nodes": [{"module_id": "CP-0", "stage": 0, "dependencies": []}],
+        }
+        store.pin_plan(run["id"], plan, digest(plan))
         store.node_running(run["id"], "CP-0")
+        fingerprint = artifact_input_fingerprint(plan, digest(plan), "CP-0", [])
+        payload = build_deterministic_payload(
+            "CP-0", plan, input_fingerprint=fingerprint,
+        )
         artifact = store.complete_node(
-            run["id"], "case-1", "CP-0", "fingerprint", {"status": "COMPLETE"},
+            run["id"], "case-1", "CP-0", fingerprint, payload,
             None, "Passed", "analyst",
+            content_expectations={"expected_system_payload": payload},
         )
         assert artifact["provider_identity"] == identity
 
@@ -884,7 +922,7 @@ def test_run_store_copies_one_provider_identity_through_run_artifact_snapshot_an
             "provider_identity": identity, "previous_snapshot_id": None,
             "accepted_at": "2026-09-01T00:00:00+00:00",
         }
-        preimage = {key: value for key, value in snapshot.items() if key not in {"id", "previous_snapshot_id"}}
+        preimage = {key: value for key, value in snapshot.items() if key != "id"}
         snapshot["digest"] = digest(preimage)
         assert store.create_snapshot(snapshot)["provider_identity"] == identity
         assert store.get_snapshot("snap-1")["digest"] == digest(preimage)
@@ -900,15 +938,172 @@ def test_run_store_copies_one_provider_identity_through_run_artifact_snapshot_an
         with pytest.raises(StoreConflict, match="AGENT_IDENTITY_MISMATCH"):
             store.create_snapshot({**snapshot, "id": "snap-3", "run_id": same_identity["id"]})
 
+        forged_payload = {
+            **artifact["payload"],
+            "provider_identity": host_control_identity(
+                adapter_version="caos.host-control.v2"
+            ).as_dict(),
+        }
+        store.update_artifact_for_tests(
+            run["id"], "CP-0", payload=forged_payload, digest=digest(forged_payload),
+        )
+        assert store.find_valid_artifact(run["id"], "CP-0", fingerprint) is None
+        store.update_artifact_for_tests(
+            run["id"], "CP-0", payload=artifact["payload"], digest=artifact["digest"],
+        )
         store.update_artifact_for_tests(
             run["id"], "CP-0",
             provider_identity=host_control_identity(adapter_version="caos.host-control.v2").as_dict(),
         )
         with pytest.raises(StoreConflict, match="AGENT_IDENTITY_MISMATCH"):
             store.complete_node(
-                run["id"], "case-1", "CP-0", "fingerprint", {"status": "COMPLETE"},
+                run["id"], "case-1", "CP-0", fingerprint, payload,
                 None, "Passed", "analyst",
             )
+    finally:
+        db.dispose()
+
+
+@pytest.mark.parametrize(
+    "invalid_kind",
+    [
+        "unknown_schema",
+        "semantic_empty_system",
+        "semantic_empty_canonical",
+        "oversized_markdown",
+        "oversized_payload",
+        "non_finite_json",
+        "non_passed_qa",
+    ],
+)
+def test_complete_node_rejects_invalid_or_unbounded_artifact_payloads(tmp_path, invalid_kind):
+    import hashlib
+
+    import sqlalchemy as sa
+
+    from caos.contracts import digest
+    from caos.engine.deterministic import build_deterministic_payload
+    from caos.methodology.canonical import MAX_CANONICAL_MARKDOWN_CHARS
+    from caos.storage.runs import (
+        MAX_ARTIFACT_PAYLOAD_BYTES,
+        RunStore,
+        StoreConflict,
+        artifact_input_fingerprint,
+    )
+
+    db = sa.create_engine(f"sqlite:///{tmp_path / 'invalid-artifact.db'}")
+    runs = RunStore(db)
+    try:
+        run = runs.create_run("case-1", "FULL_CREDIT", "full", "analyst")
+        plan = {
+            "build_id": "deploy-v-test-build",
+            "pathway": "FULL_CREDIT",
+            "nodes": [{"module_id": "CP-0", "stage": 0, "dependencies": []}],
+        }
+        runs.pin_plan(run["id"], plan, digest(plan))
+        runs.node_running(run["id"], "CP-0")
+        fingerprint = artifact_input_fingerprint(plan, digest(plan), "CP-0", [])
+        markdown = None
+        qa_status = "Passed"
+        payload = build_deterministic_payload("CP-0", plan, input_fingerprint=fingerprint)
+        if invalid_kind == "unknown_schema":
+            payload["schema_version"] = "caos.canonical.artifact.v999"
+        elif invalid_kind == "semantic_empty_system":
+            payload = {
+                "schema_version": "caos.system_analysis.v1",
+                "module_id": "CP-0",
+                "lineage": {"input_fingerprint": fingerprint},
+            }
+        elif invalid_kind == "semantic_empty_canonical":
+            markdown = "arbitrary"
+            payload = {
+                "schema_version": "caos.canonical.artifact.v1",
+                "module_id": "CP-0",
+                "host_identity": {"run_id": run["id"], "case_id": "case-1", "module_id": "CP-0"},
+                "canonical_output": {
+                    "markdown": markdown,
+                    "markdown_sha256": hashlib.sha256(markdown.encode()).hexdigest(),
+                },
+                "lineage": {"input_fingerprint": fingerprint},
+            }
+        elif invalid_kind == "oversized_markdown":
+            markdown = "x" * (MAX_CANONICAL_MARKDOWN_CHARS + 1)
+            payload = {
+                "schema_version": "caos.canonical.artifact.v1",
+                "module_id": "CP-0",
+                "host_identity": {"run_id": run["id"], "case_id": "case-1", "module_id": "CP-0"},
+                "canonical_output": {
+                    "markdown": markdown,
+                    "markdown_sha256": hashlib.sha256(markdown.encode()).hexdigest(),
+                },
+                "lineage": {"input_fingerprint": fingerprint},
+            }
+        elif invalid_kind == "oversized_payload":
+            payload["padding"] = "x" * MAX_ARTIFACT_PAYLOAD_BYTES
+        elif invalid_kind == "non_finite_json":
+            payload["non_finite"] = float("nan")
+        else:
+            qa_status = "Restricted"
+
+        with pytest.raises(StoreConflict, match="AGENT_OUTPUT_INVALID"):
+            runs.complete_node(
+                run["id"], "case-1", "CP-0", fingerprint, payload,
+                markdown, qa_status, "analyst",
+            )
+        assert runs.find_valid_artifact(run["id"], "CP-0", fingerprint) is None
+    finally:
+        db.dispose()
+
+
+@pytest.mark.parametrize(
+    ("field", "forged_value"),
+    [
+        ("run_id", "run-relocated"),
+        ("case_id", "case-relocated"),
+        ("module_id", "CP-9"),
+        ("input_fingerprint", "fingerprint-relocated"),
+        ("qa_status", "Blocked"),
+    ],
+)
+def test_artifact_verifier_rejects_row_relocation_and_index_drift(tmp_path, field, forged_value):
+    import sqlalchemy as sa
+
+    from caos.contracts import digest
+    from caos.engine.deterministic import build_deterministic_payload
+    from caos.storage.runs import RunStore, artifact_input_fingerprint, verify_artifact_content
+
+    db = sa.create_engine(f"sqlite:///{tmp_path / 'artifact-relocation.db'}")
+    runs = RunStore(db)
+    try:
+        run = runs.create_run("case-1", "FULL_CREDIT", "full", "analyst")
+        plan = {
+            "build_id": "deploy-v-test-build",
+            "pathway": "FULL_CREDIT",
+            "nodes": [{"module_id": "CP-0", "stage": 0, "dependencies": []}],
+        }
+        runs.pin_plan(run["id"], plan, digest(plan))
+        runs.node_running(run["id"], "CP-0")
+        fingerprint = artifact_input_fingerprint(plan, digest(plan), "CP-0", [])
+        payload = build_deterministic_payload("CP-0", plan, input_fingerprint=fingerprint)
+        artifact = runs.complete_node(
+            run["id"], "case-1", "CP-0", fingerprint,
+            payload,
+            None, "Passed", "analyst",
+            content_expectations={"expected_system_payload": payload},
+        )
+        assert verify_artifact_content(artifact, expected_system_payload=payload)
+
+        forged = {**artifact, field: forged_value}
+        assert not verify_artifact_content(
+            forged,
+            run_id=run["id"],
+            case_id="case-1",
+            module_id="CP-0",
+            input_fingerprint=fingerprint,
+            methodology_build_id=plan["build_id"],
+            qa_status="Passed",
+            expected_system_payload=payload,
+        )
     finally:
         db.dispose()
 
@@ -956,20 +1151,27 @@ def test_provider_identity_schema_evolution_is_serialized_and_does_not_backfill(
         verify_engine.dispose()
 
 
-async def test_ordinary_deterministic_execution_refuses_without_creating_placeholder_artifacts(engine, store):
+async def test_ordinary_screen_semantics_require_a_provider_before_run_creation(tmp_path, settings, store):
+    from caos.engine.runtime import Engine, EngineError
+
     case, _source = seed_case_with_source(store)
-    run = await engine.start_run(
-        case_id=case["id"], pathway="FULL_CREDIT", depth="screen", actor="analyst",
+    absent = Engine.create(
+        settings=settings,
+        store=store,
+        checkpoint_path=tmp_path / "screen-provider-absent.db",
+        provider=None,
     )
-    await engine.wait(run["id"])
+    try:
+        with pytest.raises(EngineError) as excinfo:
+            await absent.start_run(
+                case_id=case["id"], pathway="FULL_CREDIT", depth="screen", actor="analyst",
+            )
+        assert excinfo.value.code == "AGENT_PROVIDER_UNAVAILABLE"
+    finally:
+        await absent.aclose()
 
-    record = engine.get_run(run["id"])
-    assert record["status"] == "failed"
-    assert record["error"]["code"] == "DETERMINISTIC_EXECUTOR_UNAVAILABLE"
-    assert engine.artifacts_for_run(run["id"]) == []
 
-
-async def test_test_only_placeholder_capability_is_run_local_and_not_persisted(engine, store):
+async def test_test_only_placeholder_capability_is_run_local_and_not_persisted(engine, store, provider):
     case, _source = seed_case_with_source(store)
     permitted = await engine.start_run_for_tests(
         case_id=case["id"], pathway="FULL_CREDIT", depth="screen", actor="analyst",
@@ -977,13 +1179,23 @@ async def test_test_only_placeholder_capability_is_run_local_and_not_persisted(e
     )
     await engine.wait(permitted["id"])
     assert engine.get_run(permitted["id"])["status"] == "succeeded"
+    assert provider.create_requests == []
 
     ordinary = await engine.start_run(
         case_id=case["id"], pathway="FULL_CREDIT", depth="screen", actor="analyst",
     )
     await engine.wait(ordinary["id"])
-    assert engine.get_run(ordinary["id"])["error"]["code"] == "DETERMINISTIC_EXECUTOR_UNAVAILABLE"
+    assert engine.get_run(ordinary["id"])["status"] == "failed"
+    assert provider.create_requests, "ordinary SCREEN semantics must reach the provider, never the placeholder"
     assert "placeholder" not in engine.runs.serialize_all_for_run(permitted["id"])
+
+
+def test_full_depth_host_control_preserves_the_pre_promotion_placeholder_modules():
+    from caos.engine.runtime import Engine
+
+    assert Engine._PLACEHOLDER_FULL_MODULES == {
+        "CP-PARSE", "CP-0", "CP-2E", "CP-2H", "CP-3", "CP-4", "CP-4C", "CP-6", "CP-L10",
+    }
 
 
 async def test_placeholder_artifact_cannot_relink_after_restart_without_test_capability(
@@ -1211,7 +1423,7 @@ async def test_provider_identity_is_read_once_and_bound_through_runtime_authorit
         assert accepted_event["provider_identity_digest"] == identity["identity_digest"]
         preimage = {
             key: value for key, value in snapshot.items()
-            if key not in {"digest", "id", "previous_snapshot_id", "source_set"}
+            if key not in {"digest", "id", "source_set"}
         }
         assert snapshot["digest"] == digest(preimage)
     finally:
@@ -1435,14 +1647,36 @@ async def test_replay_from_same_pinned_sources_and_build_is_equivalent_by_the_sa
     assert second["status"] == "succeeded"
     assert [n["module_id"] for n in second["nodes"]] == [n["module_id"] for n in first["nodes"]], "same path"
     assert second["plan_digest"] == first["plan_digest"], "same pin -> same plan identity"
-    firsts = {a["module_id"]: a["digest"] for a in engine.artifacts_for_run(first["id"])}
-    seconds = {a["module_id"]: a["digest"] for a in engine.artifacts_for_run(second["id"])}
-    assert firsts == seconds, "deterministic modules replay to identical artifact digests"
+    firsts = {a["module_id"]: a for a in engine.artifacts_for_run(first["id"])}
+    seconds = {a["module_id"]: a for a in engine.artifacts_for_run(second["id"])}
+    assert set(firsts) == set(seconds) == {n["module_id"] for n in first["nodes"]}
+
+    # Every payload key except the two that carry run identity (the run id
+    # itself and the fingerprint chain it seeds) must be byte-equal: evidence
+    # references, narrative, provenance, authority, methodology, confidence.
+    # Comparing constants such as `status` would pass on any two successful
+    # runs; this comparison fails when a replay produces different content.
+    def semantic(payload: dict) -> dict:
+        return {key: value for key, value in payload.items() if key not in {"artifact_identity", "lineage"}}
+
+    for module_id in firsts:
+        assert semantic(firsts[module_id]["payload"]) == semantic(seconds[module_id]["payload"]), module_id
+        assert firsts[module_id]["payload"]["evidence_refs"], f"{module_id} cites nothing"
+        assert firsts[module_id]["markdown"] == seconds[module_id]["markdown"], module_id
+        assert firsts[module_id]["payload"]["lineage"]["upstream_digests"] != seconds[module_id]["payload"]["lineage"]["upstream_digests"] or module_id == "CP-PARSE", (
+            "the fingerprint chain is seeded by the run id, so it must differ downstream of CP-PARSE"
+        )
+    assert all(
+        firsts[module_id]["digest"] != seconds[module_id]["digest"]
+        and firsts[module_id]["payload"]["artifact_identity"]["run_id"] == first["id"]
+        and seconds[module_id]["payload"]["artifact_identity"]["run_id"] == second["id"]
+        for module_id in firsts
+    ), "each equivalent replay remains auditable to its own run"
 
 
 async def test_started_pathways_are_restricted_to_the_mvp_set(engine, store):
     case, _ = seed_case_with_source(store)
-    for pathway in ("DEEP_RESEARCH", "DISTRESSED_RESTRUCTURING", "PORTFOLIO_DECISION", "DECISION_LEDGER"):
+    for pathway in ("DEEP_RESEARCH", "PORTFOLIO_DECISION", "DECISION_LEDGER"):
         with pytest.raises(Exception):
             await engine.start_run(case_id=case["id"], pathway=pathway, depth="full", actor="analyst")
 
@@ -1604,6 +1838,54 @@ async def test_snapshot_rejects_forged_succeeded_run(engine, store):
         await engine.accept(run["id"], actor="analyst")
 
 
+async def test_acceptance_rejects_source_content_changed_without_a_new_source_set(engine, store):
+    from caos.storage.store import sources
+
+    case, source = seed_case_with_source(store)
+    run = await engine.run_scripted_for_tests(case["id"])
+    pinned_set = store.current_source_set(case["id"])
+    changed_blocks = [
+        {**block, "text": f"{block['text']} tampered"} if index == 0 else block
+        for index, block in enumerate(source["blocks"])
+    ]
+    with store.engine.begin() as conn:
+        conn.execute(
+            sources.update().where(sources.c.id == source["id"]).values(blocks=changed_blocks)
+        )
+
+    with pytest.raises(Exception, match="SOURCE_SET_CHANGED"):
+        await engine.accept(run["id"], actor="analyst")
+    assert store.current_source_set(case["id"])["id"] == pinned_set["id"], (
+        "the content guard must not depend on source-set version churn"
+    )
+
+
+async def test_acceptance_rejects_corrupted_uploaded_source_bytes(
+    engine,
+    store,
+    settings,
+):
+    from caos.sources.domain import Vault
+    from caos.storage.store import sources
+
+    content = b"pinned evidence line"
+    case, source = seed_case_with_source(store, body=content)
+    path = Vault(settings).put(content, source["sha256"])
+    with store.engine.begin() as connection:
+        connection.execute(
+            sources.update()
+            .where(sources.c.id == source["id"])
+            .values(vault_path=path)
+        )
+    run = await engine.run_scripted_for_tests(case["id"])
+    path = Path(path)
+    path.write_bytes(b"x" * len(content))
+
+    with pytest.raises(Exception, match="AGENT_AUTHORITY_MISMATCH"):
+        await engine.accept(run["id"], actor="analyst")
+    assert engine.runs.snapshot_for_run(run["id"]) is None
+
+
 @pytest.mark.parametrize("payload", [[], "not-an-artifact"])
 async def test_non_mapping_artifact_payload_fails_closed_at_finalization_and_acceptance(
     engine, store, payload,
@@ -1623,6 +1905,22 @@ async def test_non_mapping_artifact_payload_fails_closed_at_finalization_and_acc
         await engine.accept(run["id"], actor="analyst")
 
 
+async def test_artifact_read_revalidates_payload_provider_identity(client, engine, store):
+    from caos.contracts import digest
+
+    case, _source, run = await start_full_credit_run(engine, store, depth="screen")
+    await engine.wait(run["id"])
+    artifact = engine.artifacts_for_run(run["id"])[0]
+    url = f"/api/cases/{case['id']}/artifacts/{artifact['id']}"
+    assert client.get(url, headers={"x-forwarded-user": "analyst"}).status_code == 200
+
+    forged = {**artifact["payload"], "provider_identity": {"identity_digest": "0" * 64}}
+    engine.runs.update_artifact_for_tests(
+        run["id"], artifact["module_id"], payload=forged, digest=digest(forged),
+    )
+    assert client.get(url, headers={"x-forwarded-user": "analyst"}).status_code == 404
+
+
 async def test_acceptance_is_idempotent_and_updates_case_and_run_together(engine, store):
     case, source, run = await start_full_credit_run(engine, store, depth="screen")
     await engine.wait(run["id"])
@@ -1630,6 +1928,41 @@ async def test_acceptance_is_idempotent_and_updates_case_and_run_together(engine
     second = await engine.accept(run["id"], actor="analyst")
     assert first["id"] == second["id"]
     assert store.get_case(case["id"])["accepted_snapshot_id"] == first["id"]
+
+
+async def test_acceptance_rolls_back_snapshot_both_pointers_and_audit_as_one_unit(
+    engine, store, monkeypatch
+):
+    case, _source, run = await start_full_credit_run(engine, store, depth="screen")
+    await engine.wait(run["id"])
+    original_audit = store._audit
+
+    def fail_acceptance_audit(connection, action, actor, **details):
+        if action == "snapshot.accepted":
+            raise RuntimeError("injected acceptance commit failure")
+        return original_audit(connection, action, actor, **details)
+
+    monkeypatch.setattr(store, "_audit", fail_acceptance_audit)
+    with pytest.raises(RuntimeError, match="injected acceptance commit failure"):
+        await engine.accept(run["id"], actor="analyst")
+
+    assert engine.runs.snapshot_for_run(run["id"]) is None
+    assert engine.get_run(run["id"])["accepted_snapshot_id"] is None
+    assert store.get_case(case["id"])["accepted_snapshot_id"] is None
+    assert not [
+        event for event in store.list_audit()
+        if event["action"] == "snapshot.accepted" and event["run_id"] == run["id"]
+    ]
+
+    monkeypatch.setattr(store, "_audit", original_audit)
+    accepted = await engine.accept(run["id"], actor="analyst")
+    assert engine.runs.snapshot_for_run(run["id"])["id"] == accepted["id"]
+    assert engine.get_run(run["id"])["accepted_snapshot_id"] == accepted["id"]
+    assert store.get_case(case["id"])["accepted_snapshot_id"] == accepted["id"]
+    assert len([
+        event for event in store.list_audit()
+        if event["action"] == "snapshot.accepted" and event["run_id"] == run["id"]
+    ]) == 1
 
 
 async def test_snapshot_acceptance_refuses_when_cp5_reports_blocked(engine, store):
@@ -1689,3 +2022,103 @@ def test_production_rejects_forged_forwarded_identity(store, tmp_path):
         )
         assert escalated.status_code == 200
         assert escalated.json()["role"] == "READER", "client role headers never escalate in production"
+
+
+# --- artifact replacement keeps the node pointing at the live row -------------------
+
+
+def test_replacing_an_invalid_artifact_relinks_the_succeeded_node(engine):
+    """A stored artifact that no longer verifies is replaced on re-execution;
+    the already-succeeded node must follow the replacement, or every downstream
+    fingerprint resolves through a deleted row and the run wedges."""
+    from caos.contracts import digest
+    from caos.engine.deterministic import build_deterministic_payload
+    from caos.storage.runs import artifact_input_fingerprint
+
+    runs = engine.runs
+    run = runs.create_run("case-1", "FULL_CREDIT", "full", "analyst")
+    plan = {
+        "build_id": "deploy-v-test-build",
+        "pathway": "FULL_CREDIT",
+        "nodes": [
+            {"module_id": "CP-0", "stage": 0, "dependencies": []},
+            {"module_id": "CP-1", "stage": 1, "dependencies": ["CP-0"]},
+        ],
+    }
+    runs.pin_plan(run["id"], plan, digest(plan))
+    runs.node_running(run["id"], "CP-0")
+    fingerprint = artifact_input_fingerprint(plan, digest(plan), "CP-0", [])
+    payload = build_deterministic_payload("CP-0", plan, input_fingerprint=fingerprint)
+    first = runs.complete_node(
+        run["id"], "case-1", "CP-0", fingerprint, payload, None, "Passed", "analyst",
+        content_expectations={"expected_system_payload": payload},
+    )
+    runs.update_artifact_for_tests(run["id"], "CP-0", digest="0" * 64)
+    assert runs.find_valid_artifact(run["id"], "CP-0", fingerprint) is None
+
+    second = runs.complete_node(
+        run["id"], "case-1", "CP-0", fingerprint, payload, None, "Passed", "analyst",
+        content_expectations={"expected_system_payload": payload},
+    )
+    assert second["id"] != first["id"]
+    node = next(n for n in runs.get_run(run["id"])["nodes"] if n["module_id"] == "CP-0")
+    assert node["status"] == "succeeded"
+    assert node["artifact_id"] == second["id"], "the node must follow the replacement"
+    assert runs.get_artifact(first["id"]) is None
+
+    runs.node_running(run["id"], "CP-1")
+    cp1_fingerprint = artifact_input_fingerprint(plan, digest(plan), "CP-1", [second["digest"]])
+    cp1_payload = build_deterministic_payload(
+        "CP-1", plan, input_fingerprint=cp1_fingerprint, upstream_digests=[second["digest"]],
+    )
+    runs.complete_node(
+        run["id"], "case-1", "CP-1", cp1_fingerprint, cp1_payload, None, "Passed", "analyst",
+        content_expectations={"expected_system_payload": cp1_payload},
+    )
+    assert [e["event"] for e in runs.events_after(run["id"], 0)].count("node.succeeded") == 2
+
+
+# --- acceptance takes the authority lock off the event loop --------------------------
+
+
+async def test_acceptance_waits_for_the_authority_lock_without_stalling_the_event_loop(engine, store):
+    """The process-wide authority lock linearizes acceptance against ingest and
+    withdrawal, but a synchronous route holding it must not freeze the loop:
+    SSE tails and readiness keep serving while acceptance waits."""
+    import time
+
+    case, _source = seed_case_with_source(store)
+    run = await engine.run_scripted_for_tests(case["id"])
+
+    hold_seconds = 0.6
+    held = threading.Event()
+
+    def hold_lock():
+        with store.authority_guard():
+            held.set()
+            time.sleep(hold_seconds)
+
+    holder = threading.Thread(target=hold_lock, name="sync-route-holding-authority")
+    holder.start()
+    assert held.wait(5)
+
+    ticks: list[float] = []
+
+    async def heartbeat():
+        while True:
+            ticks.append(time.monotonic())
+            await asyncio.sleep(0.01)
+
+    pulse = asyncio.create_task(heartbeat())
+    try:
+        started = time.monotonic()
+        snapshot = await engine.accept(run["id"], actor="analyst")
+        waited = time.monotonic() - started
+    finally:
+        pulse.cancel()
+        holder.join(5)
+    assert snapshot["run_id"] == run["id"]
+    assert waited >= hold_seconds * 0.8, "acceptance must wait for the lock holder"
+    longest_gap = max(later - earlier for earlier, later in zip(ticks, ticks[1:]))
+    assert longest_gap < hold_seconds * 0.5, f"event loop stalled for {longest_gap:.2f}s while acceptance waited"
+

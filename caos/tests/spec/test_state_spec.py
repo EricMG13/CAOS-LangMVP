@@ -95,6 +95,15 @@ def test_case_and_note_text_is_boundary_validated_at_the_api_contract(client):
     assert under.status_code == 201 and len(under.json()["name"]) == 160
 
 
+def test_case_identity_rejects_whitespace_only_values(client):
+    assert client.post(
+        "/api/cases", json={"name": "   ", "issuer": "Issuer", "sector": "S"},
+    ).status_code == 422
+    assert client.post(
+        "/api/cases", json={"name": "Case", "issuer": "\t", "sector": "S"},
+    ).status_code == 422
+
+
 def test_focus_questions_reject_surrogates_at_the_api_contract(client, store):
     import json
 

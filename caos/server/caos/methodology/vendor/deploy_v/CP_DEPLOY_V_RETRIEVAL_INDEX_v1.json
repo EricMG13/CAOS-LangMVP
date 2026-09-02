@@ -1,6 +1,6 @@
 {
   "authority": "CP_DEPLOY_V_RETRIEVAL_INDEX_v1",
-  "build_id": "1912cb03a21a750ec995e623de9b9a8973aa6e0160cc4b0d8c36f4a863c5c001",
+  "build_id": "237bf4bc56b616b1c679a32c3733a2d9baf580b113758329320478e0226bae9d",
   "deployment_scope": [
     "V"
   ],
@@ -17,9 +17,13 @@
   "schema_version": "1.1",
   "skills": [
     {
-      "aliases": [
-        "CP-PARSE"
-      ],
+      "aliases": [],
+      "folder_slug": "cp-0-source-readiness",
+      "module_id": "CP-PARSE",
+      "skill_md": "skills/cp-0-source-readiness/SKILL.md"
+    },
+    {
+      "aliases": [],
       "folder_slug": "cp-0-source-readiness",
       "module_id": "CP-0",
       "skill_md": "skills/cp-0-source-readiness/SKILL.md"

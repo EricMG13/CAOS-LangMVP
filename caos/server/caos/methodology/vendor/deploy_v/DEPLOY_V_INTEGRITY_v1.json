@@ -1,24 +1,22 @@
 {
   "authority": "DEPLOY_V_INTEGRITY_v1",
-  "build_id": "1912cb03a21a750ec995e623de9b9a8973aa6e0160cc4b0d8c36f4a863c5c001",
+  "build_id": "237bf4bc56b616b1c679a32c3733a2d9baf580b113758329320478e0226bae9d",
   "routing_index": "CP_DEPLOY_V_RETRIEVAL_INDEX_v1.json",
   "schema_version": "1.0",
   "skills": [
     {
-      "aliases": [
-        "CP-PARSE"
-      ],
+      "aliases": [],
       "companion_count": 13,
       "companion_limit": 20,
       "companion_limit_exception": false,
-      "entry_bytes": 30165,
-      "entry_sha256": "5683fdd21c5b4009d6ff3ad9a7eeb78f1051f6a92eba605bda97b2a03311ca05",
+      "entry_bytes": 30597,
+      "entry_sha256": "1bce46dc758747898187b54f8fb619839dfbf2557fd43bce8b3f51efcc33a4f3",
       "folder_slug": "cp-0-source-readiness",
       "module_id": "CP-0",
       "relative_file_hashes": {
         "SKILL.md": {
-          "bytes": 30165,
-          "sha256": "5683fdd21c5b4009d6ff3ad9a7eeb78f1051f6a92eba605bda97b2a03311ca05"
+          "bytes": 30597,
+          "sha256": "1bce46dc758747898187b54f8fb619839dfbf2557fd43bce8b3f51efcc33a4f3"
         },
         "references/CP-0_SCHEMA_REFERENCE.md": {
           "bytes": 2823,
@@ -72,7 +70,11 @@
           "bytes": 35004,
           "sha256": "6e7cb91632fba8ad9e621cdb7085497aa600213c5d4cd9c0e1887fa13110c3b2"
         }
-      }
+      },
+      "runnable_module_ids": [
+        "CP-PARSE",
+        "CP-0"
+      ]
     },
     {
       "aliases": [],
@@ -625,8 +627,8 @@
           "sha256": "4dbdb64d1eb671bcaca4b2f13b74ab4f730672af005a8250b26ba8e1668ed570"
         },
         "scripts/bond_analytics.py": {
-          "bytes": 10354,
-          "sha256": "6fef23dbd1c7010e8a3f7d096c9eb007d756eb5a4a4bdcf7b463f8c1fac8a648"
+          "bytes": 10872,
+          "sha256": "405f7a92ad7bbce51e33dcbf73020a1217469d13f20d157257d094158377d3da"
         },
         "scripts/completeness_check.py": {
           "bytes": 17807,
@@ -1447,8 +1449,8 @@
           "sha256": "109e4978940130fc8d7b9fd50cf6beb43dcc4d77a4e94a60ada8e3849f98f8a7"
         },
         "references/CREDIT_OS_V_MODULE_CATALOG_v2.json": {
-          "bytes": 72167,
-          "sha256": "e6a048813b07977144a8faa75d27e059c5b50098febd1b2e7f917987c946570c"
+          "bytes": 72549,
+          "sha256": "e7c512ce7f35da1aa0df15128fdb74c62573135be4dd6356a7b6846c2bc70795"
         },
         "references/CREDIT_OS_V_NUMBERED_UX_v2.md": {
           "bytes": 1197,
@@ -1530,8 +1532,8 @@
     }
   ],
   "source_hashes": {
-    "deployed_baseline": "6ccae2f1f31728afad26acbf386e0ffcc4d6eaa023d7f6884e7c3c4e24e6fcee",
+    "deployed_baseline": "682dc54e242f8e27202327e22d2628f7b1c754ad4823b21c1227440909bd6689",
     "deployed_child_schema_registry": "6b1766e5698632e277ede71037bee2fcd3e02b726c43b76fc4fe0f8b47c5ef48",
-    "deployed_manifest": "5edce50db89b028c4d43123bdce2cb126632e20d5816de883f035a47364fc974"
+    "deployed_manifest": "e9ada5a377048851416c8f031a91cd5dc521529c0c8a2877aac5a797b1777d6b"
   }
 }

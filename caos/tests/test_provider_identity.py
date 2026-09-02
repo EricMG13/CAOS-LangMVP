@@ -108,9 +108,28 @@ def test_parameter_context_has_exactly_host_owned_policy_fields():
         transport={"mode": "anthropic-messages"}, counting={"mode": "provider-count-tokens"},
     )
 
-    assert set(context) == {"provider", "adapter", "transport", "counting", "loop", "tool", "schema", "modules"}
+    assert set(context) == {
+        "provider", "adapter", "transport", "counting", "loop", "budget", "calculation",
+        "tool", "schema", "modules",
+    }
     assert "prompt" not in json.dumps(context).lower()
     assert "secret" not in json.dumps(context).lower()
+    assert all(
+        module["authority_digest"] is not None
+        for module in context["modules"].values()
+        if module["mode_full"] == "agent" or module["mode_screen"] == "agent"
+    )
+    assert context["modules"]["CP-2G"]["calculators"] == ("credit_metrics", "liquidity_bridge")
+    assert context["budget"] == {
+        "evidence_reads_per_module": 10,
+        "evidence_bytes_per_module": 873_814,
+        "evidence_refs_per_module": 200,
+        "max_attempt_records": 256,
+    }
+    assert context["calculation"] == {
+        "max_input_bytes": 256 * 1024,
+        "max_recovery_waterfall_work_units": 100_000,
+    }
 
 
 @pytest.mark.parametrize("change", [

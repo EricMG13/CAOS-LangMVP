@@ -359,3 +359,90 @@ Consolidation note: where §6 conflicts with §10/§11/§12 (output Σ vs Σ+max
     carry the behaviour instead — the wrapper's inert-phrase declaration, or a
     registry field such as CP-1C's existing `source_mode` — it remains
     preferred, because it leaves the pin meaningful.
+
+12. **Screen depth is provider-backed (2026-09-02, decision D1).** Supersedes
+    §1's "SCREEN routes are deterministic end to end" and the deterministic-
+    screen wording that stood in `ENTERPRISE_TESTING_READINESS.md` RUN-030 and
+    `ENTERPRISE_READINESS_PLAN.md` scope decision 4 (both amended the same day).
+    `modules/registry.py` defaults `mode_screen` to `agent`; CP-PARSE, CP-0,
+    CP-2E, CP-2H, CP-3, CP-4, CP-4C, CP-6 and CP-L10 execute through the one
+    qualified provider at both depths, with the same verified assembled
+    authority and the same host tools. Screen determinism now means identical
+    host-validated identity for identical pins and build: the plan digest, the
+    source pins, the calculation records (canonical input and output digests)
+    and the canonical envelope are byte-equal across replays; provider prose is
+    compared by validated canonical contract (AUD-019). Consequences recorded
+    here, not discovered later: no route runs without a provider, so the
+    keyless browser gates bind `CAOS_PROVIDER=host_control` (item 15); the
+    provider parameter/context digest changed (new tool set, new modes, the
+    §14.7 budgets), so every earlier qualification record is invalid (§14.5).
+
+13. **Deploy V build `237bf4bc…` (2026-09-02, decisions D2 and D7).** The
+    second in-tree bundle edit under item 11's rule. Files: the cp-0 skill
+    (`skills/cp-0-source-readiness/SKILL.md`) split into two runnable profiles,
+    CP-PARSE (owns `document_parse_manifest` and the P1–P8 registers) and CP-0
+    (consumes it, owns `source_readiness_register`), which implements item 4's
+    separate static nodes; `skills/cp-2h-ratings-migration-trigger/scripts/
+    bond_analytics.py` gains `MAX_BOND_YEARS = 100` and
+    `MAX_CALL_SCHEDULE_ITEMS = 100` as defence in depth, while the authoritative
+    bound lives in the host (`methodology/execution.py::_enforce_work_factor`,
+    item 8) and refuses first as `METHODOLOGY_INPUT_INVALID`; the module catalog
+    (`CREDIT_OS_V_MODULE_CATALOG_v2.json`) records CP-PARSE as a
+    `runnable_profile` instead of an alias, adds `CP-L10 → CP-2A` (REQUIRED,
+    `SCREENING_ONLY`) in place of `CP-0 → CP-2A` on the FULL_CREDIT and
+    DISTRESSED screen routes, adds `CP-4C → CP-6` on the FULL_CREDIT and
+    DISTRESSED full routes, and adds `CP-3` to the DISTRESSED full route at
+    stage 9 with edges from CP-1, CP-2, CP-2G and CP-2H and to CP-6; the
+    manifests, baseline, retrieval index and copilot prompts are regenerated
+    (`caos/scripts/regenerate_deploy_v_integrity.py --check` is current). Why
+    the seam could not carry it: the profile split changes the vendored skill's
+    own trigger and output contract, which a wrapper cannot restate without
+    contradicting the skill text the model reads; the catalog is the route
+    authority `engine/graphs.py` compiles, so an edge is a bundle change by
+    definition; the vendor bound is duplicated on purpose. Costs recorded: the
+    tree pin moves `1f1a71d3…` → `9905f67b…`; every entry in
+    `GOLDEN_AUTHORITY_DIGESTS` was regenerated (the assembled authority carries
+    the catalog); `caos/deploy/verify_image_resources.py` expects 310 checks
+    (307 pinned files plus the three top-level manifests `DeployVBundle.verify`
+    now verifies). Every compiled route cell is pinned by digest in
+    `spec/test_runs_spec.py::ROUTE_GOLDENS`; a later route change moves that
+    table in the same commit as its own entry here.
+
+14. **Calculation completeness is a typed model outcome, never evidence
+    insufficiency (2026-09-02, decision D6).** A `run_methodology_calculation`
+    call whose verified calculator returns no usable result (per
+    `calculation_output_complete`) is answered with a typed tool result,
+    `{"complete": false, "code": "METHODOLOGY_CALCULATION_INCOMPLETE"}`, and
+    the model may run that calculator once more; the retry spends the module's
+    single repair allowance, shared with the final-output repair. After the
+    allowance, the core calculators (`credit_metrics` on CP-1 and CP-2G;
+    `funding_gap` and `recovery_waterfall` on CP-4C in a DISTRESSED run) end
+    the run as `METHODOLOGY_CALCULATION_INCOMPLETE`; every other assigned
+    calculator that stays incomplete becomes a host-declared limitation: absent
+    from the pinned `calculations`, present in the artifact's
+    `calculation_limitations`, and flagged `host:calculation_incomplete:<id>`
+    in the handoff `limitation_flags` (a host-derived field in the provenance
+    block). `SOURCE_EVIDENCE_INSUFFICIENT` and `SOURCE_EVIDENCE_RESTRICTED`
+    remain reserved for the provider-declared source gate (item 10); item 12.27's
+    CP-1C terminal for absent peers stands. Provider doubles that drive host
+    controls feed answer-keyed inputs (`caos/tests/calculator_fixtures.py`) so
+    every defence under test is actually reached.
+
+15. **Authority locking, publication binding and the development provider
+    (2026-09-02, decisions D8 and D9).** The process-wide authority lock covers
+    mutations only (source ingest, withdrawal, note promotion, run
+    finalization, model queueing and sign-off); transient model reads run
+    unguarded, and `Engine.accept` waits for the lock in a worker thread so the
+    event loop keeps serving. Model build completion and every model export
+    publish through a compare-and-swap that also requires each pinned source
+    to be live in the same statement (`expected_live_source_ids`); a withdrawal
+    that lands first yields the typed `MODEL_AUTHORITY_CHANGED` /
+    `MODEL_EXPORT_AUTHORITY_CHANGED` records, never a READY file. Intermediate
+    snapshots in a Distressed ancestry are validated by identity; only the base
+    whose artifacts are consumed must be fully live. The residual
+    statement-level window on PostgreSQL is Task 12's to close with database
+    locks. `CAOS_PROVIDER=host_control` binds a development-only answer-keyed
+    provider (`engine/host_control.py`, identity `host_control`) for the
+    keyless browser gates; production refuses it at the provider builder and at
+    engine construction. Local development evidence is produced on Python 3.14
+    (decision D3), matching nightly and the image.

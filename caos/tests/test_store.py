@@ -96,6 +96,35 @@ def test_promotion_rolls_back_atomically_on_downstream_failure(store, case_id, m
     assert retry["promoted_source_id"]
 
 
+def test_note_promotion_serializes_with_snapshot_and_publication_authority(store, case_id):
+    import threading
+
+    note = store.create_note(case_id, "concurrent observation", "analyst")
+    started = threading.Event()
+    finished = threading.Event()
+    errors = []
+
+    def promote():
+        started.set()
+        try:
+            store.promote_note(case_id, note["id"], "analyst")
+        except Exception as exc:  # noqa: BLE001 — surfaced in the test thread
+            errors.append(exc)
+        finally:
+            finished.set()
+
+    worker = threading.Thread(target=promote)
+    with store.authority_guard():
+        worker.start()
+        assert started.wait(2)
+        assert not finished.wait(0.05), "promotion bypassed the held authority guard"
+        assert store.current_source_set(case_id) is None
+    assert finished.wait(2)
+    worker.join()
+    assert errors == []
+    assert store.current_source_set(case_id)["version"] == 1
+
+
 def test_withdrawal_stales_citing_assumptions_and_bans_new_citations(store, case_id):
     source = seed_source(store, case_id, b"assumption evidence")
     assumption = store.save_assumption(case_id, {"name": "margin"}, [source["id"]], "analyst")

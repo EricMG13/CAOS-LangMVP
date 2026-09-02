@@ -341,9 +341,8 @@ def test_visual_recipe_is_declarative_and_fails_closed():
         validate_recipe({"kind": "line", "fields": ["not_available"]}, available_fields={"total_leverage"})
 
 
-def test_confidence_derives_only_from_host_attested_provenance():
-    """Re-hosts test_cpdr_host_provenance_controls_adequacy_and_confidence: the provider's
-    self-asserted confidence/authority/lineage values never enter the recomputation."""
+def test_confidence_discards_provider_scores_and_labels_declared_count_provenance():
+    """Provider scores are ignored; bounded provider counts remain clearly labelled."""
     from caos.methodology.canonical import recompute_confidence
 
     forged = {"confidence_score": 100, "authority_class": "primary", "lineage": "complete"}
@@ -353,6 +352,9 @@ def test_confidence_derives_only_from_host_attested_provenance():
         provider_asserted=forged,
     )
     assert result["qa_status"] != "Passed", "host-recomputed confidence ignores provider assertions"
+    assert result["basis"] == "provider_declared_bounded_counts"
+    assert result["arithmetic"] == "host_recomputed"
+    assert result["analyst_review_required"] is True
 
 
 def test_final_model_output_rejects_duplicate_json_keys():

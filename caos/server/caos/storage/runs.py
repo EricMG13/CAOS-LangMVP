@@ -10,15 +10,24 @@ on the (run_id, module_id, input_fingerprint) unique key (§12.8).
 
 from __future__ import annotations
 
+import hashlib
 import json
 from typing import Any
 
 import sqlalchemy as sa
 
 from ..contracts import digest
+from ..engine.budget import MAX_ATTEMPT_RECORDS
 from ..engine.provider import AgentError, ProviderIdentity
+from ..methodology.canonical import (
+    MAX_CANONICAL_MARKDOWN_CHARS,
+    CanonicalHandoffMetadata,
+    canonicalize_for_tests,
+    validate_model_sources,
+)
+from ..methodology.execution import calculation_output_complete
 from ..observability import log_event
-from .store import new_id, now_iso
+from .store import cases, new_id, now_iso
 
 run_metadata = sa.MetaData()
 
@@ -125,6 +134,544 @@ class StoreConflict(ValueError):
     def __init__(self, code: str, message: str = "") -> None:
         self.code = code
         super().__init__(f"{code}: {message}" if message else code)
+
+
+_UNSET = object()
+MAX_ARTIFACT_PAYLOAD_BYTES = 8 * 1024 * 1024
+_ARTIFACT_SCHEMAS = {"caos.canonical.artifact.v1", "caos.system_analysis.v1"}
+_SYSTEM_ARTIFACT_FIELDS = {
+    "artifact_identity", "authority", "confidence", "evidence_refs", "lineage",
+    "methodology", "module_id", "narrative", "provenance", "provider_identity",
+    "schema_version", "status", "summary",
+}
+_CANONICAL_ARTIFACT_FIELDS = {
+    "artifact_identity", "calculation_limitations", "calculations", "canonical_output", "evidence_refs",
+    "handoff_metadata", "handoff_metadata_provenance", "host_confidence",
+    "host_identity", "lineage", "methodology", "module_id", "provider_identity",
+    "schema_version", "source_set", "upstream_artifacts",
+}
+_CALCULATION_FIELDS = {
+    "schema_version", "methodology_build_id", "module_id", "calculator_id",
+    "script_digest", "script_bytes", "dependency_digests", "calculator_digest",
+    "canonical_input", "input_digest", "output_digest", "canonical_output",
+}
+
+
+def _is_nonblank(value: Any) -> bool:
+    return isinstance(value, str) and bool(value.strip())
+
+
+def _is_sha256(value: Any) -> bool:
+    return (
+        isinstance(value, str)
+        and len(value) == 64
+        and all(character in "0123456789abcdef" for character in value)
+    )
+
+
+def _valid_calculation_limitations(limitations: Any, calculator_ids: Any) -> bool:
+    """Host-declared incomplete calculators: bounded, unique, assigned, typed."""
+    if not isinstance(limitations, list) or not isinstance(calculator_ids, list):
+        return False
+    seen: set[str] = set()
+    for item in limitations:
+        if (
+            not isinstance(item, dict)
+            or set(item) != {"calculator_id", "code"}
+            or item.get("code") != "METHODOLOGY_CALCULATION_INCOMPLETE"
+            or not _is_nonblank(item.get("calculator_id"))
+            or item["calculator_id"] in seen
+            or item["calculator_id"] not in calculator_ids
+        ):
+            return False
+        seen.add(item["calculator_id"])
+    return True
+
+
+def _valid_calculation_records(
+    records: Any,
+    module_id: str,
+    build_id: str,
+    bindings: Any = _UNSET,
+    limited_calculator_ids: frozenset[str] = frozenset(),
+) -> bool:
+    if not isinstance(records, list):
+        return False
+    if bindings is not _UNSET:
+        if not isinstance(bindings, list) or any(not isinstance(binding, dict) for binding in bindings):
+            return False
+        binding_by_id = {binding.get("calculator_id"): binding for binding in bindings}
+        if None in binding_by_id or len(binding_by_id) != len(bindings):
+            return False
+    else:
+        binding_by_id = None
+    calculator_ids: set[str] = set()
+    for record in records:
+        if not isinstance(record, dict) or set(record) != _CALCULATION_FIELDS:
+            return False
+        calculator_id = record.get("calculator_id")
+        if (
+            record.get("schema_version") != "caos.methodology-calculation.v1"
+            or record.get("methodology_build_id") != build_id
+            or record.get("module_id") != module_id
+            or not _is_nonblank(calculator_id)
+            or calculator_id in calculator_ids
+            or not _is_sha256(record.get("script_digest"))
+            or type(record.get("script_bytes")) is not int
+            or record["script_bytes"] < 0
+            or not isinstance(record.get("dependency_digests"), dict)
+            or not all(_is_nonblank(key) and _is_sha256(value)
+                       for key, value in record["dependency_digests"].items())
+            or not _is_sha256(record.get("calculator_digest"))
+            or not isinstance(record.get("canonical_input"), dict)
+            or not _is_sha256(record.get("input_digest"))
+            or digest(record["canonical_input"]) != record["input_digest"]
+            or not _is_sha256(record.get("output_digest"))
+            or digest(record.get("canonical_output")) != record["output_digest"]
+            or not calculation_output_complete(
+                module_id,
+                calculator_id,
+                record.get("canonical_output"),
+            )
+        ):
+            return False
+        if binding_by_id is not None:
+            binding = binding_by_id.get(calculator_id)
+            if binding is None or any(
+                record.get(field) != binding.get(field)
+                for field in (
+                    "methodology_build_id", "module_id", "calculator_id", "script_digest",
+                    "script_bytes", "dependency_digests", "calculator_digest",
+                )
+            ):
+                return False
+        calculator_ids.add(calculator_id)
+    if calculator_ids & limited_calculator_ids:
+        return False
+    return binding_by_id is None or calculator_ids | limited_calculator_ids == set(binding_by_id)
+
+
+def _valid_system_payload(
+    payload: dict[str, Any],
+    identity: dict[str, Any],
+    *,
+    source_set: Any = _UNSET,
+    upstream_artifacts: Any = _UNSET,
+    calculator_bindings: Any = _UNSET,
+    expected_payload: Any = _UNSET,
+) -> bool:
+    optional = set(payload) - _SYSTEM_ARTIFACT_FIELDS
+    if not optional <= {"calculations", "inputs"}:
+        return False
+    lineage = payload.get("lineage")
+    narrative = payload.get("narrative")
+    provenance = payload.get("provenance")
+    evidence_refs = payload.get("evidence_refs")
+    unbound_payload = {
+        key: value
+        for key, value in payload.items()
+        if key not in {"artifact_identity", "calculations", "methodology", "provider_identity"}
+    }
+    if (
+        not isinstance(expected_payload, dict)
+        or unbound_payload != expected_payload
+        or not _SYSTEM_ARTIFACT_FIELDS <= set(payload)
+        or payload.get("status") != "COMPLETE"
+        or not _is_nonblank(payload.get("summary"))
+        or payload.get("authority") != "SYSTEM_ANALYSIS"
+        or payload.get("confidence") != {"band": "SYSTEM", "qa_status": "Passed"}
+        or not isinstance(evidence_refs, list)
+        or any(not _is_nonblank(reference) for reference in evidence_refs)
+        or len(set(evidence_refs)) != len(evidence_refs)
+        or not isinstance(lineage, dict)
+        or set(lineage) not in ({"input_fingerprint", "upstream_digests"},
+                                {"input_fingerprint", "upstream_digests", "loan_universe"})
+        or lineage.get("input_fingerprint") != identity["input_fingerprint"]
+        or not isinstance(lineage.get("upstream_digests"), list)
+        or any(not _is_sha256(value) for value in lineage["upstream_digests"])
+        or not isinstance(narrative, dict)
+        or set(narrative) != {"takeaway", "basis", "exceptions"}
+        or not _is_nonblank(narrative.get("takeaway"))
+        or not _is_nonblank(narrative.get("basis"))
+        or not isinstance(narrative.get("exceptions"), str)
+        or not isinstance(provenance, dict)
+        or set(provenance) not in ({"executor", "profile_id", "selection_id"},
+                                   {"executor", "profile_id", "selection_id", "loan_universe"})
+        or provenance.get("executor") != "caos.engine.deterministic"
+        or any(value is not None and not _is_nonblank(value)
+               for value in (provenance.get("profile_id"), provenance.get("selection_id")))
+    ):
+        return False
+    loan_identity = lineage.get("loan_universe")
+    if loan_identity is None:
+        if "inputs" in payload or "loan_universe" in provenance:
+            return False
+    elif (
+        identity["module_id"] != "CP-3"
+        or not isinstance(loan_identity, dict)
+        or set(loan_identity) != {"id", "universe_digest", "source_id"}
+        or not _is_nonblank(loan_identity.get("id"))
+        or not _is_sha256(loan_identity.get("universe_digest"))
+        or not _is_nonblank(loan_identity.get("source_id"))
+        or provenance.get("loan_universe") != loan_identity
+        or not isinstance(payload.get("inputs"), dict)
+        or set(payload["inputs"]) != {"loan_universe"}
+        or not isinstance(payload["inputs"]["loan_universe"], dict)
+        or payload["inputs"]["loan_universe"].get("identity") != loan_identity
+        or not isinstance(payload["inputs"]["loan_universe"].get("rows"), list)
+    ):
+        return False
+    if source_set is not _UNSET and (
+        not isinstance(source_set, dict)
+        or evidence_refs != source_set.get("source_ids")
+    ):
+        return False
+    if upstream_artifacts is not _UNSET and (
+        not isinstance(upstream_artifacts, list)
+        or lineage["upstream_digests"] != [artifact.get("digest") for artifact in upstream_artifacts]
+    ):
+        return False
+    records = payload.get("calculations", [])
+    return _valid_calculation_records(
+        records,
+        identity["module_id"],
+        identity["methodology_build_id"],
+        calculator_bindings,
+    )
+
+
+def _valid_canonical_payload(
+    payload: dict[str, Any],
+    identity: dict[str, Any],
+    markdown: str,
+    *,
+    expected_source_set: Any,
+    upstream_artifacts: Any,
+    handoff_artifacts: Any,
+    calculator_bindings: Any,
+    expected_host_identity: Any,
+    evidence_blocks: Any,
+    downstream_consumers: Any,
+) -> bool:
+    if (
+        set(payload) != _CANONICAL_ARTIFACT_FIELDS
+        or expected_source_set is _UNSET
+        or upstream_artifacts is _UNSET
+        or handoff_artifacts is _UNSET
+        or calculator_bindings is _UNSET
+        or not isinstance(expected_source_set, dict)
+        or not isinstance(upstream_artifacts, list)
+        or not isinstance(handoff_artifacts, list)
+        or not isinstance(expected_host_identity, dict)
+        or not isinstance(evidence_blocks, set)
+        or not isinstance(downstream_consumers, list)
+    ):
+        return False
+    host_identity = payload.get("host_identity")
+    payload_source_set = payload.get("source_set")
+    lineage = payload.get("lineage")
+    confidence = payload.get("host_confidence")
+    provenance = payload.get("handoff_metadata_provenance")
+    evidence_refs = payload.get("evidence_refs")
+    upstream = payload.get("upstream_artifacts")
+    try:
+        handoff = CanonicalHandoffMetadata.model_validate(payload.get("handoff_metadata"))
+    except ValueError:
+        return False
+    if (
+        not isinstance(host_identity, dict)
+        or set(host_identity) != {
+            "module_id", "module_name", "run_id", "case_id", "issuer_name", "issuer_id",
+            "reporting_period", "analysis_date", "profile_id", "selection_id", "source_set_id",
+            "source_set_version", "calculator_ids", "upstream_digests",
+        }
+        or host_identity.get("run_id") != identity["run_id"]
+        or host_identity.get("case_id") != identity["case_id"]
+        or host_identity.get("module_id") != identity["module_id"]
+        or handoff.module_id != identity["module_id"]
+        or handoff.run_id != identity["run_id"]
+        or handoff.module_name != host_identity.get("module_name")
+        or handoff.reporting_period != host_identity.get("reporting_period")
+        or handoff.analysis_date != host_identity.get("analysis_date")
+        or handoff.issuer_name != host_identity.get("issuer_name")
+        or handoff.issuer_id != host_identity.get("issuer_id")
+        or host_identity != expected_host_identity
+        or handoff.downstream_consumers != downstream_consumers
+        or handoff.qa_status != "Passed"
+        or not isinstance(evidence_refs, list)
+        or any(not isinstance(reference, dict) or set(reference) != {"source_id", "block_id"}
+               or not _is_nonblank(reference.get("source_id"))
+               or not _is_nonblank(reference.get("block_id")) for reference in evidence_refs)
+        or len({(reference["source_id"], reference["block_id"]) for reference in evidence_refs})
+        != len(evidence_refs)
+        or not isinstance(lineage, dict)
+        or set(lineage) != {"input_fingerprint", "upstream_digests"}
+        or lineage.get("input_fingerprint") != identity["input_fingerprint"]
+        or not isinstance(lineage.get("upstream_digests"), list)
+        or any(not _is_sha256(value) for value in lineage["upstream_digests"])
+        or not isinstance(payload_source_set, dict)
+        or set(payload_source_set) != {"id", "version", "digest"}
+        or payload_source_set != {
+            "id": host_identity.get("source_set_id"),
+            "version": host_identity.get("source_set_version"),
+            "digest": payload_source_set.get("digest"),
+        }
+        or not _is_sha256(payload_source_set.get("digest"))
+        or not isinstance(upstream, list)
+        or any(not isinstance(item, dict) or set(item) != {"module_id", "artifact_id", "digest"}
+               or not _is_nonblank(item.get("module_id"))
+               or not _is_nonblank(item.get("artifact_id"))
+               or not _is_sha256(item.get("digest")) for item in upstream)
+        or [item["digest"] for item in upstream] != lineage["upstream_digests"]
+        or host_identity.get("upstream_digests") != lineage["upstream_digests"]
+        or not isinstance(host_identity.get("calculator_ids"), list)
+        or any(not _is_nonblank(value) for value in host_identity["calculator_ids"])
+        or not isinstance(confidence, dict)
+        or set(confidence) != {
+            "confidence_score", "confidence_band", "qa_status", "basis", "arithmetic",
+            "analyst_review_required",
+        }
+        or confidence.get("confidence_score") != handoff.confidence_score
+        or str(confidence.get("confidence_band", "")).title() != handoff.confidence_band
+        or confidence.get("qa_status") != "Passed"
+        or confidence.get("basis") != "provider_declared_bounded_counts"
+        or confidence.get("arithmetic") != "host_recomputed"
+        or confidence.get("analyst_review_required") is not True
+        or provenance != {
+            "host_derived_fields": [
+                "module_id", "module_name", "run_id", "analysis_date", "confidence_score",
+                "confidence_band", "qa_status", "committee_status", "upstream_artifacts_used",
+                "downstream_consumers", "issuer_name", "issuer_id",
+                "calculation_limitations",
+            ],
+            "provider_declared_bounded_fields": ["limitation_flags", "validation_warnings"],
+            "reporting_period_basis": "host_pinned_run_date",
+        }
+        or not _valid_calculation_limitations(
+            payload.get("calculation_limitations"), host_identity.get("calculator_ids"),
+        )
+        or not _valid_calculation_records(
+            payload.get("calculations"), identity["module_id"], identity["methodology_build_id"],
+            calculator_bindings,
+            frozenset(item["calculator_id"] for item in payload["calculation_limitations"]),
+        )
+        or set(host_identity["calculator_ids"])
+        != {record["calculator_id"] for record in payload["calculations"]}
+        | {item["calculator_id"] for item in payload["calculation_limitations"]}
+        or any(
+            f"host:calculation_incomplete:{item['calculator_id']}" not in handoff.limitation_flags
+            for item in payload["calculation_limitations"]
+        )
+    ):
+        return False
+    expected_source_projection = {
+        "id": expected_source_set.get("id"),
+        "version": expected_source_set.get("version"),
+        "digest": expected_source_set.get("digest"),
+    }
+    expected_upstream = [{
+        "module_id": artifact.get("module_id"),
+        "artifact_id": artifact.get("id"),
+        "digest": artifact.get("digest"),
+    } for artifact in upstream_artifacts]
+    expected_handoff = [{
+        "module_id": artifact.get("module_id"),
+        "run_id": artifact.get("run_id"),
+        "period": (
+            (artifact.get("payload") or {}).get("handoff_metadata") or {}
+        ).get("reporting_period", expected_host_identity["reporting_period"]),
+        "artifact_digest": artifact.get("digest"),
+    } for artifact in handoff_artifacts]
+    actual_handoff = [{
+        "module_id": artifact.module_id,
+        "run_id": artifact.run_id,
+        "period": artifact.period,
+        "artifact_digest": artifact.artifact_digest,
+    } for artifact in handoff.upstream_artifacts_used]
+    delivered = {(reference["source_id"], reference["block_id"]) for reference in evidence_refs}
+    if (
+        payload_source_set != expected_source_projection
+        or payload["upstream_artifacts"] != expected_upstream
+        or actual_handoff != expected_handoff
+        or not delivered <= evidence_blocks
+    ):
+        return False
+    validate_model_sources(
+        markdown,
+        {source_id for source_id, _block_id in delivered},
+        module_id=identity["module_id"],
+    )
+    rebuilt = canonicalize_for_tests(
+        module_id=identity["module_id"],
+        provider_markdown=markdown,
+        run_identity=host_identity,
+        delivered=delivered,
+        build_id=identity["methodology_build_id"],
+        handoff_metadata=handoff.model_dump(),
+    )
+    return all(payload.get(key) == rebuilt[key] for key in (
+        "schema_version", "module_id", "canonical_output", "methodology", "host_identity",
+        "handoff_metadata", "evidence_refs",
+    ))
+
+
+def _artifact_payload_bytes(payload: dict[str, Any]) -> bytes:
+    encoded = json.dumps(
+        payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True, allow_nan=False,
+    ).encode("utf-8")
+    if len(encoded) > MAX_ARTIFACT_PAYLOAD_BYTES:
+        raise ValueError("artifact payload exceeds its size bound")
+    return encoded
+
+
+def _bind_artifact_payload(
+    payload: dict[str, Any],
+    *,
+    run_id: str,
+    case_id: str,
+    module_id: str,
+    input_fingerprint: str,
+    qa_status: str | None,
+    methodology_build_id: str,
+    provider_identity: dict[str, Any] | None,
+) -> dict[str, Any]:
+    return {
+        **payload,
+        "methodology": {"build_id": methodology_build_id},
+        "provider_identity": provider_identity,
+        "artifact_identity": {
+            "run_id": run_id,
+            "case_id": case_id,
+            "module_id": module_id,
+            "input_fingerprint": input_fingerprint,
+            "qa_status": qa_status,
+            "methodology_build_id": methodology_build_id,
+        },
+    }
+
+
+def artifact_input_fingerprint(
+    plan: dict[str, Any],
+    plan_digest: str,
+    module_id: str,
+    upstream_digests: list[str],
+) -> str:
+    return digest({
+        "plan_digest": plan_digest,
+        "module_id": module_id,
+        "upstream_artifact_digests": upstream_digests,
+        "source_set_digest": plan.get("source_set_digest"),
+        "provider_identity_digest": (plan.get("provider_identity") or {}).get("identity_digest"),
+    })
+
+
+def verify_artifact_content(
+    artifact: dict[str, Any],
+    *,
+    run_id: str | None = None,
+    case_id: str | None = None,
+    module_id: str | None = None,
+    input_fingerprint: str | None = None,
+    methodology_build_id: str | None = None,
+    qa_status: Any = _UNSET,
+    provider_identity: Any = _UNSET,
+    source_set: Any = _UNSET,
+    upstream_artifacts: Any = _UNSET,
+    handoff_artifacts: Any = _UNSET,
+    calculator_bindings: Any = _UNSET,
+    expected_system_payload: Any = _UNSET,
+    expected_host_identity: Any = _UNSET,
+    evidence_blocks: Any = _UNSET,
+    downstream_consumers: Any = _UNSET,
+) -> bool:
+    """Verify payload bytes and every separately indexed artifact authority."""
+    try:
+        if not isinstance(artifact, dict):
+            return False
+        if artifact.get("qa_status") != "Passed":
+            return False
+        payload = artifact.get("payload")
+        if not isinstance(payload, dict) or payload.get("schema_version") not in _ARTIFACT_SCHEMAS:
+            return False
+        encoded = _artifact_payload_bytes(payload)
+        if hashlib.sha256(encoded).hexdigest() != artifact.get("digest"):
+            return False
+        if run_id is not None and artifact.get("run_id") != run_id:
+            return False
+        if case_id is not None and artifact.get("case_id") != case_id:
+            return False
+        if module_id is not None and artifact.get("module_id") != module_id:
+            return False
+        if input_fingerprint is not None and artifact.get("input_fingerprint") != input_fingerprint:
+            return False
+        if qa_status is not _UNSET and artifact.get("qa_status") != qa_status:
+            return False
+        if payload.get("provider_identity") != artifact.get("provider_identity"):
+            return False
+        if provider_identity is not _UNSET and artifact.get("provider_identity") != provider_identity:
+            return False
+        identity = payload.get("artifact_identity")
+        if (
+            not isinstance(identity, dict)
+            or not isinstance(identity.get("methodology_build_id"), str)
+            or not identity["methodology_build_id"]
+        ):
+            return False
+        expected_identity = {
+            "run_id": artifact.get("run_id"),
+            "case_id": artifact.get("case_id"),
+            "module_id": artifact.get("module_id"),
+            "input_fingerprint": artifact.get("input_fingerprint"),
+            "qa_status": artifact.get("qa_status"),
+            "methodology_build_id": methodology_build_id or identity["methodology_build_id"],
+        }
+        if identity != expected_identity:
+            return False
+        if payload.get("module_id") != identity["module_id"]:
+            return False
+        if payload.get("methodology") != {"build_id": identity["methodology_build_id"]}:
+            return False
+        lineage = payload.get("lineage")
+        if not isinstance(lineage, dict) or lineage.get("input_fingerprint") != identity["input_fingerprint"]:
+            return False
+        canonical = payload.get("canonical_output")
+        if payload["schema_version"] == "caos.system_analysis.v1":
+            return (
+                canonical is None
+                and artifact.get("markdown") is None
+                and _valid_system_payload(
+                    payload,
+                    identity,
+                    source_set=source_set,
+                    upstream_artifacts=upstream_artifacts,
+                    calculator_bindings=calculator_bindings,
+                    expected_payload=expected_system_payload,
+                )
+            )
+        if not isinstance(canonical, dict):
+            return False
+        markdown = canonical.get("markdown")
+        return (
+            isinstance(markdown, str)
+            and len(markdown) <= MAX_CANONICAL_MARKDOWN_CHARS
+            and artifact.get("markdown") == markdown
+            and canonical.get("markdown_sha256")
+            == hashlib.sha256(markdown.encode("utf-8")).hexdigest()
+            and _valid_canonical_payload(
+                payload,
+                identity,
+                markdown,
+                expected_source_set=source_set,
+                upstream_artifacts=upstream_artifacts,
+                handoff_artifacts=handoff_artifacts,
+                calculator_bindings=calculator_bindings,
+                expected_host_identity=expected_host_identity,
+                evidence_blocks=evidence_blocks,
+                downstream_consumers=downstream_consumers,
+            )
+        )
+    except (AttributeError, OverflowError, RecursionError, TypeError, UnicodeError, ValueError):
+        return False
 
 
 TERMINAL = {"succeeded", "failed"}
@@ -334,8 +881,20 @@ class RunStore:
             if changed:
                 self._emit(conn, run_id, "node.running", module_id=module_id)
 
-    def find_valid_artifact(self, run_id: str, module_id: str, input_fingerprint: str) -> dict[str, Any] | None:
+    def find_valid_artifact(
+        self,
+        run_id: str,
+        module_id: str,
+        input_fingerprint: str,
+        *,
+        content_expectations: dict[str, Any] | None = None,
+    ) -> dict[str, Any] | None:
         with self.engine.connect() as conn:
+            authority = conn.execute(
+                sa.select(
+                    runs.c.case_id, runs.c.provider_identity, runs.c.plan, runs.c.plan_digest,
+                ).where(runs.c.id == run_id)
+            ).mappings().first()
             row = conn.execute(
                 sa.select(run_artifacts).where(
                     run_artifacts.c.run_id == run_id,
@@ -343,10 +902,35 @@ class RunStore:
                     run_artifacts.c.input_fingerprint == input_fingerprint,
                 )
             ).mappings().first()
-        if row is None:
+            authoritative_fingerprint = self._authoritative_input_fingerprint(
+                conn,
+                run_id,
+                authority.get("plan") or {} if authority is not None else {},
+                authority.get("plan_digest") if authority is not None else None,
+                module_id,
+            )
+        if row is None or authority is None:
+            return None
+        plan = authority.get("plan") or {}
+        methodology_build_id = plan.get("build_id")
+        if (
+            digest(plan) != authority.get("plan_digest")
+            or not isinstance(methodology_build_id, str)
+            or not methodology_build_id
+            or authoritative_fingerprint != input_fingerprint
+        ):
             return None
         artifact = dict(row)
-        if digest(artifact["payload"]) != artifact["digest"]:
+        if not verify_artifact_content(
+            artifact,
+            run_id=run_id,
+            case_id=authority["case_id"],
+            module_id=module_id,
+            input_fingerprint=input_fingerprint,
+            methodology_build_id=methodology_build_id,
+            provider_identity=_provider_identity(authority["provider_identity"]),
+            **(content_expectations or {}),
+        ):
             return None
         return artifact
 
@@ -360,13 +944,58 @@ class RunStore:
         markdown: str | None,
         qa_status: str | None,
         actor: str,
+        *,
+        content_expectations: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """§12.8 validate-then-replace, one transaction: artifact link/relink,
         node completion, execution marker, node.succeeded event (conditional)."""
         with self.engine.begin() as conn:
-            identity = _provider_identity(conn.execute(
-                sa.select(runs.c.provider_identity).where(runs.c.id == run_id)
-            ).scalar_one())
+            authority = conn.execute(
+                sa.select(
+                    runs.c.case_id, runs.c.provider_identity, runs.c.plan, runs.c.plan_digest,
+                ).where(runs.c.id == run_id)
+            ).mappings().one()
+            identity = _provider_identity(authority["provider_identity"])
+            plan = authority.get("plan") or {}
+            methodology_build_id = plan.get("build_id")
+            if (
+                digest(plan) != authority.get("plan_digest")
+                or not isinstance(methodology_build_id, str)
+                or not methodology_build_id
+            ):
+                raise StoreConflict("AGENT_AUTHORITY_MISMATCH", "run methodology identity is unavailable")
+            if authority["case_id"] != case_id:
+                raise StoreConflict("AGENT_AUTHORITY_MISMATCH", "artifact case differs from run")
+            if qa_status != "Passed":
+                raise StoreConflict("AGENT_OUTPUT_INVALID", "artifact QA must be Passed")
+            node = conn.execute(
+                sa.select(run_nodes.c.case_id, run_nodes.c.status).where(
+                    run_nodes.c.run_id == run_id, run_nodes.c.module_id == module_id,
+                )
+            ).mappings().first()
+            if (
+                node is None
+                or node["case_id"] != case_id
+                or not any(
+                    isinstance(plan_node, dict) and plan_node.get("module_id") == module_id
+                    for plan_node in plan.get("nodes") or []
+                )
+            ):
+                raise StoreConflict("AGENT_AUTHORITY_MISMATCH", "artifact module differs from the run plan")
+            authoritative_fingerprint = self._authoritative_input_fingerprint(
+                conn,
+                run_id,
+                plan,
+                authority["plan_digest"],
+                module_id,
+            )
+            if authoritative_fingerprint != input_fingerprint:
+                raise StoreConflict(
+                    "AGENT_AUTHORITY_MISMATCH",
+                    "artifact input fingerprint differs from the run graph",
+                )
+            if not isinstance(payload, dict):
+                raise StoreConflict("AGENT_OUTPUT_INVALID", "artifact payload must be an object")
             existing = conn.execute(
                 sa.select(run_artifacts).where(
                     run_artifacts.c.run_id == run_id,
@@ -374,31 +1003,103 @@ class RunStore:
                     run_artifacts.c.input_fingerprint == input_fingerprint,
                 )
             ).mappings().first()
-            if existing is not None and digest(existing["payload"]) == existing["digest"]:
-                if _provider_identity(existing["provider_identity"]) != identity:
-                    raise StoreConflict("AGENT_IDENTITY_MISMATCH", "artifact identity differs from run")
+            if (
+                existing is not None
+                and _provider_identity(existing["provider_identity"]) != identity
+            ):
+                raise StoreConflict("AGENT_IDENTITY_MISMATCH", "artifact identity differs from run")
+            if existing is not None and verify_artifact_content(
+                dict(existing),
+                run_id=run_id,
+                case_id=case_id,
+                module_id=module_id,
+                input_fingerprint=input_fingerprint,
+                methodology_build_id=methodology_build_id,
+                qa_status=qa_status,
+                provider_identity=identity,
+                **(content_expectations or {}),
+            ):
                 artifact = dict(existing)  # relink: discard candidate, keep stored ids
             else:
                 if existing is not None:
                     conn.execute(sa.delete(run_artifacts).where(run_artifacts.c.id == existing["id"]))
+                bound_payload = _bind_artifact_payload(
+                    payload,
+                    run_id=run_id,
+                    case_id=case_id,
+                    module_id=module_id,
+                    input_fingerprint=input_fingerprint,
+                    qa_status=qa_status,
+                    methodology_build_id=methodology_build_id,
+                    provider_identity=identity,
+                )
+                try:
+                    payload_digest = hashlib.sha256(_artifact_payload_bytes(bound_payload)).hexdigest()
+                except (OverflowError, RecursionError, TypeError, UnicodeError, ValueError) as exc:
+                    raise StoreConflict("AGENT_OUTPUT_INVALID", "artifact payload is not bounded JSON") from exc
                 artifact = {
                     "id": new_id("art"), "run_id": run_id, "case_id": case_id, "module_id": module_id,
-                    "input_fingerprint": input_fingerprint, "payload": payload, "markdown": markdown,
-                    "digest": digest(payload), "qa_status": qa_status,
+                    "input_fingerprint": input_fingerprint, "payload": bound_payload, "markdown": markdown,
+                    "digest": payload_digest, "qa_status": qa_status,
                     "created_by": actor, "created_at": now_iso(),
                     "provider_identity": identity,
                 }
+                if not verify_artifact_content(
+                    artifact,
+                    run_id=run_id,
+                    case_id=case_id,
+                    module_id=module_id,
+                    input_fingerprint=input_fingerprint,
+                    methodology_build_id=methodology_build_id,
+                    qa_status=qa_status,
+                    provider_identity=identity,
+                    **(content_expectations or {}),
+                ):
+                    raise StoreConflict("AGENT_OUTPUT_INVALID", "payload and Markdown differ")
                 conn.execute(run_artifacts.insert().values(**artifact))
                 conn.execute(executions.insert().values(run_id=run_id, module_id=module_id))
-            changed = conn.execute(
+            # The node always follows the artifact it was completed with: a
+            # replaced row relinks a node that already succeeded, while the
+            # node.succeeded event stays exactly-once on the status transition.
+            conn.execute(
                 sa.update(run_nodes)
-                .where(run_nodes.c.run_id == run_id, run_nodes.c.module_id == module_id,
-                       run_nodes.c.status != "succeeded")
+                .where(run_nodes.c.run_id == run_id, run_nodes.c.module_id == module_id)
                 .values(status="succeeded", artifact_id=artifact["id"], error=None)
-            ).rowcount
-            if changed:
+            )
+            if node["status"] != "succeeded":
                 self._emit(conn, run_id, "node.succeeded", module_id=module_id, artifact_id=artifact["id"])
             return artifact
+
+    @staticmethod
+    def _authoritative_input_fingerprint(
+        conn: sa.Connection,
+        run_id: str,
+        plan: dict[str, Any],
+        plan_digest: str | None,
+        module_id: str,
+    ) -> str | None:
+        plan_node = next(
+            (node for node in plan.get("nodes") or []
+             if isinstance(node, dict) and node.get("module_id") == module_id),
+            None,
+        )
+        dependencies = plan_node.get("dependencies") if plan_node is not None else None
+        if not isinstance(plan_digest, str) or not isinstance(dependencies, list):
+            return None
+        upstream_digests: list[str] = []
+        for dependency in dependencies:
+            row = conn.execute(
+                sa.select(run_nodes.c.artifact_id, run_artifacts.c.digest)
+                .select_from(run_nodes.outerjoin(
+                    run_artifacts,
+                    run_artifacts.c.id == run_nodes.c.artifact_id,
+                ))
+                .where(run_nodes.c.run_id == run_id, run_nodes.c.module_id == dependency)
+            ).mappings().first()
+            if row is None or not isinstance(row["artifact_id"], str) or not _is_sha256(row["digest"]):
+                return None
+            upstream_digests.append(row["digest"])
+        return artifact_input_fingerprint(plan, plan_digest, module_id, upstream_digests)
 
     def finalize_success(self, run_id: str) -> bool:
         with self.engine.begin() as conn:
@@ -562,9 +1263,9 @@ class RunStore:
             attempts = list(budget["attempts"])
             if terminal:
                 attempts.append(row)
-                attempts = attempts[-100:]
+                attempts = attempts[-MAX_ATTEMPT_RECORDS:]
             else:
-                if len(attempts) >= 100:
+                if len(attempts) >= MAX_ATTEMPT_RECORDS:
                     raise StoreConflict("AGENT_BUDGET_EXCEEDED", "attempt metadata budget exhausted")
                 attempts.append(row)
             conn.execute(sa.update(run_budgets).where(run_budgets.c.run_id == run_id).values(attempts=attempts))
@@ -581,23 +1282,87 @@ class RunStore:
             row = conn.execute(sa.select(run_snapshots).where(run_snapshots.c.run_id == run_id)).mappings().first()
         return dict(row) if row else None
 
+    @staticmethod
+    def _snapshot_record(conn: sa.Connection, snapshot: dict[str, Any]) -> dict[str, Any]:
+        run_identity = _provider_identity(conn.execute(
+            sa.select(runs.c.provider_identity).where(runs.c.id == snapshot["run_id"])
+        ).scalar_one())
+        snapshot_identity = _provider_identity(snapshot.get("provider_identity"))
+        if snapshot_identity != run_identity:
+            raise StoreConflict("AGENT_IDENTITY_MISMATCH", "snapshot identity differs from run")
+        record = {**snapshot, "provider_identity": run_identity}
+        preimage = {
+            key: value for key, value in record.items()
+            if key not in {"digest", "id"}
+        }
+        if record.get("digest") != digest(preimage):
+            raise StoreConflict("AGENT_IDENTITY_MISMATCH", "snapshot digest does not bind provider identity")
+        return record
+
     def create_snapshot(self, snapshot: dict[str, Any]) -> dict[str, Any]:
+        """Low-level fixture seam; ordinary acceptance uses accept_snapshot."""
         with self.engine.begin() as conn:
-            run_identity = _provider_identity(conn.execute(
-                sa.select(runs.c.provider_identity).where(runs.c.id == snapshot["run_id"])
-            ).scalar_one())
-            snapshot_identity = _provider_identity(snapshot.get("provider_identity"))
-            if snapshot_identity != run_identity:
-                raise StoreConflict("AGENT_IDENTITY_MISMATCH", "snapshot identity differs from run")
-            record = {**snapshot, "provider_identity": run_identity}
-            preimage = {
-                key: value for key, value in record.items()
-                if key not in {"digest", "id", "previous_snapshot_id"}
-            }
-            if record.get("digest") != digest(preimage):
-                raise StoreConflict("AGENT_IDENTITY_MISMATCH", "snapshot digest does not bind provider identity")
+            record = self._snapshot_record(conn, snapshot)
             conn.execute(run_snapshots.insert().values(**record))
             conn.execute(sa.update(runs).where(runs.c.id == record["run_id"]).values(accepted_snapshot_id=record["id"]))
+        return record
+
+    def accept_snapshot(
+        self,
+        snapshot: dict[str, Any],
+        *,
+        actor: str,
+        audit: Any,
+    ) -> dict[str, Any]:
+        """Atomically publish snapshot, run/case pointers, and audit event."""
+        with self.engine.begin() as conn:
+            record = self._snapshot_record(conn, snapshot)
+            run = conn.execute(
+                sa.select(runs).where(runs.c.id == record["run_id"])
+            ).mappings().one()
+            if (
+                run["case_id"] != record["case_id"]
+                or run["status"] != "succeeded"
+                or run["accepted_snapshot_id"] is not None
+            ):
+                raise StoreConflict("RUN_NOT_READY", "run cannot publish an accepted snapshot")
+            case_pointer = cases.c.accepted_snapshot_id
+            expected_previous = record.get("previous_snapshot_id")
+            changed = conn.execute(
+                sa.update(cases)
+                .where(
+                    cases.c.id == record["case_id"],
+                    case_pointer.is_(None)
+                    if expected_previous is None
+                    else case_pointer == expected_previous,
+                )
+                .values(accepted_snapshot_id=record["id"])
+            ).rowcount
+            if changed != 1:
+                raise StoreConflict(
+                    "SNAPSHOT_AUTHORITY_CHANGED",
+                    "case accepted snapshot moved during acceptance",
+                )
+            conn.execute(run_snapshots.insert().values(**record))
+            changed = conn.execute(
+                sa.update(runs)
+                .where(
+                    runs.c.id == record["run_id"],
+                    runs.c.accepted_snapshot_id.is_(None),
+                )
+                .values(accepted_snapshot_id=record["id"])
+            ).rowcount
+            if changed != 1:
+                raise StoreConflict("RUN_NOT_READY", "run acceptance was already consumed")
+            audit(
+                conn,
+                "snapshot.accepted",
+                actor,
+                case_id=record["case_id"],
+                snapshot_id=record["id"],
+                run_id=record["run_id"],
+                provider_identity_digest=(record.get("provider_identity") or {}).get("identity_digest"),
+            )
         return record
 
     def serialize_all_for_run(self, run_id: str) -> str:

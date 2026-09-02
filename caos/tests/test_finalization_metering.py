@@ -20,7 +20,7 @@ if str(SERVER) not in sys.path:
 from caos.config import Settings  # noqa: E402
 from caos.storage.store import DomainStore  # noqa: E402
 
-from test_module_wiring import ScriptedProvider, _agent_turns, _seed_case  # noqa: E402
+from test_module_wiring import ScriptedProvider, _seed_case  # noqa: E402
 
 
 async def _start_full_run(tmp_path: Path):
@@ -32,7 +32,7 @@ async def _start_full_run(tmp_path: Path):
     engine = None
     try:
         case, source = _seed_case(store)
-        provider = ScriptedProvider(script=_agent_turns(source["id"], modules=10))
+        provider = ScriptedProvider(source["id"])
         engine = Engine.create(settings=settings, store=store,
                                checkpoint_path=tmp_path / "ck.db", provider=provider)
         run = await engine.start_run_for_tests(
@@ -97,11 +97,17 @@ def test_every_step_in_the_node_sequence_is_wrapped_by_the_timed_bracket():
     assert source.count("await _call(") == sum(body.count("await _call(") for body in bracket_bodies)
 
     run_module = inspect.getsource(Engine._run_module)
-    assert re.search(r"started = self\._clock\(\)\s*\n\s*existing = self\.runs\.find_valid_artifact", run_module) \
-        and re.search(r"find_valid_artifact\([^\n]*\)\s*\n\s*self\._charge_active_if_metered", run_module), \
+    # A bracket is the text between one `started = self._clock()` and the
+    # `_charge_active_if_metered(... - started)` that closes it; the reuse
+    # validation (expectations + find_valid_artifact) and the completion write
+    # must each sit inside one, whatever line shape the calls take.
+    brackets = re.findall(
+        r"started = self\._clock\(\)(.*?)self\._charge_active_if_metered\(run_id, self\._clock\(\) - started\)",
+        run_module, re.DOTALL,
+    )
+    assert any("existing = self.runs.find_valid_artifact(" in body for body in brackets), \
         "reuse-validation segment is not bracketed"
-    assert re.search(r"started = self\._clock\(\)\s*\n\s*artifact = self\.runs\.complete_node", run_module) \
-        and re.search(r"artifact = self\.runs\.complete_node[^\n]*\n\s*self\._charge_active_if_metered", run_module), \
+    assert any("artifact = self.runs.complete_node(" in body for body in brackets), \
         "completion-write segment is not bracketed"
 
     finalize = inspect.getsource(Engine._finalize_node)

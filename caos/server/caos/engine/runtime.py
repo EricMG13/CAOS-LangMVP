@@ -27,16 +27,30 @@ from ..methodology.canonical import (
     CanonicalModuleOutput,
     canonicalize_for_tests,
     recompute_confidence,
-    require_qa_passed,
     validate_citations,
+    validate_model_sources,
+)
+from ..methodology.execution import (
+    MAX_CALCULATION_INPUT_BYTES,
+    MethodologyCalculationError,
+    MethodologyCalculationRuntime,
+    calculation_output_complete,
 )
 from ..observability import log_event, run_context
-from ..storage.runs import TERMINAL, RunStore, StoreConflict
-from ..storage.store import DomainStore, source_sets as domain_source_sets
+from ..storage.runs import (
+    TERMINAL,
+    RunStore,
+    StoreConflict,
+    artifact_input_fingerprint,
+    verify_artifact_content,
+)
+from ..storage.store import DomainStore, now_iso, source_sets as domain_source_sets
 from . import state as state_mod
 from .authority import compile_module_prompts
 from .budget import (
     DIMENSIONS,
+    EVIDENCE_BYTES_PER_MODULE,
+    EVIDENCE_READS_PER_MODULE,
     MAX_ACTIVE_JOBS,
     PROVIDER_CONCURRENCY_SLOTS,
     bound_manifest,
@@ -44,11 +58,31 @@ from .budget import (
 )
 from .deterministic import build_deterministic_payload
 from .evidence import EvidenceReader
-from .loop import ProviderSlots, run_agent_module
-from .provider import AgentError, ProviderIdentity, ProviderRequest
+from .loop import ProviderSlots, reject_duplicate_keys, run_agent_module
+from .provider import (
+    READ_EVIDENCE_TOOL,
+    AgentError,
+    ProviderIdentity,
+    ProviderRequest,
+    methodology_calculation_tool,
+)
 
 
-MVP_PATHWAYS = {"FULL_CREDIT", "EARNINGS_UPDATE", "COVENANT_REFINANCING", "RELATIVE_VALUE"}
+MVP_PATHWAYS = {
+    "FULL_CREDIT",
+    "EARNINGS_UPDATE",
+    "COVENANT_REFINANCING",
+    "RELATIVE_VALUE",
+    "DISTRESSED_RESTRUCTURING",
+}
+
+_CALCULATION_REF_FIELDS = (
+    "calculator_id",
+    "script_digest",
+    "calculator_digest",
+    "input_digest",
+    "output_digest",
+)
 
 
 def _is_placeholder_payload(payload: Any) -> bool:
@@ -59,6 +93,93 @@ def _is_placeholder_payload(payload: Any) -> bool:
         and isinstance(provenance, dict)
         and provenance.get("executor") == "caos.engine.deterministic"
     )
+
+
+def _agent_module_ids_for_plan(plan: dict[str, Any]) -> list[str]:
+    from ..modules.registry import MODULES
+
+    depth = plan["depth"]
+    agent_modules = []
+    for node in plan["nodes"]:
+        spec = MODULES.get(node["module_id"])
+        if spec is None:  # a route node without a registry entry (CP-DR until Task 7) is not budgeted
+            continue
+        if (spec.mode_full if depth == "full" else spec.mode_screen) == "agent":
+            agent_modules.append(node["module_id"])
+    return agent_modules
+
+
+def _reject_nonfinite_json(_value: str) -> None:
+    raise ValueError("non-finite number")
+
+
+def _parse_calculation_input(arguments: dict[str, Any]) -> tuple[str, dict[str, Any]]:
+    if set(arguments) != {"calculator_id", "input_json"}:
+        raise AgentError("METHODOLOGY_INPUT_INVALID", "calculation arguments are not exact")
+    calculator_id, input_json = arguments["calculator_id"], arguments["input_json"]
+    if not isinstance(calculator_id, str) or not isinstance(input_json, str):
+        raise AgentError("METHODOLOGY_INPUT_INVALID", "calculation arguments are malformed")
+    try:
+        if len(input_json.encode("utf-8")) > MAX_CALCULATION_INPUT_BYTES:
+            raise ValueError("calculation input is too large")
+        inputs = json.loads(
+            input_json,
+            object_pairs_hook=reject_duplicate_keys,
+            parse_constant=_reject_nonfinite_json,
+        )
+    except (UnicodeError, ValueError, TypeError, RecursionError) as exc:
+        raise AgentError("METHODOLOGY_INPUT_INVALID", "calculation input is not strict JSON") from exc
+    if type(inputs) is not dict:
+        raise AgentError("METHODOLOGY_INPUT_INVALID", "calculation input must be a JSON object")
+    return calculator_id, inputs
+
+
+def _calculation_ref(record: dict[str, Any]) -> dict[str, Any]:
+    return {field: record[field] for field in _CALCULATION_REF_FIELDS}
+
+
+CALCULATION_INCOMPLETE = "METHODOLOGY_CALCULATION_INCOMPLETE"
+
+# The calculators whose incompleteness ends the run (DECISIONS §14 D6): the
+# module's core numbers. Every other assigned calculator that stays incomplete
+# after the single repair becomes a host-declared limitation on the artifact.
+_CORE_CALCULATORS = frozenset({("CP-1", "credit_metrics"), ("CP-2G", "credit_metrics")})
+_DISTRESSED_CORE_CALCULATORS = frozenset({("CP-4C", "funding_gap"), ("CP-4C", "recovery_waterfall")})
+
+
+def _calculation_is_core(pathway: str, module_id: str, calculator_id: str) -> bool:
+    key = (module_id, calculator_id)
+    return key in _CORE_CALCULATORS or (
+        pathway == "DISTRESSED_RESTRUCTURING" and key in _DISTRESSED_CORE_CALCULATORS
+    )
+
+
+def _validate_calculation_refs(
+    declared: list[dict[str, Any]],
+    delivered: list[dict[str, Any]],
+    assigned_calculator_ids: tuple[str, ...],
+    limited_calculator_ids: tuple[str, ...] = (),
+) -> None:
+    """Declared references must equal the host-pinned records exactly, and the
+    records plus the host-declared limitations must cover every assigned
+    calculator: a limitation is never a reference, and never a substitute."""
+    declared_keys = [tuple(record[field] for field in _CALCULATION_REF_FIELDS) for record in declared]
+    delivered_keys = [tuple(_calculation_ref(record)[field] for field in _CALCULATION_REF_FIELDS)
+                      for record in delivered]
+    delivered_ids = {key[0] for key in delivered_keys}
+    limited_ids = set(limited_calculator_ids)
+    if (
+        len(assigned_calculator_ids) != len(set(assigned_calculator_ids))
+        or len(limited_calculator_ids) != len(limited_ids)
+        or len(declared_keys) != len(set(declared_keys))
+        or len(delivered_keys) != len(set(delivered_keys))
+        or len({key[0] for key in declared_keys}) != len(declared_keys)
+        or len(delivered_ids) != len(delivered_keys)
+        or delivered_ids & limited_ids
+        or delivered_ids | limited_ids != set(assigned_calculator_ids)
+        or set(declared_keys) != set(delivered_keys)
+    ):
+        raise ValueError("provider calculation references do not match host calculations")
 
 
 # Shutdown must not wait forever for a task that ignores cancellation or a
@@ -121,6 +242,11 @@ class Engine:
         self.checkpoint_path = Path(checkpoint_path)
         self.runs = RunStore(store.engine)
         self.bundle = DeployVBundle(settings.deploy_v_root)
+        self._calculation_runtime = MethodologyCalculationRuntime(
+            settings.deploy_v_root,
+            self.bundle.integrity,
+        )
+        self._calculation_bindings_cache: dict[str, list[dict[str, Any]]] | None = None
         self._savers: dict[int, Any] = {}
         self._graphs: dict[tuple[int, str, str], Any] = {}
         self._clock = time.monotonic
@@ -573,6 +699,14 @@ class Engine:
             log_event("gate.interrupt", run_id=run_id, reason="SOURCE_SET_EMPTY", interrupt_id=ticket)
             interrupt({"reason": "SOURCE_SET_EMPTY", "ticket": ticket})
             current = self.store.current_source_set(run["case_id"])
+        live_sources = self.store.sources_for_live_set(
+            run["case_id"],
+            current["id"],
+            current["version"],
+        )
+        if live_sources is None:
+            raise AgentError("AGENT_AUTHORITY_MISMATCH", "source authority changed at the gate")
+        self._verify_source_vault(live_sources)
         if run["status"] == "paused":
             # The node re-runs from the top on resume, so a run that entered
             # this invocation paused is a run whose gate has just cleared.
@@ -584,6 +718,7 @@ class Engine:
         )
         plan.pop("plan_digest", None)
         plan["source_set_digest"] = state_mod.source_set_digest(current)
+        plan["source_authority"] = state_mod.source_authority(live_sources)
         # §12.6: the plan pins the integrity-manifest digest at gate exit.
         plan["manifest_digest"] = digest(self.bundle.integrity)
         plan["provider_identity"] = run.get("provider_identity")
@@ -621,13 +756,7 @@ class Engine:
         return next(node for node in plan["nodes"] if node["module_id"] == module_id)
 
     def _input_fingerprint(self, plan: dict[str, Any], plan_digest: str, module_id: str, upstream_digests: list[str]) -> str:
-        return digest({
-            "plan_digest": plan_digest,
-            "module_id": module_id,
-            "upstream_artifact_digests": upstream_digests,
-            "source_set_digest": plan["source_set_digest"],
-            "provider_identity_digest": (plan.get("provider_identity") or {}).get("identity_digest"),
-        })
+        return artifact_input_fingerprint(plan, plan_digest, module_id, upstream_digests)
 
     def _pinned_loan_universe(self, plan: dict[str, Any], case_id: str) -> dict[str, Any] | None:
         """The universe CP-3 binds, re-derived from the store on every attempt.
@@ -661,25 +790,312 @@ class Engine:
         pinned record byte-identical, so `verify_source_set_expectation` passes.
         The live rows are the only authority, and reuse-relink and deterministic
         execution need this check exactly as much as the agent path does."""
-        live = []
-        for source_id in source_set["source_ids"]:
-            source = self.store.get_source(source_id)
-            if not source or source.get("case_id") != case_id or source.get("withdrawn"):
-                raise AgentError("AGENT_AUTHORITY_MISMATCH", "pinned source is unavailable")
-            live.append(source)
+        live = self.store.sources_for_live_set(
+            case_id,
+            source_set.get("id"),
+            source_set.get("version"),
+        )
+        if live is None:
+            raise AgentError("AGENT_AUTHORITY_MISMATCH", "pinned source is unavailable")
         return live
+
+    def _live_plan_sources(self, run: dict[str, Any], plan: dict[str, Any]) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+        source_set = state_mod.verify_source_set_expectation(
+            self.store, plan["source_set_id"], plan["source_set_digest"],
+        )
+        live_sources = self._live_sources(run["case_id"], source_set)
+        if plan.get("source_authority") != state_mod.source_authority(live_sources):
+            raise AgentError("AGENT_AUTHORITY_MISMATCH", "pinned source content changed")
+        return source_set, live_sources
+
+    def _verify_source_vault(self, sources: list[dict[str, Any]]) -> None:
+        from ..sources.domain import Vault
+
+        vault = Vault(self.settings)
+        for source in sources:
+            private = self.store.get_source_private(source.get("id"))
+            if (
+                private is None
+                or state_mod.source_authority([private])
+                != state_mod.source_authority([source])
+            ):
+                raise AgentError(
+                    "AGENT_AUTHORITY_MISMATCH",
+                    "pinned source storage identity changed",
+                )
+            if private.get("vault_path") is None:
+                if private.get("source_kind") == "analyst_note" or self.settings.environment == "development":
+                    continue
+                raise AgentError(
+                    "AGENT_AUTHORITY_MISMATCH",
+                    "pinned source bytes are unavailable",
+                )
+            try:
+                vault.verify(private)
+            except ValueError as exc:
+                raise AgentError(
+                    "AGENT_AUTHORITY_MISMATCH",
+                    "pinned source bytes failed integrity verification",
+                ) from exc
+
+    def _calculation_bindings_by_module(self, *, fresh: bool = False) -> dict[str, list[dict[str, Any]]]:
+        if self._calculation_bindings_cache is None or fresh:
+            try:
+                manifest = self._calculation_runtime.binding_manifest()
+            except (KeyError, OSError, TypeError, ValueError) as exc:
+                raise AgentError(
+                    "METHODOLOGY_AUTHORITY_MISMATCH",
+                    "calculation bindings are unavailable",
+                ) from exc
+            grouped: dict[str, list[dict[str, Any]]] = {}
+            for binding in manifest:
+                grouped.setdefault(binding["module_id"], []).append(binding)
+            self._calculation_bindings_cache = grouped
+        return self._calculation_bindings_cache
+
+    def _replay_artifact_calculations(
+        self,
+        artifact: dict[str, Any],
+        module_id: str,
+    ) -> None:
+        """Require persisted deterministic results to equal a fresh pinned run."""
+        for record in artifact["payload"].get("calculations", []):
+            try:
+                reconstructed = self._calculation_runtime.execute(
+                    module_id,
+                    record["calculator_id"],
+                    record["canonical_input"],
+                )
+            except (KeyError, OSError, TypeError, ValueError) as exc:
+                raise ModuleFailure(
+                    "RUN_NOT_READY",
+                    module_id,
+                    "calculation record cannot be reconstructed",
+                ) from exc
+            if reconstructed != record:
+                raise ModuleFailure(
+                    "RUN_NOT_READY",
+                    module_id,
+                    "calculation record differs from the pinned calculator",
+                )
+
+    def _artifact_rows_by_module(self, run: dict[str, Any]) -> dict[str, dict[str, Any]]:
+        artifacts: dict[str, dict[str, Any]] = {}
+        for node in run["nodes"]:
+            if not node.get("artifact_id"):
+                continue
+            artifact = self.runs.get_artifact(node["artifact_id"])
+            if artifact is not None:
+                artifacts[node["module_id"]] = artifact
+        return artifacts
+
+    def _expected_host_identity(
+        self,
+        run: dict[str, Any],
+        plan: dict[str, Any],
+        module_id: str,
+        source_set: dict[str, Any],
+        upstream: list[dict[str, Any]],
+        calculator_bindings: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        case = self.store.get_case(run["case_id"])
+        if case is None:
+            raise AgentError("AGENT_AUTHORITY_MISMATCH", "run case is unavailable")
+        return {
+            "module_id": module_id,
+            "module_name": self._plan_node(plan, module_id)["module_name"],
+            "run_id": run["id"],
+            "case_id": run["case_id"],
+            "issuer_name": case["issuer"],
+            "issuer_id": run["case_id"].replace("_", "-"),
+            "reporting_period": run["created_at"][:10],
+            "analysis_date": run["created_at"][:10],
+            "profile_id": plan["profile_id"],
+            "selection_id": plan["selection_id"],
+            "source_set_id": source_set["id"],
+            "source_set_version": source_set["version"],
+            "calculator_ids": [binding["calculator_id"] for binding in calculator_bindings],
+            "upstream_digests": [artifact["digest"] for artifact in upstream],
+        }
+
+    def _artifact_content_expectations(
+        self,
+        run: dict[str, Any],
+        plan: dict[str, Any],
+        module_id: str,
+        source_set: dict[str, Any],
+        live_sources: list[dict[str, Any]],
+        artifacts: dict[str, dict[str, Any]],
+        *,
+        payload: dict[str, Any] | None = None,
+        bindings_by_module: dict[str, list[dict[str, Any]]] | None = None,
+    ) -> dict[str, Any]:
+        plan_node = self._plan_node(plan, module_id)
+        try:
+            immediate = [artifacts[dependency] for dependency in plan_node["dependencies"]]
+        except KeyError as exc:
+            raise AgentError("AGENT_AUTHORITY_MISMATCH", "upstream artifact is unavailable") from exc
+        handoff = immediate
+        if module_id not in {"CP-PARSE", "CP-0"} and not any(
+            artifact["module_id"] == "CP-0" for artifact in immediate
+        ):
+            cp0 = artifacts.get("CP-0")
+            if cp0 is None:
+                raise AgentError("AGENT_AUTHORITY_MISMATCH", "CP-0 handoff anchor is unavailable")
+            handoff = [cp0, *immediate]
+        identity = run.get("provider_identity") or {}
+        host_control_without_calculations = (
+            identity.get("provider_name") == "host_control"
+            and not (
+                isinstance(payload, dict)
+                and (payload.get("calculations") or payload.get("calculation_limitations"))
+            )
+        )
+        available_bindings = (
+            self._calculation_bindings_by_module()
+            if bindings_by_module is None
+            else bindings_by_module
+        )
+        bindings = [] if host_control_without_calculations else available_bindings.get(module_id, [])
+        upstream_digests = [artifact["digest"] for artifact in immediate]
+        input_fingerprint = self._input_fingerprint(
+            plan,
+            run["plan_digest"],
+            module_id,
+            upstream_digests,
+        )
+        loan_universe = (
+            self._pinned_loan_universe(plan, run["case_id"])
+            if module_id == "CP-3"
+            else None
+        )
+        return {
+            "source_set": {**source_set, "digest": plan["source_set_digest"]},
+            "upstream_artifacts": immediate,
+            "handoff_artifacts": handoff,
+            "calculator_bindings": bindings,
+            "expected_system_payload": build_deterministic_payload(
+                module_id,
+                plan,
+                input_fingerprint=input_fingerprint,
+                upstream_digests=upstream_digests,
+                source_ids=source_set["source_ids"],
+                loan_universe=loan_universe,
+            ),
+            "expected_host_identity": self._expected_host_identity(
+                run,
+                plan,
+                module_id,
+                source_set,
+                immediate,
+                bindings,
+            ),
+            "evidence_blocks": {
+                (source["id"], block["block_id"])
+                for source in live_sources
+                for block in source.get("blocks") or []
+                if isinstance(block, dict) and isinstance(block.get("block_id"), str)
+            },
+            "downstream_consumers": self._downstream_consumers(plan, module_id),
+        }
 
     def _upstream_digests(self, run_id: str, plan: dict[str, Any], module_id: str) -> list[dict[str, Any]]:
         """Upstream artifact refs in the pinned plan's dependency order (§12.5)."""
-        nodes = {node["module_id"]: node for node in self.runs.get_run(run_id)["nodes"]}
+        run = self.runs.get_run(run_id)
+        source_set, live_sources = self._live_plan_sources(run, plan)
+        nodes = {node["module_id"]: node for node in run["nodes"]}
+        artifacts = self._artifact_rows_by_module(run)
         upstream = []
         for dependency in self._plan_node(plan, module_id)["dependencies"]:
             node = nodes.get(dependency)
             artifact = self.runs.get_artifact(node["artifact_id"]) if node and node["artifact_id"] else None
-            if artifact is None:
+            if artifact is None or not verify_artifact_content(
+                artifact,
+                run_id=run_id,
+                case_id=run["case_id"],
+                module_id=dependency,
+                input_fingerprint=self._input_fingerprint(
+                    plan,
+                    run["plan_digest"],
+                    dependency,
+                    [
+                        artifacts[parent]["digest"]
+                        for parent in self._plan_node(plan, dependency)["dependencies"]
+                    ],
+                ),
+                methodology_build_id=plan["build_id"],
+                provider_identity=run.get("provider_identity"),
+                **self._artifact_content_expectations(
+                    run,
+                    plan,
+                    dependency,
+                    source_set,
+                    live_sources,
+                    artifacts,
+                    payload=artifact.get("payload"),
+                ),
+            ):
                 raise ModuleFailure("AGENT_AUTHORITY_MISMATCH", module_id, "validated upstream artifact is unavailable")
             upstream.append(artifact)
         return upstream
+
+    def _handoff_lineage(
+        self,
+        run_id: str,
+        module_id: str,
+        immediate: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        """Retain the accepted CP-0 anchor as well as immediate dependencies."""
+        if module_id in {"CP-PARSE", "CP-0"} or any(
+            artifact["module_id"] == "CP-0" for artifact in immediate
+        ):
+            return immediate
+        run = self.runs.get_run(run_id)
+        nodes = {node["module_id"]: node for node in run["nodes"]}
+        cp0_node = nodes.get("CP-0")
+        cp0 = self.runs.get_artifact(cp0_node["artifact_id"]) if cp0_node and cp0_node["artifact_id"] else None
+        source_set, live_sources = self._live_plan_sources(run, run["plan"])
+        if cp0 is None or not verify_artifact_content(
+            cp0,
+            run_id=run_id,
+            case_id=run["case_id"],
+            module_id="CP-0",
+            input_fingerprint=self._input_fingerprint(
+                run["plan"],
+                run["plan_digest"],
+                "CP-0",
+                [
+                    self._artifact_rows_by_module(run)[parent]["digest"]
+                    for parent in self._plan_node(run["plan"], "CP-0")["dependencies"]
+                ],
+            ),
+            methodology_build_id=run["plan"]["build_id"],
+            provider_identity=run.get("provider_identity"),
+            **self._artifact_content_expectations(
+                run,
+                run["plan"],
+                "CP-0",
+                source_set,
+                live_sources,
+                self._artifact_rows_by_module(run),
+                payload=cp0.get("payload"),
+            ),
+        ):
+            raise AgentError("AGENT_AUTHORITY_MISMATCH", "accepted CP-0 lineage is unavailable")
+        return [cp0, *immediate]
+
+    @staticmethod
+    def _downstream_consumers(plan: dict[str, Any], module_id: str) -> list[str]:
+        from ..modules.registry import CP_MODEL_INPUT_MODULES
+
+        consumers = [
+            node["module_id"]
+            for node in plan["nodes"]
+            if module_id in node["dependencies"]
+        ]
+        if module_id in CP_MODEL_INPUT_MODULES and "CP-MODEL" not in consumers:
+            consumers.append("CP-MODEL")
+        return consumers
 
     async def _run_module(self, state: dict[str, Any], module_id: str) -> dict[str, Any]:
         from ..modules.registry import MODULES
@@ -693,15 +1109,29 @@ class Engine:
                 raise AgentError("AGENT_IDENTITY_MISMATCH", "plan identity differs from run")
             if plan["build_id"] != self._current_build_id():
                 raise AgentError("AGENT_AUTHORITY_MISMATCH", "pinned methodology build is not the active bundle")
-            source_set = state_mod.verify_source_set_expectation(self.store, plan["source_set_id"], plan["source_set_digest"])
-            live_sources = self._live_sources(run["case_id"], source_set)
+            source_set, live_sources = self._live_plan_sources(run, plan)
             upstream = self._upstream_digests(run_id, plan, module_id)
             fingerprint = self._input_fingerprint(plan, plan_digest, module_id, [a["digest"] for a in upstream])
 
             # §12.14: the reuse-validation segment is a bracketed charge on
             # metered (agent-budgeted) runs; gate/interrupt waits accrue nothing.
             started = self._clock()
-            existing = self.runs.find_valid_artifact(run_id, module_id, fingerprint)
+            artifacts = self._artifact_rows_by_module(run)
+            content_expectations = self._artifact_content_expectations(
+                run,
+                plan,
+                module_id,
+                source_set,
+                live_sources,
+                artifacts,
+                payload=(artifacts.get(module_id) or {}).get("payload"),
+            )
+            existing = self.runs.find_valid_artifact(
+                run_id,
+                module_id,
+                fingerprint,
+                content_expectations=content_expectations,
+            )
             self._charge_active_if_metered(run_id, self._clock() - started)
             if existing is not None:
                 if _is_placeholder_payload(existing.get("payload")) and run_id not in self._placeholder_deterministic_runs:
@@ -711,7 +1141,8 @@ class Engine:
                     )
                 # Reuse-first relink (§10.1): zero provider calls, byte-identical link.
                 self.runs.complete_node(run_id, existing["case_id"], module_id, fingerprint,
-                                        existing["payload"], existing["markdown"], existing["qa_status"], "system")
+                                        existing["payload"], existing["markdown"], existing["qa_status"], "system",
+                                        content_expectations=content_expectations)
                 return {"artifacts": {module_id: {"artifact_id": existing["id"], "digest": existing["digest"]}},
                         "node_status": {module_id: "succeeded"}}
 
@@ -722,7 +1153,58 @@ class Engine:
                 # Canonical modules take the golden fixtures; every other node
                 # (CP-3's universe binding included) runs its real
                 # deterministic path.
-                payload, markdown, qa_status = self._scripted_output(run_id, plan, module_id, fingerprint, upstream)
+                payload, markdown, qa_status = self._scripted_output(
+                    run_id,
+                    plan,
+                    module_id,
+                    fingerprint,
+                    upstream,
+                    source_set,
+                    live_sources,
+                )
+            elif (
+                run_id in self._placeholder_deterministic_runs
+                and (
+                    run_id in self._scripted_runs
+                    or plan["depth"] == "screen"
+                    or module_id in self._PLACEHOLDER_FULL_MODULES
+                )
+            ):
+                universe = (self._pinned_loan_universe(plan, run["case_id"])
+                            if module_id == "CP-3" else None)
+                payload = build_deterministic_payload(
+                    module_id, plan, input_fingerprint=fingerprint,
+                    upstream_digests=[a["digest"] for a in upstream],
+                    source_ids=source_set["source_ids"],
+                    loan_universe=universe,
+                )
+                if run_id in self._scripted_runs and module_id == "CP-4C":
+                    payload["calculations"] = [
+                        self._calculation_runtime.execute("CP-4C", "funding_gap", {
+                            "horizon_years": 2,
+                            "cash": 100,
+                            "currency": "USD",
+                            "forecast_fcf": 50,
+                            "instruments": [{
+                                "instrument": "Near-term notes",
+                                "amount": 300,
+                                "years_to_maturity": 1,
+                                "currency": "USD",
+                            }],
+                        }),
+                        self._calculation_runtime.execute("CP-4C", "recovery_waterfall", {
+                            "enterprise_value": 130,
+                            "claims": [
+                                *[{
+                                    "claim_id": f"FILLER-{index:03d}",
+                                    "class": "Senior Secured",
+                                    "amount": 1,
+                                } for index in range(80)],
+                                {"claim_id": "SUN", "class": "Senior Unsecured", "amount": 200},
+                            ],
+                        }),
+                    ]
+                markdown, qa_status = None, "Passed"
             elif mode == "agent" and run_id not in self._scripted_runs:
                 if not self.settings.agent_execution_enabled:
                     raise AgentError("AGENT_EXECUTION_DISABLED", "agent execution is disabled")
@@ -733,16 +1215,6 @@ class Engine:
                 with run_context(run_id=run_id, module_id=module_id):
                     result = await self._execute_agent(run_id, plan, module_id, source_set, live_sources, fingerprint, upstream)
                 payload, markdown, qa_status = result["payload"], result["markdown"], result["qa_status"]
-            elif run_id in self._placeholder_deterministic_runs:
-                universe = (self._pinned_loan_universe(plan, run["case_id"])
-                            if module_id == "CP-3" else None)
-                payload = build_deterministic_payload(
-                    module_id, plan, input_fingerprint=fingerprint,
-                    upstream_digests=[a["digest"] for a in upstream],
-                    source_ids=source_set["source_ids"],
-                    loan_universe=universe,
-                )
-                markdown, qa_status = None, "Passed"
             else:
                 raise AgentError(
                     "DETERMINISTIC_EXECUTOR_UNAVAILABLE",
@@ -750,8 +1222,27 @@ class Engine:
                 )
             run = self.runs.get_run(run_id)
             payload = {**payload, "provider_identity": run.get("provider_identity")}
+            content_expectations = self._artifact_content_expectations(
+                run,
+                plan,
+                module_id,
+                source_set,
+                live_sources,
+                self._artifact_rows_by_module(run),
+                payload=payload,
+            )
             started = self._clock()
-            artifact = self.runs.complete_node(run_id, run["case_id"], module_id, fingerprint, payload, markdown, qa_status, run["created_by"])
+            artifact = self.runs.complete_node(
+                run_id,
+                run["case_id"],
+                module_id,
+                fingerprint,
+                payload,
+                markdown,
+                qa_status,
+                run["created_by"],
+                content_expectations=content_expectations,
+            )
             self._charge_active_if_metered(run_id, self._clock() - started)
             if self._crash_gap.get(run_id) == module_id:
                 raise SimulatedCrash(f"injected crash in commit gap for {module_id}")
@@ -796,10 +1287,13 @@ class Engine:
             identity = self._assert_run_provider_identity(run)
             if identity is None:  # guarded above for every agent route
                 raise AgentError("AGENT_IDENTITY_MISMATCH", "agent run identity is absent")
-            agent_modules = [
-                node["module_id"] for node in plan["nodes"]
-                if MODULES[node["module_id"]].mode_full == "agent"
-            ]
+            spec = MODULES[module_id]
+            if spec.calculators != self._calculation_runtime.calculator_ids(module_id):
+                raise AgentError(
+                    "AGENT_AUTHORITY_MISMATCH",
+                    "module calculator registry differs from the pinned execution runtime",
+                )
+            agent_modules = _agent_module_ids_for_plan(plan)
             limits = dict(route_envelope(agent_modules, MODULES))
             limits.update(self._budget_overrides)
             self.runs.init_budget(run_id, limits)
@@ -822,10 +1316,16 @@ class Engine:
                 })
             bound_manifest(manifest)
 
+            case = self.store.get_case(run["case_id"])
+            if case is None:
+                raise AgentError("AGENT_AUTHORITY_MISMATCH", "run case is unavailable")
+            plan_node = self._plan_node(plan, module_id)
             host_identity = {
                 "module_id": module_id,
+                "module_name": plan_node["module_name"],
                 "run_id": run_id,
                 "case_id": run["case_id"],
+                "issuer_name": case["issuer"],
                 "issuer_id": run["case_id"].replace("_", "-"),
                 "reporting_period": run["created_at"][:10],
                 "analysis_date": run["created_at"][:10],
@@ -833,6 +1333,7 @@ class Engine:
                 "selection_id": plan["selection_id"],
                 "source_set_id": source_set["id"],
                 "source_set_version": source_set["version"],
+                "calculator_ids": list(spec.calculators),
                 "upstream_digests": [a["digest"] for a in upstream],
             }
             # §12.6 verify-at-use: prompt bytes are hashed against the PINNED
@@ -849,13 +1350,25 @@ class Engine:
             used = budget["used"]
             reader = EvidenceReader(
                 self.store, run["case_id"], source_set["id"], run_id,
-                read_limit=limits["evidence_reads"] - used.get("evidence_reads", 0),
-                byte_limit=limits["evidence_bytes"] - used.get("evidence_bytes", 0),
+                read_limit=min(
+                    EVIDENCE_READS_PER_MODULE,
+                    limits["evidence_reads"] - used.get("evidence_reads", 0),
+                ),
+                byte_limit=min(
+                    EVIDENCE_BYTES_PER_MODULE,
+                    limits["evidence_bytes"] - used.get("evidence_bytes", 0),
+                ),
                 on_read=lambda source_id, block_ids, returned_bytes: (
                     self.runs.charge_budget(run_id, "evidence_reads", 1),
                     self.runs.charge_budget(run_id, "evidence_bytes", returned_bytes),
                 ),
             )
+            calculation_records: list[dict[str, Any]] = []
+            incomplete_calculators: dict[str, int] = {}
+            repair_state = {"used": False}
+            tools = (READ_EVIDENCE_TOOL,)
+            if spec.calculators:
+                tools += (methodology_calculation_tool(spec.calculators),)
 
             attempt_base = {
                 "run_id": run_id,
@@ -908,19 +1421,176 @@ class Engine:
                     raise AgentError("AGENT_BUDGET_EXCEEDED", "active worker time exhausted")
                 return remaining
 
+            async def call_tool(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
+                if name != "run_methodology_calculation":
+                    raise AgentError("AGENT_OUTPUT_INVALID", "unknown host tool")
+                calculator_id, inputs = _parse_calculation_input(arguments)
+                if any(record["calculator_id"] == calculator_id for record in calculation_records):
+                    raise AgentError(
+                        "METHODOLOGY_CALCULATOR_NOT_ALLOWED",
+                        "each assigned calculator may run once per module",
+                    )
+                if calculator_id in incomplete_calculators:
+                    # A retry after an incomplete result is the module's one
+                    # repair; a second retry has nothing left to spend.
+                    if repair_state["used"]:
+                        raise AgentError(
+                            "METHODOLOGY_CALCULATOR_NOT_ALLOWED",
+                            "the calculator retry allowance is spent",
+                        )
+                    repair_state["used"] = True
+                    record("repair_reserve", calculator_id=calculator_id)
+                try:
+                    calculation = await asyncio.to_thread(
+                        self._calculation_runtime.execute,
+                        module_id,
+                        calculator_id,
+                        inputs,
+                    )
+                except MethodologyCalculationError as exc:
+                    raise AgentError(exc.code) from exc
+                if not calculation_output_complete(
+                    module_id,
+                    calculator_id,
+                    calculation["canonical_output"],
+                ):
+                    # The pinned calculator ran and produced nothing usable for
+                    # these inputs. That is the model's extraction, not the
+                    # evidence, so it is never an evidence refusal: the core
+                    # numbers end the run once the repair is spent, everything
+                    # else becomes a host-declared limitation on the artifact.
+                    incomplete_calculators[calculator_id] = incomplete_calculators.get(calculator_id, 0) + 1
+                    record(
+                        "calculation_incomplete",
+                        module_id=module_id,
+                        calculator_id=calculator_id,
+                        input_digest=calculation["input_digest"],
+                    )
+                    if repair_state["used"] and _calculation_is_core(plan["pathway"], module_id, calculator_id):
+                        raise AgentError(
+                            CALCULATION_INCOMPLETE,
+                            "a core methodology calculation is incomplete after its repair",
+                        )
+                    return {
+                        "calculator_id": calculator_id,
+                        "complete": False,
+                        "code": CALCULATION_INCOMPLETE,
+                        "input_digest": calculation["input_digest"],
+                        "reason": "the pinned calculator returned no usable result for these inputs",
+                    }
+                incomplete_calculators.pop(calculator_id, None)
+                calculation_records.append(calculation)
+                record_attempt = _calculation_ref(calculation)
+                record(
+                    "calculation",
+                    module_id=module_id,
+                    **record_attempt,
+                )
+                return calculation
+
             def validate(decoded: dict[str, Any]) -> dict[str, Any]:
                 output = CanonicalModuleOutput.model_validate(decoded)
                 validate_citations([ref.model_dump() for ref in output.evidence_refs], reader.delivered())
+                limited = tuple(
+                    calculator_id for calculator_id in spec.calculators
+                    if calculator_id in incomplete_calculators
+                    and not any(record["calculator_id"] == calculator_id for record in calculation_records)
+                )
+                if any(_calculation_is_core(plan["pathway"], module_id, calculator_id) for calculator_id in limited):
+                    raise AgentError(
+                        CALCULATION_INCOMPLETE,
+                        "a core methodology calculation is incomplete",
+                    )
+                _validate_calculation_refs(
+                    [ref.model_dump() for ref in output.calculation_refs],
+                    calculation_records,
+                    spec.calculators,
+                    limited,
+                )
+                validate_model_sources(
+                    output.markdown,
+                    {source_id for source_id, _block_id in reader.delivered()},
+                    module_id=module_id,
+                )
                 confidence = recompute_confidence(decoded)
-                require_qa_passed(confidence)
+                if confidence["qa_status"] != "Passed":
+                    gate = decoded["source_gate"]
+                    code = (
+                        "SOURCE_EVIDENCE_INSUFFICIENT" if gate == "fail"
+                        else "SOURCE_EVIDENCE_RESTRICTED" if gate == "partial"
+                        else "ANALYSIS_QA_BLOCKED" if confidence["qa_status"] == "Blocked"
+                        else "ANALYSIS_QA_RESTRICTED"
+                    )
+                    raise AgentError(code)
+                reporting_period = host_identity["reporting_period"]
+                handoff_lineage = self._handoff_lineage(run_id, module_id, upstream)
+                handoff_metadata = {
+                    "module_id": module_id,
+                    "module_name": host_identity["module_name"],
+                    "run_id": run_id,
+                    "reporting_period": reporting_period,
+                    "analysis_date": host_identity["analysis_date"],
+                    "confidence_score": confidence["confidence_score"],
+                    "confidence_band": confidence["confidence_band"].title(),
+                    "qa_status": confidence["qa_status"],
+                    "committee_status": "Draft Only",
+                    "limitation_flags": [
+                        *output.limitation_flags,
+                        *(f"host:calculation_incomplete:{calculator_id}" for calculator_id in limited),
+                    ],
+                    "validation_warnings": output.validation_warnings,
+                    "upstream_artifacts_used": [
+                        {
+                            "module_id": artifact["module_id"],
+                            "run_id": artifact["run_id"],
+                            "period": (
+                                (artifact.get("payload") or {}).get("handoff_metadata") or {}
+                            ).get("reporting_period", reporting_period),
+                            "artifact_digest": artifact["digest"],
+                        }
+                        for artifact in handoff_lineage
+                    ],
+                    "downstream_consumers": self._downstream_consumers(plan, module_id),
+                    "issuer_name": host_identity["issuer_name"],
+                    "issuer_id": host_identity["issuer_id"],
+                }
                 envelope = canonicalize_for_tests(
                     module_id=module_id,
                     provider_markdown=output.markdown,
                     run_identity=host_identity,
                     delivered=reader.delivered(),
                     build_id=plan["build_id"],
+                    handoff_metadata=handoff_metadata,
+                )
+                self.bundle.validate_handoff(
+                    envelope["canonical_output"]["markdown"],
+                    module_id=module_id,
+                    run_id=run_id,
+                    reporting_period=reporting_period,
                 )
                 envelope["host_confidence"] = confidence
+                envelope["handoff_metadata_provenance"] = {
+                    "host_derived_fields": [
+                        "module_id", "module_name", "run_id", "analysis_date",
+                        "confidence_score", "confidence_band", "qa_status",
+                        "committee_status", "upstream_artifacts_used",
+                        "downstream_consumers", "issuer_name", "issuer_id",
+                        "calculation_limitations",
+                    ],
+                    "provider_declared_bounded_fields": [
+                        "limitation_flags", "validation_warnings",
+                    ],
+                    "reporting_period_basis": "host_pinned_run_date",
+                }
+                envelope["calculations"] = list(calculation_records)
+                envelope["calculation_limitations"] = [
+                    {"calculator_id": calculator_id, "code": CALCULATION_INCOMPLETE}
+                    for calculator_id in limited
+                ]
+                envelope["lineage"] = {
+                    "input_fingerprint": fingerprint,
+                    "upstream_digests": [artifact["digest"] for artifact in upstream],
+                }
                 envelope["source_set"] = {"id": source_set["id"], "version": source_set["version"], "digest": plan["source_set_digest"]}
                 envelope["upstream_artifacts"] = [
                     {"module_id": a["module_id"], "artifact_id": a["id"], "digest": a["digest"]} for a in upstream
@@ -933,8 +1603,10 @@ class Engine:
                     system=system,
                     user=user,
                     schema=CanonicalModuleOutput.model_json_schema(),
-                    max_tokens=MODULES[module_id].max_output_tokens,
+                    max_tokens=spec.max_output_tokens,
                     read_evidence=reader.read,
+                    tools=tools,
+                    call_tool=call_tool,
                     validate=validate,
                     reserve=reserve,
                     reconcile=reconcile,
@@ -945,6 +1617,7 @@ class Engine:
                     before_create=before_create,
                     clock=self._clock,
                     expected_identity=identity,
+                    repair_state=repair_state,
                 )
             except SimulatedCrash:
                 raise
@@ -969,47 +1642,217 @@ class Engine:
         # charged even when verification throws; an over-ceiling charge fails
         # the run closed HERE, so a success commit never lands past the budget
         # ceiling (the re-hosted 174+10 finalization-deadline contract).
-        started = self._clock()
         try:
-            try:
-                self._verify_run_artifacts(run_id, plan)
-            finally:
-                self._charge_active_if_metered(run_id, self._clock() - started)
+            # Linearize source authority and terminal success: a withdrawal is
+            # either visible to the last verification or happens after a run
+            # that was validly terminalized.
+            with self.store.authority_guard():
+                started = self._clock()
+                try:
+                    self._verify_run_artifacts(run_id, plan)
+                finally:
+                    self._charge_active_if_metered(run_id, self._clock() - started)
+                self.runs.finalize_success(run_id)
         except (AgentError, StoreConflict) as exc:
             log_event("refusal", run_id=run_id, module_id=None, code=exc.code)
             self.runs.finalize_failure(run_id, exc.code, None)
             raise ModuleFailure(exc.code, None) from exc
-        self.runs.finalize_success(run_id)
         return {"error": None}
 
     def _verify_run_artifacts(self, run_id: str, plan: dict[str, Any]) -> None:
-        """Legacy finalization gate, kept verbatim as a node: existence, run
-        ownership, module match, digest recompute for every module artifact."""
+        """Finalization gate over the exact plan artifact graph."""
         run = self.runs.get_run(run_id)
-        nodes = {node["module_id"]: node for node in run["nodes"]}
-        for plan_node in plan["nodes"]:
-            module_id = plan_node["module_id"]
-            node = nodes.get(module_id)
-            artifact = self.runs.get_artifact(node["artifact_id"]) if node and node["artifact_id"] else None
+        self._validated_plan_artifacts(run, plan)
+
+    def _validated_plan_artifacts(
+        self,
+        run: dict[str, Any],
+        plan: dict[str, Any],
+        references: list[dict[str, Any]] | None = None,
+        *,
+        accepted_snapshot_id: str | None = None,
+    ) -> list[dict[str, Any]]:
+        if (
+            not isinstance(run, dict)
+            or plan != run.get("plan")
+            or digest(plan) != run.get("plan_digest")
+            or plan.get("pathway") != run.get("pathway")
+            or plan.get("depth") != run.get("depth")
+            or plan.get("provider_identity") != run.get("provider_identity")
+        ):
+            raise AgentError("AGENT_AUTHORITY_MISMATCH", "run differs from its pinned plan")
+        plan_nodes = plan.get("nodes")
+        run_nodes = run.get("nodes")
+        if not isinstance(plan_nodes, list) or not isinstance(run_nodes, list):
+            raise AgentError("AGENT_AUTHORITY_MISMATCH", "run artifact plan is unavailable")
+        expected_modules = [node.get("module_id") for node in plan_nodes]
+        nodes = {node.get("module_id"): node for node in run_nodes if isinstance(node, dict)}
+        if (
+            any(not isinstance(module_id, str) or not module_id for module_id in expected_modules)
+            or len(expected_modules) != len(set(expected_modules))
+            or set(nodes) != set(expected_modules)
+        ):
+            raise AgentError("AGENT_AUTHORITY_MISMATCH", "run artifact plan is invalid")
+        if references is not None and (
+            not isinstance(references, list)
+            or [reference.get("module_id") if isinstance(reference, dict) else None
+                for reference in references] != expected_modules
+            or any(not isinstance(reference, dict) or set(reference) != {"id", "module_id", "digest"}
+                   for reference in references)
+        ):
+            raise AgentError("AGENT_AUTHORITY_MISMATCH", "snapshot artifact set is incomplete")
+        source_set, live_sources = self._live_plan_sources(run, plan)
+        self._verify_source_vault(live_sources)
+        bindings_by_module = self._calculation_bindings_by_module(fresh=True)
+        artifacts: list[dict[str, Any]] = []
+        ids: set[str] = set()
+        for index, module_id in enumerate(expected_modules):
+            node = nodes[module_id]
+            reference = references[index] if references is not None else None
+            artifact_id = reference["id"] if reference is not None else node.get("artifact_id")
+            artifact = self.runs.get_artifact(artifact_id) if isinstance(artifact_id, str) else None
             if (
-                artifact is not None
-                and _is_placeholder_payload(artifact.get("payload"))
-                and run_id not in self._placeholder_deterministic_runs
+                node.get("status") != "succeeded"
+                or node.get("artifact_id") != artifact_id
+                or artifact_id in ids
+                or artifact is None
+                or (reference is not None and artifact.get("digest") != reference["digest"])
+            ):
+                raise ModuleFailure("RUN_NOT_READY", module_id, "module artifact reference is invalid")
+            ids.add(artifact_id)
+            artifacts.append(artifact)
+        by_module = {artifact["module_id"]: artifact for artifact in artifacts}
+        persisted_test_authority = (
+            accepted_snapshot_id is not None
+            and self.settings.environment == "development"
+            and (run.get("provider_identity") or {}).get("provider_name") == "host_control"
+            and run.get("status") == "succeeded"
+            and run.get("accepted_snapshot_id") == accepted_snapshot_id
+        )
+        for module_id, artifact in zip(expected_modules, artifacts, strict=True):
+            if (
+                _is_placeholder_payload(artifact.get("payload"))
+                and run["id"] not in self._placeholder_deterministic_runs
+                and not persisted_test_authority
             ):
                 raise AgentError(
                     "DETERMINISTIC_EXECUTOR_UNAVAILABLE",
-                    f"placeholder artifact cannot authorize finalization for {module_id}",
+                    f"placeholder artifact cannot authorize {module_id}",
                 )
-            if (
-                artifact is None
-                or not isinstance(artifact.get("payload"), dict)
-                or artifact["run_id"] != run_id
-                or artifact["module_id"] != module_id
-                or digest(artifact["payload"]) != artifact["digest"]
-                or artifact.get("provider_identity") != run.get("provider_identity")
-                or artifact["payload"].get("provider_identity") != run.get("provider_identity")
+            if artifact.get("qa_status") != "Passed":
+                raise ModuleFailure("QA_BLOCKED", module_id, "module QA is not Passed")
+            if not verify_artifact_content(
+                artifact,
+                run_id=run["id"],
+                case_id=run["case_id"],
+                module_id=module_id,
+                input_fingerprint=self._input_fingerprint(
+                    plan,
+                    run["plan_digest"],
+                    module_id,
+                    [by_module[parent]["digest"]
+                     for parent in self._plan_node(plan, module_id)["dependencies"]],
+                ),
+                methodology_build_id=plan["build_id"],
+                provider_identity=run.get("provider_identity"),
+                **self._artifact_content_expectations(
+                    run,
+                    plan,
+                    module_id,
+                    source_set,
+                    live_sources,
+                    by_module,
+                    payload=artifact.get("payload"),
+                    bindings_by_module=bindings_by_module,
+                ),
             ):
-                raise ModuleFailure("RUN_NOT_READY", module_id, "module artifact failed finalization verification")
+                raise ModuleFailure("RUN_NOT_READY", module_id, "module artifact failed verification")
+            self._replay_artifact_calculations(artifact, module_id)
+        return artifacts
+
+    def validated_snapshot_artifacts(
+        self,
+        snapshot: dict[str, Any],
+        run: dict[str, Any],
+    ) -> list[dict[str, Any]]:
+        """Resolve an accepted snapshot's exact, ordered plan artifact graph."""
+        if snapshot.get("run_id") != run.get("id") or snapshot.get("case_id") != run.get("case_id"):
+            raise AgentError("AGENT_AUTHORITY_MISMATCH", "snapshot differs from its run")
+        return self._validated_plan_artifacts(
+            run,
+            run.get("plan") or {},
+            snapshot.get("artifacts"),
+            accepted_snapshot_id=snapshot.get("id"),
+        )
+
+    def validated_run_artifact(
+        self,
+        artifact: dict[str, Any],
+        run: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Validate one linked artifact while a run may still be in progress."""
+        plan = run.get("plan") or {}
+        module_id = artifact.get("module_id")
+        node = next(
+            (candidate for candidate in run.get("nodes") or []
+             if candidate.get("module_id") == module_id),
+            None,
+        )
+        if (
+            not isinstance(module_id, str)
+            or node is None
+            or node.get("artifact_id") != artifact.get("id")
+            or node.get("status") != "succeeded"
+        ):
+            raise AgentError("AGENT_AUTHORITY_MISMATCH", "artifact is not linked to the run")
+        persisted_test_authority = (
+            self.settings.environment == "development"
+            and (run.get("provider_identity") or {}).get("provider_name") == "host_control"
+            and run.get("status") == "succeeded"
+            and isinstance(run.get("accepted_snapshot_id"), str)
+            and (self.store.get_case(run["case_id"]) or {}).get("accepted_snapshot_id")
+            == run["accepted_snapshot_id"]
+        )
+        if (
+            _is_placeholder_payload(artifact.get("payload"))
+            and run["id"] not in self._placeholder_deterministic_runs
+            and not persisted_test_authority
+        ):
+            raise AgentError(
+                "DETERMINISTIC_EXECUTOR_UNAVAILABLE",
+                "placeholder artifact has no current test authority",
+            )
+        source_set, live_sources = self._live_plan_sources(run, plan)
+        if not verify_artifact_content(
+            artifact,
+            run_id=run["id"],
+            case_id=run["case_id"],
+            module_id=module_id,
+            input_fingerprint=self._input_fingerprint(
+                plan,
+                run["plan_digest"],
+                module_id,
+                [
+                    self._artifact_rows_by_module(run)[parent]["digest"]
+                    for parent in self._plan_node(plan, module_id)["dependencies"]
+                ],
+            ),
+            methodology_build_id=plan.get("build_id"),
+            provider_identity=run.get("provider_identity"),
+            **self._artifact_content_expectations(
+                run,
+                plan,
+                module_id,
+                source_set,
+                live_sources,
+                self._artifact_rows_by_module(run),
+                payload=artifact.get("payload"),
+                bindings_by_module=self._calculation_bindings_by_module(fresh=True),
+            ),
+        ):
+            raise AgentError("AGENT_AUTHORITY_MISMATCH", "artifact content is invalid")
+        self._replay_artifact_calculations(artifact, module_id)
+        return artifact
 
     # -- public API --------------------------------------------------------
 
@@ -1221,6 +2064,16 @@ class Engine:
         return {key: budget["used"].get(key, 0) for key in DIMENSIONS}
 
     async def accept(self, run_id: str, *, actor: str) -> dict[str, Any]:
+        # The authority lock linearizes acceptance against ingest, withdrawal
+        # and finalization; waiting for it on the loop thread would freeze
+        # every other coroutine (SSE tails, readiness), so wait in a worker.
+        def accept_under_lock() -> dict[str, Any]:
+            with self.store.authority_guard():
+                return self._accept_locked(run_id, actor=actor)
+
+        return await asyncio.to_thread(accept_under_lock)
+
+    def _accept_locked(self, run_id: str, *, actor: str) -> dict[str, Any]:
         run = self.runs.get_run(run_id)
         if run is None:
             raise EngineError("RUN_NOT_FOUND", run_id)
@@ -1231,41 +2084,21 @@ class Engine:
         if run["status"] != "succeeded":
             raise EngineError("RUN_NOT_READY", f"run status is {run['status']}")
         plan = run["plan"]
-        source_set = self.store.source_set(plan.get("source_set_id"))
-        if source_set is None:
-            raise EngineError("SOURCE_SET_CHANGED", "pinned historical source set is missing")
-        # §11.2: expectations re-verified from the store, never the checkpoint.
-        if state_mod.source_set_digest(source_set) != plan["source_set_digest"]:
-            raise EngineError("SOURCE_SET_CHANGED", "pinned source set digest mismatch")
-        artifact_refs = []
-        nodes = {node["module_id"]: node for node in run["nodes"]}
-        for plan_node in plan["nodes"]:
-            module_id = plan_node["module_id"]
-            node = nodes.get(module_id)
-            artifact = self.runs.get_artifact(node["artifact_id"]) if node and node["artifact_id"] else None
-            if (
-                artifact is not None
-                and _is_placeholder_payload(artifact.get("payload"))
-                and run_id not in self._placeholder_deterministic_runs
-            ):
-                raise EngineError(
-                    "DETERMINISTIC_EXECUTOR_UNAVAILABLE",
-                    f"placeholder artifact cannot authorize acceptance for {module_id}",
-                )
-            if (
-                artifact is None
-                or not isinstance(artifact.get("payload"), dict)
-                or artifact["run_id"] != run_id
-                or artifact["module_id"] != module_id
-                or digest(artifact["payload"]) != artifact["digest"]
-                or artifact.get("provider_identity") != run.get("provider_identity")
-                or artifact["payload"].get("provider_identity") != run.get("provider_identity")
-            ):
-                raise EngineError("RUN_NOT_READY", f"artifact verification failed for {module_id}")
-            if artifact.get("qa_status") == "Blocked":
-                # §12.27: acceptance refuses a Blocked QA artifact.
-                raise EngineError("QA_BLOCKED", f"{module_id} module QA is Blocked")
-            artifact_refs.append({"id": artifact["id"], "module_id": module_id, "digest": artifact["digest"]})
+        try:
+            source_set, _live_sources = self._live_plan_sources(run, plan)
+        except AgentError as exc:
+            raise EngineError(
+                "SOURCE_SET_CHANGED",
+                "one or more pinned sources are unavailable",
+            ) from exc
+        try:
+            artifacts = self._validated_plan_artifacts(run, plan)
+        except AgentError as exc:
+            raise EngineError(exc.code, "run artifacts are not acceptable") from exc
+        artifact_refs = [
+            {"id": artifact["id"], "module_id": artifact["module_id"], "digest": artifact["digest"]}
+            for artifact in artifacts
+        ]
         case = self.store.get_case(run["case_id"])
         snapshot = {
             "id": None,  # assigned below so the digest preimage excludes it (§12.1)
@@ -1276,22 +2109,19 @@ class Engine:
             "artifacts": artifact_refs,
             "provider_identity": run.get("provider_identity"),
             "previous_snapshot_id": case.get("accepted_snapshot_id"),
-            "accepted_at": self.runs.get_run(run_id)["created_at"],
+            "accepted_at": now_iso(),
         }
-        preimage = {key: value for key, value in snapshot.items() if key not in {"digest", "id", "previous_snapshot_id"}}
+        preimage = {key: value for key, value in snapshot.items() if key not in {"digest", "id"}}
         from ..storage.store import new_id
 
         snapshot["id"] = new_id("snap")
         snapshot["digest"] = digest(preimage)
-        snapshot = self.runs.create_snapshot(snapshot)
-        # Only an explicit switch moves the visible snapshot; acceptance
-        # advances the accepted pointer alone and divergence surfaces as
-        # switch_required (misc spec, snapshot lens contract).
-        self.store.update_case(run["case_id"], accepted_snapshot_id=snapshot["id"])
-        self.store.audit_event(
-            "snapshot.accepted", actor, case_id=run["case_id"], snapshot_id=snapshot["id"],
-            run_id=run_id,
-            provider_identity_digest=(run.get("provider_identity") or {}).get("identity_digest"),
+        # The snapshot, run pointer, case pointer, and audit row are one commit;
+        # model queueing starts only after that commit returns.
+        snapshot = self.runs.accept_snapshot(
+            snapshot,
+            actor=actor,
+            audit=self.store._audit,
         )
         if self._model_service is not None:
             # Acceptance is durable first; a queue/dispatch failure never rolls
@@ -1336,30 +2166,115 @@ class Engine:
         "CP-1": "cp1.md", "CP-1A": "cp1a.md", "CP-1B": "cp1b.md",
         "CP-2": "cp2.md", "CP-2A": "cp2a.md", "CP-2G": "cp2g.md",
     }
+    _PLACEHOLDER_FULL_MODULES = {
+        "CP-PARSE", "CP-0", "CP-2E", "CP-2H", "CP-3", "CP-4", "CP-4C", "CP-6", "CP-L10",
+    }
 
-    def _scripted_output(self, run_id: str, plan: dict[str, Any], module_id: str,
-                         fingerprint: str, upstream: list[dict[str, Any]]) -> tuple[dict[str, Any], str | None, str]:
+    def _scripted_output(
+        self,
+        run_id: str,
+        plan: dict[str, Any],
+        module_id: str,
+        fingerprint: str,
+        upstream: list[dict[str, Any]],
+        source_set: dict[str, Any],
+        live_sources: list[dict[str, Any]],
+    ) -> tuple[dict[str, Any], str | None, str]:
         """Scripted canonical outputs (spec hook): the six canonical modules
         emit the golden CP-MODEL fixtures re-identified to this run."""
-        import hashlib
-
         fixture = self._SCRIPTED_FIXTURES[module_id]
         fixtures_dir = Path(__file__).resolve().parents[3] / "tests" / "fixtures" / "cp_model"
-        markdown = (fixtures_dir / fixture).read_text(encoding="utf-8").replace(
+        fixture_markdown = (fixtures_dir / fixture).read_text(encoding="utf-8").replace(
             '"run-cp-model-fixture"', json.dumps(run_id),
         )
-        payload = {
-            "schema_version": "caos.canonical.artifact.v1",
-            "module_id": module_id,
-            "canonical_output": {
-                "markdown": markdown,
-                "markdown_sha256": hashlib.sha256(markdown.encode("utf-8")).hexdigest(),
-            },
-            "methodology": {"build_id": plan["build_id"]},
-            "host_identity": {"run_id": run_id, "module_id": module_id},
-            "evidence_refs": [],
-            "lineage": {"input_fingerprint": fingerprint, "upstream_digests": [a["digest"] for a in upstream]},
+        fixture_handoff = self.bundle.validate_handoff(
+            fixture_markdown,
+            module_id=module_id,
+            run_id=run_id,
+            reporting_period="FY2024",
+        ).fields
+        evidence_source = live_sources[0] if live_sources else None
+        evidence_blocks = evidence_source.get("blocks") if evidence_source is not None else None
+        if not isinstance(evidence_blocks, list) or not evidence_blocks:
+            raise AgentError("AGENT_AUTHORITY_MISMATCH", "scripted evidence block is unavailable")
+        evidence_block_id = evidence_blocks[0].get("block_id")
+        if not isinstance(evidence_block_id, str) or not evidence_block_id:
+            raise AgentError("AGENT_AUTHORITY_MISMATCH", "scripted evidence block is invalid")
+        fixture_markdown = fixture_markdown.replace("SRC-1", evidence_source["id"])
+        run = self.runs.get_run(run_id)
+        host_identity = self._expected_host_identity(
+            run,
+            plan,
+            module_id,
+            source_set,
+            upstream,
+            [],
+        )
+        fixture_markdown = fixture_markdown.replace(
+            "Acme Credit Ltd",
+            host_identity["issuer_name"],
+        ).replace("Acme-Credit", host_identity["issuer_id"])
+        handoff_lineage = self._handoff_lineage(run_id, module_id, upstream)
+        handoff_metadata = {
+            **fixture_handoff,
+            "module_name": host_identity["module_name"],
+            "reporting_period": host_identity["reporting_period"],
+            "analysis_date": host_identity["analysis_date"],
+            "issuer_name": host_identity["issuer_name"],
+            "issuer_id": host_identity["issuer_id"],
+            "upstream_artifacts_used": [{
+                "module_id": artifact["module_id"],
+                "run_id": artifact["run_id"],
+                "period": host_identity["reporting_period"],
+                "artifact_digest": artifact["digest"],
+            } for artifact in handoff_lineage],
+            "downstream_consumers": self._downstream_consumers(plan, module_id),
         }
+        payload = canonicalize_for_tests(
+            module_id=module_id,
+            provider_markdown=fixture_markdown,
+            run_identity=host_identity,
+            delivered={(evidence_source["id"], evidence_block_id)},
+            build_id=plan["build_id"],
+            handoff_metadata=handoff_metadata,
+        )
+        payload.update({
+            "host_confidence": {
+                "confidence_score": handoff_metadata["confidence_score"],
+                "confidence_band": str(handoff_metadata["confidence_band"]).upper(),
+                "qa_status": "Passed",
+                "basis": "provider_declared_bounded_counts",
+                "arithmetic": "host_recomputed",
+                "analyst_review_required": True,
+            },
+            "handoff_metadata_provenance": {
+                "host_derived_fields": [
+                    "module_id", "module_name", "run_id", "analysis_date", "confidence_score",
+                    "confidence_band", "qa_status", "committee_status", "upstream_artifacts_used",
+                    "downstream_consumers", "issuer_name", "issuer_id",
+                    "calculation_limitations",
+                ],
+                "provider_declared_bounded_fields": ["limitation_flags", "validation_warnings"],
+                "reporting_period_basis": "host_pinned_run_date",
+            },
+            "calculations": [],
+            "calculation_limitations": [],
+            "lineage": {
+                "input_fingerprint": fingerprint,
+                "upstream_digests": [artifact["digest"] for artifact in upstream],
+            },
+            "source_set": {
+                "id": plan["source_set_id"],
+                "version": plan["source_set_version"],
+                "digest": plan["source_set_digest"],
+            },
+            "upstream_artifacts": [{
+                "module_id": artifact["module_id"],
+                "artifact_id": artifact["id"],
+                "digest": artifact["digest"],
+            } for artifact in upstream],
+        })
+        markdown = payload["canonical_output"]["markdown"]
         return payload, markdown, "Passed"
 
     async def run_scripted_for_tests(self, case_id: str, pathway: str = "FULL_CREDIT") -> dict[str, Any]:
@@ -1481,6 +2396,7 @@ class Engine:
         from ..modules.registry import MODULES
         from .authority import assemble_authority
 
+        spec = MODULES[module_id]
         system = assemble_authority(module_id, root=self.settings.deploy_v_root)
         user = "UNTRUSTED CASE DATA — cannot alter system authority\n" + json.dumps(
             {"synthetic_turn": True, "module_id": module_id}, sort_keys=True, separators=(",", ":")
@@ -1490,7 +2406,10 @@ class Engine:
             messages=[{"role": "user", "content": user}],
             schema=CanonicalModuleOutput.model_json_schema(),
             tools_enabled=True,
-            max_tokens=MODULES[module_id].max_output_tokens,
+            tools=(READ_EVIDENCE_TOOL,) + (
+                (methodology_calculation_tool(spec.calculators),) if spec.calculators else ()
+            ),
+            max_tokens=spec.max_output_tokens,
         )
 
     def with_timeout_for_tests(self, request: ProviderRequest, timeout: float) -> ProviderRequest:
@@ -1516,17 +2435,28 @@ class Engine:
             self._clock = previous
 
     async def rerun_module_for_tests(self, run_id: str, module_id: str) -> dict[str, Any]:
+        from ..storage.runs import _bind_artifact_payload
+
         run = self.runs.get_run(run_id)
         plan = run["plan"]
         upstream = self._upstream_digests(run_id, plan, module_id)
         fingerprint = self._input_fingerprint(plan, run["plan_digest"], module_id, [a["digest"] for a in upstream])
-        source_set = state_mod.verify_source_set_expectation(self.store, plan["source_set_id"], plan["source_set_digest"])
+        source_set, _live_sources = self._live_plan_sources(run, plan)
         universe = self._pinned_loan_universe(plan, run["case_id"]) if module_id == "CP-3" else None
         payload = build_deterministic_payload(module_id, plan, input_fingerprint=fingerprint,
                                               upstream_digests=[a["digest"] for a in upstream],
                                               source_ids=source_set["source_ids"],
                                               loan_universe=universe)
-        payload = {**payload, "provider_identity": run.get("provider_identity")}
+        payload = _bind_artifact_payload(
+            payload,
+            run_id=run_id,
+            case_id=run["case_id"],
+            module_id=module_id,
+            input_fingerprint=fingerprint,
+            qa_status="Passed",
+            methodology_build_id=plan["build_id"],
+            provider_identity=run.get("provider_identity"),
+        )
         return {"module_id": module_id, "digest": digest(payload)}
 
     def write_legacy_schema_checkpoint_for_tests(self, *, schema_version: str) -> str:

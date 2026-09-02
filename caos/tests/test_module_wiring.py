@@ -17,6 +17,7 @@ if str(SERVER) not in sys.path:
 
 from caos.config import Settings  # noqa: E402
 from caos.storage.store import DomainStore  # noqa: E402
+from calculator_fixtures import VALID_CALCULATION_INPUTS as _VALID_CALCULATION_INPUTS  # noqa: E402
 
 
 CANONICAL_BODY = "\n".join(
@@ -26,13 +27,12 @@ CANONICAL_BODY = "\n".join(
 
 
 class ScriptedProvider:
-    """Same provider-port double the spec suite uses: an ordered script of
-    ProviderMessage steps; every request is recorded."""
+    """Ordinary provider double that follows each module's advertised tools."""
 
-    def __init__(self, script=(), count: int = 1_000):
+    def __init__(self, source_id: str, count: int = 1_000):
         from caos.engine.provider import host_control_identity
 
-        self.script = list(script)
+        self.source_id = source_id
         self.count = count
         self.create_requests = []
         self.identity = host_control_identity()
@@ -41,40 +41,66 @@ class ScriptedProvider:
         return self.count
 
     def create_message(self, request):
+        from caos.engine.provider import ProviderBlock, ProviderMessage, ProviderUsage
+
         self.create_requests.append(request)
-        if not self.script:
-            raise AssertionError("ScriptedProvider script exhausted")
-        return self.script.pop(0)
-
-
-def _agent_turns(source_id: str, modules: int):
-    """Per agent module: one read_evidence tool call, then the canonical JSON."""
-    from caos.engine.provider import ProviderBlock, ProviderMessage, ProviderUsage
-
-    final = json.dumps({
-        "markdown": CANONICAL_BODY,
-        "evidence_refs": [{"source_id": source_id, "block_id": "b00001"}],
-        "lineage_counts": {"directly_sourced": 1},
-        "fields_present": 1,
-        "fields_total": 1,
-        "source_gate": "pass",
-    })
-    turns = []
-    for _ in range(modules):
-        turns.append(ProviderMessage(
-            content=[ProviderBlock(type="tool_use", id="tool-1", name="read_evidence",
-                                   input={"source_id": source_id, "block_ids": ["b00001"]})],
+        results = [
+            json.loads(block["content"])
+            for message in request.messages
+            if isinstance(message.get("content"), list)
+            for block in message["content"]
+            if isinstance(block, dict) and block.get("type") == "tool_result"
+        ]
+        evidence = next((result for result in results if isinstance(result, list)), None)
+        calculations = [result for result in results if isinstance(result, dict)]
+        calculation_tool = next(
+            (tool for tool in request.effective_tools()
+             if tool["name"] == "run_methodology_calculation"),
+            None,
+        )
+        if evidence is None:
+            name = "read_evidence"
+            arguments = {"source_id": self.source_id, "block_ids": ["b00001"]}
+        elif calculation_tool is not None and len(calculations) < len(
+            calculation_tool["input_schema"]["properties"]["calculator_id"]["enum"]
+        ):
+            name = "run_methodology_calculation"
+            calculator_id = calculation_tool["input_schema"]["properties"]["calculator_id"]["enum"][len(calculations)]
+            arguments = {
+                "calculator_id": calculator_id,
+                "input_json": json.dumps(_VALID_CALCULATION_INPUTS[calculator_id]),
+            }
+        else:
+            source_id, block_id = evidence[0]["source_id"], evidence[0]["block_id"]
+            final = json.dumps({
+                "markdown": (
+                    CANONICAL_BODY
+                    + f"\n\n| source_id | value |\n| --- | --- |\n| {source_id} | scripted |"
+                ),
+                "evidence_refs": [{"source_id": source_id, "block_id": block_id}],
+                "calculation_refs": [
+                    {field: record[field] for field in (
+                        "calculator_id", "script_digest", "calculator_digest", "input_digest", "output_digest",
+                    )}
+                    for record in calculations
+                ],
+                "lineage_counts": {"directly_sourced": 1},
+                "fields_present": 1,
+                "fields_total": 1,
+                "source_gate": "pass",
+            })
+            return ProviderMessage(
+                content=[ProviderBlock(type="text", text=final)],
+                stop_reason="end_turn",
+                usage=ProviderUsage(input_tokens=1_000, output_tokens=200),
+                request_id="req-final",
+            )
+        return ProviderMessage(
+            content=[ProviderBlock(type="tool_use", id="tool-1", name=name, input=arguments)],
             stop_reason="tool_use",
             usage=ProviderUsage(input_tokens=1_000, output_tokens=50),
             request_id="req-tool",
-        ))
-        turns.append(ProviderMessage(
-            content=[ProviderBlock(type="text", text=final)],
-            stop_reason="end_turn",
-            usage=ProviderUsage(input_tokens=1_000, output_tokens=200),
-            request_id="req-final",
-        ))
-    return turns
+        )
 
 
 def _seed_case(store: DomainStore):
@@ -102,7 +128,7 @@ async def _run_pathway(tmp_path: Path, pathway: str):
     engine = None
     try:
         case, source = _seed_case(store)
-        provider = ScriptedProvider(script=_agent_turns(source["id"], modules=10))
+        provider = ScriptedProvider(source["id"])
         engine = Engine.create(settings=settings, store=store,
                                checkpoint_path=tmp_path / "ck.db", provider=provider)
         run = await engine.start_run_for_tests(

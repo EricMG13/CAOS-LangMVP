@@ -151,11 +151,14 @@ engine, the bundle, or the routes.
 ## Running and testing
 
 - Dev server: `python caos/server/dev.py` (SQLite under `.dev-data`, loopback
-  bind, startup recovery, serves `caos/frontend/out` when built). Screen routes
-  need no API key, but any placeholder deterministic executor now returns
-  `DETERMINISTIC_EXECUTOR_UNAVAILABLE` rather than an ordinary success.
-  Development agent execution requires `AGENT_EXECUTION_ENABLED=true` and
-  exactly one provider key.
+  bind, startup recovery, serves `caos/frontend/out` when built). Every route
+  is provider-backed at both depths (`docs/DECISIONS.md` §14.3, §14.12), so no
+  route runs without a provider: development agent execution requires
+  `AGENT_EXECUTION_ENABLED=true` and exactly one provider key, or
+  `CAOS_PROVIDER=host_control` for the development-only answer-keyed binding
+  the keyless browser gates use (orchestration proof, never analysis; refused
+  in production). The placeholder deterministic executor is test-only and
+  returns `DETERMINISTIC_EXECUTOR_UNAVAILABLE` on any ordinary path.
 - Production entrypoints: `caos/server/run.py` (combined app — validated env,
   qualified Anthropic-only provider assembly, auto-continue, recovery; the
   Docker `app` target's CMD) and
@@ -163,12 +166,12 @@ engine, the bundle, or the routes.
   executes them through the current Python workbook renderer; its image includes
   LibreOffice, but runtime exports do not yet invoke the verified LibreOffice
   path). `worker.py --once` runs a single pass.
-- Development evidence at `ba97a89` (not candidate qualification):
-  `python -m pytest caos/tests -q` produced `655 passed, 2 skipped, 864
-  warnings`; the retained full-corpus host control produced `34 passed, 124
-  warnings`. The security audit and quality-ledger gates each started with 10
-  failures and were repaired in enterprise-readiness Task 1. These results do
-  not qualify live analysis or an enterprise candidate.
+- Development evidence (not candidate qualification): the suite count is
+  measured, never quoted from memory; the enterprise-readiness task reports
+  under `.superpowers/sdd/` carry the exact result of each landed task on the
+  declared Python 3.14 interpreter. The security audit and quality-ledger
+  gates each started with 10 failures and were repaired in enterprise-readiness
+  Task 1. None of this qualifies live analysis or an enterprise candidate.
   Spec tests (`caos/tests/spec/`) are the contractual surface —
   they pin invariants and wire shapes; `test_injection_spec.py` pins the
   behavioural half of the prompt-injection defence: adversarial documents in

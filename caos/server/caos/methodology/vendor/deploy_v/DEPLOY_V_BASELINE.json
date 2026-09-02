@@ -1,12 +1,12 @@
 {
   "authority": "DEPLOY_V_BASELINE",
-  "baseline_digest": "a31d27123b74e189af00378cbf0b49df5fc73c358b3626b7bdf9469d835f1392",
+  "baseline_digest": "cee7532a4bc1c4c2e0746b47e1d961888b6f3b30997b1802364d29d0f8bef863",
   "packages": {
     "cp-0-source-readiness": {
       "files": {
         "SKILL.md": {
-          "bytes": 30165,
-          "sha256": "5683fdd21c5b4009d6ff3ad9a7eeb78f1051f6a92eba605bda97b2a03311ca05"
+          "bytes": 30597,
+          "sha256": "1bce46dc758747898187b54f8fb619839dfbf2557fd43bce8b3f51efcc33a4f3"
         },
         "references/CP-0_SCHEMA_REFERENCE.md": {
           "bytes": 2823,
@@ -521,8 +521,8 @@
           "sha256": "4dbdb64d1eb671bcaca4b2f13b74ab4f730672af005a8250b26ba8e1668ed570"
         },
         "scripts/bond_analytics.py": {
-          "bytes": 10354,
-          "sha256": "6fef23dbd1c7010e8a3f7d096c9eb007d756eb5a4a4bdcf7b463f8c1fac8a648"
+          "bytes": 10872,
+          "sha256": "405f7a92ad7bbce51e33dcbf73020a1217469d13f20d157257d094158377d3da"
         },
         "scripts/completeness_check.py": {
           "bytes": 17807,
@@ -1237,8 +1237,8 @@
           "sha256": "109e4978940130fc8d7b9fd50cf6beb43dcc4d77a4e94a60ada8e3849f98f8a7"
         },
         "references/CREDIT_OS_V_MODULE_CATALOG_v2.json": {
-          "bytes": 72167,
-          "sha256": "e6a048813b07977144a8faa75d27e059c5b50098febd1b2e7f917987c946570c"
+          "bytes": 72549,
+          "sha256": "e7c512ce7f35da1aa0df15128fdb74c62573135be4dd6356a7b6846c2bc70795"
         },
         "references/CREDIT_OS_V_NUMBERED_UX_v2.md": {
           "bytes": 1197,

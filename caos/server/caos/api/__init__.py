@@ -44,6 +44,7 @@ from ..contracts import (
     finite_or_none,
 )
 from ..identity import EdgeIdentityGate, identity_from_request, require_case, require_role
+from ..observability import log_event
 from ..storage.store import DomainStore
 
 WORKSHEET_SCHEMA_VERSION = "caos.model.worksheet.v1"
@@ -516,12 +517,10 @@ def create_app(*, settings: Settings, store: DomainStore, engine: Any) -> FastAP
         budget = engine.runs.get_budget(run["id"])
         if budget is None:
             return None
+        from ..engine.runtime import _agent_module_ids_for_plan
         from ..modules.registry import MODULES
 
-        agent_modules = [
-            node["module_id"] for node in (run.get("plan") or {}).get("nodes", [])
-            if MODULES.get(node["module_id"]) and MODULES[node["module_id"]].mode_full == "agent"
-        ]
+        agent_modules = _agent_module_ids_for_plan(run["plan"]) if run.get("plan_digest") else []
         dimensions = ("turns", "evidence_reads", "evidence_bytes", "input_tokens",
                       "output_tokens", "active_minutes", "provider_retries", "repairs")
         identity = run.get("provider_identity")
@@ -747,8 +746,20 @@ def create_app(*, settings: Settings, store: DomainStore, engine: Any) -> FastAP
     def get_artifact(case_id: str, artifact_id: str, request: Request) -> dict[str, Any]:
         require_case(store, case_id, identity(request))
         artifact = engine.runs.get_artifact(artifact_id)
-        if artifact is None or artifact["case_id"] != case_id:
+        run = engine.runs.get_run(artifact["run_id"]) if artifact is not None else None
+        if artifact is None or run is None or run.get("case_id") != case_id:
             raise HTTPException(status_code=404, detail="artifact not found")
+        try:
+            engine.validated_run_artifact(artifact, run)
+        except (RuntimeError, KeyError) as exc:
+            # An artifact that no longer verifies is served as not found (the
+            # same body as an unknown id) but never silently: the typed
+            # refusal is one of the seven log points (CLAUDE.md, observability).
+            log_event(
+                "refusal", run_id=run.get("id"), module_id=artifact.get("module_id"),
+                code=getattr(exc, "code", None) or "ARTIFACT_AUTHORITY_MISMATCH",
+            )
+            raise HTTPException(status_code=404, detail="artifact not found") from exc
         return {
             key: artifact.get(key)
             for key in ("id", "case_id", "run_id", "module_id", "payload", "markdown",

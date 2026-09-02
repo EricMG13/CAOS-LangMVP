@@ -14,6 +14,11 @@ from typing import Any
 
 from fastapi import HTTPException, UploadFile
 
+from ..atomic_files import (
+    VaultFileIntegrityError,
+    VaultFileUnavailable,
+    read_verified_vault_bytes,
+)
 from ..config import Settings
 from ..storage.store import DomainStore
 from ..storage.store import now_iso
@@ -51,17 +56,38 @@ EXTRACTION_LIMIT_DETAIL = "source exceeds safe extraction limits"
 class Vault:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
-        self.root = settings.storage_dir
+        self.root = settings.storage_dir.resolve()
         self.root.mkdir(parents=True, exist_ok=True)
+
+    @staticmethod
+    def _key(sha256: str) -> str:
+        if (
+            not isinstance(sha256, str)
+            or len(sha256) != 64
+            or any(character not in "0123456789abcdef" for character in sha256)
+        ):
+            raise ValueError("invalid source digest")
+        return f"sources/{sha256[:2]}/{sha256}"
 
     def put(self, content: bytes, sha256: str) -> str:
         actual = hashlib.sha256(content).hexdigest()
         if actual != sha256:
             raise ValueError("content digest mismatch")
+        key = self._key(sha256)
         directory = self.root / "sources" / sha256[:2]
         directory.mkdir(parents=True, exist_ok=True)
         target = directory / sha256
         if target.exists():
+            try:
+                read_verified_vault_bytes(
+                    self.root,
+                    key,
+                    expected_sha256=sha256,
+                    expected_size=len(content),
+                    max_bytes=self.settings.max_upload_bytes,
+                )
+            except (VaultFileIntegrityError, VaultFileUnavailable) as exc:
+                raise ValueError("existing source identity mismatch") from exc
             return str(target)
         temp = directory / f".{sha256}.{secrets.token_hex(8)}.tmp"
         try:
@@ -73,6 +99,23 @@ class Vault:
         finally:
             temp.unlink(missing_ok=True)
         return str(target)
+
+    def verify(self, source: dict[str, Any]) -> bytes:
+        sha256 = source.get("sha256")
+        key = self._key(sha256)
+        expected_path = self.root.joinpath(*key.split("/"))
+        if source.get("vault_path") != str(expected_path):
+            raise ValueError("source vault identity mismatch")
+        try:
+            return read_verified_vault_bytes(
+                self.root,
+                key,
+                expected_sha256=sha256,
+                expected_size=source.get("bytes"),
+                max_bytes=self.settings.max_upload_bytes,
+            )
+        except (VaultFileIntegrityError, VaultFileUnavailable) as exc:
+            raise ValueError("source vault integrity mismatch") from exc
 
 
 def scan_content(content: bytes, settings: Settings) -> None:

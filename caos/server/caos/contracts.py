@@ -7,7 +7,7 @@ from datetime import date
 from enum import StrEnum
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, field_validator, model_validator
+from pydantic import AfterValidator, BaseModel, BeforeValidator, ConfigDict, Field, field_validator, model_validator
 
 
 class Role(StrEnum):
@@ -141,13 +141,22 @@ def _boundary_before(value: Any) -> Any:
 BoundaryText = Annotated[str, BeforeValidator(_boundary_before)]
 
 
+def _nonblank_after(value: str) -> str:
+    if not value.strip():
+        raise ValueError("text must contain a non-whitespace character")
+    return value
+
+
+NonBlankBoundaryText = Annotated[BoundaryText, AfterValidator(_nonblank_after)]
+
+
 class StrictModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
 class CreateCaseRequest(StrictModel):
-    name: BoundaryText = Field(min_length=1, max_length=160)
-    issuer: BoundaryText = Field(min_length=1, max_length=160)
+    name: NonBlankBoundaryText = Field(min_length=1, max_length=160)
+    issuer: NonBlankBoundaryText = Field(min_length=1, max_length=160)
     sector: BoundaryText = Field(default="Unclassified", max_length=120)
 
 
