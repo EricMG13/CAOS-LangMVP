@@ -66,12 +66,52 @@ trigger" (dropping the `previousFocusedRef` inversion) rebuilt and ran 14 times:
 identically**. Correct as a simplification, useless as a fix — by that point
 focus is already wrong. Do not re-attempt it.
 
-Two directions worth trying instead, neither verified:
-- Stop `ForecastScrubber` re-keying on `draftGeneration`
-  (`model/ModelBuilder.tsx:750`). The remount is what steals focus; a controlled
-  value would reset without unmounting.
-- Make the repair effect re-find the element that just lost focus (by
-  `aria-label`/`id`) rather than restoring a remembered unrelated one.
+### Direction 1 tried: the remount is gone, the failure is not
+
+`ForecastScrubber` no longer re-keys on `draftGeneration`
+(`model/ModelBuilder.tsx`). It takes `generation` as a prop and syncs its local
+input state when the generation or the authoritative value changes, so the reset
+semantics are identical but the DOM node — and focus — survives.
+
+Verified with the harness: **12/12 runs show no remount at all**, and the dirty
+value `0.06` is preserved in all 12, so the reset behaviour is intact. `tsc`,
+`eslint --max-warnings=0` and the 116 unit tests are green.
+
+**It does not fix the CI failure.** Full smoke, 8 runs: 5 pass, 3 fail — two of
+them still `:1099`. Against a stock baseline of roughly 2 passes in 7 that is not
+a regression and may be an improvement, but the sample is far too small to claim
+one. Worth keeping on its own merits — every draft generation used to destroy
+every scrubber, and any focused one with it — but it is not a fix for this issue.
+
+### What actually pulls focus away — measured, still unfixed
+
+Instrumenting `focusout` with the target's `disabled` state, 10 runs:
+
+- **`disabled` is `false` on every focusout.** The "the input gets disabled and
+  the browser blurs it" hypothesis is refuted.
+- In the failing run, focus reaches the assumption input at t=13 ms and **leaves
+  it again at t=16 ms**, landing back on `Open command palette`, where it stays
+  through the whole 2500 ms settle window. Passing runs keep focus on the input
+  until `history.back()` at t≈2545 ms.
+
+So something re-focuses the previous dialog's trigger ~3 ms after the journey
+legitimately moved focus. `DraftDiscardDialog.dismiss()`'s restore chain retries
+for up to 500 ms after the dialog closed and never checks whether anyone else has
+since taken focus, which fits exactly.
+
+**A guard for that was tried and regressed the suite.** Aborting `restore()` when
+`document.activeElement` is neither `<body>`, the trigger, nor inside the dialog
+took the smoke to **10/10 failures at `:1502`** — the pathway-selector restore
+after "Keep editing" is a legitimate repair the guard suppresses. Reverted. Any
+fix has to separate "focus moved on" from "focus is mid-handoff during dialog
+close", and that distinction is the whole problem.
+
+Remaining direction, still unverified:
+
+- Make the repair effect and the dialog restore re-find the element that just
+  lost focus (by `aria-label`/`id`) rather than restoring a remembered one, and
+  make a late retry a no-op once focus has settled elsewhere — without breaking
+  the dialog-close handoff above.
 
 Everything below is the original 2026-09-02 analysis, kept for the record. Its
 mechanism claims are superseded by the table above; its **harness warnings
