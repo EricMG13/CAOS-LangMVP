@@ -296,7 +296,8 @@ class ModelStore:
     def update_build(self, build_id: str, *, expected_status: tuple[str, ...] | None = None,
                      expected_input_fingerprint: str | None = None,
                      expected_export_status: str | None = None,
-                     expected_live_source_ids: list[str] | None = None, **values: Any) -> bool:
+                     expected_live_source_ids: list[str] | None = None,
+                     audit: Any = None, **values: Any) -> bool:
         with self.engine.begin() as conn:
             where = [model_builds.c.id == build_id]
             if expected_status is not None:
@@ -308,7 +309,12 @@ class ModelStore:
                 where.append(model_builds.c.export["status"].as_string() == expected_export_status)
             if expected_live_source_ids is not None:
                 where.append(self._live_sources_condition(expected_live_source_ids))
-            return bool(conn.execute(sa.update(model_builds).where(*where).values(**values)).rowcount)
+            changed = bool(conn.execute(sa.update(model_builds).where(*where).values(**values)).rowcount)
+            if changed and audit is not None:
+                # Transactional pairing: the audit row commits with the
+                # transition it records, or not at all.
+                audit(conn)
+            return changed
 
     def active_build_count(self) -> int:
         with self.engine.connect() as conn:

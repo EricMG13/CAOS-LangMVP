@@ -19,7 +19,7 @@ from openpyxl import load_workbook
 from openpyxl.utils import get_column_letter
 from openpyxl.utils.datetime import from_excel
 
-from ..contracts import digest
+from ..contracts import digest, validate_boundary_text
 
 
 TEMPLATE_VERSION = "cp3-sector-rv-v1"
@@ -286,6 +286,20 @@ def _text(
         findings.add(
             "RV_CELL_TEXT_LIMIT",
             "Cell text exceeds the 32 KB limit.",
+            sheet=sheet,
+            row=row,
+            column=column,
+        )
+        return None
+    # Workbook text reaches the CP-3 artifact, the model's market-marks effect
+    # and every renderer, so it crosses the same boundary as any other pinned
+    # string: UTF-8, no control bytes, no bidi overrides, NFC before storage.
+    try:
+        normalized = validate_boundary_text(normalized)
+    except ValueError:
+        findings.add(
+            "RV_CELL_TEXT_INVALID",
+            "Cell text carries control or bidirectional-override characters.",
             sheet=sheet,
             row=row,
             column=column,

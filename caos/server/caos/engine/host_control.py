@@ -15,6 +15,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from .budget import EVIDENCE_READS_PER_MODULE
 from .provider import ProviderBlock, ProviderMessage, ProviderUsage, host_control_identity
 
 ADAPTER_VERSION = "caos.host-control.dev.v1"
@@ -63,13 +64,18 @@ def _tool_results(messages: list[dict[str, Any]]) -> list[Any]:
     ]
 
 
-def _first_pinned_block(messages: list[dict[str, Any]]) -> tuple[str, str]:
-    """The first block of the first source in the host-built manifest."""
+def _pinned_blocks(messages: list[dict[str, Any]]) -> list[tuple[str, str]]:
+    """The first block of every source in the host-built manifest, in manifest
+    order. One read per source is what makes a host-control run source-complete:
+    every supplied document is delivered and cited, never only the first."""
     header, _, payload = str(messages[0]["content"]).partition("\n")
     del header
     manifest = json.loads(payload)["source_metadata_manifest"]
-    source = manifest[0]
-    return source["source_id"], source["blocks"][0]["block_id"]
+    return [
+        (source["source_id"], source["blocks"][0]["block_id"])
+        for source in manifest
+        if source.get("blocks")
+    ]
 
 
 class HostControlProvider:
@@ -85,9 +91,22 @@ class HostControlProvider:
     def create_message(self, request: Any) -> ProviderMessage:
         self.calls += 1
         results = _tool_results(request.messages)
-        evidence = next((result for result in results if isinstance(result, list)), None)
-        if evidence is None:
-            source_id, block_id = _first_pinned_block(request.messages)
+        evidence_results = [result for result in results if isinstance(result, list)]
+        delivered_sources = {row["source_id"] for result in evidence_results for row in result}
+        remaining = [
+            (source_id, block_id)
+            for source_id, block_id in _pinned_blocks(request.messages)
+            if source_id not in delivered_sources
+        ]
+        # Bounded by the module's read allowance (invariant 8): a pack wider
+        # than the allowance leaves its tail sources unread, and the model's
+        # source-lineage check then says so instead of reading READY.
+        if remaining and len(evidence_results) < EVIDENCE_READS_PER_MODULE:
+            source_id, block_id = remaining[0]
+            return self._tool_call("read_evidence", {"source_id": source_id, "block_ids": [block_id]})
+        evidence = [row for result in evidence_results for row in result]
+        if not evidence:
+            source_id, block_id = _pinned_blocks(request.messages)[0]
             return self._tool_call("read_evidence", {"source_id": source_id, "block_ids": [block_id]})
         records = [result for result in results if isinstance(result, dict) and "output_digest" in result]
         attempted = {

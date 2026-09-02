@@ -556,12 +556,12 @@ def _cp2a_register_source_ids(markdown: str) -> set[str]:
     return source_ids
 
 
-def validate_model_sources(
-    markdown: str,
-    returned_source_ids: set[str],
-    *,
-    module_id: str | None = None,
-) -> None:
+def model_facing_source_ids(markdown: str, *, module_id: str | None = None) -> set[str]:
+    """Every source id a module's model-facing tables name: the ordinary
+    `source_id` columns, the `source_refs` / `source_or_conflict_ref` columns,
+    and CP-2A's source register. One reader for the validator that refuses
+    unpinned ids and the lineage record that proves which pinned documents the
+    model actually consumed."""
     cited = _model_source_ids(markdown)
     cited.update(_model_source_ids(
         markdown,
@@ -569,6 +569,16 @@ def validate_model_sources(
     ))
     if module_id == "CP-2A":
         cited.update(_cp2a_register_source_ids(markdown))
+    return cited
+
+
+def validate_model_sources(
+    markdown: str,
+    returned_source_ids: set[str],
+    *,
+    module_id: str | None = None,
+) -> None:
+    cited = model_facing_source_ids(markdown, module_id=module_id)
     if not cited or not cited <= returned_source_ids:
         raise CanonicalValidationError("model-facing tables cite evidence outside returned pinned sources")
 

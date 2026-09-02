@@ -553,6 +553,18 @@ class DomainStore:
             ).mappings().first()
         return dict(row) if row else None
 
+    def intakes_for_case(self, case_id: str) -> list[dict[str, Any]]:
+        """Every intake admitted into a case, oldest first: together their
+        manifests carry the host disposition of each source the case pinned,
+        which the model's lineage record reads (a later intake's row for the
+        same source supersedes an earlier one)."""
+        with self.engine.connect() as conn:
+            rows = conn.execute(
+                sa.select(case_intakes).where(case_intakes.c.case_id == case_id)
+                .order_by(case_intakes.c.created_at.asc(), case_intakes.c.id.asc())
+            ).mappings().all()
+        return [dict(row) for row in rows]
+
     def find_intake_by_key(self, actor: str, intake_key: str) -> dict[str, Any] | None:
         with self.engine.connect() as conn:
             row = conn.execute(

@@ -37,6 +37,25 @@ from caos.storage.store import DomainStore  # noqa: E402
 
 from calculator_fixtures import VALID_CALCULATION_INPUTS  # noqa: E402
 
+FIXTURES = Path(__file__).resolve().parent / "fixtures" / "cp_model"
+MODEL_FIXTURES = {
+    "CP-1": "cp1.md", "CP-1A": "cp1a.md", "CP-1B": "cp1b.md",
+    "CP-2": "cp2.md", "CP-2A": "cp2a.md", "CP-2G": "cp2g.md",
+}
+# What each accepted (pathway, depth) must read as in Model Builder under host
+# control: the complete model, one overlay effect, or the typed precondition.
+# Relative Value has no market-marks workbook in this pack (licensed marks are
+# an external input), so its full route reads the typed missing-marks state.
+MODEL_EFFECTS = {
+    ("FULL_CREDIT", "full"): "FULL_MODEL",
+    ("EARNINGS_UPDATE", "full"): "EARNINGS_PERIOD_FORECAST_VARIANCE",
+    ("COVENANT_REFINANCING", "full"): "COVENANT_REFINANCING_ASSUMPTIONS",
+    ("RELATIVE_VALUE", "full"): "RELATIVE_VALUE_MARKET_MARKS_REQUIRED",
+    ("DISTRESSED_RESTRUCTURING", "full"): "DISTRESSED_SCENARIO_RECOVERY",
+    ("DISTRESSED_RESTRUCTURING", "screen"): "DISTRESSED_SCENARIO_RECOVERY",
+    ("DEEP_RESEARCH", "full"): "DEEP_RESEARCH_REVALIDATION",
+}
+
 CORPUS = Path(__file__).resolve().parent / "corpus"
 DOCUMENTS = CORPUS / "documents"
 SOURCES = CORPUS / "sources.txt"
@@ -192,9 +211,15 @@ class CorpusProvider:
         self.calls = 0
         self.reads = 0
         self.identity = host_control_identity()
+        # Sources read so far in each run: the double spreads one read of every
+        # pinned source across the route (the read allowance is per module, so
+        # thirty documents cannot all be read in one), which is what lets every
+        # supplied document reach the cited analysis.
+        self.read_by_run: dict[str, set[str]] = {}
 
     def bind(self, sources: list[dict]) -> None:
         self.evidence = [(source["id"], source["blocks"][0]["block_id"]) for source in sources]
+        self.sha256_by_source = {source["id"]: source["sha256"] for source in sources}
 
     def count_tokens(self, request) -> int:
         return 1_000
@@ -204,6 +229,11 @@ class CorpusProvider:
 
         assert self.evidence, "CorpusProvider used before bind()"
         self.calls += 1
+        from caos.engine.budget import EVIDENCE_READS_PER_MODULE
+
+        prompt = json.loads(str(request.messages[0]["content"]).split("\n", 1)[1])
+        identity = prompt["host_identity"]
+        module_id, run_id = identity["module_id"], identity["run_id"]
         tool_results = [
             json.loads(block["content"])
             for message in request.messages
@@ -216,10 +246,17 @@ class CorpusProvider:
              if tool["name"] == "run_methodology_calculation"),
             None,
         )
-        if not tool_results:
-            current = self.evidence[self.reads % len(self.evidence)]
+        evidence_results = [result for result in tool_results if isinstance(result, list)]
+        read_here = {row["source_id"] for result in evidence_results for row in result}
+        read_so_far = self.read_by_run.setdefault(run_id, set())
+        read_so_far.update(read_here)
+        remaining = [pair for pair in self.evidence if pair[0] not in read_so_far]
+        if (remaining and len(evidence_results) < EVIDENCE_READS_PER_MODULE) or not evidence_results:
+            if remaining and len(evidence_results) < EVIDENCE_READS_PER_MODULE:
+                source_id, block_id = remaining[0]
+            else:
+                source_id, block_id = self.evidence[self.reads % len(self.evidence)]
             self.reads += 1
-            source_id, block_id = current
             block = ProviderBlock(
                 type="tool_use", id=f"tool-{self.calls}", name="read_evidence",
                 input={"source_id": source_id, "block_ids": [block_id]},
@@ -229,8 +266,7 @@ class CorpusProvider:
                 usage=ProviderUsage(input_tokens=1_000, output_tokens=50),
                 request_id="req-corpus-tool",
             )
-        evidence_result = next(result for result in tool_results if isinstance(result, list))
-        returned = {(row["source_id"], row["block_id"]) for row in evidence_result}
+        returned = {(row["source_id"], row["block_id"]) for result in evidence_results for row in result}
         self.delivered.update(returned)
         self.delivery_log.append(returned)
         calculation_records = [result for result in tool_results if isinstance(result, dict)]
@@ -252,22 +288,37 @@ class CorpusProvider:
                     usage=ProviderUsage(input_tokens=1_000, output_tokens=50),
                     request_id="req-corpus-calculation",
                 )
-        source_id, block_id = next(iter(returned))
+        rows = sorted(returned)
+        source_id, block_id = rows[0]
+        if module_id in MODEL_FIXTURES:
+            # The canonical modules emit the golden CP-MODEL fixtures re-identified
+            # to this run and to the first source delivered here, so the host-control
+            # Full Credit run yields a buildable model and every later route an overlay.
+            markdown = (
+                (FIXTURES / MODEL_FIXTURES[module_id]).read_text(encoding="utf-8")
+                .replace('"run-cp-model-fixture"', json.dumps(run_id))
+                .replace("SRC-1", source_id)
+                .replace("block-1", block_id)
+                .replace("b" * 64, self.sha256_by_source[source_id])
+                .replace("Acme Credit Ltd", identity["issuer_name"])
+                .replace("Acme-Credit", identity["issuer_id"])
+            )
+        else:
+            markdown = CANONICAL_BODY + "\n\n| source_id | value |\n| --- | --- |\n" + "\n".join(
+                f"| {cited_source} | scripted |" for cited_source, _block in rows
+            )
         envelope = json.dumps({
-            "markdown": (
-                CANONICAL_BODY
-                + f"\n\n| source_id | value |\n| --- | --- |\n| {source_id} | scripted |"
-            ),
-            "evidence_refs": [{"source_id": source_id, "block_id": block_id}],
+            "markdown": markdown,
+            "evidence_refs": [{"source_id": cited_source, "block_id": cited_block} for cited_source, cited_block in rows],
             "calculation_refs": [
                 {field: record[field] for field in (
                     "calculator_id", "script_digest", "calculator_digest", "input_digest", "output_digest",
                 )}
                 for record in calculation_records
             ],
-            "lineage_counts": {"directly_sourced": 1},
-            "fields_present": 1,
-            "fields_total": 1,
+            "lineage_counts": {"directly_sourced": len(rows)},
+            "fields_present": len(rows),
+            "fields_total": len(rows),
             "source_gate": "pass",
         })
         return ProviderMessage(
@@ -366,6 +417,14 @@ def test_user_uploaded_document_is_admitted_with_blocks(client, store, document:
 
 @requires_corpus
 async def test_supported_routes_complete_host_path_on_30_document_upload(client, store, engine, provider):
+    """Every startable route on the whole pack: the run completes, every pinned
+    document is cited by the run's artifacts, and the accepted snapshot reads
+    in Model Builder as its pathway's declared model effect (Task 9) — the
+    complete model, an overlay bound to that model, or the typed precondition.
+    Host control proves orchestration and lineage, never analysis."""
+    from caos.models.service import ModelService
+
+    models = ModelService(store=store, vault_dir=engine.settings.storage_dir, engine=engine)
     case_id = open_case(client, "Carnival complete pack")
     sources = seed(client, case_id)
     provider.bind(sources)
@@ -375,6 +434,7 @@ async def test_supported_routes_complete_host_path_on_30_document_upload(client,
         for source in sources for block in source["blocks"]
     }
     source_ids = {source["id"] for source in sources}
+    base_build = None
 
     for pathway, depth in ROUTES:
         calls_before = provider.calls
@@ -413,11 +473,38 @@ async def test_supported_routes_complete_host_path_on_30_document_upload(client,
         delivered_this_route = set().union(*provider.delivery_log[deliveries_before:])
         assert delivered_this_route
         assert delivered_this_route <= cited_blocks
+        # Source-complete lineage: every pinned document reaches the cited analysis.
+        assert {source_id for source_id, _block in cited_blocks} == source_ids, (pathway, depth)
         cp4c = next((artifact for artifact in artifacts if artifact["module_id"] == "CP-4C"), None)
         if cp4c is not None:
             assert {record["calculator_id"] for record in cp4c["payload"]["calculations"]} == {
                 "funding_gap", "recovery_waterfall",
             }
+
+        # The accepted snapshot's declared model effect (DECISIONS §14.18).
+        snapshot = await engine.accept(run_id, actor="analyst")
+        expected = MODEL_EFFECTS.get((pathway, depth.value), "FULL_DEPTH_REQUIRED")
+        readiness = models.readiness(case_id)
+        if expected in {"FULL_DEPTH_REQUIRED", "RELATIVE_VALUE_MARKET_MARKS_REQUIRED"}:
+            assert readiness["status"] == "NOT_READY", (pathway, depth, readiness)
+            assert [blocker["code"] for blocker in readiness["blockers"]] == [expected]
+            continue
+        assert readiness["status"] == "READY_TO_BUILD", (pathway, depth, readiness)
+        queued = next(build for build in models.list_builds(case_id) if build["snapshot_id"] == snapshot["id"])
+        build = models.run_build_for_tests(queued["id"])
+        assert build["status"] == "READY", (pathway, depth, build.get("error"))
+        lineage = build["payload"]["source_lineage"]
+        assert {row["source_id"] for row in lineage} == source_ids
+        assert {row["binding"] for row in lineage} <= {"MODEL_INPUT", "CITED_ANALYSIS"}
+        if expected == "FULL_MODEL":
+            assert "pathway_effects" not in build["payload"]
+            base_build = build
+        else:
+            assert base_build is not None
+            effect, = build["payload"]["pathway_effects"]
+            assert effect["effect_id"] == expected
+            assert effect["base_model"]["build_id"] == base_build["id"]
+            assert build["payload"]["tabs"] == base_build["payload"]["tabs"]
 
 
 @requires_corpus
