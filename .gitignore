@@ -31,6 +31,13 @@ caos/frontend/test-results/
 caos/frontend/playwright-report/
 caos/frontend/private/
 
+# Dev run state: the SQLite domain store and LangGraph checkpoints that
+# `caos/server/dev.py` (and `run.py` with CAOS_DATA_DIR unset) write beside the
+# entrypoint. Unanchored so it catches both ./.dev-data and caos/server/.dev-data.
+# These were untracked-but-not-ignored once, which is how ~6.5 MB of dev database
+# ended up swept into a WIP commit.
+.dev-data/
+
 # Local static-analysis databases and diagnostics
 /static_analysis_codeql_*/
 
