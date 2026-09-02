@@ -210,6 +210,30 @@ def _model_section(
         "rows": rows or [["Model outputs", "Unavailable"]],
         "note": "Generated values are locked to the selected model authority.",
     }
+    model_tables = [table]
+    for effect_index, effect in enumerate((model or {}).get("pathway_effects") or [], 1):
+        for calculation_index, calculation in enumerate(effect.get("calculations") or [], 1):
+            calculator_id = str(calculation.get("calculator_id") or "calculation")
+            calculation_rows = _model_rows(
+                calculation.get("canonical_output") or {}, (calculator_id,),
+            )
+            for part, start in enumerate(range(0, len(calculation_rows), 500), 1):
+                model_tables.append({
+                    "kind": "table",
+                    "section_id": _slug(
+                        f"{section_id}_pathway_{effect_index}_{calculation_index}_{part}_{calculator_id}"
+                    ),
+                    "title": (
+                        f"Calculated Pathway Effect · {calculator_id}"
+                        + (f" · Part {part}" if len(calculation_rows) > 500 else "")
+                    ),
+                    "page": page,
+                    "editable": False,
+                    "origin": _origin("MODEL", authority_id),
+                    "columns": ["Calculator / Field", "Value"],
+                    "rows": calculation_rows[start:start + 500],
+                    "note": "Deterministic pathway calculations pinned to the selected model authority.",
+                })
     return {
         "kind": "columns",
         "section_id": section_id,
@@ -219,7 +243,7 @@ def _model_section(
         "origin": _origin("MODEL" if model else "SYSTEM", authority_id),
         "items": [
             [_analyst_text(f"{section_id}_commentary", analyst_title, page, _required(by_title, title))],
-            [table],
+            model_tables,
         ],
     }
 

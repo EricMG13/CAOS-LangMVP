@@ -10,6 +10,7 @@ ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 HOST=0.0.0.0 PORT=8000 ENVIRONM
 WORKDIR /app
 RUN apt-get update \
     && apt-get upgrade -y \
+    && apt-get install -y --no-install-recommends fonts-noto-cjk pango1.0-tools \
     && rm -rf /var/lib/apt/lists/*
 COPY caos/server/requirements.txt ./requirements.txt
 # --require-hashes: requirements.txt is a fully-pinned, hashed lock compiled from

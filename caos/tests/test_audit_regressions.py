@@ -44,11 +44,18 @@ def _draft(service, store, case, source):
 
     template = service.templates()["FULL_CREDIT"]
     service.seed_accepted_authority_for_tests(case["id"])
+    model = service.seed_signed_revision_for_tests(
+        case["id"], outputs={"total_leverage": 4.2},
+    )
     return service.save_draft(case["id"], "FULL_CREDIT", DeliverableDraftRequest(
         expected_version=0,
         template_id=template["template_id"],
         template_version=template["template_version"],
-        model_selection=None,
+        model_selection={
+            "kind": "ANALYST_REVISION",
+            "build_id": model["build_id"],
+            "revision_id": model["revision_id"],
+        },
         blocks=[
             {"block_id": item["block_id"], "slot_id": item["slot_id"], "kind": "NARRATIVE", "text": "View.",
              "content_mode": "ANALYST_JUDGMENT", "citations": []}
@@ -131,15 +138,32 @@ async def test_queue_build_shares_the_admission_ceiling(tmp_path):
 def test_model_revision_mutation_is_refused_by_the_store_not_by_fiat(tmp_path):
     from caos.storage.models import ModelStore
 
+    from caos.contracts import digest
+
     store = DomainStore.from_url(f"sqlite:///{tmp_path / 'd.db'}")
     try:
         model_store = ModelStore(store.engine)
-        signed = model_store.sign_off_revision("case-1", {
-            "build_id": "bld-1", "assumptions_digest": "a" * 64,
-        }, "analyst", None, store._audit)
+        # A record that does not carry its own digests is refused before any
+        # row or audit event exists: the store validates, then writes.
+        with pytest.raises(ValueError, match="MODEL_REVISION_INTEGRITY_FAILED"):
+            model_store.sign_off_revision("case-1", {
+                "build_id": "bld-1", "assumptions_digest": "a" * 64,
+            }, "analyst", None, store._audit)
+        assert model_store.list_revisions("case-1") == []
+        assert store.audit_trail() == []
+
+        effective = [{"assumption_id": "growth", "value": 0.02}]
+        outputs = {"leverage": 3.1}
+        record = {
+            "case_id": "case-1", "build_id": "bld-1",
+            "effective_assumptions": effective, "assumptions_digest": digest(effective),
+            "outputs": outputs, "outputs_digest": digest(outputs),
+            "note": "signed by the analyst",
+        }
+        signed = model_store.sign_off_revision("case-1", record, "analyst", None, store._audit)
         with pytest.raises(ValueError, match="APPEND_ONLY"):
             store.mutate_model_revision_for_tests(signed["id"], {"record": {"note": "rewritten"}})
-        assert model_store.get_revision(signed["id"])["assumptions_digest"] == "a" * 64
+        assert model_store.get_revision(signed["id"])["assumptions_digest"] == digest(effective)
         model_store.update_revision_export(signed["id"], {"status": "READY"})  # job state stays writable
         assert model_store.get_revision(signed["id"])["export"]["status"] == "READY"
     finally:

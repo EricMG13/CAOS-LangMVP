@@ -13,10 +13,13 @@ import hashlib
 import importlib.util
 import json
 import math
+import os
 import re
+import stat
 import sys
 import tempfile
 import threading
+from copy import deepcopy
 from dataclasses import dataclass
 from decimal import Decimal
 from pathlib import Path
@@ -25,6 +28,14 @@ from typing import Any
 
 from ..config import Settings
 from ..contracts import canonical_json
+from ..methodology.bundle import DeployVBundle, MethodologyError
+from ..methodology.canonical import (
+    CanonicalValidationError,
+    model_source_ids,
+    validate_model_sources,
+    validate_visible_stable_tables,
+    visible_top_level_markdown,
+)
 
 
 class ModelInputError(ValueError):
@@ -41,6 +52,10 @@ class ModelInputError(ValueError):
     def __init__(self, message: str, code: str = "CANONICAL_MODEL_INPUTS_INVALID") -> None:
         super().__init__(message)
         self.code = code
+
+
+class CpModelV3Error(ValueError):
+    """Stable host type for errors raised by content-isolated CP-MODEL runtimes."""
 
 
 _T5_HEADERS = {
@@ -139,16 +154,19 @@ def _table_headers(block: str, table_id: str) -> tuple[str, ...]:
 
 
 def _t5_sections(markdown: str) -> list[str]:
-    analysis_headings = list(_ANALYSIS_HEADING.finditer(markdown))
-    evidence_headings = list(_EVIDENCE_HEADING.finditer(markdown))
+    visible = visible_top_level_markdown(markdown)
+    analysis_headings = list(_ANALYSIS_HEADING.finditer(visible))
+    evidence_headings = list(_EVIDENCE_HEADING.finditer(visible))
     if (
         len(analysis_headings) != 1
         or len(evidence_headings) != 1
         or analysis_headings[0].end() >= evidence_headings[0].start()
     ):
         raise ModelInputError("CP-2A must contain one ordered Analysis section")
-    analysis = markdown[analysis_headings[0].end() : evidence_headings[0].start()]
-    matches = list(_T5_HEADING.finditer(analysis))
+    start, end = analysis_headings[0].end(), evidence_headings[0].start()
+    analysis = markdown[start:end]
+    visible_analysis = visible[start:end]
+    matches = list(_T5_HEADING.finditer(visible_analysis))
     observed = [match.group(1) for match in matches]
     expected = list(_T5_HEADERS)
     if observed != expected:
@@ -157,16 +175,23 @@ def _t5_sections(markdown: str) -> list[str]:
     for index, match in enumerate(matches):
         end = matches[index + 1].start() if index + 1 < len(matches) else len(analysis)
         section = analysis[match.start() : end]
+        visible_section = visible_analysis[match.start() : end]
         table_id = match.group(1)
-        headers = _table_headers(section, table_id)
+        headers = _table_headers(visible_section, table_id)
         if headers != _T5_HEADERS[table_id]:
             raise ModelInputError(f"{table_id} headers do not match the canonical CP-2B schema")
         sections.append(section)
     return sections
 
 
-def _load_module(name: str, path: Path, aliases: dict[str, ModuleType] | None = None) -> ModuleType:
-    module_name = f"caos_deploy_v_{name}_{hashlib.sha256(str(path).encode()).hexdigest()[:12]}"
+def _load_module(
+    name: str,
+    path: Path,
+    content_digest: str,
+    aliases: dict[str, ModuleType] | None = None,
+) -> ModuleType:
+    instance_digest = hashlib.sha256(f"{path}:{content_digest}".encode()).hexdigest()[:16]
+    module_name = f"caos_deploy_v_{name}_{instance_digest}"
     cached = sys.modules.get(module_name)
     if cached is not None:
         return cached
@@ -178,6 +203,7 @@ def _load_module(name: str, path: Path, aliases: dict[str, ModuleType] | None = 
     prior_dont_write_bytecode = sys.dont_write_bytecode
     sys.modules[module_name] = module
     try:
+        sys.dont_write_bytecode = True
         sys.modules.update(aliases or {})
         spec.loader.exec_module(module)
     except BaseException:
@@ -278,19 +304,62 @@ class RenderedWorkbook:
 class CpModelBundle:
     """Load the integrity-pinned CP-MODEL validators without a permanent sys.path edit."""
 
-    def __init__(self, deploy_v_root: Path) -> None:
+    _RUNTIME_FILES = (
+        "scripts/validate_handoff.py",
+        "scripts/validate_cp_model_inputs.py",
+        "scripts/cp_model_v3/__init__.py",
+        "scripts/cp_model_v3/domain.py",
+        "scripts/cp_model_v3/calculations.py",
+        "scripts/cp_model_v3/workbook.py",
+        "scripts/cp_model_v3/builder.py",
+    )
+
+    def __init__(self, deploy_v_root: Path, *, integrity: dict[str, Any] | None = None) -> None:
         self.deploy_v_root = Path(deploy_v_root).resolve()
-        scripts = self.deploy_v_root / "skills" / "cp-model" / "scripts"
+        if integrity is None:
+            try:
+                integrity = DeployVBundle(self.deploy_v_root).integrity
+            except MethodologyError as exc:
+                raise ModelInputError("CP-MODEL methodology authority is invalid") from exc
+        self._integrity = deepcopy(integrity)
+        source_entries = next(
+            (skill.get("relative_file_hashes") for skill in self._integrity.get("skills", [])
+             if skill.get("folder_slug") == "cp-model"),
+            None,
+        )
+        if not isinstance(source_entries, dict):
+            raise ModelInputError("CP-MODEL methodology authority is not declared")
+        sources = {
+            relative: self._read_pinned_source(relative, source_entries.get(relative))
+            for relative in self._RUNTIME_FILES
+        }
+        content_digest = hashlib.sha256(b"".join(
+            relative.encode("utf-8") + b"\0" + sources[relative]
+            for relative in self._RUNTIME_FILES
+        )).hexdigest()
+        self._runtime_tree = tempfile.TemporaryDirectory(prefix=f"caos-cp-model-{content_digest[:12]}-")
+        runtime_root = Path(self._runtime_tree.name)
+        for relative, source in sources.items():
+            destination = runtime_root / relative
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            destination.write_bytes(source)
+        scripts = runtime_root / "scripts"
         with _LOAD_LOCK:
-            self._handoff = _load_module("cp_model_validate_handoff", scripts / "validate_handoff.py")
+            self._handoff = _load_module(
+                "cp_model_validate_handoff",
+                scripts / "validate_handoff.py",
+                content_digest,
+            )
             self._inputs = _load_module(
                 "cp_model_validate_inputs",
                 scripts / "validate_cp_model_inputs.py",
+                content_digest,
                 {"validate_handoff": self._handoff},
             )
             package = _load_module(
                 "cp_model_v3",
                 scripts / "cp_model_v3" / "__init__.py",
+                content_digest,
                 {"validate_handoff": self._handoff, "validate_cp_model_inputs": self._inputs},
             )
             self._domain = sys.modules[f"{package.__name__}.domain"]
@@ -298,15 +367,16 @@ class CpModelBundle:
             self._workbook = sys.modules[f"{package.__name__}.workbook"]
             self._builder = sys.modules[f"{package.__name__}.builder"]
         runtime_hash = hashlib.sha256()
-        for path in (
-            scripts / "cp_model_v3" / "domain.py",
-            scripts / "cp_model_v3" / "calculations.py",
-            scripts / "cp_model_v3" / "workbook.py",
-            scripts / "validate_cp_model_inputs.py",
-            scripts / "validate_handoff.py",
+        for relative in (
+            "scripts/cp_model_v3/domain.py",
+            "scripts/cp_model_v3/calculations.py",
+            "scripts/cp_model_v3/workbook.py",
+            "scripts/validate_cp_model_inputs.py",
+            "scripts/validate_handoff.py",
         ):
+            path = Path(relative)
             runtime_hash.update(path.name.encode("utf-8"))
-            runtime_hash.update(path.read_bytes())
+            runtime_hash.update(sources[relative])
         self.calculation_runtime = {
             "name": "cp_model_v3_python",
             "version": self._domain.V3_CONTRACT_VERSION,
@@ -317,14 +387,40 @@ class CpModelBundle:
         }
         self.assumption_registry = self._inputs.assumption_registry()
 
+    def _read_pinned_source(self, relative: str, entry: Any) -> bytes:
+        if (
+            not isinstance(entry, dict)
+            or type(entry.get("bytes")) is not int
+            or not isinstance(entry.get("sha256"), str)
+        ):
+            raise ModelInputError(f"CP-MODEL authority file is not pinned: {relative}")
+        path = self.deploy_v_root / "skills" / "cp-model" / relative
+        descriptor = None
+        try:
+            descriptor = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+            metadata = os.fstat(descriptor)
+            if not stat.S_ISREG(metadata.st_mode):
+                raise ModelInputError(f"CP-MODEL authority file is not regular: {relative}")
+            chunks: list[bytes] = []
+            while chunk := os.read(descriptor, 1024 * 1024):
+                chunks.append(chunk)
+            source = b"".join(chunks)
+        except OSError as exc:
+            raise ModelInputError(f"CP-MODEL authority file is unavailable: {relative}") from exc
+        finally:
+            if descriptor is not None:
+                os.close(descriptor)
+        if len(source) != entry["bytes"] or hashlib.sha256(source).hexdigest() != entry["sha256"]:
+            raise ModelInputError(f"CP-MODEL authority file changed: {relative}")
+        return source
+
     # -- integrity ---------------------------------------------------------
 
     def verify_integrity(self) -> list[str]:
         """Hash every file the pinned integrity manifest declares; return the
         mismatches (empty list == the vendored bundle is byte-exact)."""
-        manifest = json.loads((self.deploy_v_root / "DEPLOY_V_INTEGRITY_v1.json").read_text(encoding="utf-8"))
         mismatches: list[str] = []
-        for skill in manifest["skills"]:
+        for skill in self._integrity["skills"]:
             for relative, entry in (skill.get("relative_file_hashes") or {}).items():
                 path = self.deploy_v_root / "skills" / skill["folder_slug"] / relative
                 if not path.is_file():
@@ -354,14 +450,48 @@ class CpModelBundle:
     # -- validation and calculation ---------------------------------------
 
     def validate_handoff(self, markdown: str, *, module_id: str, run_id: str | None = None) -> Any:
+        try:
+            validate_visible_stable_tables(markdown)
+        except CanonicalValidationError as exc:
+            raise ModelInputError(str(exc)) from exc
         return self._handoff.validate_text(markdown, expected_module=module_id, expected_run_id=run_id)
 
     def validate(self, cp1: str, cp1a: str, cp1b: str, cp2: str, cp2b: str, cp2g: str | None = None) -> Any:
+        try:
+            documents = (
+                ("CP-1", cp1),
+                ("CP-1A", cp1a),
+                ("CP-1B", cp1b),
+                ("CP-2", cp2),
+                ("CP-2B", cp2b),
+                ("CP-2G", cp2g),
+            )
+            for module_id, markdown in documents:
+                if markdown is not None:
+                    validate_visible_stable_tables(markdown)
+                    validate_model_sources(
+                        markdown,
+                        model_source_ids(markdown),
+                        module_id=module_id,
+                    )
+        except CanonicalValidationError as exc:
+            raise ModelInputError(str(exc)) from exc
         return self._inputs.validate_cp_model_bundle(cp1, cp1a, cp1b, cp2, cp2b, cp2g)
 
     def calculate(
         self, paths: dict[str, Path], *, effective_assumptions: list[dict[str, Any]] | None = None
     ) -> tuple[Any, Any]:
+        try:
+            for module_id, path in paths.items():
+                markdown = Path(path).read_text(encoding="utf-8")
+                validate_visible_stable_tables(markdown)
+                validate_model_sources(
+                    markdown,
+                    model_source_ids(markdown),
+                    module_id=module_id,
+                )
+        except CanonicalValidationError as exc:
+            raise ModelInputError(str(exc)) from exc
         bundle_paths = self._domain.BundlePaths(
             cp1=paths["CP-1"],
             cp1a=paths["CP-1A"],
@@ -410,20 +540,20 @@ class CpModelBundle:
             except Exception:
                 finite = False
             if not finite:
-                raise self._domain.CpModelV3Error(
+                raise CpModelV3Error(
                     f"active growth slot {slot} value must be finite, got {row['value']!r}"
                 )
 
-    def _name_growth_slot(self, exc: Exception) -> Exception:
+    def _name_growth_slot(self, exc: Exception) -> CpModelV3Error:
         """The calc boundary names the offending active-growth slot even where
         the engine reports only the assumption identity (spec rows 133+134)."""
         message = str(exc)
         match = re.search(r"revenue_growth\.division_(\d+)", message)
         if match:
-            return self._domain.CpModelV3Error(f"{message} (active growth slot DIVISION_{match.group(1)})")
+            return CpModelV3Error(f"{message} (active growth slot DIVISION_{match.group(1)})")
         if "consolidated" in message.lower():
-            return self._domain.CpModelV3Error(f"{message} (active growth slot CONSOLIDATED)")
-        return exc
+            return CpModelV3Error(f"{message} (active growth slot CONSOLIDATED)")
+        return CpModelV3Error(message)
 
     def calculate_model(self, model: Any) -> Any:
         """Calculate a caller-supplied IR variant. Reconciliation checks are
@@ -751,10 +881,41 @@ def project_cp2b(cp2a_markdown: str, *, run_id: str, cp2a_artifact_digest: str, 
     fields = validation.fields
     if fields.get("qa_status") != "Passed" or "CP-MODEL" not in fields.get("downstream_consumers", []):
         raise ModelInputError("CP-2A is not ready for CP-MODEL")
+    try:
+        validate_model_sources(
+            cp2a_markdown,
+            model_source_ids(cp2a_markdown),
+            module_id="CP-2A",
+        )
+    except CanonicalValidationError as exc:
+        raise ModelInputError(str(exc)) from exc
     sections = _t5_sections(cp2a_markdown)
 
     def quoted(value: object) -> str:
         return json.dumps(str(value), ensure_ascii=True)
+
+    cp0_lineage = [
+        artifact
+        for artifact in fields["upstream_artifacts_used"]
+        if artifact.get("module_id") == "CP-0"
+    ]
+    if len(cp0_lineage) > 1:
+        raise ModelInputError("CP-2A carries ambiguous CP-0 lineage")
+    upstream_lines = ["upstream_artifacts_used:"]
+    for artifact in (*cp0_lineage, {
+        "module_id": "CP-2A",
+        "run_id": run_id,
+        "period": fields["reporting_period"],
+        "artifact_digest": cp2a_artifact_digest,
+    }):
+        upstream_lines.extend((
+            f"  - module_id: {artifact['module_id']}",
+            f"    run_id: {quoted(artifact['run_id'])}",
+            f"    period: {quoted(artifact['period'])}",
+        ))
+        artifact_digest = artifact.get("artifact_digest")
+        if isinstance(artifact_digest, str) and _HEX_DIGEST.fullmatch(artifact_digest):
+            upstream_lines.append(f"    artifact_digest: {quoted(artifact_digest)}")
 
     projected = "\n".join(
         [
@@ -770,11 +931,7 @@ def project_cp2b(cp2a_markdown: str, *, run_id: str, cp2a_artifact_digest: str, 
             f"committee_status: {quoted(fields['committee_status'])}",
             f"limitation_flags: {json.dumps(fields['limitation_flags'])}",
             f"validation_warnings: {json.dumps(fields['validation_warnings'])}",
-            "upstream_artifacts_used:",
-            "  - module_id: CP-2A",
-            f"    run_id: {quoted(run_id)}",
-            f"    period: {quoted(fields['reporting_period'])}",
-            f"    artifact_digest: {quoted(cp2a_artifact_digest)}",
+            *upstream_lines,
             "downstream_consumers: [CP-MODEL]",
             f"issuer_name: {quoted(fields['issuer_name'])}",
             f"issuer_id: {quoted(fields['issuer_id'])}",
@@ -844,14 +1001,16 @@ def safe_ratio(numerator: object, denominator: object) -> float | None:
 
 
 def finite_operand(value: object, label: str) -> Decimal:
-    return _default_bundle()._calculations._finite_operand(value, label)
+    bundle = _default_bundle()
+    try:
+        return bundle._calculations._finite_operand(value, label)
+    except bundle._domain.CpModelV3Error as exc:
+        raise CpModelV3Error(str(exc)) from exc
 
 
 def calculate(model: Any) -> Any:
-    return _default_bundle().calculate_model(model)
-
-
-def __getattr__(name: str) -> Any:
-    if name == "CpModelV3Error":
-        return _default_bundle()._domain.CpModelV3Error
-    raise AttributeError(name)
+    bundle = _default_bundle()
+    try:
+        return bundle.calculate_model(model)
+    except bundle._domain.CpModelV3Error as exc:
+        raise CpModelV3Error(str(exc)) from exc

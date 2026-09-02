@@ -16,6 +16,7 @@ from __future__ import annotations
 import copy
 import hashlib
 import threading
+from contextlib import nullcontext
 from pathlib import Path
 from typing import Any, Callable
 
@@ -23,20 +24,30 @@ from ..atomic_files import (
     MAX_EXPORT_BYTES,
     VaultFileIntegrityError,
     VaultFileUnavailable,
+    publish_hash_addressed_bytes,
     read_verified_vault_bytes,
 )
 from ..contracts import (
+    AnalystRevisionSelection,
+    ApplicationBuildSelection,
     DeliverableDraftRequest,
     FileDeliverableRequest,
     FreezeDeliverableRequest,
     digest,
 )
+from ..engine.provider import AgentError
+from ..engine.state import source_set_digest
 from ..publishing.renderers import render_frozen_export
 from ..storage.deliverables import DeliverableStore, DeliverableVersionConflict  # noqa: F401 — conflict re-raised to callers
 from ..storage.runs import RunStore
 from ..storage.store import DomainStore, new_id
 from .document import DOCUMENT_SCHEMA_VERSION, compose_document, model_metric_values
-from .graph import canonical_approval_hash, filing_thread_id, validate_approval_hash
+from .graph import (
+    canonical_approval_hash,
+    filing_thread_id,
+    frozen_approval_digest,
+    validate_approval_hash,
+)
 
 PATHWAY_TEMPLATES = (
     "FULL_CREDIT",
@@ -150,10 +161,14 @@ class DeliverableService:
         self._validate_citations(case_id, blocks)
         selection = request.model_selection
         model = self._resolve_selection(case_id, selection)
+        self._validate_pathway_authority(case_id, pathway, model)
         identity = self._model_identity(model, selection) if model else None
         needs_model = [block for block in blocks if block["kind"] in MODEL_DEPENDENT_KINDS]
-        if needs_model and identity is None:
-            raise ValueError("MODEL_REQUIRED: model-dependent blocks need a selected model")
+        if identity is None and (template["model_requirement"] == "REQUIRED" or needs_model):
+            raise ValueError(
+                "MODEL_REQUIRED: this deliverable template or its model-dependent blocks "
+                "need a selected model"
+            )
         stored = [self._enrich_block(case_id, block, model, identity, selection) for block in blocks]
         document_sections = compose_document(
             pathway=pathway,
@@ -256,17 +271,92 @@ class DeliverableService:
             raise ValueError("MODEL_BUILD_STALE: fallback build does not resolve to a stored record")
         return record
 
+    def _resolve_stored_selection(
+        self,
+        case_id: str,
+        stored: Any,
+    ) -> tuple[dict[str, Any] | None, Any]:
+        if stored is None:
+            return None, None
+        if not isinstance(stored, dict):
+            raise ValueError("MODEL_SELECTION_INVALID")
+        selection_model = (
+            AnalystRevisionSelection
+            if stored.get("kind") == "ANALYST_REVISION"
+            else ApplicationBuildSelection
+        )
+        selection = selection_model.model_validate(stored)
+        return self._resolve_selection(case_id, selection), selection
+
     # -- live model authority (Model Builder is the system of record) --------
+
+    @staticmethod
+    def _revision_targets_publication_build(
+        head: dict[str, Any] | None,
+        build: dict[str, Any] | None,
+        model_authority: dict[str, Any],
+    ) -> bool:
+        return bool(
+            head is not None
+            and build is not None
+            and head.get("build_id") == build.get("id")
+            and head.get("snapshot_id") == model_authority.get("snapshot_id")
+        )
+
+    @staticmethod
+    def _signed_revision_matches_publication_build(
+        head: dict[str, Any] | None,
+        build: dict[str, Any] | None,
+        model_authority: dict[str, Any],
+    ) -> bool:
+        if head is None or build is None:
+            return False
+        prior_full_credit = (
+            model_authority.get("relationship") == "PRIOR_FULL_CREDIT_BASE"
+        )
+        return (
+            head.get("build_id") == build.get("id")
+            and head.get("snapshot_id") == model_authority.get("snapshot_id")
+            and head.get("build_input_fingerprint") == build.get("input_fingerprint")
+            and head.get("build_payload_digest") == build.get("payload_digest")
+            and head.get("registry_version") == build.get("registry_version")
+            and head.get("registry_digest") == build.get("registry_digest")
+            and head.get("calculation_contract_version")
+            == (build.get("calculation_runtime") or {}).get(
+                "calculation_contract_version"
+            )
+            and head.get("assumptions_digest")
+            == digest(head.get("effective_assumptions"))
+            and head.get("outputs_digest") == digest(head.get("outputs"))
+            and (
+                head.get("state") == "ACTIVE"
+                or (prior_full_credit and head.get("state") == "STALE")
+            )
+        )
 
     def _live_revision(self, case_id: str, selection: Any) -> dict[str, Any]:
         head = self.models.head_revision(case_id) if self.models is not None else None
+        context = (
+            self.models.validated_publication_build(case_id, selection.build_id)
+            if self.models is not None
+            else None
+        )
+        build = context["build"] if context is not None else None
+        model_authority = context["model_authority"] if context is not None else {}
         if (
             head is None
             or head["id"] != selection.revision_id
             or head["build_id"] != selection.build_id
-            or head.get("state") != "ACTIVE"
+            or build is None
+            or build.get("status") != "READY"
+            or not self._signed_revision_matches_publication_build(
+                head,
+                build,
+                model_authority,
+            )
         ):
             raise ValueError("MODEL_REVISION_STALE: selection must pin the current signed revision")
+        payload = build.get("payload") or {}
         return {
             "kind": "ANALYST_REVISION",
             "build_id": head["build_id"],
@@ -279,38 +369,72 @@ class DeliverableService:
                 "calculation_contract_version": head.get("calculation_contract_version"),
                 "assumption_registry_version": head.get("registry_version"),
             },
+            "methodology_build_id": build.get("methodology_build_id"),
+            "pathway_effects": copy.deepcopy(payload.get("pathway_effects") or []),
+            "model_authority": copy.deepcopy(model_authority),
         }
 
     def _live_build(self, case_id: str, selection: Any) -> dict[str, Any]:
         head = self.models.head_revision(case_id) if self.models is not None else None
-        if head is not None and head.get("state") == "ACTIVE":
+        context = (
+            self.models.validated_publication_build(case_id, selection.build_id)
+            if self.models is not None
+            else None
+        )
+        build = context["build"] if context is not None else None
+        model_authority = context["model_authority"] if context is not None else {}
+        signed_revision_governs = self._revision_targets_publication_build(
+            head,
+            build,
+            model_authority,
+        )
+        if signed_revision_governs:
             raise ValueError("MODEL_FALLBACK_INELIGIBLE: a signed REVISION exists — select it instead of the FALLBACK build")
-        build = (self.models.readiness(case_id) or {}).get("build") if self.models is not None else None
         if build is None or build["id"] != selection.build_id or build.get("status") != "READY":
             raise ValueError("MODEL_BUILD_STALE: fallback build does not resolve to a stored record")
+        payload = build.get("payload") or {}
         return {
             "kind": "APPLICATION_BUILD",
             "build_id": build["id"],
             "revision_id": None,
-            "outputs": self.models.default_outputs(case_id, build["id"]),
+            "outputs": context["outputs"],
             "assumptions": [],
             "build_payload": {"payload_digest": build.get("payload_digest")},
             "build_qa": dict(build.get("qa") or {}),
             "calculation_runtime": dict(build.get("calculation_runtime") or {}),
+            "methodology_build_id": build.get("methodology_build_id"),
+            "pathway_effects": copy.deepcopy(payload.get("pathway_effects") or []),
+            "model_authority": copy.deepcopy(model_authority),
         }
 
     def model_eligibility(self, case_id: str) -> dict[str, Any]:
         active = None
         application_build = None
+        head_targets_build = False
         if self.models is not None:
             head = self.models.head_revision(case_id)
-            if head is not None and head.get("state") == "ACTIVE":
+            try:
+                context = self.models.validated_publication_build(case_id)
+            except ValueError:
+                context = None
+            build = context["build"] if context is not None else None
+            model_authority = context["model_authority"] if context is not None else {}
+            head_is_publishable = self._signed_revision_matches_publication_build(
+                head,
+                build,
+                model_authority,
+            )
+            head_targets_build = self._revision_targets_publication_build(
+                head,
+                build,
+                model_authority,
+            )
+            if head_is_publishable:
                 active = {
                     "revision_id": head["id"], "build_id": head["build_id"],
                     "revision_number": head["revision_number"],
                     "signed_by": head.get("created_by", ""), "signed_at": head.get("created_at", ""),
                 }
-            build = (self.models.readiness(case_id) or {}).get("build")
             if build is not None and build.get("status") == "READY":
                 application_build = {
                     "build_id": build["id"], "accepted_snapshot_id": build.get("snapshot_id"),
@@ -332,24 +456,34 @@ class DeliverableService:
         return {
             "active_revision": active,
             "application_build": application_build,
-            "fallback_acknowledgement_required": active is None and application_build is not None,
+            "fallback_acknowledgement_required": (
+                active is None
+                and application_build is not None
+                and not head_targets_build
+            ),
             "default_model_selection": default,
         }
 
     @staticmethod
     def _model_identity(model: dict[str, Any], selection: Any) -> dict[str, Any]:
         if selection.kind == "ANALYST_REVISION":
-            return {
+            identity = {
                 "kind": "ANALYST_REVISION",
                 "build_id": model["build_id"],
                 "revision_id": model["revision_id"],
                 "calculation_runtime": dict(model["calculation_runtime"]),
             }
-        return {
-            "kind": "APPLICATION_BUILD",
-            "build_id": model["build_id"],
-            "calculation_runtime": dict(model["calculation_runtime"]),
-        }
+        else:
+            identity = {
+                "kind": "APPLICATION_BUILD",
+                "build_id": model["build_id"],
+                "calculation_runtime": dict(model["calculation_runtime"]),
+            }
+        if model.get("methodology_build_id"):
+            identity["methodology_build_id"] = model["methodology_build_id"]
+        if model.get("model_authority"):
+            identity["model_authority"] = copy.deepcopy(model["model_authority"])
+        return identity
 
     @staticmethod
     def _governed_metric_ids(outputs: dict[str, Any]) -> set[str]:
@@ -436,17 +570,111 @@ class DeliverableService:
     # -- freeze --------------------------------------------------------------
 
     def _authority_for(self, case_id: str) -> dict[str, Any] | None:
-        """Seeded authority when a test pinned one; otherwise the case's live
-        accepted snapshot with the current Application Model Build identity."""
+        """Resolve application and methodology authority without conflating them."""
         seeded = self.records.authority(case_id)
         if seeded is not None:
-            return seeded
+            return {**seeded, "methodology_build_id": seeded["build_id"]}
         case = self.store.get_case(case_id) or {}
         snapshot_id = case.get("accepted_snapshot_id")
         if snapshot_id is None:
             return None
+        runs = self.engine.runs if self.engine is not None else RunStore(self.store.engine)
+        snapshot = runs.get_snapshot(snapshot_id)
+        run = runs.get_run(snapshot.get("run_id")) if snapshot is not None else None
+        snapshot_preimage = {
+            key: value
+            for key, value in (snapshot or {}).items()
+            if key not in {"digest", "id"}
+        }
+        if (
+            snapshot is None
+            or run is None
+            or snapshot.get("case_id") != case_id
+            or run.get("case_id") != case_id
+            or run.get("status") != "succeeded"
+            or run.get("accepted_snapshot_id") != snapshot_id
+            or snapshot.get("provider_identity") != run.get("provider_identity")
+            or digest(snapshot_preimage) != snapshot.get("digest")
+            or digest(run.get("plan") or {}) != run.get("plan_digest")
+            or not isinstance((run.get("plan") or {}).get("build_id"), str)
+            or not run["plan"]["build_id"]
+        ):
+            raise ValueError("DELIVERABLE_COMPOSITION_REQUIRED_VALUE_MISSING:accepted_snapshot")
+        source_set = self.store.source_set(snapshot["source_set_id"])
+        if (
+            source_set is None
+            or source_set.get("case_id") != case_id
+            or source_set.get("version") != snapshot.get("source_set_version")
+            or run["plan"].get("source_set_id") != source_set["id"]
+            or run["plan"].get("source_set_version") != source_set["version"]
+            or source_set_digest(source_set) != run["plan"].get("source_set_digest")
+            or self.store.sources_for_live_set(
+                case_id,
+                source_set["id"],
+                source_set["version"],
+            ) is None
+        ):
+            raise ValueError("DELIVERABLE_COMPOSITION_REQUIRED_VALUE_MISSING:accepted_source_set")
         build = (self.models.readiness(case_id) or {}).get("build") if self.models is not None else None
-        return {"case_id": case_id, "snapshot_id": snapshot_id, "build_id": (build or {}).get("id") or "unbuilt"}
+        return {
+            "case_id": case_id,
+            "snapshot_id": snapshot_id,
+            "source_set_id": source_set["id"],
+            "source_set_version": source_set["version"],
+            "build_id": (build or {}).get("id") or "unbuilt",
+            "methodology_build_id": run["plan"]["build_id"],
+        }
+
+    def _validate_pathway_authority(
+        self,
+        case_id: str,
+        pathway: str,
+        model: dict[str, Any] | None,
+    ) -> None:
+        # Seeded records are an isolated test seam. Ordinary publication always
+        # resolves the accepted snapshot and run below.
+        if self.records.authority(case_id) is not None:
+            return
+        authority = self._authority_for(case_id)
+        if authority is None:
+            raise ValueError(
+                "DELIVERABLE_PATHWAY_AUTHORITY_MISMATCH: no accepted pathway authority"
+            )
+        runs = self.engine.runs if self.engine is not None else RunStore(self.store.engine)
+        snapshot = runs.get_snapshot(authority["snapshot_id"])
+        run = runs.get_run(snapshot["run_id"]) if snapshot is not None else None
+        if run is None or run.get("pathway") != pathway:
+            raise ValueError(
+                "DELIVERABLE_PATHWAY_AUTHORITY_MISMATCH: accepted analysis does not match the deliverable pathway"
+            )
+        effects = (model or {}).get("pathway_effects") or []
+        if pathway == "FULL_CREDIT" and effects:
+            raise ValueError(
+                "DELIVERABLE_PATHWAY_AUTHORITY_MISMATCH: Full Credit cannot publish a Distressed overlay"
+            )
+        if pathway in {"EARNINGS_UPDATE", "COVENANT_REFINANCING"}:
+            model_authority = (model or {}).get("model_authority") or {}
+            if model_authority.get("relationship") != "PRIOR_FULL_CREDIT_BASE":
+                raise ValueError(
+                    "DELIVERABLE_PATHWAY_AUTHORITY_MISMATCH: incremental publication requires a validated prior Full Credit model"
+                )
+        if pathway != "DISTRESSED_RESTRUCTURING":
+            return
+        effect = effects[0] if len(effects) == 1 and isinstance(effects[0], dict) else {}
+        distressed = effect.get("distressed_authority") or {}
+        calculations = effect.get("calculations") or []
+        if (
+            effect.get("schema_version") != "caos.model-pathway-effect.v1"
+            or effect.get("pathway") != pathway
+            or distressed.get("snapshot_id") != snapshot["id"]
+            or distressed.get("snapshot_digest") != snapshot["digest"]
+            or not isinstance(calculations, list)
+            or {item.get("calculator_id") for item in calculations if isinstance(item, dict)}
+            != {"funding_gap", "recovery_waterfall"}
+        ):
+            raise ValueError(
+                "DELIVERABLE_PATHWAY_AUTHORITY_MISMATCH: Distressed publication requires the current CP-4C overlay"
+            )
 
     def _accepted_artifacts(self, case_id: str) -> dict[str, dict[str, Any]]:
         authority = self._authority_for(case_id)
@@ -460,23 +688,26 @@ class DeliverableService:
         snapshot_preimage = {
             key: value
             for key, value in snapshot.items()
-            if key not in {"digest", "id", "previous_snapshot_id"}
+            if key not in {"digest", "id"}
         }
         if snapshot["case_id"] != case_id or digest(snapshot_preimage) != snapshot["digest"]:
             raise ValueError("DELIVERABLE_COMPOSITION_REQUIRED_VALUE_MISSING:accepted_snapshot")
-        for reference in snapshot["artifacts"]:
-            artifact = runs.get_artifact(reference["id"])
-            if (
-                artifact is None
-                or artifact.get("case_id") != case_id
-                or artifact.get("module_id") != reference.get("module_id")
-                or artifact.get("digest") != reference.get("digest")
-                or digest(artifact.get("payload")) != artifact.get("digest")
-            ):
-                raise ValueError(
-                    "DELIVERABLE_COMPOSITION_REQUIRED_VALUE_MISSING:"
-                    f"artifact.{reference.get('module_id', 'unknown')}"
-                )
+        runtime_engine = self.engine or getattr(self.models, "engine", None)
+        run = runs.get_run(snapshot["run_id"])
+        if runtime_engine is None or run is None:
+            raise ValueError("DELIVERABLE_COMPOSITION_REQUIRED_VALUE_MISSING:accepted_snapshot")
+        try:
+            validated = runtime_engine.validated_snapshot_artifacts(snapshot, run)
+        except AgentError as exc:
+            missing = (
+                f"artifact.{exc.module_id}"
+                if getattr(exc, "module_id", None)
+                else "accepted_snapshot"
+            )
+            raise ValueError(
+                f"DELIVERABLE_COMPOSITION_REQUIRED_VALUE_MISSING:{missing}"
+            ) from exc
+        for artifact in validated:
             artifacts[artifact["module_id"]] = artifact
         return artifacts
 
@@ -494,7 +725,7 @@ class DeliverableService:
 
     def freeze(self, case_id: str, request: FreezeDeliverableRequest, *, actor: str) -> dict[str, Any]:
         revision = self._revision_for_freeze(case_id, request)
-        pathway = self._pathway_of(case_id, request.draft_id)
+        pathway = revision["pathway"]
         # Invariant 1 holds at the freeze boundary, not only at draft save: a
         # source withdrawn since the revision was written refuses the freeze.
         self._validate_citations(case_id, revision["content"]["blocks"])
@@ -502,7 +733,14 @@ class DeliverableService:
         if authority is None:
             raise ValueError("DELIVERABLE_UPSTREAM_AUTHORITY_REQUIRED: no accepted upstream SNAPSHOT identity is pinned")
         source_set = self.store.current_source_set(case_id) or {"id": None, "version": 0}
+        if authority.get("source_set_id") is not None and (
+            source_set["id"], source_set["version"]
+        ) != (
+            authority["source_set_id"], authority["source_set_version"]
+        ):
+            raise ValueError("SOURCE_SET_CHANGED: accepted analysis does not cover the current evidence base")
         identity = revision["content"].get("model_identity")
+        record = None
         model_payload = None
         document_model = None
         if identity is not None:
@@ -514,18 +752,17 @@ class DeliverableService:
             if record is None:
                 # Live Model Builder authority: rehydrate the stored selection
                 # and re-pin it, so freeze refuses a stale model like save does.
-                from ..contracts import AnalystRevisionSelection, ApplicationBuildSelection
-
                 stored_selection = revision["content"]["model_selection"]
-                selection_model = AnalystRevisionSelection if stored_selection["kind"] == "ANALYST_REVISION" else ApplicationBuildSelection
-                record = self._resolve_selection(case_id, selection_model.model_validate(stored_selection))
+                record, _selection = self._resolve_stored_selection(case_id, stored_selection)
             document_model = record
             model_payload = {
                 **identity,
                 "outputs": record["outputs"],
                 "effective_assumptions": record["assumptions"],
                 "application_build": {"payload": record["build_payload"], "qa": record["build_qa"]},
+                "pathway_effects": copy.deepcopy(record.get("pathway_effects") or []),
             }
+        self._validate_pathway_authority(case_id, pathway, document_model)
         expected_sections = compose_document(
             pathway=pathway,
             template=_template(pathway),
@@ -539,14 +776,25 @@ class DeliverableService:
         ):
             raise ValueError("DELIVERABLE_COMPOSITION_MISMATCH: draft document no longer matches pinned inputs")
         build_id = identity["build_id"] if identity else authority["build_id"]
+        methodology_build_id = (
+            (identity or {}).get("methodology_build_id")
+            or (record or {}).get("methodology_build_id")
+            or authority["methodology_build_id"]
+        )
         frozen_authority = {
             "snapshot_id": authority["snapshot_id"],
             "source_set_id": source_set["id"],
             "source_set_version": source_set["version"],
             "build_id": build_id,
+            "methodology_build_id": methodology_build_id,
         }
         input_fingerprint = digest(frozen_authority)
         template = _template(pathway)
+        draft_digest = digest(revision["content"])
+        if draft_digest != revision["digest"]:
+            raise ValueError(
+                "DELIVERABLE_REVISION_INTEGRITY_FAILED: draft digest does not match its content"
+            )
         payload = {
             "schema_version": "caos.frozen-deliverable.v1",
             "case_id": case_id,
@@ -554,7 +802,11 @@ class DeliverableService:
             "template": {"title": template["title"], "template_id": template["template_id"],
                          "template_version": template["template_version"],
                          "block_titles": {item["block_id"]: item["title"] for item in template["blocks"]}},
-            "draft": {"id": request.draft_id, "version": revision["version"], "digest": revision["digest"]},
+            "draft": {
+                "id": revision["draft_id"],
+                "version": revision["version"],
+                "digest": draft_digest,
+            },
             "content": revision["content"],
             "model": model_payload,
             "authority": {
@@ -564,75 +816,115 @@ class DeliverableService:
                 "build_id": build_id,
             },
             "evidence": self._frozen_evidence(case_id, revision["content"]["blocks"]),
-            "methodology": {"build_id": build_id},
+            "methodology": {"build_id": methodology_build_id},
             "renderer": {"version": "caos.deliverable-renderer.v2"},
             "input_fingerprint": input_fingerprint,
         }
         payload["preview_digest"] = digest({key: value for key, value in payload.items() if key != "preview_digest"})
         thread_id = filing_thread_id(
             case_id=case_id, pathway=pathway, draft_version=revision["version"],
-            draft_digest=revision["digest"], build_id=build_id,
+            draft_digest=draft_digest, build_id=build_id,
         )
         with self._freeze_lock:
             rendered = {format_name: self._render(payload, format_name) for format_name in EXPORT_FORMATS}
-            exports = {
-                format_name: {"sha256": hashlib.sha256(content).hexdigest(), "size": len(content)}
-                for format_name, content in rendered.items()
-            }
-            record, created = self.records.insert_frozen({
+            exports = {}
+            for format_name, content in rendered.items():
+                sha256 = hashlib.sha256(content).hexdigest()
+                _path, vault_key, size = publish_hash_addressed_bytes(
+                    self.vault_dir,
+                    ("deliverables", thread_id),
+                    format_name,
+                    content,
+                    expected_sha256=sha256,
+                    max_bytes=MAX_EXPORT_BYTES,
+                )
+                exports[format_name] = {
+                    "vault_key": vault_key,
+                    "sha256": sha256,
+                    "size": size,
+                }
+            frozen_record = {
                 "deliverable_id": f"dlv-{thread_id[4:]}",
                 "thread_id": thread_id,
                 "case_id": case_id,
                 "pathway": pathway,
                 "status": "FROZEN",
-                "preview_digest": payload["preview_digest"],
                 "input_fingerprint": input_fingerprint,
                 "build_id": build_id,
                 "payload": payload,
                 "exports": exports,
                 "authority": frozen_authority,
                 "draft_version": revision["version"],
-                "draft_digest": revision["digest"],
+                "draft_digest": draft_digest,
                 "created_by": actor,
-            }, actor, self.store._audit)
-            if created:
-                directory = self.vault_dir / "deliverables" / thread_id
-                directory.mkdir(parents=True, exist_ok=True)
-                for format_name, content in rendered.items():
-                    (directory / format_name).write_bytes(content)
-        if not created and record["exports"] != exports:
+            }
+            frozen_record["preview_digest"] = frozen_approval_digest(frozen_record)
+            self._validate_frozen_integrity(frozen_record)
+            record, created = self.records.insert_frozen(
+                frozen_record, actor, self.store._audit
+            )
+        self._validate_frozen_integrity(record)
+        if not created and record["preview_digest"] != frozen_record["preview_digest"]:
             # The gate's own render is the only render: a divergent render for
             # the same freeze identity is a conflict, never an overwrite.
             raise ValueError("DELIVERABLE_FREEZE_CONFLICT: a divergent render exists for this freeze identity")
         return record
 
     def _revision_for_freeze(self, case_id: str, request: FreezeDeliverableRequest) -> dict[str, Any]:
-        for pathway in PATHWAY_TEMPLATES:
-            head = self.records.head_revision(case_id, pathway)
-            if head and head["draft_id"] == request.draft_id:
-                if head["version"] != request.draft_version or head["digest"] != request.draft_digest:
-                    target = next(
-                        (r for r in self.records.revision_history(case_id, pathway)
-                         if r["version"] == request.draft_version and r["digest"] == request.draft_digest),
-                        None,
-                    )
-                    if target is None:
-                        raise ValueError("DELIVERABLE_DRAFT_STALE: freeze identity does not match a stored revision")
-                    return target
-                return head
-        raise ValueError("DELIVERABLE_DRAFT_STALE: unknown draft")
-
-    def _pathway_of(self, case_id: str, draft_id: str) -> str:
-        for pathway in PATHWAY_TEMPLATES:
-            head = self.records.head_revision(case_id, pathway)
-            if head and head["draft_id"] == draft_id:
-                return pathway
-        raise ValueError("DELIVERABLE_DRAFT_STALE: unknown draft")
+        revision = self.records.revision_for_freeze(
+            case_id, request.draft_id, request.draft_version,
+        )
+        if revision is None or revision["digest"] != request.draft_digest:
+            raise ValueError(
+                "DELIVERABLE_DRAFT_STALE: freeze identity does not match a stored revision"
+            )
+        return revision
 
     # -- filing gate ---------------------------------------------------------
 
     def frozen_record(self, case_id: str, deliverable_id: str) -> dict[str, Any] | None:
         return self.records.frozen_record(case_id, deliverable_id)
+
+    @staticmethod
+    def _validate_frozen_integrity(record: dict[str, Any]) -> None:
+        try:
+            payload = dict(record["payload"])
+            payload_digest = payload.pop("preview_digest", None)
+            draft = payload["draft"]
+            authority = payload["authority"]
+            thread_id = filing_thread_id(
+                case_id=record["case_id"],
+                pathway=record["pathway"],
+                draft_version=record["draft_version"],
+                draft_digest=record["draft_digest"],
+                build_id=record["build_id"],
+            )
+            valid = (
+                isinstance(draft, dict)
+                and isinstance(payload["content"], dict)
+                and isinstance(draft.get("id"), str)
+                and bool(draft["id"])
+                and type(record["draft_version"]) is int
+                and type(draft["version"]) is int
+                and payload["case_id"] == record["case_id"]
+                and payload["pathway"] == record["pathway"]
+                and draft["version"] == record["draft_version"]
+                and draft["digest"] == record["draft_digest"]
+                and record["draft_digest"] == digest(payload["content"])
+                and payload["input_fingerprint"] == record["input_fingerprint"]
+                and authority["build_id"] == record["build_id"]
+                and record["authority"]["build_id"] == record["build_id"]
+                and record["thread_id"] == thread_id
+                and record["deliverable_id"] == f"dlv-{thread_id[4:]}"
+                and payload_digest == digest(payload)
+                and frozen_approval_digest(record) == record["preview_digest"]
+            )
+        except (KeyError, TypeError, ValueError):
+            valid = False
+        if not valid:
+            raise ValueError(
+                "DELIVERABLE_PREVIEW_INTEGRITY_FAILED: frozen content or export manifest does not match its digest"
+            )
 
     def approve_filing(self, case_id: str, deliverable_id: str, request: FileDeliverableRequest, *, actor: str) -> dict[str, Any]:
         record = self.records.frozen_record(case_id, deliverable_id)
@@ -642,23 +934,57 @@ class DeliverableService:
         interrupt_id = thread["interrupt_id"] if thread else None
         if record["status"] != "FROZEN" or thread is None or thread["status"] != "PARKED":
             raise ResumeNotApplied(interrupt_id if thread and thread["status"] == "PARKED" else None)
-        payload = dict(record["payload"])
-        stored_preview = payload.pop("preview_digest", None)
-        if stored_preview != record["preview_digest"] or digest(payload) != record["preview_digest"]:
-            raise ValueError("DELIVERABLE_PREVIEW_INTEGRITY_FAILED: frozen content does not match its digest")
+        self._validate_frozen_integrity(record)
         if request.preview_digest != record["preview_digest"]:
             raise ValueError("DELIVERABLE_STALE_PREVIEW: approval binds the exact frozen PREVIEW digest")
         if request.input_fingerprint != record["input_fingerprint"]:
             raise ValueError("DELIVERABLE_STALE_PREVIEW: approval FINGERPRINT does not match the frozen identity")
-        authority = self._authority_for(case_id)
-        if authority is None or authority["snapshot_id"] != record["authority"]["snapshot_id"]:
-            raise ValueError("FROZEN_AUTHORITY_STALE: the accepted upstream authority moved after freeze")
-        current_set = self.store.current_source_set(case_id) or {"id": None, "version": 0}
-        if (current_set["id"], current_set["version"]) != (
-            record["authority"]["source_set_id"], record["authority"]["source_set_version"],
-        ):
-            raise ValueError("SOURCE_SET_CHANGED: the evidence base moved while the gate was parked")
-        filed = self.records.file_record(deliverable_id, actor, self.store._audit)
+        guard = self.models.publication_guard() if self.models is not None else nullcontext()
+        with self.store.authority_guard(), guard:
+            content = record["payload"].get("content") or {}
+            try:
+                current_model, selection = self._resolve_stored_selection(
+                    case_id,
+                    content.get("model_selection"),
+                )
+            except (TypeError, ValueError) as exc:
+                raise ValueError(
+                    "FROZEN_MODEL_AUTHORITY_STALE: the selected model moved after freeze"
+                ) from exc
+            frozen_identity = content.get("model_identity")
+            current_identity = (
+                self._model_identity(current_model, selection)
+                if current_model is not None and selection is not None
+                else None
+            )
+            if current_identity != frozen_identity:
+                raise ValueError(
+                    "FROZEN_MODEL_AUTHORITY_STALE: the selected model moved after freeze"
+                )
+            self._validate_pathway_authority(case_id, record["pathway"], current_model)
+            authority = self._authority_for(case_id)
+            if (
+                authority is None
+                or authority["snapshot_id"] != record["authority"]["snapshot_id"]
+                or authority["methodology_build_id"] != record["authority"]["methodology_build_id"]
+                or authority.get("source_set_id") not in {
+                    None,
+                    record["authority"]["source_set_id"],
+                }
+                or authority.get("source_set_version") not in {
+                    None,
+                    record["authority"]["source_set_version"],
+                }
+            ):
+                raise ValueError("FROZEN_AUTHORITY_STALE: the accepted upstream authority moved after freeze")
+            current_set = self.store.current_source_set(case_id) or {"id": None, "version": 0}
+            if (current_set["id"], current_set["version"]) != (
+                record["authority"]["source_set_id"], record["authority"]["source_set_version"],
+            ):
+                raise ValueError("SOURCE_SET_CHANGED: the evidence base moved while the gate was parked")
+            self._accepted_artifacts(case_id)
+            self._verify_frozen_exports(record)
+            filed = self.records.file_record(deliverable_id, actor, self.store._audit)
         if filed is None:
             raise ResumeNotApplied(None)
         return filed
@@ -667,11 +993,9 @@ class DeliverableService:
         record = self.records.frozen_record(case_id, deliverable_id)
         if record is None:
             raise ValueError("DELIVERABLE_NOT_FOUND")
+        self._validate_frozen_integrity(record)
         if request.preview_digest != record["preview_digest"] or request.input_fingerprint != record["input_fingerprint"]:
             raise ValueError("DELIVERABLE_STALE_PREVIEW: change requests bind the exact frozen preview")
-        updated = self.records.mark_changes_requested(deliverable_id, actor, request.comment, self.store._audit)
-        if updated is None:
-            raise ResumeNotApplied(None)
         head = self.records.head_revision(case_id, record["pathway"])
         content = copy.deepcopy(head["content"])
         content["change_request"] = {
@@ -679,31 +1003,57 @@ class DeliverableService:
             "requested_by": actor,
             "deliverable_id": deliverable_id,
         }
-        draft = self.records.append_revision(
-            case_id, record["pathway"], head["version"], content, digest(content), actor, self.store._audit,
+        outcome = self.records.request_changes_and_append_revision(
+            deliverable_id,
+            head["version"],
+            content,
+            digest(content),
+            actor,
+            request.comment,
+            self.store._audit,
         )
+        if outcome is None:
+            raise ResumeNotApplied(None)
+        updated, draft = outcome
         return {"frozen": updated, "draft": draft}
 
     # -- exports -------------------------------------------------------------
 
+    def _verified_export(self, record: dict[str, Any], format_name: str) -> bytes:
+        recorded = (record["exports"] or {}).get(format_name)
+        if recorded is None:
+            raise ValueError("DELIVERABLE_EXPORT_UNAVAILABLE: no stored export for this format")
+        try:
+            return read_verified_vault_bytes(
+                self.vault_dir,
+                recorded.get("vault_key", f"deliverables/{record['thread_id']}/{format_name}"),
+                expected_sha256=recorded["sha256"],
+                expected_size=recorded["size"],
+                max_bytes=MAX_EXPORT_BYTES,
+            )
+        except VaultFileUnavailable as exc:
+            raise ValueError("DELIVERABLE_EXPORT_UNAVAILABLE: no stored export for this format") from exc
+        except VaultFileIntegrityError as exc:
+            raise ValueError(
+                "DELIVERABLE_EXPORT_INTEGRITY_FAILED: stored bytes do not match the frozen record"
+            ) from exc
+
+    def _verify_frozen_exports(self, record: dict[str, Any]) -> None:
+        if set(record["exports"] or {}) != set(EXPORT_FORMATS):
+            raise ValueError("DELIVERABLE_EXPORT_UNAVAILABLE: frozen export set is incomplete")
+        for format_name in EXPORT_FORMATS:
+            self._verified_export(record, format_name)
+
     def export(self, deliverable_id: str, format_name: str) -> tuple[bytes, str]:
         record = self._frozen_by_id(deliverable_id)
+        self._validate_frozen_integrity(record)
         recorded = (record["exports"] or {}).get(format_name)
         if recorded is None:
             raise ValueError("DELIVERABLE_EXPORT_UNAVAILABLE: no stored export for this format")
         # Read through the no-follow descriptor chain, verified against the
         # frozen record's digest AND length, so a symlink or a non-regular file
         # standing where the export should be is refused rather than followed.
-        try:
-            content = read_verified_vault_bytes(
-                self.vault_dir, f"deliverables/{record['thread_id']}/{format_name}",
-                expected_sha256=recorded["sha256"], expected_size=recorded["size"],
-                max_bytes=MAX_EXPORT_BYTES,
-            )
-        except VaultFileUnavailable as exc:
-            raise ValueError("DELIVERABLE_EXPORT_UNAVAILABLE: no stored export for this format") from exc
-        except VaultFileIntegrityError as exc:
-            raise ValueError("DELIVERABLE_EXPORT_INTEGRITY_FAILED: stored bytes do not match the frozen record") from exc
+        content = self._verified_export(record, format_name)
         return content, recorded["sha256"]
 
     def _frozen_by_id(self, deliverable_id: str) -> dict[str, Any]:
@@ -722,12 +1072,14 @@ class DeliverableService:
     # -- test seams ----------------------------------------------------------
 
     def seed_accepted_authority_for_tests(self, case_id: str) -> dict[str, Any]:
-        return self.records.set_authority(case_id, new_id("snap"), f"deploy-v-{new_id('bld')[4:]}")
+        with self.store.authority_guard():
+            return self.records.set_authority(case_id, new_id("snap"), f"deploy-v-{new_id('bld')[4:]}")
 
     def supersede_accepted_authority_for_tests(self, case_id: str) -> dict[str, Any]:
-        current = self.records.authority(case_id)
-        build_id = current["build_id"] if current else f"deploy-v-{new_id('bld')[4:]}"
-        return self.records.set_authority(case_id, new_id("snap"), build_id)
+        with self.store.authority_guard():
+            current = self.records.authority(case_id)
+            build_id = current["build_id"] if current else f"deploy-v-{new_id('bld')[4:]}"
+            return self.records.set_authority(case_id, new_id("snap"), build_id)
 
     def seed_signed_revision_for_tests(self, case_id: str, *, outputs: dict[str, Any]) -> dict[str, Any]:
         record = {
@@ -806,12 +1158,12 @@ class DeliverableService:
 
     def tamper_export_for_tests(self, deliverable_id: str, format_name: str) -> None:
         record = self._frozen_by_id(deliverable_id)
-        path = self.vault_dir / "deliverables" / record["thread_id"] / format_name
+        path = self.vault_dir / record["exports"][format_name]["vault_key"]
         path.write_bytes(path.read_bytes() + b"tampered")
 
     def delete_export_for_tests(self, deliverable_id: str, format_name: str) -> None:
         record = self._frozen_by_id(deliverable_id)
-        (self.vault_dir / "deliverables" / record["thread_id"] / format_name).unlink(missing_ok=True)
+        (self.vault_dir / record["exports"][format_name]["vault_key"]).unlink(missing_ok=True)
 
     def terminate_filing_thread_for_tests(self, thread_id: str) -> None:
         self.records.terminate_thread(thread_id, "TERMINATED_FOR_TESTS")
