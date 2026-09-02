@@ -6,6 +6,12 @@ from pathlib import Path
 from urllib.parse import unquote, urlsplit
 
 
+def _provider_binding(value: str) -> str:
+    if value not in {"", "host_control"}:
+        raise RuntimeError("CAOS_PROVIDER must be unset or host_control")
+    return value
+
+
 def _strict_bool(name: str, default: bool) -> bool:
     value = os.getenv(name)
     if value is None:
@@ -50,6 +56,10 @@ class Settings:
     openrouter_model: str = "z-ai/glm-5.3-flash"
     provider_qualification_path: Path | None = None
     provider_qualification_digest: str = ""
+    # `host_control` binds the development-only answer-keyed provider so the
+    # keyless browser gates can drive an ordinary run (DECISIONS §14 D8). It is
+    # refused outside development; production knows only qualified Anthropic.
+    provider_binding: str = ""
     # Fail-closed posture: agent (LLM) execution stays off without explicit opt-in.
     agent_execution_enabled: bool = False
 
@@ -96,6 +106,7 @@ class Settings:
             anthropic_model=os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-6"),
             provider_qualification_path=Path(qualification_path) if qualification_path else None,
             provider_qualification_digest=os.getenv("CAOS_PROVIDER_QUALIFICATION_DIGEST", ""),
+            provider_binding=_provider_binding(os.getenv("CAOS_PROVIDER", "")),
             agent_execution_enabled=_strict_bool("AGENT_EXECUTION_ENABLED", False),
         )
 
@@ -123,6 +134,9 @@ class Settings:
     def validate_worker_runtime(self) -> None:
         if self.environment not in {"development", "production"}:
             raise RuntimeError("ENVIRONMENT must be development or production")
+        _provider_binding(self.provider_binding)
+        if self.environment == "production" and self.provider_binding:
+            raise RuntimeError("CAOS_PROVIDER=host_control is development-only; production binds qualified Anthropic")
         if self.environment == "production":
             if not self.database_url.startswith(("postgresql://", "postgresql+psycopg://")):
                 raise RuntimeError("production requires a PostgreSQL DATABASE_URL")

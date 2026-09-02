@@ -41,8 +41,16 @@ def build_provider(settings: Settings):
         raise AgentError("AGENT_QUALIFICATION_MISSING", "qualification path and digest are both required")
     if settings.environment == "production" and openrouter_configured:
         raise AgentError("AGENT_PROVIDER_UNQUALIFIED", "OpenRouter is development-only")
+    if settings.environment == "production" and settings.provider_binding:
+        raise AgentError("AGENT_PROVIDER_UNQUALIFIED", "the host-control binding is development-only")
     if not settings.agent_execution_enabled:
         return None
+    if settings.provider_binding == "host_control":
+        if anthropic_configured or openrouter_configured:
+            raise AgentError("AGENT_PROVIDER_UNQUALIFIED", "the host-control binding excludes provider credentials")
+        from caos.engine.host_control import HostControlProvider
+
+        return HostControlProvider()
     if settings.environment == "production" and not anthropic_configured:
         raise AgentError("AGENT_PROVIDER_UNAVAILABLE", "ANTHROPIC_API_KEY is not configured")
 
