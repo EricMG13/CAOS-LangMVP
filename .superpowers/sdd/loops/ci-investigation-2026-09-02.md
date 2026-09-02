@@ -71,9 +71,11 @@ Dockerfile will repeat this exactly.
 the line). The wait expects focus back on the `Revenue growth, FY2025, BASE`
 input after Escape dismisses the discard-draft dialog raised by `history.back()`.
 
-Root cause was already established in `focus-race-findings.md` and issue #38, and
-this investigation confirms it rather than restating it. One mechanism detail is
-worth adding, because it explains why the existing fallbacks do not save the case.
+**Update 2026-09-02, later the same day: the previously recorded root cause is
+wrong, and so is the mechanism detail this section originally added.** Both are
+kept below, struck through, because the correction is the useful part. See
+`focus-race-findings.md` for the measurement; the short version is in the next
+subsection.
 
 `DraftDiscardDialog.dismiss()` (`Workspace.tsx:1187`) restores focus through three
 strategies in order — the captured node, `getElementById(trigger.id)`, then an
@@ -92,6 +94,34 @@ embeds `draftGeneration` (`model/ModelBuilder.tsx:750`,
 unmounts and remounts every scrubber. When `focus(trigger)` succeeds on the
 *outgoing* node, `restore()` returns satisfied, React then discards that node,
 focus falls to `<body>`, and nothing is left watching.
+
+### Corrected root cause — focus is already wrong before the dialog opens
+
+An instrumented copy of the smoke (focusin + MutationObserver timeline, plus a
+snapshot of `document.activeElement` immediately before `history.back()`) run 12
+times against isolated servers on stock code:
+
+| | remount before `history.back()` | focus before `history.back()` | result |
+|---|---|---|---|
+| PASS (8) | no | `Revenue growth, FY2025, BASE` | pass |
+| FAIL (4) | **yes** | **`Open command palette`** | fail |
+
+12/12, no exceptions. Every failing run enters the navigation with focus already
+on the command-palette button from an earlier dialog. `DraftDiscardDialog`
+faithfully restores what was focused; what was focused was already wrong. And
+the `ForecastScrubber` remount — named as the cause in `focus-race-findings.md`
+and issue #38 — is **protective**: it is present in all 8 passes, because a
+remount during the dialog forces the `aria-label` fallback onto the correct
+replacement node. It only harms when it lands *before* `history.back()`, where it
+strands focus and lets the workspace repair effect restore a stale trigger.
+
+A candidate fix (drop the `previousFocusedRef` inversion in
+`guardBrowserHistory`'s trigger ternary, use the live `activeElement`) was
+applied, rebuilt and run 14 times: 13 passed and the single no-remount run
+**failed identically**. Refuted — by then focus is already lost. Recorded so
+nobody spends the afternoon on it again.
+
+The two unverified directions worth trying are in `focus-race-findings.md`.
 
 ### Correction on frequency — it is intermittent, not deterministic
 

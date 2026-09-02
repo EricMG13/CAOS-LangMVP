@@ -25,7 +25,59 @@ fails the identical assertion. Main alternates pass/fail with no relevant code
 change — `14c49ec` (green) → `0458f10` (red) is a *gitignore-only* commit. Same
 code, both outcomes.
 
-## Root cause (evidenced, not inferred)
+## SUPERSEDED 2026-09-02 — the root cause below is wrong
+
+Measured with an instrumented copy of the smoke (focusin/MutationObserver
+timeline plus a snapshot of `document.activeElement` immediately before
+`history.back()`), 12 isolated runs, stock code:
+
+| | remount before `history.back()` | focus before `history.back()` | result |
+|---|---|---|---|
+| PASS (8) | no | `Revenue growth, FY2025, BASE` | pass |
+| FAIL (4) | **yes** | **`Open command palette`** | fail |
+
+12/12, no exceptions. Two conclusions, both opposite to what this file said:
+
+1. **Focus is already on the wrong element before the dialog exists.** Every
+   failing run enters `history.back()` with focus on `Open command palette` —
+   the trigger of the command-palette dialog dismissed earlier in the journey.
+   `DraftDiscardDialog.dismiss()` then does its job correctly: it restores what
+   was focused. The dialog is not the defect.
+2. **The remount is protective, not causal.** In all 8 passing runs the
+   `ForecastScrubber` remount lands *while the dialog is open*: that destroys
+   the captured node, `focus(trigger)` fails on `!isConnected`, and the
+   `aria-label` fallback finds the replacement — the correct input. The remount
+   only breaks things when it lands *before* `history.back()`.
+
+The actual chain in a failing run: the 2500 ms settle window lets a
+`draftGeneration` bump remount the scrubber → the focused input is destroyed →
+focus drops to `<body>` → the **workspace-level repair effect** restores focus
+from `focusedBeforeRef`/`previousFocusedRef`, which still hold the palette
+button (seeded there by `099fa10`'s `focusedBeforeRef.current = prompt.trigger`)
+→ the journey proceeds with focus on the wrong control.
+
+So the defect is in the repair effect re-focusing a **stale** element after a
+remount steals focus, not in the dialog's restore and not in the retry budget.
+
+**A fix was tried and refuted.** Replacing the trigger-selection ternary in
+`guardBrowserHistory` with "if something is genuinely focused, that is the
+trigger" (dropping the `previousFocusedRef` inversion) rebuilt and ran 14 times:
+13 passed, and the one run that took the no-remount path **still failed
+identically**. Correct as a simplification, useless as a fix — by that point
+focus is already wrong. Do not re-attempt it.
+
+Two directions worth trying instead, neither verified:
+- Stop `ForecastScrubber` re-keying on `draftGeneration`
+  (`model/ModelBuilder.tsx:750`). The remount is what steals focus; a controlled
+  value would reset without unmounting.
+- Make the repair effect re-find the element that just lost focus (by
+  `aria-label`/`id`) rather than restoring a remembered unrelated one.
+
+Everything below is the original 2026-09-02 analysis, kept for the record. Its
+mechanism claims are superseded by the table above; its **harness warnings
+remain accurate and valuable**.
+
+## Root cause (superseded — see above)
 
 `DraftDiscardDialog.dismiss()` in `caos/frontend/src/components/Workspace.tsx`
 restores focus to the control that opened the dialog. That control is routinely
