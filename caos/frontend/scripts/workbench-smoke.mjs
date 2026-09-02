@@ -423,9 +423,39 @@ try {
   }));
 
   await page.goto(`${baseURL}/run-console/?case=${caseRecord.id}`, { waitUntil: "networkidle" });
+  // Deep Research availability is derived from runtime truth. This server binds
+  // the host-control provider, so the route is offered and the governed journey
+  // runs live: brief → host-proposed plan → digest-bound approval → completion.
+  const liveCaseDetail = await (await api.get(`/api/cases/${caseRecord.id}`)).json();
+  assert.equal(liveCaseDetail.deep_research_available, true, `server derived Deep Research unavailable: ${liveCaseDetail.deep_research_unavailable_reason}`);
   const deepResearchOption = page.locator('#pathway option[value="DEEP_RESEARCH"]');
-  assert.equal(await deepResearchOption.isDisabled(), true, "Deep Research was enabled before actor-specific availability resolved");
-  await page.getByText("Deep Research is disabled for this deployment.", { exact: true }).waitFor();
+  assert.equal(await deepResearchOption.isDisabled(), false, "Deep Research stayed disabled although the server derives it available");
+  await page.getByRole("combobox", { name: "Purpose" }).selectOption("DEEP_RESEARCH");
+  await page.getByRole("textbox", { name: "Research question" }).fill("How resilient is liquidity through the next refinancing?");
+  await page.getByRole("textbox", { name: "Decision context" }).fill("Committee review of an existing position.");
+  await page.getByLabel("As-of date").fill("2026-01-01");
+  await page.getByRole("textbox", { name: "Time horizon" }).fill("12 months");
+  await page.getByRole("textbox", { name: "Must-answer lines" }).fill("Nearest maturity");
+  await page.getByRole("button", { name: "Compile and run" }).click();
+  await page.getByRole("status").getByText("Route compiled. Execution started.", { exact: true }).waitFor();
+  await page.getByRole("heading", { name: "Proposed research plan" }).waitFor({ timeout: 60_000 });
+  await page.getByRole("status").getByText("Run status: Pending approval", { exact: true }).waitFor();
+  const liveRunId = new URL(page.url()).searchParams.get("run")
+    || (await (await api.get(`/api/cases/${caseRecord.id}`)).json()).current_execution_id;
+  assert.ok(liveRunId, "neither the run console URL nor the case wire names the live research run");
+  const livePlanResponse = await api.get(`/api/runs/${liveRunId}/research-plan`);
+  assert.equal(livePlanResponse.status(), 200, "the research plan route is not served");
+  const livePlanState = await livePlanResponse.json();
+  assert.equal(livePlanState.phase, "awaiting_approval");
+  const livePlan = page.locator(".research-plan");
+  await livePlan.getByText(livePlanState.proposed_plan_hash, { exact: true }).waitFor();
+  assert.equal(await livePlan.locator(".research-workstreams > li").count(), livePlanState.proposed_plan.workstreams.length, "the live plan did not render every proposed workstream");
+  await page.getByRole("button", { name: "Approve research plan" }).click();
+  await page.getByRole("status").getByText("Research plan approved. Execution resumes against the approved plan hash.", { exact: true }).waitFor();
+  await page.getByRole("status").getByText("Run status: succeeded", { exact: true }).waitFor({ timeout: 120_000 });
+  const approvedState = await (await api.get(`/api/runs/${liveRunId}/research-plan`)).json();
+  assert.equal(approvedState.phase, "approved");
+  assert.equal(approvedState.approved_plan_hash, livePlanState.proposed_plan_hash, "execution resumed on a plan other than the approved one");
 
   let caseDetailFixtureHits = 0;
   let startFixtureHits = 0;
