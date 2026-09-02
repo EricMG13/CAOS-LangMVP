@@ -3,7 +3,13 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from urllib.parse import urlsplit
+from urllib.parse import unquote, urlsplit
+
+
+def _provider_binding(value: str) -> str:
+    if value not in {"", "host_control"}:
+        raise RuntimeError("CAOS_PROVIDER must be unset or host_control")
+    return value
 
 
 def _strict_bool(name: str, default: bool) -> bool:
@@ -43,13 +49,17 @@ class Settings:
     deploy_v_root: Path = Path(__file__).parent / "methodology" / "vendor" / "deploy_v"
     anthropic_api_key: str = ""
     anthropic_model: str = "claude-sonnet-4-6"
-    anthropic_timeout_seconds: float = 150.0
-    # OpenRouter is an alternative binding for the same provider port. It has no
-    # pre-call token-counting endpoint, so its adapter estimates locally — see
-    # engine/openrouter.py. Anthropic stays the default and wins when both are
-    # configured, because only it can count before it calls.
+    # OpenRouter is a development-only binding for the same provider port. It
+    # estimates tokens locally; startup rejects multiple credentials rather
+    # than applying provider precedence. Production accepts qualified Anthropic.
     openrouter_api_key: str = ""
     openrouter_model: str = "z-ai/glm-5.3-flash"
+    provider_qualification_path: Path | None = None
+    provider_qualification_digest: str = ""
+    # `host_control` binds the development-only answer-keyed provider so the
+    # keyless browser gates can drive an ordinary run (DECISIONS §14 D8). It is
+    # refused outside development; production knows only qualified Anthropic.
+    provider_binding: str = ""
     # Fail-closed posture: agent (LLM) execution stays off without explicit opt-in.
     agent_execution_enabled: bool = False
 
@@ -75,6 +85,7 @@ class Settings:
                             ("MAX_CONCURRENT_PREVIEWS", max_previews)):
             if value <= 0:
                 raise ValueError(f"{name} must be greater than 0")
+        qualification_path = os.getenv("CAOS_PROVIDER_QUALIFICATION_PATH", "")
         return cls(
             environment=os.getenv("ENVIRONMENT", "development"),
             database_url=os.getenv("DATABASE_URL", ""),
@@ -93,6 +104,9 @@ class Settings:
             openrouter_api_key=os.getenv("OPENROUTER_API_KEY", ""),
             openrouter_model=os.getenv("OPENROUTER_MODEL", "z-ai/glm-5.3-flash"),
             anthropic_model=os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-6"),
+            provider_qualification_path=Path(qualification_path) if qualification_path else None,
+            provider_qualification_digest=os.getenv("CAOS_PROVIDER_QUALIFICATION_DIGEST", ""),
+            provider_binding=_provider_binding(os.getenv("CAOS_PROVIDER", "")),
             agent_execution_enabled=_strict_bool("AGENT_EXECUTION_ENABLED", False),
         )
 
@@ -117,16 +131,25 @@ class Settings:
                 "(e.g. `openssl rand -hex 32`)"
             )
 
-    def validate_runtime(self) -> None:
+    def validate_worker_runtime(self) -> None:
         if self.environment not in {"development", "production"}:
             raise RuntimeError("ENVIRONMENT must be development or production")
+        _provider_binding(self.provider_binding)
+        if self.environment == "production" and self.provider_binding:
+            raise RuntimeError("CAOS_PROVIDER=host_control is development-only; production binds qualified Anthropic")
         if self.environment == "production":
             if not self.database_url.startswith(("postgresql://", "postgresql+psycopg://")):
                 raise RuntimeError("production requires a PostgreSQL DATABASE_URL")
-            self._reject_placeholder("EDGE_PROXY_SECRET", self.edge_proxy_secret)
-            self._reject_placeholder("SESSION_SECRET", self.session_secret)
             # POSTGRES_PASSWORD never reaches Settings on its own — Compose
             # interpolates it into DATABASE_URL, which is where we can see it.
-            password = urlsplit(self.database_url).password or ""
+            password = unquote(urlsplit(self.database_url).password or "")
+            if not password.strip():
+                raise RuntimeError("production requires POSTGRES_PASSWORD")
             if password.strip().lower().startswith(self._PLACEHOLDER_PREFIXES):
                 raise RuntimeError("production requires a real POSTGRES_PASSWORD, not the documented placeholder")
+
+    def validate_runtime(self) -> None:
+        self.validate_worker_runtime()
+        if self.environment == "production":
+            self._reject_placeholder("EDGE_PROXY_SECRET", self.edge_proxy_secret)
+            self._reject_placeholder("SESSION_SECRET", self.session_secret)

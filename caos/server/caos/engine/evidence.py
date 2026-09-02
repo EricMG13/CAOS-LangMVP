@@ -12,9 +12,10 @@ from __future__ import annotations
 import json
 from typing import Any, Callable
 
+from ..methodology.canonical import MAX_EVIDENCE_ID_CHARS, MAX_EVIDENCE_REFS_PER_MODULE
 from ..storage.store import DomainStore
-from .budget import EVIDENCE_BYTES_PER_SIX, EVIDENCE_READS_PER_MODULE
-from .provider import AgentError
+from .budget import EVIDENCE_BYTES_PER_MODULE, EVIDENCE_READS_PER_MODULE
+from .provider import AgentError, MAX_EVIDENCE_BLOCKS_PER_READ
 
 
 def render_tool_result(rows: list[dict[str, Any]]) -> str:
@@ -35,8 +36,8 @@ class EvidenceReader:
         source_set_id: str,
         run_id: str,
         *,
-        read_limit: int = 6 * EVIDENCE_READS_PER_MODULE,
-        byte_limit: int = EVIDENCE_BYTES_PER_SIX,
+        read_limit: int = EVIDENCE_READS_PER_MODULE,
+        byte_limit: int = EVIDENCE_BYTES_PER_MODULE,
         on_read: Callable[[str, list[str], int], None] | None = None,
     ) -> None:
         self.store = store
@@ -83,16 +84,23 @@ class EvidenceReader:
             raise AgentError("AGENT_BUDGET_EXCEEDED", "evidence read budget exhausted")
         if (
             not isinstance(source_id, str)
+            or not 0 < len(source_id) <= MAX_EVIDENCE_ID_CHARS
             or not isinstance(block_ids, list)
             or not block_ids
-            or len(block_ids) > 50
+            or len(block_ids) > MAX_EVIDENCE_BLOCKS_PER_READ
             # Element types are checked BEFORE the dedup set is built: an
             # unhashable block id (a list, a dict) would otherwise leave the
             # boundary as a bare TypeError instead of a typed refusal.
-            or any(not isinstance(item, str) for item in block_ids)
+            or any(
+                not isinstance(item, str) or not 0 < len(item) <= MAX_EVIDENCE_ID_CHARS
+                for item in block_ids
+            )
             or len(block_ids) != len(set(block_ids))
         ):
             raise AgentError("AGENT_OUTPUT_INVALID", "evidence block IDs must be unique and bounded")
+        requested = {(source_id, block_id) for block_id in block_ids}
+        if len(self.delivered() | requested) > MAX_EVIDENCE_REFS_PER_MODULE:
+            raise AgentError("AGENT_BUDGET_EXCEEDED", "module evidence reference budget exhausted")
 
         source = self._authorized_source(source_id)
 

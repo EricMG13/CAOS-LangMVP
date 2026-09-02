@@ -57,12 +57,12 @@ BODY_PROBES = {
                          "unit": "x", "status": "READY", "value": 1}],
         "preview_digest": ZERO_DIGEST, "note": "audit",
     },
+    ("POST", "/api/cases/{case_id}/model-revisions/rebase-preview"): {
+        "revision_id": "foreign-revision", "build_id": "foreign-build",
+    },
     ("POST", "/api/cases/{case_id}/models/scenarios"): {
         "build_id": "foreign-build", "registry_version": "audit", "registry_digest": ZERO_DIGEST,
         "shocks": [{"assumption_id": "audit", "case": "BASE", "period_id": "FY2026", "value": 1}],
-    },
-    ("POST", "/api/cases/{case_id}/model-revisions/rebase-preview"): {
-        "revision_id": "foreign-revision", "build_id": "foreign-build", "draft_generation": 0,
     },
     ("POST", "/api/cases/{case_id}/models/tornado"): {
         "build_id": "foreign-build", "registry_version": "audit", "registry_digest": ZERO_DIGEST,
@@ -72,7 +72,7 @@ BODY_PROBES = {
     },
     ("POST", "/api/cases/{case_id}/models/sensitivities/one-way"): {
         "build_id": "foreign-build", "registry_version": "audit", "registry_digest": ZERO_DIGEST,
-        "assumption_id": "audit", "case": "BASE", "period_scope": "ALL",
+        "assumption_id": "audit", "case": "BASE", "period_scope": "FY2026",
     },
     ("PUT", "/api/cases/{case_id}/deliverables/{pathway}/draft"): {
         "expected_version": 0, "template_id": "audit", "template_version": "audit",

@@ -44,11 +44,22 @@ output contract. Smaller deterministic modules are unaffected.
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from typing import Any
 
 from .budget import PROVIDER_TIMEOUT_SECONDS
 from .loop import reject_duplicate_keys
-from .provider import AgentError, ProviderBlock, ProviderMessage, ProviderRequest, ProviderUsage
+from .provider import (
+    AgentError,
+    ProviderBlock,
+    ProviderIdentity,
+    ProviderMessage,
+    ProviderQualification,
+    ProviderRequest,
+    ProviderUsage,
+    installed_dependencies,
+    parameter_context_digest,
+)
 
 BASE_URL = "https://openrouter.ai/api/v1"
 # A local tokenizer cannot know the served model's vocabulary, so the count is
@@ -67,6 +78,7 @@ TOKEN_ESTIMATE_MARGIN = 1.5
 # tiktoken's newest published vocabulary. Not GLM's, which is the point of the
 # margin above; it is a stable, offline stand-in rather than a claim of accuracy.
 TOKENIZER_ENCODING = "o200k_base"
+ADAPTER_VERSION = "caos.openrouter.v1"
 
 # finish_reason -> the port's stop_reason vocabulary. Anything absent stays
 # verbatim so loop.py rejects it as an unexpected stop reason rather than this
@@ -75,13 +87,45 @@ STOP_REASONS = {"tool_calls": "tool_use", "stop": "end_turn", "length": "max_tok
 
 
 class OpenRouterProvider:
-    def __init__(self, api_key: str, model: str, *, referer: str = "", title: str = "CAOS") -> None:
+    def __init__(
+        self,
+        api_key: str,
+        model: str,
+        *,
+        referer: str = "",
+        title: str = "CAOS",
+        qualification: ProviderQualification | None = None,
+        methodology_root: Path | None = None,
+    ) -> None:
         if not api_key:
             raise AgentError("AGENT_PROVIDER_UNAVAILABLE", "OPENROUTER_API_KEY is not configured")
+        del methodology_root
+        if qualification is not None:
+            raise AgentError("AGENT_PROVIDER_UNQUALIFIED", "OpenRouter is development-only")
         import httpx
         import tiktoken
 
         self.model = model
+        self.identity = ProviderIdentity(
+            provider_name="openrouter",
+            model=model,
+            provider_version=None,
+            adapter_version=ADAPTER_VERSION,
+            parameter_context_digest=parameter_context_digest(
+                provider_name="openrouter",
+                model=model,
+                provider_version=None,
+                adapter_version=ADAPTER_VERSION,
+                runtime_dependencies=installed_dependencies("httpx", "tiktoken"),
+                transport={"mode": "openai-chat-completions", "base_url": BASE_URL},
+                counting={"mode": "local-token-estimate", "tokenizer": TOKENIZER_ENCODING,
+                          "margin": TOKEN_ESTIMATE_MARGIN},
+            ),
+            qualification_record_id=None,
+            qualification_record_digest=None,
+            qualification_status="unqualified",
+            qualification_expires_at=None,
+        )
         self._encoding = tiktoken.get_encoding(TOKENIZER_ENCODING)
         headers = {"Authorization": f"Bearer {api_key}", "X-Title": title}
         if referer:
@@ -98,16 +142,14 @@ class OpenRouterProvider:
     # -- request shaping ---------------------------------------------------
 
     @staticmethod
-    def _tool_definition() -> dict[str, Any]:
-        from .provider import READ_EVIDENCE_TOOL
-
+    def _tool_definition(definition: dict[str, Any]) -> dict[str, Any]:
         return {
             "type": "function",
             "function": {
-                "name": READ_EVIDENCE_TOOL["name"],
-                "description": READ_EVIDENCE_TOOL["description"],
-                "parameters": READ_EVIDENCE_TOOL["input_schema"],
-                "strict": READ_EVIDENCE_TOOL["strict"],
+                "name": definition["name"],
+                "description": definition["description"],
+                "parameters": definition["input_schema"],
+                "strict": definition["strict"],
             },
         }
 
@@ -162,8 +204,9 @@ class OpenRouterProvider:
             "model": self.model,
             "messages": self._wire_messages(request.system, request.messages),
         }
-        if request.tools_enabled:
-            payload["tools"] = [self._tool_definition()]
+        tools = request.effective_tools()
+        if tools:
+            payload["tools"] = [self._tool_definition(tool) for tool in tools]
             payload["tool_choice"] = "auto"
             payload["parallel_tool_calls"] = False
         else:
@@ -226,6 +269,10 @@ class OpenRouterProvider:
                 output_tokens=usage.get("completion_tokens"),
             ),
             request_id=body.get("id"),
+            observed_model=body.get("model") if isinstance(body.get("model"), str) else None,
+            observed_provider_version=(
+                body.get("provider_version") if isinstance(body.get("provider_version"), str) else None
+            ),
         )
 
     @staticmethod

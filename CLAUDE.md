@@ -20,8 +20,15 @@ vacuously is wrong even if the suite stays green.
    checkpointed digests are expectations re-verified against the store.
 4. Methodology authority is the verified vendored bundle — integrity checked on
    the bytes at use. A run pinned to one build never executes under another.
-   The vendored bundle under `caos/server/caos/methodology/vendor/` is never
-   edited; behavior changes ride wrappers or registry entries.
+   Behavior changes ride wrappers or registry entries *where they can*: that
+   seam leaves the whole-tree pin meaningful and stays preferred. The bundle
+   under `caos/server/caos/methodology/vendor/` may be edited in-tree, but only
+   under a dated `DECISIONS.md` entry recording the change and regenerating the
+   manifests (`caos/scripts/regenerate_deploy_v_integrity.py`) — see §14.11,
+   which supersedes §12.27's "the bundle is never edited". Because a bundle
+   change moves the pin with it, that entry, not
+   `test_vendored_bundle_is_the_approved_unmodified_release`, is the authority
+   for what the tree should contain.
 5. Every gate where execution waits on a human is a digest-bound interrupt;
    approval binds the exact reviewed content (preview digest + input
    fingerprint). Single-actor releases (model Sign-Off) are store CAS
@@ -144,17 +151,27 @@ engine, the bundle, or the routes.
 ## Running and testing
 
 - Dev server: `python caos/server/dev.py` (SQLite under `.dev-data`, loopback
-  bind, startup recovery, serves `caos/frontend/out` when built). Deterministic
-  screen routes need no API key; agent execution requires
-  `AGENT_EXECUTION_ENABLED=true` + `ANTHROPIC_API_KEY`.
+  bind, startup recovery, serves `caos/frontend/out` when built). Every route
+  is provider-backed at both depths (`docs/DECISIONS.md` §14.3, §14.12), so no
+  route runs without a provider: development agent execution requires
+  `AGENT_EXECUTION_ENABLED=true` and exactly one provider key, or
+  `CAOS_PROVIDER=host_control` for the development-only answer-keyed binding
+  the keyless browser gates use (orchestration proof, never analysis; refused
+  in production). The placeholder deterministic executor is test-only and
+  returns `DETERMINISTIC_EXECUTOR_UNAVAILABLE` on any ordinary path.
 - Production entrypoints: `caos/server/run.py` (combined app — validated env,
-  auto-continue, recovery; the Docker `app` target's CMD) and
+  qualified Anthropic-only provider assembly, auto-continue, recovery; the
+  Docker `app` target's CMD) and
   `caos/server/worker.py` (polls the store for QUEUED model builds/exports and
-  executes them; the only process with LibreOffice, so XLSX rendering lives
-  here and nowhere else). `worker.py --once` runs a single pass.
-- Suite: `python -m pytest caos/tests -q` — 655 passed and 2 optional PostgreSQL
-  tests skipped in the default invocation with the retained corpus present.
-  Both optional tests pass against the local PostgreSQL 17 QA container.
+  executes them through the current Python workbook renderer; its image includes
+  LibreOffice, but runtime exports do not yet invoke the verified LibreOffice
+  path). `worker.py --once` runs a single pass.
+- Development evidence (not candidate qualification): the suite count is
+  measured, never quoted from memory; the enterprise-readiness task reports
+  under `.superpowers/sdd/` carry the exact result of each landed task on the
+  declared Python 3.14 interpreter. The security audit and quality-ledger
+  gates each started with 10 failures and were repaired in enterprise-readiness
+  Task 1. None of this qualifies live analysis or an enterprise candidate.
   Spec tests (`caos/tests/spec/`) are the contractual surface —
   they pin invariants and wire shapes; `test_injection_spec.py` pins the
   behavioural half of the prompt-injection defence: adversarial documents in
@@ -201,24 +218,19 @@ engine, the bundle, or the routes.
 
 ## Known gaps (honest ledger)
 
-- The ported frontend calls some routes this server does not yet serve; those
-  surfaces degrade or stay hidden behind the capability gate: Admin Studio
-  (`/admin/audit`, `/admin/bundle`), one-way sensitivities
-  (`/models/sensitivities/one-way`), worksheet reads
-  (`/models/{build_id}/worksheet`), model build export
-  (`POST /models/{build_id}/export` — only `GET …/download` is served),
-  revision rebase-preview, revision export and revision download
-  (`/model-revisions/rebase-preview`, `/model-revisions/{id}/export`,
-  `GET /model-revisions/{id}/download` — the download is served for a model
-  build only, never for a revision), and deep-research plan approval
-  (`/runs/{id}/research-plan/approve`).
-  The Command Center lens, the Report Studio deliverables workspace, model
-  scenarios/previews, model sign-off and run resume are all served and wired —
-  do not re-add them to this list.
-- Backup encryption is **untested here**: `caos/deploy/backup.sh` and
-  `restore_drill.sh` now encrypt with `age`, but neither `age` nor a running
-  Compose stack exists in the dev worktree, so only their syntax is checked.
-  Drill a real backup/restore pair before relying on either.
+- Admin Studio remains an explicit unavailable capability (`/admin/audit`,
+  `/admin/bundle`), as does deep-research plan approval
+  (`/runs/{id}/research-plan/approve`). Worksheet reads, one-way sensitivity,
+  tornado, revision rebase preview, and build/revision export and download
+  routes are served and must not be re-added to this gap list.
+- The governed builder and canonical deliverable implementation exists, but its
+  deterministic/scripted development proof does not qualify live analysis.
+  Enterprise qualification across all six pathways remains open.
+- The encrypted Postgres/vault backup streams and restore checks were exercised
+  with real `age`, PostgreSQL, and Docker-volume data on 2026-08-30. The
+  `backup.sh` Compose wrapper, lock directory, manifest bookkeeping, scheduled
+  off-host transfer, rotation, and retention were not exercised and remain
+  deployment gates.
 - The Dockerfile installs `libreoffice-calc` and its 167 apt dependencies
   unversioned. This is an **accepted** gap, not an oversight, and the reason is
   narrower than it looks: apt is not unauthenticated. The `InRelease` file is
@@ -259,17 +271,22 @@ engine, the bundle, or the routes.
   emitted clause is pinned. Locking the set row instead would not work:
   `ORDER BY version DESC LIMIT 1 FOR UPDATE` re-reads the same unchanged row
   and still computes N+1.
-- The OpenRouter binding meters by estimate, not by count.
-  `engine/openrouter.py` is a second provider-port adapter (selected by
-  `build_provider` only when `OPENROUTER_API_KEY` is set and
-  `ANTHROPIC_API_KEY` is not). OpenRouter has no pre-call token-counting
+- The OpenRouter binding is development-only and meters by estimate, not by
+  count. `engine/openrouter.py` is a second provider-port adapter selected by
+  `build_provider` only in development when it is the sole configured key.
+  Production refuses OpenRouter, and every environment refuses ambiguous dual
+  credentials. OpenRouter has no pre-call token-counting
   endpoint, so `count_tokens` measures locally with tiktoken and multiplies by
   `TOKEN_ESTIMATE_MARGIN`. Invariant 8's reservation is therefore approximate on
   this provider in a way it is not on Anthropic; `reconcile_provider` still
   corrects `used` to the actual figures, so the aggregate ceiling holds, but the
   pre-call reservation can be wrong by the margin. The margin is calibrated
   against measurements recorded in the module docstring — raise it, never lower
-  it. The docstring also records why z-ai/glm-5.3-flash cannot complete CP-1.
+  it. Run, plan, artifact, snapshot, and attempt records carry the immutable
+  provider identity; run events and acceptance audit carry its digest. Usage-valid
+  responses that report a different model/version are
+  reconciled for spend and then refused before parsing or tool execution. The
+  docstring also records why z-ai/glm-5.3-flash cannot complete CP-1.
 - Large documents are packed, not indexed line by line. The run's source
   manifest carries one row per block into *every* module prompt, so block count
   must not track document size: `pack_blocks` in `sources/domain.py` emits one

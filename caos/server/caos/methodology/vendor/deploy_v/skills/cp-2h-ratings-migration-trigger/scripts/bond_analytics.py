@@ -31,6 +31,8 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from cp_tables import parse_figure  # noqa: E402
 
 NOT_CALCULABLE = "Not Calculable"
+MAX_BOND_YEARS = 100
+MAX_CALL_SCHEDULE_ITEMS = 100
 _NULL_WORDS = {"null", "n/a", "na", "none", "not disclosed", "not available",
                "not calculable", "unknown", "tbd", "insufficient information"}
 
@@ -85,6 +87,8 @@ def yield_to(price, cashflows, tol=1e-10, lo=-0.99, hi=10.0):
 
 def _schedule(coupon, years, redemption=100.0, freq=2):
     """(time, cashflow) pairs to a redemption date, per 100 nominal."""
+    if years < 0 or years > MAX_BOND_YEARS:
+        raise ValueError(f"redemption horizon must be between 0 and {MAX_BOND_YEARS} years")
     n = int(round(years * freq))
     if n <= 0:
         return []
@@ -110,7 +114,12 @@ def compute(payload):
     # premium bond's worst case is usually the earliest call, and reporting YTM
     # there overstates the return an investor can actually be held to.
     calls, worst = [], None
-    for c in payload.get("call_schedule", []) or []:
+    call_schedule = payload.get("call_schedule", []) or []
+    if not isinstance(call_schedule, list) or len(call_schedule) > MAX_CALL_SCHEDULE_ITEMS:
+        raise ValueError(f"call_schedule must contain at most {MAX_CALL_SCHEDULE_ITEMS} entries")
+    for c in call_schedule:
+        if not isinstance(c, dict):
+            raise ValueError("call_schedule entries must be objects")
         cy = _num(c.get("years"), "call_schedule.years")
         cp = _num(c.get("price"), "call_schedule.price")
         if cy is None or cp is None:

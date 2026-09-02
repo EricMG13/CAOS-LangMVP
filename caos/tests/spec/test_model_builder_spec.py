@@ -39,6 +39,8 @@ import dataclasses
 import hashlib
 import json
 import shutil
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from decimal import Decimal
 from pathlib import Path
 
@@ -371,13 +373,29 @@ def test_deploy_v_bundle_verifies_pinned_digests_and_rejects_symlink_paths(tmp_p
     assert CpModelBundle(DEPLOY_V).verify_integrity() == [], "zero digest mismatches"
     mirror = tmp_path / "deploy_v"
     shutil.copytree(DEPLOY_V, mirror)
+    mirrored_bundle = CpModelBundle(mirror)
     outside = tmp_path / "outside.md"
     outside.write_text("evil", encoding="utf-8")
     target = mirror / "skills" / "cp-model" / "SKILL.md"
     target.unlink()
     target.symlink_to(outside)
     with pytest.raises(Exception, match="symlink"):
-        CpModelBundle(mirror).resolve_declared_file("cp-model", "SKILL.md")
+        mirrored_bundle.resolve_declared_file("cp-model", "SKILL.md")
+
+
+def test_cp_model_loader_rejects_runtime_changed_after_engine_bundle_pin(tmp_path):
+    from caos.methodology.bundle import DeployVBundle
+    from caos.models.engine import CpModelBundle, ModelInputError
+
+    mirror = tmp_path / "deploy_v"
+    shutil.copytree(DEPLOY_V, mirror)
+    authority = DeployVBundle(mirror)
+    CpModelBundle(mirror, integrity=authority.integrity)
+    calculations = mirror / "skills" / "cp-model" / "scripts" / "cp_model_v3" / "calculations.py"
+    calculations.write_text(calculations.read_text(encoding="utf-8") + "\n# changed after pin\n", encoding="utf-8")
+
+    with pytest.raises(ModelInputError, match="authority file changed"):
+        CpModelBundle(mirror, integrity=authority.integrity)
 
 
 def test_golden_cp_model_fixtures_pass_vendor_validation():
@@ -727,11 +745,22 @@ def test_cp2b_projection_preserves_registers_and_pins_upstream_digest():
     from caos.models.engine import project_cp2b
 
     bundle = _bundle()
-    cp2a = _read("cp2a.md")
+    cp2a = _read("cp2a.md").replace(
+        "upstream_artifacts_used: []",
+        "\n".join((
+            "upstream_artifacts_used:",
+            "  - module_id: CP-0",
+            '    run_id: "run-cp-model-fixture"',
+            '    period: "FY2024"',
+            f'    artifact_digest: {"b" * 64}',
+        )),
+    )
     upstream_digest = "a" * 64
     projected = project_cp2b(cp2a, run_id="run-cp-model-fixture", cp2a_artifact_digest=upstream_digest, bundle=bundle)
 
     assert upstream_digest in projected
+    handoff = bundle.validate_handoff(projected, module_id="CP-2B", run_id="run-cp-model-fixture")
+    assert [row["module_id"] for row in handoff.fields["upstream_artifacts_used"]] == ["CP-0", "CP-2A"]
     source_region = cp2a[cp2a.index("### T5.1"): cp2a.index("## Evidence Trace")]
     assert source_region in projected, "the register region carries over byte-for-byte"
     for table_id in ("T5.1", "T5.2", "T5.3", "T5.4", "T5.5", "T5.6", "T5.7"):
@@ -773,6 +802,115 @@ def test_cp2b_projection_never_escalates_restricted_qa():
         project_cp2b(cp2a, run_id="run-cp-model-fixture", cp2a_artifact_digest="a" * 64, bundle=_bundle())
 
 
+def test_cp2b_projection_rejects_hidden_t5_register_data():
+    from caos.models.engine import ModelInputError, project_cp2b
+
+    cp2a = _read("cp2a.md").replace(
+        "| Event ID | Source Document | Event Description | Event Category | Date/Range | Evidence Quality | Source Reliability |\n"
+        "|---|---|---|---|---|---|---|\n"
+        "| EVT-1 | SRC-1 | Covenant test | Covenant | 2025-06-30 | High | Primary filing |",
+        "<div hidden>\n"
+        "| Event ID | Source Document | Event Description | Event Category | Date/Range | Evidence Quality | Source Reliability |\n"
+        "|---|---|---|---|---|---|---|\n"
+        "| EVT-1 | SRC-1 | Covenant test | Covenant | 2025-06-30 | High | Primary filing |\n"
+        "</div>",
+        1,
+    )
+    with pytest.raises(ModelInputError, match="T5.1 is missing its Markdown table"):
+        project_cp2b(
+            cp2a,
+            run_id="run-cp-model-fixture",
+            cp2a_artifact_digest="a" * 64,
+            bundle=_bundle(),
+        )
+
+
+def test_cp2b_projection_rejects_t5_sources_outside_the_stable_source_register():
+    from caos.models.engine import ModelInputError, project_cp2b
+
+    cp2a = (
+        _read("cp2a.md")
+        .replace("| EVT-1 | SRC-1 | Covenant test |", "| EVT-1 | SRC-EVIL | Covenant test |", 1)
+        .replace(
+            "| 2025-06-30 | Covenant test | Covenant | Tests headroom | SRC-1 Annual report",
+            "| 2025-06-30 | Covenant test | Covenant | Tests headroom | SRC-EVIL fabricated filing",
+            1,
+        )
+        .replace(
+            "| EVT-1 | Covenant test | Medium | covenant | High | leverage | Negative | SRC-1 Annual report",
+            "| EVT-1 | Covenant test | Medium | covenant | High | leverage | Negative | SRC-EVIL fabricated filing",
+            1,
+        )
+    )
+    with pytest.raises(ModelInputError, match="outside returned pinned sources"):
+        project_cp2b(
+            cp2a,
+            run_id="run-cp-model-fixture",
+            cp2a_artifact_digest="a" * 64,
+            bundle=_bundle(),
+        )
+
+
+@pytest.mark.parametrize("separator", ("and", "/", "&", "+", "("))
+def test_cp2b_projection_rejects_secondary_source_ids_hidden_in_locators(separator):
+    from caos.models.engine import ModelInputError, project_cp2b
+
+    closing = ")" if separator == "(" else ""
+    cp2a = _read("cp2a.md").replace(
+        "SRC-1 Annual report 2024 note 12",
+        f"SRC-1 {separator} SRC-EVIL{closing} fabricated filing",
+    )
+    with pytest.raises(ModelInputError, match="outside returned pinned sources"):
+        project_cp2b(
+            cp2a,
+            run_id="run-cp-model-fixture",
+            cp2a_artifact_digest="a" * 64,
+            bundle=_bundle(),
+        )
+
+
+def test_cp_model_rejects_hidden_stable_tables(tmp_path):
+    from caos.models.engine import ModelInputError
+
+    cp1 = _read("cp1.md").replace(
+        "<!-- table-id: cp1.model_account_register -->",
+        "<div hidden>\n<!-- table-id: cp1.model_account_register -->",
+        1,
+    ).replace(
+        "### Segment revenue schedule",
+        "</div>\n\n### Segment revenue schedule",
+        1,
+    )
+    bundle = _bundle()
+    with pytest.raises(ModelInputError, match="stable table marker is not visible"):
+        bundle.validate(cp1, _read("cp1a.md"), _read("cp1b.md"), _read("cp2.md"), _read("cp2b.md"))
+    paths = _forecast_paths(tmp_path, {"CP-1": cp1})
+    with pytest.raises(ModelInputError, match="stable table marker is not visible"):
+        bundle.calculate(paths)
+
+
+@pytest.mark.parametrize(
+    ("fixture", "original"),
+    (
+        (
+            "cp1.md",
+            "| segment-q1 | FY2024_Q1 | SEGMENT_REVENUE | 100 | 100 | 0 | 0 | PASS | Segment equals reported revenue | SRC-1 |",
+        ),
+        (
+            "cp1b.md",
+            "| revenue | FY2024_Q1 | 100 | 100 | 0 | 0 | PASS | Matched | SRC-1 |",
+        ),
+    ),
+)
+def test_cp_model_rejects_unpinned_secondary_source_references(fixture, original):
+    from caos.models.engine import ModelInputError
+
+    mutated = _read(fixture).replace(original, original.removesuffix("SRC-1 |") + "SRC-EVIL |", 1)
+    replacements = {fixture.removesuffix(".md"): mutated}
+    with pytest.raises(ModelInputError, match="outside returned pinned sources"):
+        _validate(_bundle(), **replacements)
+
+
 # --- build queue, readiness, and build authority ----------------------------------
 
 
@@ -810,6 +948,48 @@ async def test_readiness_binds_to_the_latest_accepted_snapshot(models, engine, s
     assert store.get_case(case["id"])["visible_snapshot_id"] == snap1["id"], "the visible pointer is untouched"
 
 
+async def test_warmed_model_caches_cannot_outlive_withdrawn_source_authority(models, engine, store):
+    case, build = await _built_case(models, engine, store)
+    registry = models.assumption_registry(case["id"], build["id"])
+    request = _preview_request(registry, build["id"])
+    models.preview(case["id"], request)
+    source = store.list_sources(case["id"])[0]
+
+    store.withdraw(case["id"], source["id"], "analyst")
+
+    assert models.readiness(case["id"])["status"] == "CANONICAL_MODEL_INPUTS_INVALID"
+    with pytest.raises(ValueError, match="MODEL_BUILD_NOT_READY"):
+        models.assumption_registry(case["id"], build["id"])
+    with pytest.raises(ValueError, match="MODEL_BUILD_NOT_READY"):
+        models.preview(case["id"], request)
+
+
+async def test_full_credit_snapshot_requires_the_exact_plan_artifact_set(models, engine, store):
+    import sqlalchemy as sa
+
+    from caos.models.service import CANONICAL_MODULES
+    from caos.storage.runs import run_snapshots
+
+    case, build = await _built_case(models, engine, store)
+    snapshot = engine.runs.get_snapshot(build["snapshot_id"])
+    snapshot["artifacts"] = [
+        reference
+        for reference in snapshot["artifacts"]
+        if reference["module_id"] in CANONICAL_MODULES
+    ]
+    preimage = {key: value for key, value in snapshot.items() if key not in {"digest", "id"}}
+    with store.engine.begin() as connection:
+        connection.execute(
+            sa.update(run_snapshots)
+            .where(run_snapshots.c.id == snapshot["id"])
+            .values(artifacts=snapshot["artifacts"], digest=_digest(preimage))
+        )
+
+    assert models.readiness(case["id"])["status"] == "CANONICAL_MODEL_INPUTS_INVALID"
+    with pytest.raises(ValueError, match="MODEL_BUILD_NOT_READY"):
+        models.assumption_registry(case["id"], build["id"])
+
+
 async def test_provider_failure_is_bounded_and_leaks_nothing_into_the_run(engine, store, provider):
     case, _source = seed_case_with_source(store)
 
@@ -817,7 +997,10 @@ async def test_provider_failure_is_bounded_and_leaks_nothing_into_the_run(engine
         raise RuntimeError("provider-secret-XYZZY: internal stack")
 
     provider.script = [boom]
-    run = await engine.start_run(case_id=case["id"], pathway="FULL_CREDIT", depth="full", actor="analyst")
+    run = await engine.start_run_for_tests(
+        case_id=case["id"], pathway="FULL_CREDIT", depth="full", actor="analyst",
+        allow_placeholder_deterministic=True,
+    )
     await engine.wait(run["id"])
     record = engine.get_run(run["id"])
     assert record["status"] == "failed"
@@ -884,6 +1067,39 @@ async def test_acceptance_commits_before_queueing_and_duplicate_accept_is_idempo
     builds = models.list_builds(case["id"])
     assert len(builds) == 1
     assert models.dispatch_log_for_tests().count(builds[0]["id"]) == 1, "dispatched exactly once"
+
+
+async def test_manual_queue_cannot_repoint_a_newer_accepted_build(models, engine, store, monkeypatch):
+    models.fail_next_queue_for_tests()
+    case, _run_a, snapshot_a = await _accepted_case(engine, store)
+    run_b = await engine.run_scripted_for_tests(case["id"])
+    resolve = models._resolve_snapshot
+    entered = threading.Event()
+    release = threading.Event()
+
+    def pause_after_resolving_old_snapshot(snapshot):
+        resolved = resolve(snapshot)
+        if snapshot["id"] == snapshot_a["id"]:
+            entered.set()
+            assert release.wait(5)
+        return resolved
+
+    monkeypatch.setattr(models, "_resolve_snapshot", pause_after_resolving_old_snapshot)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        stale_queue = pool.submit(models.queue_build, case["id"], "analyst")
+        assert entered.wait(5)
+        newer_accept = pool.submit(asyncio.run, engine.accept(run_b["id"], actor="analyst"))
+        with pytest.raises(TimeoutError):
+            newer_accept.result(timeout=0.1)
+        release.set()
+        stale_queue.result(timeout=5)
+        snapshot_b = newer_accept.result(timeout=5)
+
+    builds = models.list_builds(case["id"])
+    assert len(builds) == 1
+    assert builds[0]["status"] == "QUEUED"
+    assert builds[0]["snapshot_id"] == snapshot_b["id"]
+    assert store.get_case(case["id"])["accepted_snapshot_id"] == snapshot_b["id"]
 
 
 async def test_acceptance_survives_queue_failure_and_manual_retry(models, engine, store):
@@ -1009,7 +1225,7 @@ async def test_invalid_canonical_inputs_commit_acceptance_but_never_queue(models
 
 @pytest.mark.parametrize(
     "corruption",
-    ["missing_qa", "digest_mismatch", "unknown_field", "malformed_tabs", "incomplete_cells", "non_finite_value"],
+    ["missing_qa", "failed_qa", "digest_mismatch", "unknown_field", "malformed_tabs", "incomplete_cells", "non_finite_value"],
 )
 async def test_build_completion_refuses_invalid_results_and_stays_building(models, engine, store, corruption):
     models.fail_next_queue_for_tests()
@@ -1018,6 +1234,8 @@ async def test_build_completion_refuses_invalid_results_and_stays_building(model
     result = models.valid_build_result_for_tests(queued["id"])
     if corruption == "missing_qa":
         result.pop("qa")
+    elif corruption == "failed_qa":
+        result["qa"]["status"] = "FAIL"
     elif corruption == "digest_mismatch":
         result["payload_digest"] = "0" * 64
     elif corruption == "unknown_field":
@@ -1529,6 +1747,205 @@ async def test_sign_off_cas_is_append_only_with_separate_head_and_monotonic_orde
         store.mutate_model_revision_for_tests(signed["id"], {"note": "rewritten history"})
 
 
+async def test_signed_revision_database_guard_refuses_every_immutable_mutation_and_delete(
+    models, engine, store,
+):
+    import sqlalchemy as sa
+    from sqlalchemy.exc import DBAPIError
+
+    from caos.storage.models import model_revisions
+
+    case, build = await _built_case(models, engine, store)
+    registry = models.assumption_registry(case["id"], build["id"])
+    preview = models.preview(case["id"], _preview_request(registry, build["id"]))
+    signed = models.sign_off(
+        case["id"], _sign_off_request(registry, build["id"], preview)
+    )
+    with models.builds.engine.connect() as connection:
+        stored = dict(connection.execute(
+            sa.select(model_revisions).where(model_revisions.c.id == signed["id"])
+        ).mappings().one())
+    mutations = (
+        {"seq": stored["seq"] + 1},
+        {"id": "rev-rewritten"},
+        {"case_id": "case-rewritten"},
+        {"revision_number": 99},
+        {"build_id": "mdl-rewritten"},
+        {"record": {**stored["record"], "note": "rewritten history"}},
+        {"record_digest": "0" * 64},
+        {"created_by": "rewriter"},
+        {"created_at": "2099-01-01T00:00:00+00:00"},
+    )
+    for values in mutations:
+        with pytest.raises(DBAPIError, match="APPEND_ONLY"):
+            with models.builds.engine.begin() as connection:
+                connection.execute(
+                    sa.update(model_revisions)
+                    .where(model_revisions.c.id == signed["id"])
+                    .values(**values)
+                )
+    with pytest.raises(DBAPIError, match="APPEND_ONLY"):
+        with models.builds.engine.begin() as connection:
+            row = dict(connection.execute(
+                sa.select(model_revisions).where(model_revisions.c.id == signed["id"])
+            ).mappings().one())
+            connection.execute(
+                sa.delete(model_revisions).where(model_revisions.c.id == signed["id"])
+            )
+            connection.execute(model_revisions.insert().values(**row))
+
+    assert models.builds.update_revision_export(
+        signed["id"], {"status": "FAILED", "error": {"code": "TEST"}},
+    )
+    current = models.head_revision(case["id"])
+    assert current["id"] == signed["id"]
+    assert current["export"] == {"status": "FAILED", "error": {"code": "TEST"}}
+    with models.builds.engine.connect() as connection:
+        after = dict(connection.execute(
+            sa.select(model_revisions).where(model_revisions.c.id == signed["id"])
+        ).mappings().one())
+    assert after["record"] == stored["record"]
+    assert after["record_digest"] == stored["record_digest"]
+
+
+async def test_signed_revision_digest_refuses_storage_bypass_before_export_or_publication(
+    models, engine, store, settings,
+):
+    import sqlalchemy as sa
+
+    from caos.contracts import AnalystRevisionSelection
+    from caos.deliverables.service import DeliverableService
+    from caos.storage.models import ModelStore, model_revisions
+
+    case, build = await _built_case(models, engine, store)
+    registry = models.assumption_registry(case["id"], build["id"])
+    preview = models.preview(case["id"], _preview_request(registry, build["id"]))
+    signed = models.sign_off(
+        case["id"], _sign_off_request(registry, build["id"], preview)
+    )
+    with models.builds.engine.begin() as connection:
+        connection.exec_driver_sql("DROP TRIGGER model_revisions_append_only")
+        connection.exec_driver_sql("DROP TRIGGER model_revisions_no_delete")
+        row = dict(connection.execute(
+            sa.select(model_revisions).where(model_revisions.c.id == signed["id"])
+        ).mappings().one())
+        forged = copy.deepcopy(row["record"])
+        forged["worksheet"]["tabs"][0]["cells"][0]["value"] = "UNSIGNED"
+        connection.execute(
+            sa.delete(model_revisions).where(model_revisions.c.id == signed["id"])
+        )
+        connection.execute(model_revisions.insert().values(**{**row, "record": forged}))
+    ModelStore(models.builds.engine)
+
+    for operation in (
+        lambda: models.queue_export(signed["id"], "analyst"),
+        lambda: models.run_export_for_tests(signed["id"]),
+        lambda: models.download(case["id"], signed["id"]),
+        lambda: DeliverableService(
+            store=store,
+            vault_dir=settings.storage_dir / "deliverables",
+            engine=engine,
+            models=models,
+        )._live_revision(
+            case["id"],
+            AnalystRevisionSelection(
+                kind="ANALYST_REVISION",
+                build_id=build["id"],
+                revision_id=signed["id"],
+            ),
+        ),
+    ):
+        with pytest.raises(ValueError, match="MODEL_REVISION_INTEGRITY_FAILED"):
+            operation()
+
+
+def test_signed_revision_immutability_ddl_covers_sqlite_and_postgres():
+    from caos.storage.models import (
+        MODEL_REVISION_IMMUTABLE_COLUMNS,
+        POSTGRES_MODEL_REVISION_FUNCTION_DDL,
+        POSTGRES_MODEL_REVISION_TRIGGER_DDL,
+        SQLITE_MODEL_REVISION_DELETE_DDL,
+        SQLITE_MODEL_REVISION_UPDATE_DDL,
+        model_revisions,
+    )
+
+    assert set(MODEL_REVISION_IMMUTABLE_COLUMNS) == (
+        set(model_revisions.c.keys()) - {"export"}
+    )
+    assert "BEFORE DELETE" in SQLITE_MODEL_REVISION_DELETE_DDL
+    assert "BEFORE UPDATE OR DELETE" in POSTGRES_MODEL_REVISION_TRIGGER_DDL
+    assert "NEW.record::text IS DISTINCT FROM OLD.record::text" in (
+        POSTGRES_MODEL_REVISION_FUNCTION_DDL
+    )
+    for column in MODEL_REVISION_IMMUTABLE_COLUMNS:
+        assert column in SQLITE_MODEL_REVISION_UPDATE_DDL
+        if column != "record":
+            assert f"NEW.{column} IS DISTINCT FROM OLD.{column}" in (
+                POSTGRES_MODEL_REVISION_FUNCTION_DDL
+            )
+    assert "NEW.export" not in POSTGRES_MODEL_REVISION_FUNCTION_DDL
+
+
+async def test_signed_revision_turns_stale_when_acceptance_advances_but_auto_queue_fails(models, engine, store):
+    case, build = await _built_case(models, engine, store)
+    registry = models.assumption_registry(case["id"], build["id"])
+    preview = models.preview(case["id"], _preview_request(registry, build["id"]))
+    signed = models.sign_off(
+        case["id"], _sign_off_request(registry, build["id"], preview)
+    )
+    assert signed["state"] == "ACTIVE"
+
+    models.fail_next_queue_for_tests()
+    next_run = await engine.run_scripted_for_tests(case["id"])
+    next_snapshot = await engine.accept(next_run["id"], actor="analyst")
+
+    assert next_snapshot["id"] != signed["snapshot_id"]
+    assert models.head_revision(case["id"])["state"] == "STALE"
+    assert models.revisions(case["id"])[-1]["state"] == "STALE"
+    assert models.readiness(case["id"])["status"] == "READY_TO_BUILD"
+
+
+async def test_sign_off_and_acceptance_serialize_on_snapshot_authority(
+    models, engine, store, monkeypatch
+):
+    import threading
+
+    case, build = await _built_case(models, engine, store)
+    registry = models.assumption_registry(case["id"], build["id"])
+    preview = models.preview(case["id"], _preview_request(registry, build["id"]))
+    request = _sign_off_request(registry, build["id"], preview)
+    next_run = await engine.run_scripted_for_tests(case["id"])
+    entered_validation = threading.Event()
+    release_validation = threading.Event()
+    accept_started = threading.Event()
+    original_validate = models._validate_build_identity
+
+    def pause_inside_authority_guard(*args, **kwargs):
+        original_validate(*args, **kwargs)
+        entered_validation.set()
+        assert release_validation.wait(5), "test failed to release sign-off"
+
+    monkeypatch.setattr(models, "_validate_build_identity", pause_inside_authority_guard)
+    sign_task = asyncio.create_task(
+        asyncio.to_thread(models.sign_off, case["id"], request)
+    )
+    assert await asyncio.to_thread(entered_validation.wait, 5)
+
+    def accept_in_thread():
+        accept_started.set()
+        return asyncio.run(engine.accept(next_run["id"], actor="analyst"))
+
+    accept_task = asyncio.create_task(asyncio.to_thread(accept_in_thread))
+    assert await asyncio.to_thread(accept_started.wait, 5)
+    await asyncio.sleep(0.05)
+    assert store.get_case(case["id"])["accepted_snapshot_id"] == build["snapshot_id"]
+
+    release_validation.set()
+    signed, next_snapshot = await asyncio.gather(sign_task, accept_task)
+    assert next_snapshot["id"] != signed["snapshot_id"]
+    assert models.head_revision(case["id"])["state"] == "STALE"
+
+
 @pytest.mark.parametrize(
     "field",
     ["input_fingerprint", "payload_digest", "registry_digest", "snapshot_id", "assumptions_digest", "outputs_digest"],
@@ -1545,6 +1962,31 @@ async def test_sign_off_validates_exact_current_build_identity(models, engine, s
         models.sign_off(case["id"], request)
     assert models.revisions(case["id"]) == []
     assert store.audit_trail() == before_audit
+
+
+@pytest.mark.parametrize("field", ["methodology_build_id", "calculation_runtime"])
+async def test_validated_build_rejects_tampered_publishing_identity(models, engine, store, field):
+    case, build = await _built_case(models, engine, store)
+    value = (
+        "deploy-v-forged"
+        if field == "methodology_build_id"
+        else {**build["calculation_runtime"], "sha256": "0" * 64}
+    )
+    models.builds.update_build(build["id"], **{field: value})
+
+    with pytest.raises(ValueError, match=rf"MODEL_REVISION_INVALID:.*{field}"):
+        models.validated_build(case["id"], build["id"])
+
+
+async def test_validated_build_rejects_tampered_qa_details(models, engine, store):
+    case, build = await _built_case(models, engine, store)
+    tampered_qa = copy.deepcopy(build["qa"])
+    assert tampered_qa["status"] == "PASS"
+    tampered_qa["semantic_check_count"] += 1
+    models.builds.update_build(build["id"], qa=tampered_qa)
+
+    with pytest.raises(ValueError, match=r"MODEL_REVISION_INVALID:.*qa"):
+        models.validated_build(case["id"], build["id"])
 
 
 async def test_sign_off_against_superseded_build_reports_current_build_identity(models, engine, store):
@@ -1649,6 +2091,44 @@ async def test_signed_export_is_runtime_pinned_hash_verified_and_never_demotes(m
     (settings.storage_dir / export["vault_key"]).write_bytes(stored + b"tamper")
     with pytest.raises(Exception, match="MODEL_REVISION_EXPORT_INTEGRITY_FAILED"):
         models.download(case["id"], signed["id"])
+
+
+async def test_revision_download_rejects_another_revisions_valid_export_manifest(
+    models, engine, store
+):
+    case, build = await _built_case(models, engine, store)
+    registry = models.assumption_registry(case["id"], build["id"])
+    first_preview = models.preview(case["id"], _preview_request(registry, build["id"]))
+    first = models.sign_off(
+        case["id"], _sign_off_request(registry, build["id"], first_preview)
+    )
+    shifted = _shifted_defaults(registry)
+    second_preview = models.preview(
+        case["id"],
+        _preview_request(
+            registry, build["id"], assumptions=shifted, parent=first["id"], generation=2
+        ),
+    )
+    second = models.sign_off(
+        case["id"],
+        _sign_off_request(
+            registry,
+            build["id"],
+            second_preview,
+            assumptions=shifted,
+            parent=first["id"],
+            expected_head=first["id"],
+            generation=2,
+        ),
+    )
+    first = models.run_export_for_tests(first["id"])
+    second = models.run_export_for_tests(second["id"])
+    assert first["export"]["sha256"] != second["export"]["sha256"]
+
+    models.builds.update_revision_export(first["id"], second["export"])
+
+    with pytest.raises(ValueError, match="MODEL_REVISION_EXPORT_INTEGRITY_FAILED"):
+        models.download(case["id"], first["id"])
 
 
 async def test_newer_accepted_build_stales_revisions_and_rebase_preview_is_transient(models, engine, store):
@@ -1815,3 +2295,62 @@ async def test_model_reads_are_case_scoped_and_downloads_are_verified(client, mo
 # test_model_and_workflow_claims_share_one_active_job_budget -> test_model_and_workflow_jobs_share_one_admission_budget
 # test_postgres_concurrent_model_queue_is_idempotent_and_preserves_actor -> test_concurrent_queue_is_idempotent_and_attributes_the_winner
 # test_postgres_two_writer_revision_cas_has_one_atomic_winner -> test_two_concurrent_sign_offs_have_one_atomic_winner
+
+
+# --- publication is bound to the authority it validated ------------------------------
+
+
+async def test_revision_export_refuses_to_publish_after_a_withdrawal_between_validation_and_publish(
+    models, engine, store, monkeypatch,
+):
+    """validated_build runs, releases whatever lock the app holds, and the
+    worker (a separate process) renders and publishes. A withdrawal landing in
+    between must leave no READY export: the publish is a compare-and-swap on
+    the source authority the render was validated against."""
+    case, build = await _built_case(models, engine, store)
+    source = store.list_sources(case["id"])[0]
+    registry = models.assumption_registry(case["id"], build["id"])
+    request = _preview_request(registry, build["id"])
+    preview = models.preview(case["id"], request)
+    signed = models.sign_off(case["id"], _sign_off_request(registry, build["id"], preview))
+
+    real_render = models._render_bytes
+    calls: list[str] = []
+
+    def withdraw_then_render(*args, **kwargs):
+        assert store.withdraw(case["id"], source["id"], "analyst") is not None
+        calls.append("withdrawn")
+        return real_render(*args, **kwargs)
+
+    monkeypatch.setattr(models, "_render_bytes", withdraw_then_render)
+    exported = models.run_export_for_tests(signed["id"])
+
+    assert calls == ["withdrawn"]
+    assert exported["export"]["status"] == "FAILED"
+    assert exported["export"]["error"]["code"] == "MODEL_EXPORT_AUTHORITY_CHANGED"
+    with pytest.raises(ValueError, match="MODEL_EXPORT_NOT_READY"):
+        models.download(case["id"], signed["id"])
+
+
+async def test_build_does_not_complete_ready_after_a_withdrawal_between_resolution_and_commit(
+    models, engine, store, monkeypatch,
+):
+    case, _run, snapshot = await _accepted_case(engine, store)
+    source = store.list_sources(case["id"])[0]
+    queued = next(b for b in models.list_builds(case["id"]) if b["snapshot_id"] == snapshot["id"])
+
+    real_compute = models._compute_build_result
+
+    def compute_then_withdraw(build, **kwargs):
+        result = real_compute(build, **kwargs)
+        assert store.withdraw(case["id"], source["id"], "analyst") is not None
+        return result
+
+    monkeypatch.setattr(models, "_compute_build_result", compute_then_withdraw)
+    build = models.run_build_for_tests(queued["id"])
+
+    assert build["status"] == "FAILED"
+    assert build["error"]["code"] == "MODEL_AUTHORITY_CHANGED"
+    with pytest.raises(ValueError, match="MODEL_"):
+        models.queue_export(build["id"], "analyst")
+    assert (models.builds.get_build(build["id"]).get("export") or {}).get("status") != "QUEUED"

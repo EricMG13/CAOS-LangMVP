@@ -9,12 +9,18 @@ payload; analyst text with a formula prefix is neutralized to a literal.
 
 from __future__ import annotations
 
+import html
 import io
 import math
+import os
 import re
+import shutil
+import subprocess
+import tempfile
 import textwrap
 import zlib
 from decimal import Decimal
+from pathlib import Path
 from typing import Any
 
 FORMULA_PREFIXES = ("=", "+", "-", "@", "\t", "\r")
@@ -97,7 +103,7 @@ def _document_text_lines(payload: dict[str, Any], sections: list[dict[str, Any]]
         "# Revision Record",
         f"- Draft version: {payload['draft']['version']}",
         f"- Draft digest: {payload['draft']['digest']}",
-        f"- Preview digest: {payload['preview_digest']}",
+        f"- Content digest: {payload['preview_digest']}",
         f"- Input fingerprint: {payload['input_fingerprint']}",
         f"- Methodology build: {payload['methodology']['build_id']}",
     ])
@@ -136,7 +142,7 @@ def _text_lines(payload: dict[str, Any]) -> list[str]:
         "## Revision Record",
         f"- Draft version: {payload['draft']['version']}",
         f"- Draft digest: {payload['draft']['digest']}",
-        f"- Preview digest: {payload['preview_digest']}",
+        f"- Content digest: {payload['preview_digest']}",
         f"- Input fingerprint: {payload['input_fingerprint']}",
         f"- Methodology build: {payload['methodology']['build_id']}",
     ])
@@ -151,20 +157,91 @@ def _pdf_escape(text: str) -> str:
     return text.replace("\\", r"\\").replace("(", r"\(").replace(")", r"\)")
 
 
+def _unicode_pdf(pages_of_lines: list[list[str]]) -> bytes:
+    from pypdf import PdfReader, PdfWriter
+
+    executable = shutil.which("pango-view")
+    if executable is None:
+        for candidate in (Path("/opt/homebrew/bin/pango-view"), Path("/usr/local/bin/pango-view")):
+            if candidate.is_file():
+                executable = str(candidate)
+                break
+    if executable is None:
+        raise ValueError("PDF_UNICODE_RENDERER_UNAVAILABLE")
+    environment = {**os.environ, "SOURCE_DATE_EPOCH": "0"}
+    writer = PdfWriter()
+    with tempfile.TemporaryDirectory(prefix="caos-pdf-") as directory:
+        workspace = Path(directory)
+        for index, lines in enumerate(pages_of_lines):
+            source = workspace / f"page-{index:04d}.txt"
+            rendered = workspace / f"page-{index:04d}.pdf"
+            # Pango markup so the font's standard ligatures can be switched off:
+            # a Linux sans shapes "fi"/"fl" into one glyph and the PDF then
+            # extracts U+FB01, so the shipped text would no longer equal the
+            # canonical document byte for byte (and "Falsifiers" would not be
+            # searchable). html.escape covers Pango's markup metacharacters.
+            source.write_text(
+                '<span font_features="liga=0, clig=0, dlig=0">'
+                + html.escape("\n".join(lines), quote=False)
+                + "</span>",
+                encoding="utf-8",
+            )
+            try:
+                subprocess.run(
+                    [
+                        executable,
+                        "--no-display",
+                        "--markup",
+                        "--font=sans 10",
+                        "--margin=54",
+                        "--width=504",
+                        "--height=684",
+                        "--wrap=word-char",
+                        f"--output={rendered}",
+                        str(source),
+                    ],
+                    check=True,
+                    capture_output=True,
+                    timeout=30,
+                    env=environment,
+                )
+            except (OSError, subprocess.SubprocessError) as exc:
+                raise ValueError("PDF_UNICODE_RENDERER_FAILED") from exc
+            for page in PdfReader(rendered).pages:
+                writer.add_page(page)
+        output = io.BytesIO()
+        writer.write(output)
+    return output.getvalue()
+
+
 def render_frozen_pdf(payload: dict[str, Any]) -> bytes:
     """Minimal deterministic PDF: one Helvetica text column per page, plain
     Tj operators — structurally a PDF with extractable text."""
+    text_lines = _text_lines(payload)
+    try:
+        "\n".join(text_lines).encode("cp1252")
+        unicode_required = False
+    except UnicodeEncodeError:
+        unicode_required = True
+    wrap_width, lines_per_page = ((80, 24) if unicode_required else (110, 48))
     pages_of_lines: list[list[str]] = []
     current: list[str] = []
-    for raw_line in _text_lines(payload):
+    for raw_line in text_lines:
         for physical_line in raw_line.splitlines() or [""]:
-            for line in textwrap.wrap(physical_line, width=110, break_on_hyphens=False) or [""]:
+            for line in textwrap.wrap(
+                physical_line,
+                width=wrap_width,
+                break_on_hyphens=False,
+            ) or [""]:
                 current.append(line)
-                if len(current) >= 48:
+                if len(current) >= lines_per_page:
                     pages_of_lines.append(current)
                     current = []
     if current or not pages_of_lines:
         pages_of_lines.append(current or [""])
+
+    if unicode_required:
+        return _unicode_pdf(pages_of_lines)
 
     objects: list[bytes] = []
 
@@ -172,8 +249,6 @@ def render_frozen_pdf(payload: dict[str, Any]) -> bytes:
         objects.append(obj)
         return len(objects)
 
-    # ponytail: built-in WinAnsi covers committee Latin typography; embed a
-    # Unicode font only if non-Latin scripts become a publication requirement.
     font = add(b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>")
     content_ids = []
     for lines in pages_of_lines:
@@ -181,7 +256,7 @@ def render_frozen_pdf(payload: dict[str, Any]) -> bytes:
         for line in lines:
             body += f"({_pdf_escape(line)}) Tj T*\n"
         body += "ET"
-        stream = zlib.compress(body.encode("cp1252", "replace"))
+        stream = zlib.compress(body.encode("cp1252"))
         content_ids.append(add(
             b"<< /Length " + str(len(stream)).encode() + b" /Filter /FlateDecode >>\nstream\n" + stream + b"\nendstream"
         ))
@@ -288,7 +363,7 @@ def render_frozen_xlsx(payload: dict[str, Any]) -> bytes:
     cover.title = "Cover"
     for row in (
         ("Pathway", payload["pathway"]),
-        ("Preview digest", payload["preview_digest"]),
+        ("Content digest", payload["preview_digest"]),
         ("Input fingerprint", payload["input_fingerprint"]),
         ("Methodology build", payload["methodology"]["build_id"]),
     ):
@@ -329,7 +404,7 @@ def render_frozen_xlsx(payload: dict[str, Any]) -> bytes:
     for row in (
         ("Draft version", payload["draft"]["version"]),
         ("Draft digest", payload["draft"]["digest"]),
-        ("Frozen preview", payload["preview_digest"]),
+        ("Content digest", payload["preview_digest"]),
     ):
         record.append([_safe_cell(value) for value in row])
 

@@ -55,6 +55,22 @@ def source_set_digest(source_set: dict[str, Any]) -> str:
     return digest(source_set_preimage(source_set))
 
 
+def source_authority(sources: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Exact immutable source projection consumed by prompts and evidence reads."""
+    return [{
+        "id": source.get("id"),
+        "case_id": source.get("case_id"),
+        "filename": source.get("filename"),
+        "media_type": source.get("media_type"),
+        "bytes": source.get("bytes"),
+        "sha256": source.get("sha256"),
+        "blocks_digest": digest(source.get("blocks") or []),
+        "created_by": source.get("created_by"),
+        "created_at": source.get("created_at"),
+        "source_kind": source.get("source_kind"),
+    } for source in sources]
+
+
 def verify_source_set_expectation(store: DomainStore, source_set_id: str, expected_digest: str) -> dict[str, Any]:
     """§11.2: re-read the store record by id, recompute, compare — never trust
     the checkpointed value."""

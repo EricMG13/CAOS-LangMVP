@@ -1,5 +1,7 @@
 # Legacy Builder Core Adaptation Implementation Plan
 
+> **Status (2026-09-01, `ba97a89`):** Tasks 1–7 were implemented by `e2faa9d`, `e098fa7`, `57253a9`, `33d9d61`, `e9d33ff`, and `874b087`. This file is retained as design history. Its host/browser tests must be rerun and retained on the enterprise candidate; implementation here does not close an enterprise gate by itself.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task.
 
 **Goal:** Restore the legacy report-document quality and useful model worksheet interaction on top of the current application's governed model, revision, deliverable, freeze, filing, and export authority.
@@ -794,4 +796,4 @@ git commit -m "test: prove governed builder journey"
 - Full Credit matches the approved legacy-quality document structure without legacy issuer fixtures.
 - Remaining pathways reuse the same grammar and pass structural golden tests.
 - Backend, frontend, accessibility, and workbench checks pass.
-- A live Model Builder and Report Studio preview is running and open.
+- A retained browser-test artifact records the Model Builder and Report Studio preview on the candidate.

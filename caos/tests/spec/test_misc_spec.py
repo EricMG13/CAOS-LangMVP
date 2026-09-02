@@ -20,7 +20,10 @@ async def test_newer_accepted_run_sets_switch_required_until_explicit_switch(eng
     case, source, run = await start_full_credit_run(engine, store, depth="screen")
     await engine.wait(run["id"])
     first = await engine.accept(run["id"], actor="analyst")
-    second_run = await engine.start_run(case_id=case["id"], pathway="FULL_CREDIT", depth="screen", actor="analyst")
+    second_run = await engine.start_run_for_tests(
+        case_id=case["id"], pathway="FULL_CREDIT", depth="screen", actor="analyst",
+        allow_placeholder_deterministic=True,
+    )
     await engine.wait(second_run["id"])
     second = await engine.accept(second_run["id"], actor="analyst")
     await engine.switch_visible(case["id"], first["id"], actor="analyst")
@@ -128,11 +131,11 @@ def test_client_role_header_cannot_escalate_in_production(tmp_path, store, engin
     secret = "e" * 40
     settings = Settings(storage_dir=tmp_path / "vault", environment="production",
                         edge_proxy_secret=secret)
-    client = TestClient(create_app(settings=settings, store=store, engine=engine))
     headers = {"x-edge-authorization": secret, "x-forwarded-user": "u",
                "x-forwarded-groups": "caos-reader", "x-caos-role": "ADMIN"}
-    assert client.get("/api/me", headers=headers).json()["role"] == "READER"
-    assert client.get("/api/cases").status_code == 401  # no edge secret at all
+    with TestClient(create_app(settings=settings, store=store, engine=engine)) as client:
+        assert client.get("/api/me", headers=headers).json()["role"] == "READER"
+        assert client.get("/api/cases").status_code == 401  # no edge secret at all
     # The edge-secret comparison is constant-time over BYTES. `compare_digest`'s
     # str form is ASCII-only and Starlette decodes headers as latin-1, so one
     # high byte from the client would turn a 401 into a TypeError inside the
@@ -338,9 +341,8 @@ def test_visual_recipe_is_declarative_and_fails_closed():
         validate_recipe({"kind": "line", "fields": ["not_available"]}, available_fields={"total_leverage"})
 
 
-def test_confidence_derives_only_from_host_attested_provenance():
-    """Re-hosts test_cpdr_host_provenance_controls_adequacy_and_confidence: the provider's
-    self-asserted confidence/authority/lineage values never enter the recomputation."""
+def test_confidence_discards_provider_scores_and_labels_declared_count_provenance():
+    """Provider scores are ignored; bounded provider counts remain clearly labelled."""
     from caos.methodology.canonical import recompute_confidence
 
     forged = {"confidence_score": 100, "authority_class": "primary", "lineage": "complete"}
@@ -350,6 +352,9 @@ def test_confidence_derives_only_from_host_attested_provenance():
         provider_asserted=forged,
     )
     assert result["qa_status"] != "Passed", "host-recomputed confidence ignores provider assertions"
+    assert result["basis"] == "provider_declared_bounded_counts"
+    assert result["arithmetic"] == "host_recomputed"
+    assert result["analyst_review_required"] is True
 
 
 def test_final_model_output_rejects_duplicate_json_keys():
@@ -377,23 +382,23 @@ def test_unauthenticated_requests_are_refused_before_request_shape_validation(tm
     route that checks nothing."""
     from fastapi.testclient import TestClient
 
-    client = TestClient(_prod_app(tmp_path, store, engine), raise_server_exceptions=False)
-    url = "/api/cases/case-x/deliverables/by-id/dl-x/approve"
-    assert client.post(url, json={}).status_code == 401, "no body"
-    assert client.post(url, json={"preview_digest": "a" * 64,
-                                  "input_fingerprint": "b" * 64}).status_code == 401, "valid body"
-    assert client.get("/api/health").status_code == 200, "the public health check stays public"
+    with TestClient(_prod_app(tmp_path, store, engine), raise_server_exceptions=False) as client:
+        url = "/api/cases/case-x/deliverables/by-id/dl-x/approve"
+        assert client.post(url, json={}).status_code == 401, "no body"
+        assert client.post(url, json={"preview_digest": "a" * 64,
+                                      "input_fingerprint": "b" * 64}).status_code == 401, "valid body"
+        assert client.get("/api/health").status_code == 200, "the public health check stays public"
 
 
 def test_production_serves_no_framework_documentation_surface(tmp_path, store, engine):
     from fastapi.testclient import TestClient
 
     app = _prod_app(tmp_path, store, engine)
-    client = TestClient(app, raise_server_exceptions=False)
-    for path in ("/docs", "/redoc", "/openapi.json"):
-        assert client.get(path).status_code == 404, path
-    assert app.openapi()["paths"], "the in-process schema the contract tests read still exists"
-    assert "strict-transport-security" in client.get("/api/health").headers
+    with TestClient(app, raise_server_exceptions=False) as client:
+        for path in ("/docs", "/redoc", "/openapi.json"):
+            assert client.get(path).status_code == 404, path
+        assert app.openapi()["paths"], "the in-process schema the contract tests read still exists"
+        assert "strict-transport-security" in client.get("/api/health").headers
 
 
 def test_production_refuses_documented_placeholder_secrets():
@@ -422,14 +427,14 @@ def test_global_reader_cannot_create_a_case(tmp_path, store, engine):
     cases mints latent authority that activates on the next IdP promotion."""
     from fastapi.testclient import TestClient
 
-    client = TestClient(_prod_app(tmp_path, store, engine), raise_server_exceptions=False)
     headers = {"x-edge-authorization": "e" * 40, "x-forwarded-user": "reader",
                "x-forwarded-email": "r@example.com", "x-forwarded-groups": "caos-reader"}
     body = {"name": "Reader case", "issuer": "Issuer", "sector": "Services"}
-    assert client.post("/api/cases", json=body, headers=headers).status_code == 403
-    assert store.list_cases("reader") == []
-    assert client.post("/api/cases", json=body,
-                       headers={**headers, "x-forwarded-groups": "caos-analyst"}).status_code == 201
+    with TestClient(_prod_app(tmp_path, store, engine), raise_server_exceptions=False) as client:
+        assert client.post("/api/cases", json=body, headers=headers).status_code == 403
+        assert store.list_cases("reader") == []
+        assert client.post("/api/cases", json=body,
+                           headers={**headers, "x-forwarded-groups": "caos-analyst"}).status_code == 201
 
 
 def test_per_subject_rate_ceiling_refuses_and_is_not_shared_between_subjects(tmp_path, store, engine):
@@ -439,18 +444,18 @@ def test_per_subject_rate_ceiling_refuses_and_is_not_shared_between_subjects(tmp
     from caos.config import Settings
 
     settings = Settings(storage_dir=tmp_path / "vault", rate_limit_per_minute=3)
-    client = TestClient(create_app(settings=settings, store=store, engine=engine),
-                        raise_server_exceptions=False)
     a = {"x-caos-role": "ANALYST", "x-forwarded-user": "analyst-a"}
     b = {"x-caos-role": "ANALYST", "x-forwarded-user": "analyst-b"}
 
-    codes = [client.get("/api/cases", headers=a).status_code for _ in range(5)]
-    assert codes[:3] == [200, 200, 200] and codes[3:] == [429, 429], codes
-    refusal = client.get("/api/cases", headers=a)
-    assert refusal.headers["retry-after"] == "60"
-    assert refusal.json() == {"detail": "request rate ceiling reached"}
-    assert client.get("/api/cases", headers=b).status_code == 200, "buckets are per subject"
-    assert client.get("/api/health").status_code == 200, "the health check is never throttled"
+    with TestClient(create_app(settings=settings, store=store, engine=engine),
+                    raise_server_exceptions=False) as client:
+        codes = [client.get("/api/cases", headers=a).status_code for _ in range(5)]
+        assert codes[:3] == [200, 200, 200] and codes[3:] == [429, 429], codes
+        refusal = client.get("/api/cases", headers=a)
+        assert refusal.headers["retry-after"] == "60"
+        assert refusal.json() == {"detail": "request rate ceiling reached"}
+        assert client.get("/api/cases", headers=b).status_code == 200, "buckets are per subject"
+        assert client.get("/api/health").status_code == 200, "the health check is never throttled"
 
 
 async def test_concurrent_stream_slots_are_capped_and_always_returned(tmp_path):

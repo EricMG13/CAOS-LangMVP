@@ -44,11 +44,18 @@ def _draft(service, store, case, source):
 
     template = service.templates()["FULL_CREDIT"]
     service.seed_accepted_authority_for_tests(case["id"])
+    model = service.seed_signed_revision_for_tests(
+        case["id"], outputs={"total_leverage": 4.2},
+    )
     return service.save_draft(case["id"], "FULL_CREDIT", DeliverableDraftRequest(
         expected_version=0,
         template_id=template["template_id"],
         template_version=template["template_version"],
-        model_selection=None,
+        model_selection={
+            "kind": "ANALYST_REVISION",
+            "build_id": model["build_id"],
+            "revision_id": model["revision_id"],
+        },
         blocks=[
             {"block_id": item["block_id"], "slot_id": item["slot_id"], "kind": "NARRATIVE", "text": "View.",
              "content_mode": "ANALYST_JUDGMENT", "citations": []}
@@ -71,58 +78,93 @@ def _freeze(service, case, revision):
 
 def test_freeze_refuses_a_citation_whose_source_was_withdrawn_after_save(tmp_path):
     store = DomainStore.from_url(f"sqlite:///{tmp_path / 'a.db'}")
-    case, source = _seed(store)
-    service = _service(store, tmp_path)
-    revision = _draft(service, store, case, source)
-    store.withdraw(case["id"], source["id"], "analyst")
-    with pytest.raises(Exception, match="EVIDENCE_SOURCE_WITHDRAWN"):
-        _freeze(service, case, revision)
-    assert service.workspace(case["id"], "FULL_CREDIT")["frozen"] == []
+    try:
+        case, source = _seed(store)
+        service = _service(store, tmp_path)
+        revision = _draft(service, store, case, source)
+        store.withdraw(case["id"], source["id"], "analyst")
+        with pytest.raises(Exception, match="EVIDENCE_SOURCE_WITHDRAWN"):
+            _freeze(service, case, revision)
+        assert service.workspace(case["id"], "FULL_CREDIT")["frozen"] == []
+    finally:
+        store.close()
 
 
 def test_freeze_retry_across_a_second_boundary_converges_on_one_record(tmp_path):
     store = DomainStore.from_url(f"sqlite:///{tmp_path / 'b.db'}")
-    case, source = _seed(store)
-    service = _service(store, tmp_path)
-    revision = _draft(service, store, case, source)
-    first = _freeze(service, case, revision)
-    time.sleep(1.1)  # ponytail: the audit's exact repro — renders must be clock-free
-    retried = _freeze(service, case, revision)
-    assert retried["deliverable_id"] == first["deliverable_id"]
-    assert retried["exports"] == first["exports"]
+    try:
+        case, source = _seed(store)
+        service = _service(store, tmp_path)
+        revision = _draft(service, store, case, source)
+        first = _freeze(service, case, revision)
+        time.sleep(1.1)  # ponytail: the audit's exact repro — renders must be clock-free
+        retried = _freeze(service, case, revision)
+        assert retried["deliverable_id"] == first["deliverable_id"]
+        assert retried["exports"] == first["exports"]
+    finally:
+        store.close()
 
 
 async def test_queue_build_shares_the_admission_ceiling(tmp_path):
     from caos.config import Settings
     from caos.engine.budget import MAX_ACTIVE_JOBS
+    from caos.engine.provider import host_control_identity
     from caos.engine.runtime import Engine
     from caos.models.service import ModelService
+    from types import SimpleNamespace
 
     store = DomainStore.from_url(f"sqlite:///{tmp_path / 'c.db'}")
     engine = Engine.create(settings=Settings(storage_dir=tmp_path / "vault", agent_execution_enabled=True),
-                           store=store, checkpoint_path=tmp_path / "ck.db", provider=None)
-    models = ModelService(store=store, vault_dir=tmp_path / "vault", engine=engine)
-    models.fail_next_queue_for_tests()  # suppress the accept-time auto-queue
-    case, _source = _seed(store)
-    run = await engine.run_scripted_for_tests(case["id"])
-    await engine.accept(run["id"], actor="analyst")
-    engine.fill_admission_slots_for_tests(MAX_ACTIVE_JOBS)
-    with pytest.raises(Exception, match="ADMISSION"):
-        models.queue_build(case["id"], "analyst")
-    engine.release_admission_slot_for_tests()
-    assert models.queue_build(case["id"], "analyst")["created"] is True, "capacity returns"
+                           store=store, checkpoint_path=tmp_path / "ck.db",
+                           provider=SimpleNamespace(identity=host_control_identity()))
+    try:
+        models = ModelService(store=store, vault_dir=tmp_path / "vault", engine=engine)
+        models.fail_next_queue_for_tests()  # suppress the accept-time auto-queue
+        case, _source = _seed(store)
+        run = await engine.run_scripted_for_tests(case["id"])
+        await engine.accept(run["id"], actor="analyst")
+        engine.fill_admission_slots_for_tests(MAX_ACTIVE_JOBS)
+        with pytest.raises(Exception, match="ADMISSION"):
+            models.queue_build(case["id"], "analyst")
+        engine.release_admission_slot_for_tests()
+        assert models.queue_build(case["id"], "analyst")["created"] is True, "capacity returns"
+    finally:
+        try:
+            await engine.aclose()
+        finally:
+            store.close()
 
 
 def test_model_revision_mutation_is_refused_by_the_store_not_by_fiat(tmp_path):
     from caos.storage.models import ModelStore
 
+    from caos.contracts import digest
+
     store = DomainStore.from_url(f"sqlite:///{tmp_path / 'd.db'}")
-    model_store = ModelStore(store.engine)
-    signed = model_store.sign_off_revision("case-1", {
-        "build_id": "bld-1", "assumptions_digest": "a" * 64,
-    }, "analyst", None, store._audit)
-    with pytest.raises(ValueError, match="APPEND_ONLY"):
-        store.mutate_model_revision_for_tests(signed["id"], {"record": {"note": "rewritten"}})
-    assert model_store.get_revision(signed["id"])["assumptions_digest"] == "a" * 64
-    model_store.update_revision_export(signed["id"], {"status": "READY"})  # job state stays writable
-    assert model_store.get_revision(signed["id"])["export"]["status"] == "READY"
+    try:
+        model_store = ModelStore(store.engine)
+        # A record that does not carry its own digests is refused before any
+        # row or audit event exists: the store validates, then writes.
+        with pytest.raises(ValueError, match="MODEL_REVISION_INTEGRITY_FAILED"):
+            model_store.sign_off_revision("case-1", {
+                "build_id": "bld-1", "assumptions_digest": "a" * 64,
+            }, "analyst", None, store._audit)
+        assert model_store.list_revisions("case-1") == []
+        assert store.audit_trail() == []
+
+        effective = [{"assumption_id": "growth", "value": 0.02}]
+        outputs = {"leverage": 3.1}
+        record = {
+            "case_id": "case-1", "build_id": "bld-1",
+            "effective_assumptions": effective, "assumptions_digest": digest(effective),
+            "outputs": outputs, "outputs_digest": digest(outputs),
+            "note": "signed by the analyst",
+        }
+        signed = model_store.sign_off_revision("case-1", record, "analyst", None, store._audit)
+        with pytest.raises(ValueError, match="APPEND_ONLY"):
+            store.mutate_model_revision_for_tests(signed["id"], {"record": {"note": "rewritten"}})
+        assert model_store.get_revision(signed["id"])["assumptions_digest"] == digest(effective)
+        model_store.update_revision_export(signed["id"], {"status": "READY"})  # job state stays writable
+        assert model_store.get_revision(signed["id"])["export"]["status"] == "READY"
+    finally:
+        store.close()

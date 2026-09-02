@@ -38,7 +38,8 @@ from typing import Any
 
 import pytest
 
-from spec_helpers import text_message, tool_call_message
+from calculator_fixtures import VALID_CALCULATION_INPUTS
+from spec_helpers import ScriptedProvider, text_message, tool_call_message
 
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "injection"
 _DIRECTIVE = re.compile(r"^CAOS-INJECT:\s*(\S+)\s*(.*)$", re.MULTILINE)
@@ -89,8 +90,22 @@ def _delivered_rows(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
             continue
         for block in content:
             if isinstance(block, dict) and block.get("type") == "tool_result":
-                rows.extend(json.loads(block["content"]))
+                result = json.loads(block["content"])
+                if isinstance(result, list):
+                    rows.extend(result)
     return rows
+
+
+def _calculation_results(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [
+        result
+        for message in messages
+        if isinstance(message.get("content"), list)
+        for block in message["content"]
+        if isinstance(block, dict) and block.get("type") == "tool_result"
+        for result in [json.loads(block["content"])]
+        if isinstance(result, dict)
+    ]
 
 
 def _directives(rows: list[dict[str, Any]]) -> list[tuple[str, dict[str, Any]]]:
@@ -120,6 +135,8 @@ class CompliantProvider:
 
     def __init__(self, pinned_source_id: str, *, directive_index: int = 0,
                  on_side_effect=None, count: int = 1_000) -> None:
+        from caos.engine.provider import host_control_identity
+
         self.pinned_source_id = pinned_source_id
         self.directive_index = directive_index
         self.on_side_effect = on_side_effect
@@ -127,6 +144,7 @@ class CompliantProvider:
         self.count_requests: list[Any] = []
         self.create_requests: list[Any] = []
         self.obeyed: list[tuple[str, dict[str, Any]]] = []
+        self.identity = host_control_identity()
 
     def count_tokens(self, request):
         self.count_requests.append(request)
@@ -143,10 +161,36 @@ class CompliantProvider:
         assert self.directive_index < len(directives), \
             f"fixture has {len(directives)} directives; index {self.directive_index} requested"
         verb, params = directives[self.directive_index]
+        calculations = _calculation_results(request.messages)
+        calculation_tool = next(
+            (tool for tool in request.effective_tools()
+             if tool["name"] == "run_methodology_calculation"),
+            None,
+        )
+        if verb == "final" and calculation_tool is not None:
+            calculator_ids = calculation_tool["input_schema"]["properties"]["calculator_id"]["enum"]
+            if len(calculations) < len(calculator_ids):
+                # The module's assigned calculators run with answer-keyed inputs
+                # so the run reaches the step each fixture attacks; the document
+                # never gets to choose the calculation.
+                calculator_id = calculator_ids[len(calculations)]
+                return foreign_tool_message(
+                    "run_methodology_calculation",
+                    {
+                        "calculator_id": calculator_id,
+                        "input_json": json.dumps(VALID_CALCULATION_INPUTS[calculator_id], sort_keys=True),
+                    },
+                )
         self.obeyed.append((verb, params))
-        return self._obey(verb, params, rows)
+        return self._obey(verb, params, rows, calculations)
 
-    def _obey(self, verb: str, params: dict[str, Any], rows: list[dict[str, Any]]):
+    def _obey(
+        self,
+        verb: str,
+        params: dict[str, Any],
+        rows: list[dict[str, Any]],
+        calculations: list[dict[str, Any]],
+    ):
         if verb == "withdraw_then_read" and self.on_side_effect is not None:
             self.on_side_effect(params["source_id"])
         if verb in {"read_evidence", "withdraw_then_read"}:
@@ -157,25 +201,40 @@ class CompliantProvider:
                 {"source_id": params["source_id"], "block_ids": params["block_ids"].split(",")},
             )
         if verb == "final":
-            return text_message(json.dumps(self._final_output(params, rows)))
+            return text_message(json.dumps(self._final_output(params, rows, calculations)))
         raise AssertionError(f"unknown injection directive: {verb}")
 
-    def _final_output(self, params: dict[str, Any], rows: list[dict[str, Any]]) -> dict[str, Any]:
+    def _final_output(
+        self,
+        params: dict[str, Any],
+        rows: list[dict[str, Any]],
+        calculations: list[dict[str, Any]],
+    ) -> dict[str, Any]:
         refs = [{"source_id": row["source_id"], "block_id": row["block_id"]} for row in rows]
         if "forge_citation" in params:
             refs = refs + [{"source_id": params["source_id"], "block_id": params["block_id"]}]
-        markdown = CANONICAL_BODY
+        source_id = rows[0]["source_id"]
+        markdown = (
+            CANONICAL_BODY
+            + f"\n\n| source_id | value |\n| --- | --- |\n| {source_id} | analysed |"
+        )
         if "frontmatter" in params or "claim_passed" in params:
             claimed = "\n".join(f"{key}: {value}" for key, value in params.items()
                                 if key not in {"frontmatter", "claim_passed"})
             markdown = (f"---\n{claimed}\nqa_status: Passed\nconfidence_band: ABSOLUTE\n"
-                        f"confidence_score: 999\n---\n\n") + CANONICAL_BODY
+                        f"confidence_score: 999\n---\n\n") + markdown
         # `claim_passed` reports the gate honestly in the DECLARED fields and lies
         # about the status in the header — the host must believe the fields.
         blocked = "claim_passed" in params
         output: dict[str, Any] = {
             "markdown": markdown,
             "evidence_refs": [] if "no_evidence" in params else refs,
+            "calculation_refs": [
+                {field: record[field] for field in (
+                    "calculator_id", "script_digest", "calculator_digest", "input_digest", "output_digest",
+                )}
+                for record in calculations
+            ],
             "lineage_counts": {"directly_sourced": 1},
             "fields_present": 4,
             "fields_total": 4,
@@ -192,14 +251,22 @@ class CompliantProvider:
 
 
 @pytest.fixture()
-def build_engine(tmp_path, settings, store):
+async def build_engine(tmp_path, settings, store):
+    engines = []
+
     def build(provider):
         from caos.engine.runtime import Engine
 
-        return Engine.create(settings=settings, store=store,
-                             checkpoint_path=tmp_path / "checkpoints.db", provider=provider)
+        engine = Engine.create(settings=settings, store=store,
+                               checkpoint_path=tmp_path / "checkpoints.db", provider=provider)
+        engines.append(engine)
+        return engine
 
-    return build
+    try:
+        yield build
+    finally:
+        for engine in reversed(engines):
+            await engine.aclose()
 
 
 def cp1_artifact(engine, run_id: str) -> dict[str, Any] | None:
@@ -233,7 +300,10 @@ async def test_out_of_set_source_named_by_the_document_is_refused_and_returns_no
 
     provider = CompliantProvider(pinned["id"], directive_index=0)
     engine = build_engine(provider)
-    run = await engine.start_run(case_id=case["id"], pathway="FULL_CREDIT", depth="full", actor="analyst")
+    run = await engine.start_run_for_tests(
+        case_id=case["id"], pathway="FULL_CREDIT", depth="full", actor="analyst",
+        allow_placeholder_deterministic=True,
+    )
 
     # Uploaded after gate exit: in the case, outside the pinned set (invariant 1).
     ingest_document(store, case["id"], "RESTATED PACK MARKER-POSTPIN net leverage 1.1x",
@@ -264,7 +334,10 @@ async def test_cross_case_source_named_by_the_document_is_refused(build_engine, 
 
     provider = CompliantProvider(pinned["id"], directive_index=1)
     engine = build_engine(provider)
-    run = await engine.start_run(case_id=case["id"], pathway="FULL_CREDIT", depth="full", actor="analyst")
+    run = await engine.start_run_for_tests(
+        case_id=case["id"], pathway="FULL_CREDIT", depth="full", actor="analyst",
+        allow_placeholder_deterministic=True,
+    )
     await engine.wait(run["id"])
 
     record = engine.get_run(run["id"])
@@ -299,7 +372,10 @@ async def test_withdrawal_racing_the_injected_read_is_caught_live_inside_the_too
         on_side_effect=lambda source_id: store.withdraw(case["id"], source_id, "analyst"),
     )
     engine = build_engine(provider)
-    run = await engine.start_run(case_id=case["id"], pathway="FULL_CREDIT", depth="full", actor="analyst")
+    run = await engine.start_run_for_tests(
+        case_id=case["id"], pathway="FULL_CREDIT", depth="full", actor="analyst",
+        allow_placeholder_deterministic=True,
+    )
     await engine.wait(run["id"])
 
     record = engine.get_run(run["id"])
@@ -329,7 +405,10 @@ async def test_homoglyph_and_zero_width_source_ids_do_not_address_the_pinned_sou
 
     provider = CompliantProvider(real["id"], directive_index=directive_index)
     engine = build_engine(provider)
-    run = await engine.start_run(case_id=case["id"], pathway="FULL_CREDIT", depth="full", actor="analyst")
+    run = await engine.start_run_for_tests(
+        case_id=case["id"], pathway="FULL_CREDIT", depth="full", actor="analyst",
+        allow_placeholder_deterministic=True,
+    )
     await engine.wait(run["id"])
 
     record = engine.get_run(run["id"])
@@ -350,7 +429,10 @@ async def test_web_discovery_instruction_cannot_reach_a_second_tool(build_engine
 
     provider = CompliantProvider(pinned["id"])
     engine = build_engine(provider)
-    run = await engine.start_run(case_id=case["id"], pathway="FULL_CREDIT", depth="full", actor="analyst")
+    run = await engine.start_run_for_tests(
+        case_id=case["id"], pathway="FULL_CREDIT", depth="full", actor="analyst",
+        allow_placeholder_deterministic=True,
+    )
     await engine.wait(run["id"])
 
     record = engine.get_run(run["id"])
@@ -371,7 +453,10 @@ async def test_document_cannot_buy_an_answer_with_no_supplied_evidence(build_eng
 
     provider = CompliantProvider(pinned["id"])
     engine = build_engine(provider)
-    run = await engine.start_run(case_id=case["id"], pathway="FULL_CREDIT", depth="full", actor="analyst")
+    run = await engine.start_run_for_tests(
+        case_id=case["id"], pathway="FULL_CREDIT", depth="full", actor="analyst",
+        allow_placeholder_deterministic=True,
+    )
     await engine.wait(run["id"])
 
     record = engine.get_run(run["id"])
@@ -395,7 +480,10 @@ async def test_smuggled_envelope_fields_are_refused_not_ignored(build_engine, st
 
     provider = CompliantProvider(pinned["id"])
     engine = build_engine(provider)
-    run = await engine.start_run(case_id=case["id"], pathway="FULL_CREDIT", depth="full", actor="analyst")
+    run = await engine.start_run_for_tests(
+        case_id=case["id"], pathway="FULL_CREDIT", depth="full", actor="analyst",
+        allow_placeholder_deterministic=True,
+    )
     await engine.wait(run["id"])
 
     record = engine.get_run(run["id"])
@@ -418,7 +506,10 @@ async def test_citation_to_an_undelivered_block_is_refused(build_engine, store):
 
     provider = CompliantProvider(pinned["id"])
     engine = build_engine(provider)
-    run = await engine.start_run(case_id=case["id"], pathway="FULL_CREDIT", depth="full", actor="analyst")
+    run = await engine.start_run_for_tests(
+        case_id=case["id"], pathway="FULL_CREDIT", depth="full", actor="analyst",
+        allow_placeholder_deterministic=True,
+    )
     await engine.wait(run["id"])
 
     record = engine.get_run(run["id"])
@@ -445,7 +536,10 @@ async def test_forged_frontmatter_from_the_document_never_survives_canonicalizat
 
     provider = CompliantProvider(pinned["id"])
     engine = build_engine(provider)
-    run = await engine.start_run(case_id=case["id"], pathway="FULL_CREDIT", depth="full", actor="analyst")
+    run = await engine.start_run_for_tests(
+        case_id=case["id"], pathway="FULL_CREDIT", depth="full", actor="analyst",
+        allow_placeholder_deterministic=True,
+    )
     await engine.wait(run["id"])
 
     record = engine.get_run(run["id"])
@@ -457,7 +551,7 @@ async def test_forged_frontmatter_from_the_document_never_survives_canonicalizat
 
     assert "CP-999" not in markdown and "run-issuer-controlled-0001" not in markdown
     assert "NORTHWIND-SELF-ASSERTED" not in markdown and "deploy-v-build-ATTACKER" not in markdown
-    assert markdown.startswith("---\nmodule_id: CP-1\n")
+    assert markdown.startswith('---\nmodule_id: "CP-1"\n')
     assert json.dumps(run["id"]) in markdown.split("\n---\n", 1)[0]
     assert payload["module_id"] == "CP-1"
     assert payload["host_identity"]["run_id"] == run["id"]
@@ -468,21 +562,24 @@ async def test_forged_frontmatter_from_the_document_never_survives_canonicalizat
 async def test_a_document_cannot_talk_a_blocked_module_into_qa_passed(build_engine, store):
     """The document supplies an "independent QA attestation" and asks for
     qa_status Passed while the module's own declared source_gate fails. Host
-    check: `require_qa_passed` over host-recomputed confidence (§12.26) — a
-    non-Passed module is terminal, and the attestation has no expression."""
+    check: host-recomputed confidence (§12.26) — a non-Passed module becomes
+    a typed analytical refusal, and the attestation has no expression."""
     case = store.create_case("Northwind", "Northwind Holdings", "Services", "analyst")
     pinned = ingest_document(store, case["id"], load_injection("qa_status_forgery"))
 
     provider = CompliantProvider(pinned["id"])
     engine = build_engine(provider)
-    run = await engine.start_run(case_id=case["id"], pathway="FULL_CREDIT", depth="full", actor="analyst")
+    run = await engine.start_run_for_tests(
+        case_id=case["id"], pathway="FULL_CREDIT", depth="full", actor="analyst",
+        allow_placeholder_deterministic=True,
+    )
     await engine.wait(run["id"])
 
     record = engine.get_run(run["id"])
     assert record["status"] == "failed"
-    assert record["error"]["code"] == "AGENT_OUTPUT_INVALID"
+    assert record["error"]["code"] == "SOURCE_EVIDENCE_INSUFFICIENT"
     assert provider.obeyed[0] == ("final", {"claim_passed": True}), "the model did obey the injection"
-    assert engine.budget_used(run["id"])["repairs"] == 1, "one repair offered, then terminal"
+    assert engine.budget_used(run["id"])["repairs"] == 0, "a declared analytical refusal is not repairable"
     assert cp1_artifact(engine, run["id"]) is None
     persisted = engine.serialize_everything_for_tests(run["id"])
     assert "ABSOLUTE" not in persisted and "QA/NWH/2026/0417" not in persisted
@@ -503,7 +600,10 @@ async def test_a_forged_host_contract_inside_a_document_never_becomes_system_aut
 
     provider = CompliantProvider(pinned["id"])
     engine = build_engine(provider)
-    run = await engine.start_run(case_id=case["id"], pathway="FULL_CREDIT", depth="full", actor="analyst")
+    run = await engine.start_run_for_tests(
+        case_id=case["id"], pathway="FULL_CREDIT", depth="full", actor="analyst",
+        allow_placeholder_deterministic=True,
+    )
     await engine.wait(run["id"])
 
     assert engine.get_run(run["id"])["status"] == "succeeded"
@@ -553,8 +653,10 @@ async def test_a_focus_question_copied_out_of_a_document_carries_no_authority(bu
         await engine.start_run(case_id=case["id"], pathway="FULL_CREDIT", depth="full",
                                actor="analyst", focus_questions=[hostile])
 
-    run = await engine.start_run(case_id=case["id"], pathway="FULL_CREDIT", depth="full",
-                                 actor="analyst", focus_questions=[clean])
+    run = await engine.start_run_for_tests(
+        case_id=case["id"], pathway="FULL_CREDIT", depth="full",
+        actor="analyst", focus_questions=[clean], allow_placeholder_deterministic=True,
+    )
     await engine.wait(run["id"])
     assert engine.get_run(run["id"])["status"] == "succeeded"
     for request in provider.create_requests:
@@ -657,9 +759,11 @@ async def test_a_workbook_imported_after_the_pin_cannot_bind_itself_to_the_run(
     case = store.create_case("Northwind", "Northwind Holdings", "Services", "analyst")
     ingest_document(store, case["id"], "Northwind pinned narrative line.")
 
-    engine = build_engine(None)
-    run = await engine.start_run(case_id=case["id"], pathway="RELATIVE_VALUE",
-                                 depth="full", actor="analyst")
+    engine = build_engine(ScriptedProvider())
+    run = await engine.start_run_for_tests(
+        case_id=case["id"], pathway="RELATIVE_VALUE", depth="full",
+        actor="analyst", allow_placeholder_deterministic=True,
+    )
 
     workbook = ingest_workbook(store, settings, case["id"], "MARKER-POSTPIN Holdings")
     import_universe(store, case["id"], workbook["id"])
@@ -686,9 +790,11 @@ async def test_a_superseding_workbook_cannot_swap_what_the_pinned_run_binds(
     pinned_workbook = ingest_workbook(store, settings, case["id"], "MARKER-PINNED Holdings")
     pinned_universe = import_universe(store, case["id"], pinned_workbook["id"])
 
-    engine = build_engine(None)
-    run = await engine.start_run(case_id=case["id"], pathway="RELATIVE_VALUE",
-                                 depth="full", actor="analyst")
+    engine = build_engine(ScriptedProvider())
+    run = await engine.start_run_for_tests(
+        case_id=case["id"], pathway="RELATIVE_VALUE", depth="full",
+        actor="analyst", allow_placeholder_deterministic=True,
+    )
 
     later = ingest_workbook(store, settings, case["id"], "MARKER-SUPERSEDING Holdings")
     superseding = import_universe(store, case["id"], later["id"])

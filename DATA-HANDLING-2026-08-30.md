@@ -3,18 +3,25 @@
 Audit performed 2026-08-31 against `claude/license-data-retention-audit-36ec68`
 at `e224d9e`. The filename carries the date requested in the brief.
 
+Current-state correction, 2026-09-01: §2, §4, and §5 now reflect the Task 5
+provider-authority, false-success, startup, and checkpoint-cleanup changes.
+The original retention findings remain dated audit findings unless a correction
+below says otherwise.
+
 This is an engineering document. Every claim below is grounded in a file and
 line that was read during the audit; anything unverified is marked as such in
 §7 rather than asserted. It is not legal advice and not DPA prose — it is the
 factual substrate a DPA would have to be drafted against, plus the list of
 commitments the code cannot currently honour.
 
-**Headline.** CAOS has no deletion capability of any kind. Not a partial one, not
-a slow one — zero. There is no `DELETE` route on the API (43 routes, none),
+**Headline.** CAOS has no customer-data deletion or retention capability. There
+is no customer-data `DELETE` route on the API,
 no purge job, no TTL, no expiry, and no retention configuration anywhere in
 `caos/server` or `caos/deploy`. Every uploaded document byte, every extracted
 evidence block, every model-authored artifact, every audit row and every
-container log line persists for the life of the volume. Source withdrawal
+container log line persists for the life of the volume. Terminal run
+checkpoints are now deleted after the domain record becomes terminal, but they
+hold references rather than customer content. Source withdrawal
 (invariant 1) is a visibility and authority control; it deletes nothing. A DPA
 clause promising erasure — Art. 17 or the Art. 28(3)(g) end-of-contract
 deletion that is mandatory in every processor contract — cannot be satisfied
@@ -93,12 +100,14 @@ that is not a summary, it is the finding. "Deletable today" answers only:
    in production (`caos/deploy/docker-compose.yml`, `CAOS_STORAGE_DIR: /vault`)
    on the `vault-data` named volume, and defaults to **`/tmp/caos-vault`** in
    development.
-2. **Domain database** — SQLite in dev, PostgreSQL in production
-   (`caos/server/run.py:44`), on the `postgres-data` named volume.
+2. **Domain database** — SQLite in development and PostgreSQL in production;
+   the environment contract is validated before the store opens
+   (`caos/server/caos/config.py:123-140`; `caos/server/run.py:88-91`), and the
+   production database lives on the `postgres-data` named volume.
 
 Run checkpoints ride the vault volume, not the database:
-`caos/server/run.py:46-51` sets `checkpoint_path=data / "checkpoints.db"` and
-`data` defaults to `settings.storage_dir` (`run.py:76`). This is deliberate and
+`caos/server/run.py:99-100` sets `checkpoint_path=data / "checkpoints.db"` and
+`data` defaults to `settings.storage_dir` (`run.py:162`). This is deliberate and
 noted in the code.
 
 ### 2.2 Inventory
@@ -110,19 +119,20 @@ noted in the code.
 | C | Source metadata | `sources` row: `filename`, `media_type`, `bytes`, `sha256`, `created_by`, `created_at` (`storage/store.py:54-78`) | Identifiers + Identity; filenames are often themselves signal ("Project X lender presentation") | Indefinite | **No.** |
 | D | Analyst notes | `notes.body` TEXT (`storage/store.py:93`); a promoted note becomes a synthetic source row (`store.py:458`, `source_kind="analyst_note"`) | Content (analyst prose, which in a credit context is where MNPI is most likely to be written down verbatim) | Indefinite | **No.** No note delete or edit route. |
 | E | Loan-universe rows | `loan_universes.rows` (`storage/store.py:125`), `rv_universes.rows` (`store.py:139`) | Content — includes `borrower_name` (`artifacts/loan_universe.py:66,469`) and position-level fields | Indefinite | **No.** Withdrawal flips `status` to `WITHDRAWN` (`store.py:344-349`); rows stay. |
-| F | Prompts sent to the provider | Constructed in-memory in the node body (`engine/loop.py:146`, `engine/authority.py:86-99`); the message list is a local variable | Content in transit | **Not persisted.** Ephemeral per node execution. | n/a — nothing to delete |
-| G | Provider responses (agent modules) | `run_artifacts.payload` JSON + `run_artifacts.markdown` TEXT (`storage/runs.py:63-64`); the envelope permits up to 2 MiB of markdown (`methodology/canonical.py:48`) | Content — the model's analysis, including its Evidence Trace section, which is where verbatim document quotation lands | Indefinite | **No.** The only `DELETE` on `run_artifacts` (`storage/runs.py:311`) is the validate-then-replace arbitration inside `complete_node`, not a retention control. |
-| H | Deterministic artifacts | Same table | Mostly Identifiers — `build_deterministic_payload` is a pure function of ids (`engine/deterministic.py:73-81`). **Exception:** CP-3 embeds the full pinned loan universe, borrower names included, at `engine/deterministic.py:71` | Indefinite | **No.** |
+| F | Prompts sent to the provider | Constructed in-memory in the node body (`engine/runtime.py:842-847`; `engine/loop.py:213-223`); the message list is a local variable | Content in transit | **Not persisted.** Ephemeral per node execution. | n/a — nothing to delete |
+| G | Provider responses (agent modules) | `run_artifacts.payload` JSON + `run_artifacts.markdown` TEXT (`storage/runs.py:66-67`); the envelope permits up to 2 MiB of markdown (`methodology/canonical.py:48`) | Content — the model's analysis, including its Evidence Trace section, which is where verbatim document quotation lands | Indefinite | **No.** The `DELETE` on `run_artifacts` (`storage/runs.py:383`) is validate-then-replace arbitration inside `complete_node`, not a retention control. |
+| H | Deterministic artifacts | Same table | The fixed `build_deterministic_payload` output is now a host-control fixture, not an ordinary successful analysis path. Its explicit test capability can still persist fixture output; CP-3 can include the pinned loan universe and borrower names. Ordinary execution without a source-computed executor fails with `DETERMINISTIC_EXECUTOR_UNAVAILABLE`. | Indefinite when a host control deliberately persists one | **No.** |
 | I | Accepted snapshots | `run_snapshots.artifacts` (`storage/runs.py:86`) | Identifiers + digests | Indefinite | **No.** |
-| J | Model builds and revisions | `model_builds.payload` (`storage/models.py:39`), `model_revisions.record` (`storage/models.py:59`); rendered workbooks in the vault at `models/<case_id>/<target_id>/<sha256>.xlsx` (`models/service.py:910-913`) | Content — a credit model carries the issuer's figures | Indefinite | **No.** |
-| K | Deliverable drafts, frozen versions, exports | `deliverable_revisions.content` (`storage/deliverables.py:31`), `deliverable_frozen.payload` (`deliverables.py:48`); export bytes at `<storage_dir>/deliverables/<thread_id>/<format>` (`deliverables/service.py:553-556`) | Content — the committee memo itself | Indefinite | **No.** The one `unlink` (`deliverables/service.py:768`) is `delete_export_for_tests`. |
+| J | Model builds and revisions | `model_builds.payload` (`storage/models.py:39`), `model_revisions.record` (`storage/models.py:59`); rendered workbooks are hash-addressed in the vault under `models/<case_id>/<target_id>` (`models/service.py:988-1001`) | Content — a credit model carries the issuer's figures | Indefinite | **No.** |
+| K | Deliverable drafts, frozen versions, exports | `deliverable_revisions.content` (`storage/deliverables.py:31`), `deliverable_frozen.payload` (`deliverables.py:48`); export bytes at `<storage_dir>/deliverables/<thread_id>/<format>` (`deliverables/service.py:599-602`) | Content — the committee memo itself | Indefinite | **No.** The export `unlink` (`deliverables/service.py:812-814`) is `delete_export_for_tests`. |
 | L | Audit events | `audit_events` table (`storage/store.py:144-152`), append-only, `data` JSON at `store.py:151` | Identifiers + **Identity** (`actor` on every row, `store.py:173-176`). One row carries free text: `deliverable.changes_requested` stores `comment[:300]` (`storage/deliverables.py:277-278`) | Indefinite | **No.** No delete, no archival, no rotation. `audit_trail` only reads (`store.py:182`). |
-| M | Run events | `run_events` (`storage/runs.py:71-79`) | Identifiers only. `run.failed` carries `{code, module_id}` and nothing else (`storage/runs.py:340-342,363`) | Indefinite | **No.** |
-| N | Run checkpoints | `checkpoints.db` on the vault volume (`run.py:50`), LangGraph `AsyncSqliteSaver` (`engine/runtime.py:134-144`) | **No content.** `RunState` is `run_id`, `case_id`, `plan`, `plan_digest`, artifact *refs*, `node_status`, `error` (`engine/state.py:23-31`). The provider message list never enters state. | Indefinite | **No** — see G-6 below; the decision record requires a `delete_thread` that was never implemented. |
+| M | Run events | `run_events` (`storage/runs.py:76-83`) | Identifiers + provider-identity digest. Normal events include `provider_identity_digest`; only the identity-quarantine failure omits the invalid digest (`storage/runs.py:177-193`). `run.failed` otherwise carries its bounded code and optional module ID (`storage/runs.py:415-441`). | Indefinite | **No.** |
+| N | Run checkpoints | `checkpoints.db` on the vault volume, through LangGraph `AsyncSqliteSaver` | **No content.** `RunState` contains run authority and artifact references; the provider message list never enters state. | While the run is non-terminal. `_delete_terminal_thread` deletes the thread after terminalization, and recovery reaps terminal threads left by a crash. | **Yes, automatically at terminalization or recovery.** See G6. |
 | O | Assumptions | `assumptions.data`, `assumptions.evidence_ids` (`storage/store.py:104-105`) | Content (analyst-entered figures) | Indefinite | **No.** Withdrawal marks them `STALE` (`store.py:338-341`); rows stay. |
 | P | Identity and membership | `cases.created_by`, `case_members.subject` (`store.py:40,50`), plus `created_by` on sources, runs, artifacts, revisions, exports | **Identity** (OIDC subject or email) | Indefinite | **No.** There is no member-removal route (CLAUDE.md's known-gaps ledger records `/api/cases/{id}/members` as having no route at all; the route inventory confirms it). |
 | Q | Backups | `caos.dump.age` + `vault.tgz.age` at an operator-chosen path (`caos/deploy/backup.sh:74-76`) | Content — "the complete confidential credit corpus" in the script's own words (`backup.sh:4`), age-encrypted | Indefinite, and *by design out of scope*: "Retention and destination ACLs belong to the storage layer" (`backup.sh:20`) | **No.** Each run overwrites the same two fixed filenames; there is no generation management and no expiry. |
-| R | Container logs | Docker `json-file` driver (compose declares no `logging:` block, so the daemon default applies); uvicorn access log is on because `run.py:68` constructs `uvicorn.Config(app, host=host, port=port)` with defaults | Identifiers + **client IP** in every access line | Indefinite and unbounded — no `max-size`/`max-file` anywhere in `docker-compose.yml` | **No.** |
+| R | Container logs | Docker `json-file` driver (compose declares no `logging:` block, so the daemon default applies); uvicorn access log is on because `run.py:129` constructs `uvicorn.Config(app, host=host, port=port)` with defaults | Identifiers + **client IP** in every access line | Indefinite and unbounded — no `max-size`/`max-file` anywhere in `docker-compose.yml` | **No.** |
+| S | Provider attempt metadata | `run_budgets.attempts` JSON | Identifiers and bounded execution metadata: provider identity, request/response digests, provider request ID, observed model/version, usage, stop reason, retry index, and terminal code. No prompt, evidence text, response body, hidden reasoning, error body, or secret is stored. | Indefinite | **No.** |
 
 ### 2.3 One structural fact that shapes any future deletion design
 
@@ -201,9 +211,9 @@ be a misrepresentation.
 
 ## 4. Retention and deletion requirements a DPA would need
 
-Requirements are numbered `R`; the gaps are numbered `G` and are the
-deliverable. Every gap is a thing the code cannot do today, not a thing that is
-merely undocumented.
+Requirements are numbered `R`; the original findings are numbered `G` for
+audit traceability. Open findings describe missing behavior, while Task 5
+closures are marked in place.
 
 ### 4.1 Requirements the code already satisfies
 
@@ -217,9 +227,12 @@ merely undocumented.
 | R6 | Backups are encrypted with an authenticated cipher, and the private key is required to live off the backup host | `caos/deploy/backup.sh:5-19,34,60,66` |
 | R7 | The processing record — who did what to which case, when — is complete and tamper-evident | `audit_events` append-only, written in the same transaction as the governed write (`store.py:173-176` and every `_audit` call site) |
 | R8 | No customer content is persisted client-side | `caos/frontend/src/components/model/ModelBuilder.test.ts:45` and `report/ReportStudio.test.ts:13,36` assert no `localStorage`/`sessionStorage` usage |
-| R9 | Deterministic execution paths involve no external processor at all | `engine/runtime.py:372-386`: agent dispatch requires `mode == "agent"` **and** `settings.agent_execution_enabled`; everything else takes `build_deterministic_payload` |
+| R9 | Non-agent execution paths involve no external processor | `Engine._run_module` calls the provider only for a declared agent module with execution enabled. The former generic fixed payload is test-only; ordinary non-agent execution without a source-computed executor returns `DETERMINISTIC_EXECUTOR_UNAVAILABLE` rather than a synthetic success. |
 
-### 4.2 Requirements the code cannot satisfy — the gap list
+### 4.2 Current gaps and closed findings
+
+The original gap numbers remain stable for audit traceability. A finding closed
+after the audit is marked closed instead of being silently removed.
 
 ---
 
@@ -229,18 +242,15 @@ GDPR Art. 28(3)(g) requires the processor to delete or return all personal data
 at the end of the service, at the controller's election. There is no code path
 that does either.
 
-- No `DELETE` route exists: 43 registered `/api` routes, zero of them `DELETE`
-  (`grep -c '@app.delete' caos/server/caos/api/__init__.py` → 0).
+- No customer-data `DELETE` route exists in the current route inventory.
 - No case-deletion, source-deletion, run-deletion, or member-removal function
   exists on any store.
-- The only four non-test `DELETE`/`unlink` statements in the entire server are
-  integrity operations, not retention ones: `storage/deliverables.py:295`
-  (delete-then-insert while replacing a case's single deliverable-authority
-  row in `set_authority`), `storage/runs.py:311` (validate-then-replace inside
-  `complete_node`, DECISIONS §12.8), and `sources/domain.py:74` plus
-  `atomic_files.py:84` (removing the temp file after an atomic rename). Two
-  further `unlink`/`delete` call sites exist and are both `*_for_tests`
-  helpers: `deliverables/service.py:768` and `engine/runtime.py:851`.
+- Existing non-test deletions are correctness or lifecycle operations, not
+  customer-retention controls: authority/artifact replacement
+  (`storage/deliverables.py:295`; `storage/runs.py:383`), temporary-file cleanup
+  (`sources/domain.py:74`; `atomic_files.py:84`), and automatic terminal
+  checkpoint cleanup (`engine/runtime.py:471-474`). The deliverable export
+  deletion at `deliverables/service.py:812-814` is explicitly test-only.
 
 There is also no export path that could satisfy the "return" limb: the API can
 download one model workbook and one deliverable export at a time, and there is
@@ -323,19 +333,18 @@ overlook: the cold copy is protected and the hot copy is not.
 
 ---
 
-**G6 — Run checkpoints accumulate forever, against an explicit decision that says they should not.**
+**G6 — Terminal checkpoint cleanup is implemented. (Closed in Task 5.)**
 
-`docs/DECISIONS.md` §12.E item 25 is binding and unambiguous: "Terminalized
-threads are deleted (`delete_thread`) once the domain store holds the full
-audit trail." `grep -rn 'delete_thread\|adelete_thread' caos/` returns nothing.
-It was never implemented.
+`Engine._delete_terminal_thread` calls the checkpointer's native
+`adelete_thread` only after the domain run is terminal. Every drive path invokes
+that cleanup, identity-quarantine failures invoke it directly, and startup
+recovery scans both checkpoint tables to reap a terminal thread left by a
+crash. Paused and active threads remain because they are needed for resume.
 
-Severity is genuinely low on the content axis — `RunState`
-(`engine/state.py:23-31`) holds no document text, and the provider message list
-lives in a node-body local (`engine/loop.py:146`), never in a channel. It is
-listed because it is an unmet binding decision and because `checkpoints.db`
-grows without bound on the same volume as the vault, which is a durability
-problem before it is a privacy one.
+`RunState` still holds no document text, and provider messages remain local to
+the provider loop. The domain run, attempts, events, artifacts, and accepted
+snapshot remain durable audit records; only the redundant execution checkpoint
+is removed.
 
 ---
 
@@ -352,10 +361,11 @@ N days must either (a) state a backup-expiry window after which the last copy
 provably ages out, or (b) commit to re-encrypting or re-taking backups after a
 purge. Neither is possible against a single overwritten file with no lifecycle.
 
-CLAUDE.md's known-gaps ledger already records that backup encryption is
-untested here — `age` and a running Compose stack do not exist in this
-worktree, so only the scripts' syntax has been checked. Both facts belong in
-the same DPA answer.
+The encrypted Postgres and vault streams and their restore checks were exercised
+with real `age`, PostgreSQL, and Docker-volume data on 2026-08-30. The
+`backup.sh` Compose wrapper, lock directory, manifest bookkeeping, scheduled
+off-host transfer, rotation, and retention were not exercised. Both the proven
+cryptographic path and the missing lifecycle belong in the same DPA answer.
 
 ---
 
@@ -363,16 +373,18 @@ the same DPA answer.
 
 `docker-compose.yml` declares no `logging:` block for any of the six services,
 so the Docker daemon default applies — `json-file`, no `max-size`, no
-`max-file`, no rotation. `run.py:68` builds `uvicorn.Config(app, host=host, port=port)`
+`max-file`, no rotation. `run.py:129` builds `uvicorn.Config(app, host=host, port=port)`
 without `access_log=False`, so uvicorn's access log is on, and each line carries
 a client IP (personal data under GDPR) alongside a request path containing
 case, run, and source identifiers.
 
-No application logger writes content. The non-vendored server code contains
-zero occurrences of `import logging`, `logging.`, or `logger`, and exactly one
-`print` — `caos/server/worker.py:76`, which emits `{"processed": <count>}`. So
-this is a metadata-and-IP exposure, not a content one. It is still an unbounded, unrotated, unretained store of
-personal data outside the two data planes anyone would think to purge.
+Application logging is structured and bounded to identifiers, typed codes,
+counts, timings, provider identity digests, and exception classes; its contract
+and tests ban source text, prompts, model output, provider bodies, and secrets.
+That reduces content exposure but does not bound Docker's retention or remove
+the IP and path metadata in access logs. This remains an unbounded, unrotated,
+unretained store of personal data outside the two data planes anyone would
+think to purge.
 
 ---
 
@@ -388,41 +400,40 @@ data was in this dump" requires a bespoke query written under time pressure.
 
 ---
 
-**G10 — Sub-processor disclosure is not derivable from configuration, and the one ledger that records a model records the wrong one.**
+**G10 — Runtime provider attribution is durable; contractual disclosure remains external.**
 
-Which external processor sees customer content depends on which of two
-environment variables is set, resolved at process start with no record of the
-outcome (`caos/server/run.py:24-36`). There is no startup log line, no field on
-`/api/health`, and no audit event naming the active provider.
+Task 5 replaced the settings-derived model claim with one immutable
+`ProviderIdentity`. It records provider name, exact model, optional reported
+provider version, adapter version, parameter/context digest, and the bound
+qualification record ID, digest, status, and expiry. The engine captures that
+identity once and persists it on the run, plan authority, attempts, artifacts,
+accepted snapshot, run-event identity digest, acceptance audit event, and API
+responses.
 
-The single place a model is persisted is the attempt ledger, and on the
-OpenRouter path it is **wrong**, not merely incomplete:
+Each successfully usage-validated message-generation response records a bounded
+request and response digest, provider request ID, observed model/version, usage,
+stop reason, and retry index. Retry and terminal rows retain their applicable bounded subset; fields
+that do not exist for that row class remain absent or null. Provider token-count
+operations are bounded but are not logged or stored as durable attempt rows.
+Raw prompts, evidence text, response bodies, hidden reasoning, provider error
+bodies, and secrets are not retained. A usage-valid response that reports a
+different model or provider version is charged and recorded, then fails with
+`AGENT_IDENTITY_MISMATCH` before its tools or output can be used.
 
-```python
-attempt_base = {"run_id": run_id, "module_id": module_id, "model": self.settings.anthropic_model}
-```
+Enabled production agent execution now accepts only one qualified Anthropic
+binding. It rejects multiple credentials, any OpenRouter credential, a missing
+or malformed qualification record, an expired record, and a record bound to
+another model, adapter, policy, or methodology build. Disabled execution with a
+clean configuration constructs no provider. OpenRouter remains an explicitly
+unqualified development-only adapter. An environment-variable edit can no
+longer switch the production sub-processor.
 
-`caos/server/caos/engine/runtime.py:488`. This is unconditional — it reads
-`anthropic_model` regardless of which provider `build_provider` actually
-selected. On the OpenRouter path `ANTHROPIC_API_KEY` is by definition unset
-(`run.py:32`), so `anthropic_model` holds its default `"claude-sonnet-4-6"`
-(`config.py:45`), and every row `record()` writes into `run_budgets.attempts`
-(`runtime.py:491-502`, stored in `run_budgets.attempts`, `storage/runs.py:100`) claims a run served by
-`z-ai/glm-5.3-flash` was served by Claude Sonnet.
-
-This is worse than a missing field. A missing field is an unanswerable
-question; a wrong field is an audit record that would be produced in good faith
-to a regulator or a buyer and would be false. It also defeats the only forensic
-route to reconstructing which sub-processor handled a past run.
-
-A DPA lists sub-processors and commits to notifying the controller before they
-change. Today, changing the sub-processor is an env-var edit that leaves no
-evidence — and leaves positively misleading evidence. See §5 for why the two
-answers are materially different.
-
-*Closing it:* select the model string from the active provider rather than from
-settings, and emit the resolved provider identity as a startup audit event.
-Small change, but it touches `caos/`, so it is out of scope for this session.
+Two limits remain. `/api/health` does not publish the active binding, although
+every actual provider call is attached to a durable run identity. The identity
+is carried through the accepted snapshot but has not yet been copied into every
+model and deliverable publication record. A data processing agreement (DPA)
+still needs externally verified processor terms and a change-notification
+process; code cannot supply either.
 
 ---
 
@@ -462,12 +473,13 @@ is the wrong sizing, and a DPA should not be signed against that estimate.
 | R14 | Erasure propagates to backups within a stated window | **G7 — cannot** |
 | R15 | Encryption at rest for live data | **G5 — not configured** |
 | R16 | Bounded, retained-for-N-days operational logs | **G8 — unbounded** |
-| R17 | Named sub-processors, with change notification | **G10 — not observable; attempt ledger actively misattributes** |
+| R17 | Named sub-processors, with change notification | **G10 — production processor and exact run identity are enforced and durable; contractual terms and notification remain external** |
 | R18 | Ability to scope a breach to affected controllers | **G9 — manual** |
-| R19 | Execution telemetry does not outlive its purpose | **G6 — unmet decision** |
+| R19 | Execution telemetry does not outlive its purpose | **G6 — terminal checkpoints are deleted; durable audit records remain subject to the undefined retention policy in G3** |
 
-Ten requirements a standard processor DPA carries; **ten the code cannot
-currently satisfy.** No partial credit is claimed anywhere in that table.
+Of these ten standard processor requirements, eight remain wholly unmet. R17
+now has the runtime control but still needs contractual governance, and R19 is
+closed for checkpoints while durable audit retention remains governed by G3.
 
 ---
 
@@ -478,18 +490,16 @@ exhaustively.
 
 ### 5.1 When anything leaves at all
 
-Nothing leaves unless **both** conditions hold
-(`caos/server/caos/engine/runtime.py:378`):
-
-```python
-elif mode == "agent" and self.settings.agent_execution_enabled and run_id not in self._scripted_runs:
-```
+Nothing leaves unless the route contains an agent module, agent execution is
+enabled, and startup assembled a current provider identity. Agent-backed routes
+are preflighted before a run is created.
 
 - `AGENT_EXECUTION_ENABLED` defaults to `false` (`config.py:54`) and is strict —
   any value other than the literal `true`/`false` raises (`config.py:9-17`).
-- Screen-depth routes are deterministic end to end by catalog design
-  (`DECISIONS.md §1`), and the dispatch takes `spec.mode_screen` at that depth
-  (`runtime.py:372`).
+- Screen-depth modules are non-agent by catalog design. They never call a
+  provider, but the application no longer treats the generic fixed payload as
+  successful analysis. Until a source-computed deterministic executor exists,
+  ordinary execution returns `DETERMINISTIC_EXECUTOR_UNAVAILABLE`.
 
 So: **a screen-depth run, or any run with agent execution off, transmits
 nothing to any third party.** That is a real and saleable property.
@@ -509,22 +519,22 @@ label (`authority.py:86-99`):
 
 1. `host_identity` — `module_id`, `run_id`, `case_id`, an `issuer_id` derived
    mechanically from `case_id` by replacing underscores, and two dates sliced
-   from the run's `created_at` (`runtime.py:452-465`). **The case name, issuer
+   from the run's `created_at` (`runtime.py:825-837`). **The case name, issuer
    name and sector the analyst typed are *not* sent** — `issuer_id` is the
    opaque case id, not `cases.issuer`. Worth knowing; it is better than a buyer
    will assume.
 2. `source_metadata_manifest` — for each live source: `source_id`, `sha256`,
    **`filename`**, `media_type`, and per-block `block_id`, `locator`,
-   `extractor_version`, `confidence` (`runtime.py:438-450`). **No block text.**
+   `extractor_version`, `confidence` (`runtime.py:810-823`). **No block text.**
 3. `validated_upstream_artifacts` — the full `markdown` of every upstream
-   module artifact (`runtime.py:471`, `authority.py:82-85`). This is
+   module artifact (`runtime.py:844`, `authority.py:82-85`). This is
    customer-derived analytical content, up to 2 MiB per artifact.
 4. A fixed confidence-input contract. No customer data.
 
 **Tool results** — verbatim customer document text. When the model calls
 `read_evidence`, the host returns the block `text` field itself
 (`engine/evidence.py:113`) serialised into the next user turn
-(`engine/loop.py:241`). This is the primary content egress.
+(`engine/loop.py:356-363`). This is the primary content egress.
 
 **Two things worth naming explicitly for a buyer:**
 
@@ -543,63 +553,71 @@ label (`authority.py:86-99`):
 
 ### 5.3 Anthropic
 
-Selected when `ANTHROPIC_API_KEY` is set; it wins whenever both keys are
-present (`caos/server/run.py:28-31`). Requests go directly to Anthropic's
-Messages API via `langchain_anthropic`'s pinned async client
-(`engine/anthropic.py:71,78`). Default model `claude-sonnet-4-6`
-(`config.py:45`).
+In development, Anthropic is selected only when agent execution is enabled and
+it is the sole configured provider credential. In production, startup also
+requires a digest-bound qualification record that matches the exact model,
+adapter, parameter/context policy, and methodology build and has not expired.
+Multiple credentials are rejected; Anthropic no longer wins by precedence.
+When agent execution is disabled, no provider client is constructed.
+
+Requests go directly to Anthropic's Messages API through the pinned
+`langchain_anthropic` client. The configured default model is
+`claude-sonnet-4-6`, but the qualification record and durable provider identity
+bind the exact model used by a run.
 
 **One named processor, one hop, one contractual counterparty.** The relevant
 terms are Anthropic's commercial terms and DPA, which the buyer's counsel will
 read directly — this repository is not the authority on them, and this document
 deliberately does not paraphrase them (see §7).
 
-`caos/deploy/docker-compose.yml` passes `ANTHROPIC_API_KEY` and
-`ANTHROPIC_MODEL` to both the `app` and `worker` services. Anthropic is
-therefore the *only* provider reachable from the shipped production stack.
+`caos/deploy/docker-compose.yml` passes the Anthropic credential, model,
+execution flag, and qualification path/digest only to `app`. The model/export
+`worker` receives only its environment, database URL, and vault path; it does
+not receive edge, session, ClamAV, or provider secrets. Qualified Anthropic is
+the only provider the production app can assemble.
 
-### 5.4 OpenRouter — yes, this changes the answer materially
+### 5.4 OpenRouter is development-only
 
-Selected only when `OPENROUTER_API_KEY` is set and `ANTHROPIC_API_KEY` is not
-(`run.py:32-35`). Default model `z-ai/glm-5.3-flash` (`config.py:52`).
+OpenRouter can be selected only in development, with agent execution enabled,
+no Anthropic credential, and no qualification claim. `run.py` rejects any
+OpenRouter credential in production and rejects multiple provider credentials
+in every environment. The default development model is
+`z-ai/glm-5.3-flash`.
 
 Four differences, all read off `caos/server/caos/engine/openrouter.py`:
 
 1. **OpenRouter is a broker, not an inference provider.** The request goes to
-   `https://openrouter.ai/api/v1/chat/completions` (`openrouter.py:53,198`),
+   `https://openrouter.ai/api/v1/chat/completions` (`openrouter.py:64,242`),
    and OpenRouter forwards it to whichever upstream provider serves the named
    model. The buyer's data therefore reaches **at least two** organisations,
    the second of which is chosen by OpenRouter's routing rather than by CAOS.
    Anthropic is one hop; this is two or more.
 
 2. **The upstream is not pinned and not disclosed.** `_payload`
-   (`openrouter.py:160-180`) sends `model`, `messages`, `tools`, `tool_choice`,
+   (`openrouter.py:204-224`) sends `model`, `messages`, `tools`, `tool_choice`,
    `parallel_tool_calls`, `response_format`, and `max_tokens`. It does **not**
    send OpenRouter's `provider` routing object, so there is no pinned upstream
    allowlist and no data-collection policy asserted on the request. Which
    organisation processes a given run's document text is therefore not
-   determined by this codebase, and is not recorded anywhere afterwards. For a
-   sub-processor list (G10), that is not a gap in the disclosure — it is an
-   answer that cannot be given.
+   determined by this codebase. CAOS records the OpenRouter provider and exact
+   model, plus any provider version returned by the response, but OpenRouter's
+   undisclosed upstream is not available for CAOS to record.
 
 3. **The default model is third-party.** `z-ai/glm-5.3-flash` is not an
    Anthropic model. A buyer who has diligenced Anthropic and been told "we use
    Anthropic" would, on this path, be wrong about both the model vendor and the
    serving infrastructure.
 
-4. **It is not reachable from the shipped stack — today.**
-   `docker-compose.yml` passes no `OPENROUTER_API_KEY` to `app` or `worker`, so
-   the production Compose deployment cannot select it. That is a fact about the
-   current compose file, not an enforced invariant: nothing in the code refuses
-   the OpenRouter binding in production, and adding one environment variable
-   silently changes the sub-processor with no audit event and no health-endpoint
-   signal. Treat it as a configuration property, not a control.
+4. **Production rejects it in code.** `docker-compose.yml` passes no
+   `OPENROUTER_API_KEY`, and `build_provider` also refuses an OpenRouter
+   credential whenever `ENVIRONMENT=production`. Adding one environment
+   variable therefore stops startup instead of changing the sub-processor.
 
 Two adjacent facts worth having in the same answer:
 
 - **The budget guarantee is weaker on this path.** OpenRouter has no pre-call
   token-counting endpoint, so `count_tokens` estimates locally with tiktoken
-  and a 1.5× margin (`openrouter.py:184-190`). Invariant 8's reservation is
+  and a 1.5× margin (`openrouter.py:228-234`). Invariant 8's reservation is
   approximate here in a way it is not on Anthropic. `reconcile_provider` still
   corrects to actuals, so the aggregate ceiling holds — but the *pre-call*
   reservation can be wrong by the margin. This is documented honestly in the
@@ -614,18 +632,20 @@ Two adjacent facts worth having in the same answer:
 ### 5.5 The answer to give a buyer
 
 > With agent execution disabled, or on screen-depth routes, no customer data
-> leaves the deployment. With it enabled on a full-depth route, nine analytical
-> modules send Anthropic the document filenames, their digests, a block index,
-> the analysis produced by upstream modules, and — only when the model requests
-> a specific block through the audited `read_evidence` tool — the verbatim text
-> of that block, under a per-run byte ceiling the host enforces before each
-> read. Anthropic is the single sub-processor in the shipped configuration.
-> An alternative OpenRouter binding exists in the codebase; it is not reachable
-> from the shipped stack, and if it were enabled it would introduce a broker
-> plus an undisclosed upstream provider. We would notify before enabling it.
+> leaves the deployment. Screen-depth execution may currently refuse because
+> fixed deterministic summaries are test-only; refusal does not transmit data.
+> With production agent execution enabled, startup accepts only one exact,
+> current, qualified Anthropic binding. Agent modules send document filenames,
+> digests, a block index, validated upstream analysis, and only the evidence
+> blocks requested through the audited `read_evidence` tool. The host enforces
+> a per-run byte ceiling. Every successfully usage-validated message-generation response has a bounded
+> attempt record, and every accepted output is bound to the durable provider
+> identity. OpenRouter remains available only for development and is rejected
+> by production startup.
 
-That statement is accurate as of this audit. It stops being accurate the moment
-someone sets `OPENROUTER_API_KEY` in production, which is why G10 matters.
+That statement describes the enforced code path. It is not evidence that a
+live Anthropic credential and qualification record have completed the protected
+enterprise matrix, nor does it replace Anthropic's commercial terms or DPA.
 
 ---
 
@@ -638,12 +658,14 @@ cost-to-close ratios.
 |---|---|---|
 | 1 | G3 (define periods) | Costs no code and is a prerequisite for G1's scope |
 | 2 | G8 (log rotation), G5 (volume encryption) | Compose/ops changes measured in lines; both are pure risk reduction |
-| 3 | G10 (record the active provider) | Two small changes — take the model string from the live provider, emit a startup audit event. Converts an unanswerable DPA question into an answerable one and removes a false audit record |
-| 4 | G4 (name withdrawal honestly in the UI) | Copy change; prevents a misrepresentation |
-| 5 | G6 (`delete_thread`) | Discharges a binding decision; small, and exercises the deletion-with-audit pattern before the hard one |
-| 6 | G1 + G11 + G2 (the cascade) | The real work. Needs design against §2.3 and §4.2-G11 before estimation |
-| 7 | G7 (backup lifecycle) | Only meaningful once G1 exists |
-| 8 | G9 (data map), L1 (attribution notice) | Documentation, but L1 blocks distribution |
+| 3 | G4 (name withdrawal honestly in the UI) | Copy change; prevents a misrepresentation |
+| 4 | G1 + G11 + G2 (the cascade) | The real work. Needs design against §2.3 and §4.2-G11 before estimation |
+| 5 | G7 (backup lifecycle) | Only meaningful once G1 exists |
+| 6 | G9 (data map), L1 (attribution notice) | Documentation, but L1 blocks distribution |
+
+Task 5 closed the former G6 checkpoint and G10 runtime-attribution defects.
+Protected live qualification, processor contracts, and downstream publication
+provenance remain candidate gates rather than completed audit evidence.
 
 ---
 
@@ -651,10 +673,10 @@ cost-to-close ratios.
 
 Stated so nothing above is read as stronger than it is.
 
-- **Nothing was executed.** No test suite, no server, no container. Every claim
-  is from reading source. Behavioural claims about withdrawal, evidence
-  refusal, and dispatch are read off the code paths cited, not observed at
-  runtime.
+- **The original audit executed nothing.** Its retention claims came from
+  source inspection. The 2026-09-01 Task 5 correction reflects the current
+  implementation and its recorded host-control tests; it does not claim a live
+  provider, container, or enterprise qualification run.
 - **Provider contract terms are out of scope.** This document says which
   organisation receives what data. It does not characterise Anthropic's or
   OpenRouter's terms, retention, or training policies — those are commercial
@@ -682,11 +704,8 @@ Stated so nothing above is read as stronger than it is.
 - **PostgreSQL row-level behaviour under concurrency** was not exercised;
   CLAUDE.md already records that `_next_source_set`'s lock has never been run
   against a live PostgreSQL.
-- **Two documents referenced by `README.md` were not read.**
-  `ENTERPRISE_TESTING_READINESS.md` and `ENTERPRISE_READINESS_PLAN.md` are not
-  tracked in git and are absent from this worktree; they exist as untracked
-  files in the primary checkout, i.e. as somebody's uncommitted work in
-  progress. `README.md` calls the first of them "the binding gate". If either
-  carries retention or data-handling commitments, this audit has not seen them
-  and they must be reconciled against §4 — and committed, since a binding gate
-  that lives only on one machine is not a gate.
+- **The enterprise-readiness documents postdate the original audit.**
+  `ENTERPRISE_TESTING_READINESS.md` and `ENTERPRISE_READINESS_PLAN.md` are now
+  tracked. Their provider requirements are reflected in this correction; their
+  broader retention and deletion requirements still need reconciliation with
+  §4.

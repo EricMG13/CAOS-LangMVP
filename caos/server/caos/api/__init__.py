@@ -44,6 +44,7 @@ from ..contracts import (
     finite_or_none,
 )
 from ..identity import EdgeIdentityGate, identity_from_request, require_case, require_role
+from ..observability import log_event
 from ..storage.store import DomainStore
 
 WORKSHEET_SCHEMA_VERSION = "caos.model.worksheet.v1"
@@ -54,6 +55,11 @@ RUNTIME_KEYS = (
 )
 _SOURCE_BLOCK_KEYS = ("block_id", "text", "locator", "confidence", "untrusted_data", "extractor_version")
 _RUN_NODE_KEYS = ("id", "run_id", "case_id", "module_id", "stage", "dependencies", "status", "attempt", "artifact_id", "error")
+_ATTEMPT_KEYS = (
+    "run_id", "module_id", "kind", "provider_identity", "request_digest", "response_digest",
+    "provider_request_id", "observed_model", "observed_provider_version", "input_tokens",
+    "output_tokens", "stop_reason", "retry_index", "terminal_code", "operation",
+)
 # Schemas the wire contract names but no route references directly.
 _UNROUTED_SCHEMAS = (
     wire.ThesisResponse,
@@ -394,12 +400,12 @@ def create_app(*, settings: Settings, store: DomainStore, engine: Any) -> FastAP
 
         who = identity(request)
         require_case(store, case_id, who, write=True)
-        form = await request.form()
-        upload = form.get("file")
-        if upload is None or isinstance(upload, str):
-            raise HTTPException(status_code=422, detail="multipart field 'file' is required")
-        saved = await ingest_upload(store, Vault(settings), case_id, who.subject,
-                                    upload, max_bytes=settings.max_source_bytes)
+        async with request.form() as form:
+            upload = form.get("file")
+            if upload is None or isinstance(upload, str):
+                raise HTTPException(status_code=422, detail="multipart field 'file' is required")
+            saved = await ingest_upload(store, Vault(settings), case_id, who.subject,
+                                        upload, max_bytes=settings.max_source_bytes)
         return _wire_source(saved, source_set=saved["source_set"])
 
     def visible_source(case_id: str, source_id: str, request: Request) -> dict[str, Any]:
@@ -511,17 +517,22 @@ def create_app(*, settings: Settings, store: DomainStore, engine: Any) -> FastAP
         budget = engine.runs.get_budget(run["id"])
         if budget is None:
             return None
+        from ..engine.runtime import _agent_module_ids_for_plan
         from ..modules.registry import MODULES
 
-        agent_modules = [
-            node["module_id"] for node in (run.get("plan") or {}).get("nodes", [])
-            if MODULES.get(node["module_id"]) and MODULES[node["module_id"]].mode_full == "agent"
-        ]
+        agent_modules = _agent_module_ids_for_plan(run["plan"]) if run.get("plan_digest") else []
         dimensions = ("turns", "evidence_reads", "evidence_bytes", "input_tokens",
                       "output_tokens", "active_minutes", "provider_retries", "repairs")
+        identity = run.get("provider_identity")
+        attempts = []
+        for raw in budget["attempts"]:
+            projected = {key: raw.get(key) for key in _ATTEMPT_KEYS}
+            projected["provider_request_id"] = raw.get("provider_request_id", raw.get("request_id"))
+            attempts.append(projected)
         state = {
             "phase": "generating" if run["status"] == "running" else "complete",
-            "model": settings.anthropic_model,
+            "model": identity["model"] if identity else None,
+            "provider_identity": identity,
             "reporting_period": run["created_at"][:10],
             "module_output_tokens": {
                 module_id: MODULES[module_id].max_output_tokens for module_id in agent_modules
@@ -529,7 +540,7 @@ def create_app(*, settings: Settings, store: DomainStore, engine: Any) -> FastAP
             "budget_limits": {key: budget["limits"].get(key, 0) for key in dimensions},
             "budget_used": {key: budget["used"].get(key, 0) for key in dimensions},
             "inflight_request_digest": budget["inflight_request_digest"],
-            "attempts": budget["attempts"],
+            "attempts": attempts,
         }
         completed = [module_id for module_id in engine.runs.executed_modules(run["id"]) if module_id in agent_modules]
         if completed:
@@ -552,6 +563,7 @@ def create_app(*, settings: Settings, store: DomainStore, engine: Any) -> FastAP
             "created_by": run["created_by"],
             "created_at": run["created_at"],
             "error": run.get("error"),
+            "provider_identity": run.get("provider_identity"),
         }
         generation = _generation_state(run)
         if generation is not None:
@@ -572,7 +584,16 @@ def create_app(*, settings: Settings, store: DomainStore, engine: Any) -> FastAP
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         except RuntimeError as exc:
             code = getattr(exc, "code", "RUN_START_FAILED")
-            status = 409 if code == "ADMISSION_BUSY" else 422
+            if code == "ADMISSION_BUSY":
+                status = 409
+            elif code in {
+                "AGENT_EXECUTION_DISABLED", "AGENT_PROVIDER_UNAVAILABLE",
+                "AGENT_QUALIFICATION_MISSING", "AGENT_QUALIFICATION_EXPIRED",
+                "AGENT_PROVIDER_UNQUALIFIED", "AGENT_IDENTITY_MISMATCH",
+            }:
+                status = 503
+            else:
+                status = 422
             raise HTTPException(status_code=status, detail={"code": code}) from exc
         return _wire_run(run)
 
@@ -648,7 +669,7 @@ def create_app(*, settings: Settings, store: DomainStore, engine: Any) -> FastAP
         return {
             key: snapshot.get(key)
             for key in ("id", "case_id", "run_id", "source_set_id", "source_set_version",
-                        "artifacts", "digest", "previous_snapshot_id", "accepted_at")
+                        "artifacts", "digest", "previous_snapshot_id", "accepted_at", "provider_identity")
         }
 
     @app.post("/api/runs/{run_id}/accept", response_model=wire.SnapshotResponse)
@@ -725,12 +746,24 @@ def create_app(*, settings: Settings, store: DomainStore, engine: Any) -> FastAP
     def get_artifact(case_id: str, artifact_id: str, request: Request) -> dict[str, Any]:
         require_case(store, case_id, identity(request))
         artifact = engine.runs.get_artifact(artifact_id)
-        if artifact is None or artifact["case_id"] != case_id:
+        run = engine.runs.get_run(artifact["run_id"]) if artifact is not None else None
+        if artifact is None or run is None or run.get("case_id") != case_id:
             raise HTTPException(status_code=404, detail="artifact not found")
+        try:
+            engine.validated_run_artifact(artifact, run)
+        except (RuntimeError, KeyError) as exc:
+            # An artifact that no longer verifies is served as not found (the
+            # same body as an unknown id) but never silently: the typed
+            # refusal is one of the seven log points (CLAUDE.md, observability).
+            log_event(
+                "refusal", run_id=run.get("id"), module_id=artifact.get("module_id"),
+                code=getattr(exc, "code", None) or "ARTIFACT_AUTHORITY_MISMATCH",
+            )
+            raise HTTPException(status_code=404, detail="artifact not found") from exc
         return {
             key: artifact.get(key)
             for key in ("id", "case_id", "run_id", "module_id", "payload", "markdown",
-                        "digest", "input_fingerprint", "created_by", "created_at")
+                        "digest", "input_fingerprint", "created_by", "created_at", "provider_identity")
         }
 
     # -- Model Builder ------------------------------------------------------

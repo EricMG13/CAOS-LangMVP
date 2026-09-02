@@ -65,6 +65,8 @@ APPROVER_H = {"x-caos-role": "APPROVER", "x-forwarded-user": "approver-user"}
 GOLDEN_DIR = Path(__file__).resolve().parents[1] / "fixtures" / "deliverables" / "golden"
 
 SHOCK = {"assumption_id": "revenue_growth", "case": "DOWNSIDE", "period_id": "FY2026", "value": -0.05}
+_DEFAULT_MODEL_SELECTION = object()
+_TEST_MODEL_SELECTION = "_default_model_selection_for_tests"
 
 
 # --- helpers (unbuilt imports stay inside; called only from test bodies) ----------
@@ -107,11 +109,21 @@ def required_blocks(template, source, *, narrative_text="Leverage is manageable.
     return blocks
 
 
-def draft_request(template, source=None, *, blocks=None, expected_version=0, model_selection=None, extra_blocks=()):
+def draft_request(
+    template,
+    source=None,
+    *,
+    blocks=None,
+    expected_version=0,
+    model_selection=_DEFAULT_MODEL_SELECTION,
+    extra_blocks=(),
+):
     from caos.contracts import DeliverableDraftRequest
 
     if blocks is None:
         blocks = required_blocks(template, source) + list(extra_blocks)
+    if model_selection is _DEFAULT_MODEL_SELECTION:
+        model_selection = template.get(_TEST_MODEL_SELECTION)
     return DeliverableDraftRequest(
         expected_version=expected_version,
         template_id=template["template_id"],
@@ -187,9 +199,17 @@ def seed_model(service, case, *, outputs=None):
     return service.seed_signed_revision_for_tests(case["id"], outputs=outputs or {"total_leverage": 4.2})
 
 
+def bind_default_model_for_tests(service, case, template):
+    model = seed_model(service, case)
+    template[_TEST_MODEL_SELECTION] = revision_selection(model)
+    return model
+
+
 def save_min_draft(service, store, pathway="FULL_CREDIT", **kwargs):
     case, source, _ = seed_ready_case(service, store)
     template = service.templates()[pathway]
+    if template["model_requirement"] == "REQUIRED":
+        bind_default_model_for_tests(service, case, template)
     revision = service.save_draft(case["id"], pathway, draft_request(template, source, **kwargs), actor="analyst")
     return case, source, template, revision
 
@@ -216,6 +236,8 @@ def http_seed(settings, store, pathway="FULL_CREDIT"):
     case, source = seed_case_with_source(store)
     svc.seed_accepted_authority_for_tests(case["id"])
     template = svc.templates()[pathway]
+    if template["model_requirement"] == "REQUIRED":
+        bind_default_model_for_tests(svc, case, template)
     return svc, case, source, template
 
 
@@ -433,9 +455,51 @@ def test_annual_model_generated_table_uses_only_selected_server_outputs(service,
     assert frozen["payload"]["content"]["document_sections"] == revision["content"]["document_sections"]
 
 
+def test_pathway_calculation_rows_paginate_without_hiding_late_outputs(service, store):
+    from caos.deliverables.document import compose_document
+
+    case, source, _ = seed_ready_case(service, store)
+    template = service.templates()["DISTRESSED_RESTRUCTURING"]
+    sections = compose_document(
+        pathway="DISTRESSED_RESTRUCTURING",
+        template=template,
+        blocks=required_blocks(template, source),
+        artifacts={"__authority__": {"id": "snap-pathway-pagination"}},
+        model={
+            "build_id": "bld-pathway-pagination",
+            "outputs": {},
+            "pathway_effects": [{
+                "calculations": [
+                    {
+                        "calculator_id": "recovery_waterfall",
+                        "canonical_output": {
+                            "claims": list(range(501)),
+                            "recovery_pct": 0.25,
+                        },
+                    },
+                    {
+                        "calculator_id": "liquidity_runway",
+                        "canonical_output": {"funding_gap": 150},
+                    },
+                ],
+            }],
+        },
+    )
+
+    scenario = next(section for section in sections if section["section_id"] == "base_downside_and_scenario_exhibits")
+    tables = scenario["items"][1][1:]
+    rows = [row for table in tables for row in table["rows"]]
+    assert len(rows) == 503
+    assert all(len(table["rows"]) <= 500 for table in tables)
+    assert ["recovery_waterfall / recovery_pct", "0.25"] in rows
+    assert ["liquidity_runway / funding_gap", "150"] in rows
+    assert len({table["section_id"] for table in tables}) == len(tables)
+
+
 def test_optional_block_cannot_collide_with_a_canonical_document_section(service, store):
     case, source, _ = seed_ready_case(service, store)
     template = service.templates()["FULL_CREDIT"]
+    bind_default_model_for_tests(service, case, template)
     collision = optional_block(template, "LIMITATIONS", block_id="credit_snapshot")
 
     with pytest.raises(Exception, match="DELIVERABLE_SECTION_ID_DUPLICATE"):
@@ -459,6 +523,26 @@ def test_model_optional_pathways_compose_without_model_authority(service, store,
 
     assert revision["content"]["model_identity"] is None
     assert all(section["origin"]["kind"] != "MODEL" for section in revision["content"]["document_sections"])
+
+
+async def test_no_model_relative_value_freeze_pins_accepted_run_methodology(
+    settings, store, engine, tmp_path,
+):
+    service = make_service(store, tmp_path / "deliverable-vault", engine=engine)
+    case, source = seed_case_with_source(store)
+    run = await engine.run_scripted_for_tests(case["id"], pathway="RELATIVE_VALUE")
+    await engine.accept(run["id"], actor="analyst")
+    template = service.templates()["RELATIVE_VALUE"]
+    revision = service.save_draft(
+        case["id"], "RELATIVE_VALUE", draft_request(template, source), actor="analyst",
+    )
+
+    frozen = service.freeze(case["id"], freeze_request(revision), actor="analyst")
+
+    assert frozen["payload"]["model"] is None
+    assert frozen["payload"]["authority"]["build_id"] == "unbuilt"
+    assert frozen["payload"]["methodology"]["build_id"] == run["plan"]["build_id"]
+    assert frozen["payload"]["methodology"]["build_id"] == engine.bundle.build_id
 
 
 def test_draft_request_rejects_client_supplied_document_sections(client, settings, store):
@@ -499,6 +583,7 @@ def test_composition_verifies_accepted_artifact_bytes_before_saving(settings, st
 
     run = asyncio.run(accepted_run())
     template = service.templates()["FULL_CREDIT"]
+    bind_default_model_for_tests(service, case, template)
     first = service.save_draft(
         case["id"], "FULL_CREDIT", draft_request(template, source), actor="analyst",
     )
@@ -645,16 +730,33 @@ def test_optional_blocks_out_of_template_declared_order_are_rejected(service, st
         )
 
 
-def test_declared_limitations_slot_saves_without_model_identity(service, store):
+def test_declared_limitations_slot_saves_without_model_identity_on_optional_pathway(service, store):
     case, source, _ = seed_ready_case(service, store)
-    template = service.templates()["FULL_CREDIT"]
+    pathway = "RELATIVE_VALUE"
+    template = service.templates()[pathway]
     revision = service.save_draft(
-        case["id"], "FULL_CREDIT",
+        case["id"], pathway,
         draft_request(template, source, extra_blocks=[optional_block(template, "LIMITATIONS")]),
         actor="analyst",
     )
     assert revision["content"]["model_identity"] is None, "non-model slots need no model"
     assert revision["content"]["blocks"][-1]["kind"] == "LIMITATIONS"
+
+
+@pytest.mark.parametrize("pathway", ["FULL_CREDIT", "DISTRESSED_RESTRUCTURING"])
+def test_model_required_templates_reject_required_blocks_without_a_selected_model(
+    service, store, pathway,
+):
+    case, source, _ = seed_ready_case(service, store)
+    template = service.templates()[pathway]
+    assert template["model_requirement"] == "REQUIRED"
+
+    with pytest.raises(Exception, match="MODEL_REQUIRED"):
+        service.save_draft(
+            case["id"], pathway, draft_request(template, source), actor="analyst",
+        )
+
+    assert service.workspace(case["id"], pathway)["draft"] is None
 
 
 # --- evidence citations -----------------------------------------------------------
@@ -947,7 +1049,247 @@ def test_live_model_builder_authority_feeds_eligibility_selection_scenario_and_f
     frozen = service.freeze(case["id"], freeze_request(revision), actor="analyst")
     assert frozen["payload"]["model"]["outputs"] == signed["outputs"], "live revision outputs embedded verbatim"
     assert frozen["payload"]["authority"]["build_id"] == build["id"]
+    assert frozen["payload"]["methodology"]["build_id"] == build[
+        "methodology_build_id"
+    ], "signed-revision publishing retains the originating methodology identity"
     assert frozen["payload"]["template"]["title"] == "Investment Committee Credit Memo"
+
+
+def test_filing_rejects_a_frozen_fallback_after_an_analyst_revision_becomes_active(
+    settings,
+    store,
+    engine,
+    tmp_path,
+):
+    import asyncio
+
+    from caos.contracts import ModelPreviewRequest, ModelSignOffRequest
+    from caos.deliverables.service import DeliverableService
+    from caos.models.service import ModelService
+
+    models = ModelService(store=store, vault_dir=settings.storage_dir, engine=engine)
+    service = DeliverableService(
+        store=store,
+        vault_dir=tmp_path / "deliverable-vault",
+        models=models,
+    )
+    case, source = seed_case_with_source(store)
+
+    async def accept_scripted():
+        run = await engine.run_scripted_for_tests(case["id"])
+        await engine.accept(run["id"], actor="analyst")
+
+    asyncio.run(accept_scripted())
+    build = models.run_build_for_tests(models.queue_build(case["id"], "analyst")["id"])
+    fallback = {
+        "kind": "APPLICATION_BUILD",
+        "build_id": build["id"],
+        "fallback_acknowledged": True,
+    }
+    distressed_template = service.templates()["DISTRESSED_RESTRUCTURING"]
+    with pytest.raises(ValueError, match="DELIVERABLE_PATHWAY_AUTHORITY_MISMATCH"):
+        service.save_draft(
+            case["id"],
+            "DISTRESSED_RESTRUCTURING",
+            draft_request(distressed_template, source, model_selection=fallback),
+            actor="analyst",
+        )
+    template = service.templates()["FULL_CREDIT"]
+    draft = service.save_draft(
+        case["id"],
+        "FULL_CREDIT",
+        draft_request(template, source, model_selection=fallback),
+        actor="analyst",
+    )
+    frozen = service.freeze(case["id"], freeze_request(draft), actor="analyst")
+
+    registry = models.assumption_registry(case["id"], build["id"])
+    preview_request = ModelPreviewRequest.model_validate({
+        "build_id": build["id"],
+        "parent_revision_id": None,
+        "registry_version": registry["version"],
+        "registry_digest": registry["digest"],
+        "assumptions": registry["defaults"],
+        "draft_generation": 1,
+    })
+    preview = models.preview(case["id"], preview_request)
+    models.sign_off(case["id"], ModelSignOffRequest.model_validate({
+        **preview_request.model_dump(mode="json"),
+        "preview_digest": preview["preview_digest"],
+        "expected_head_revision_id": None,
+        "note": "Revision made active while the filing gate was parked.",
+    }))
+
+    assert service.model_eligibility(case["id"])["default_model_selection"]["kind"] == "ANALYST_REVISION"
+    with pytest.raises(ValueError, match="FROZEN_MODEL_AUTHORITY_STALE"):
+        service.approve_filing(
+            case["id"],
+            frozen["deliverable_id"],
+            file_request(frozen),
+            actor="approver-user",
+        )
+    assert service.frozen_record(case["id"], frozen["deliverable_id"])["status"] == "FROZEN"
+
+
+@pytest.mark.parametrize("pathway", ["EARNINGS_UPDATE", "COVENANT_REFINANCING"])
+@pytest.mark.parametrize("selection_kind", ["APPLICATION_BUILD", "ANALYST_REVISION"])
+async def test_live_incremental_pathway_publishes_against_a_validated_prior_full_credit_model(
+    settings,
+    store,
+    engine,
+    tmp_path,
+    pathway,
+    selection_kind,
+):
+    from caos.contracts import ModelPreviewRequest, ModelSignOffRequest, digest
+    from caos.deliverables.service import DeliverableService
+    from caos.models.service import ModelService
+
+    models = ModelService(store=store, vault_dir=settings.storage_dir, engine=engine)
+    service = DeliverableService(
+        store=store,
+        vault_dir=tmp_path / "incremental-deliverable-vault",
+        engine=engine,
+        models=models,
+    )
+    case, source = seed_case_with_source(store)
+    store.add_member(
+        case["id"],
+        "analyst",
+        "approver-user",
+        "APPROVER",
+        actor_role="ADMIN",
+    )
+
+    full_credit = await engine.run_scripted_for_tests(case["id"])
+    base_snapshot = await engine.accept(full_credit["id"], actor="analyst")
+    queued = next(
+        build
+        for build in models.list_builds(case["id"])
+        if build["snapshot_id"] == base_snapshot["id"]
+    )
+    base_build = models.run_build_for_tests(queued["id"])
+    assert base_build["status"] == "READY"
+
+    signed = None
+    if selection_kind == "ANALYST_REVISION":
+        registry = models.assumption_registry(case["id"], base_build["id"])
+        preview_request = ModelPreviewRequest.model_validate(
+            {
+                "build_id": base_build["id"],
+                "parent_revision_id": None,
+                "registry_version": registry["version"],
+                "registry_digest": registry["digest"],
+                "assumptions": registry["defaults"],
+                "draft_generation": 1,
+            }
+        )
+        preview = models.preview(case["id"], preview_request)
+        signed = models.sign_off(
+            case["id"],
+            ModelSignOffRequest.model_validate(
+                {
+                    **preview_request.model_dump(mode="json"),
+                    "preview_digest": preview["preview_digest"],
+                    "expected_head_revision_id": None,
+                    "note": "Prior Full Credit authority for incremental publication.",
+                }
+            ),
+            actor="analyst",
+        )
+        selection = {
+            "kind": "ANALYST_REVISION",
+            "build_id": base_build["id"],
+            "revision_id": signed["id"],
+        }
+    else:
+        selection = {
+            "kind": "APPLICATION_BUILD",
+            "build_id": base_build["id"],
+            "fallback_acknowledged": True,
+        }
+
+    incremental = await engine.run_scripted_for_tests(
+        case["id"],
+        pathway=pathway,
+    )
+    incremental_snapshot = await engine.accept(incremental["id"], actor="analyst")
+    assert incremental_snapshot["previous_snapshot_id"] == base_snapshot["id"]
+
+    eligibility = service.model_eligibility(case["id"])
+    assert eligibility["application_build"]["build_id"] == base_build["id"]
+    if signed is not None:
+        assert eligibility["default_model_selection"] == selection
+    else:
+        assert eligibility["default_model_selection"] is None
+        assert eligibility["fallback_acknowledgement_required"] is True
+
+    template = service.templates()[pathway]
+    if signed is not None:
+        with pytest.raises(ValueError, match="MODEL_FALLBACK_INELIGIBLE"):
+            service.save_draft(
+                case["id"],
+                pathway,
+                draft_request(
+                    template,
+                    source,
+                    model_selection={
+                        "kind": "APPLICATION_BUILD",
+                        "build_id": base_build["id"],
+                        "fallback_acknowledged": True,
+                    },
+                ),
+                actor="analyst",
+            )
+    revision = service.save_draft(
+        case["id"],
+        pathway,
+        draft_request(template, source, model_selection=selection),
+        actor="analyst",
+    )
+    expected_model_authority = {
+        "relationship": "PRIOR_FULL_CREDIT_BASE",
+        "snapshot_id": base_snapshot["id"],
+        "snapshot_digest": base_snapshot["digest"],
+        "run_id": base_snapshot["run_id"],
+        "source_set_id": base_snapshot["source_set_id"],
+        "source_set_version": base_snapshot["source_set_version"],
+        "input_fingerprint": base_build["input_fingerprint"],
+        "payload_digest": base_build["payload_digest"],
+    }
+    assert revision["content"]["model_identity"]["model_authority"] == (
+        expected_model_authority
+    )
+
+    frozen = service.freeze(case["id"], freeze_request(revision), actor="analyst")
+    assert frozen["payload"]["authority"]["accepted_snapshot_id"] == (
+        incremental_snapshot["id"]
+    )
+    assert frozen["payload"]["model"]["build_id"] == base_build["id"]
+    assert frozen["payload"]["model"]["model_authority"] == (
+        expected_model_authority
+    )
+    assert frozen["payload"]["methodology"]["build_id"] == base_build[
+        "methodology_build_id"
+    ]
+    assert frozen["input_fingerprint"] == digest(
+        {
+            "snapshot_id": incremental_snapshot["id"],
+            "source_set_id": incremental_snapshot["source_set_id"],
+            "source_set_version": incremental_snapshot["source_set_version"],
+            "build_id": base_build["id"],
+            "methodology_build_id": base_build["methodology_build_id"],
+        }
+    )
+
+    filed = service.approve_filing(
+        case["id"],
+        frozen["deliverable_id"],
+        file_request(frozen),
+        actor="approver-user",
+    )
+    assert filed["status"] == "FILED"
+    assert filed["payload"] == frozen["payload"]
 
 
 # --- reader authorization ---------------------------------------------------------
@@ -992,7 +1334,7 @@ def test_downgraded_global_reader_loses_filing_authority_despite_case_standing(c
 def test_canonical_document_is_the_only_cross_format_export_source(service, store):
     case, source, _ = seed_ready_case(service, store)
     governed_tail = "END-OF-GOVERNED-NARRATIVE"
-    unicode_marker = "“Downside”—£95m"
+    unicode_marker = "“Downside”—£95m 债务重组 fi fl ffi ffl"  # ligature pairs must extract verbatim
     long_narrative = f"Committee-ready analysis {unicode_marker} {'x' * 140} {governed_tail}"
     model = seed_model(service, case, outputs={
         "BASE": {"FY2027": {"total_leverage": 3.8}},
@@ -1028,6 +1370,7 @@ def test_canonical_document_is_the_only_cross_format_export_source(service, stor
     from pypdf import PdfReader
 
     pdf = render_frozen_export(payload, "pdf")
+    assert pdf == render_frozen_export(payload, "pdf"), "Unicode PDF bytes are deterministic"
     pdf_text = "\n".join(page.extract_text() or "" for page in PdfReader(io.BytesIO(pdf)).pages)
     pdf_titles = [line[3:] for line in pdf_text.splitlines() if line.startswith("## ")]
     assert pdf_titles == expected_titles
@@ -1113,6 +1456,27 @@ def test_divergent_render_for_same_freeze_identity_is_freeze_conflict(tmp_path, 
         divergent.freeze(case["id"], freeze_request(revision), actor="analyst")
 
 
+def test_freeze_retry_recovers_after_files_publish_but_before_record_commit(
+    service, store, monkeypatch
+):
+    case, _source, _template, revision = save_min_draft(service, store)
+    original_insert = service.records.insert_frozen
+
+    def fail_before_record(*args, **kwargs):
+        raise RuntimeError("injected record commit failure")
+
+    monkeypatch.setattr(service.records, "insert_frozen", fail_before_record)
+    with pytest.raises(RuntimeError, match="injected record commit failure"):
+        service.freeze(case["id"], freeze_request(revision), actor="analyst")
+    assert service.workspace(case["id"], "FULL_CREDIT")["frozen"] == []
+
+    monkeypatch.setattr(service.records, "insert_frozen", original_insert)
+    frozen = service.freeze(case["id"], freeze_request(revision), actor="analyst")
+    assert set(frozen["exports"]) == {"md", "pdf", "xlsx"}
+    assert all(service.export(frozen["deliverable_id"], format_name)[0]
+               for format_name in frozen["exports"])
+
+
 def test_filing_thread_id_is_a_deterministic_digest_including_build_id():
     from caos.deliverables.graph import filing_thread_id
 
@@ -1125,12 +1489,12 @@ def test_filing_thread_id_is_a_deterministic_digest_including_build_id():
     assert filing_thread_id(**{**args, "case_id": "case-2"}) != baseline
 
 
-def test_freeze_fails_closed_without_upstream_accepted_authority(service, store):
+def test_draft_fails_closed_without_upstream_accepted_authority(service, store):
     case, source = seed_case_with_source(store)  # deliberately: no accepted authority seeded
     template = service.templates()["FULL_CREDIT"]
-    revision = service.save_draft(case["id"], "FULL_CREDIT", draft_request(template, source), actor="analyst")
+    bind_default_model_for_tests(service, case, template)
     with pytest.raises(Exception, match="AUTHORITY|SNAPSHOT|UPSTREAM"):
-        service.freeze(case["id"], freeze_request(revision), actor="analyst")
+        service.save_draft(case["id"], "FULL_CREDIT", draft_request(template, source), actor="analyst")
     assert service.workspace(case["id"], "FULL_CREDIT")["frozen"] == [], "no frozen record without pinned upstream identity"
 
 
@@ -1232,12 +1596,88 @@ def test_gate_rejects_source_set_drift_between_freeze_and_filing(service, store)
     assert not [e for e in service.audit_events_for_tests(case["id"]) if e["action"] == "deliverable.filed"]
 
 
+async def test_gate_revalidates_accepted_artifact_graph_after_freeze(settings, store, engine, tmp_path):
+    service = make_service(store, tmp_path / "deliverable-vault", engine=engine)
+    case, source = seed_case_with_source(store)
+    run = await engine.run_scripted_for_tests(case["id"], pathway="RELATIVE_VALUE")
+    await engine.accept(run["id"], actor="analyst")
+    template = service.templates()["RELATIVE_VALUE"]
+    revision = service.save_draft(
+        case["id"], "RELATIVE_VALUE", draft_request(template, source), actor="analyst",
+    )
+    frozen = service.freeze(case["id"], freeze_request(revision), actor="analyst")
+    add_approver(store, case)
+    engine.forge_node_artifact_for_tests(run["id"], module_id="CP-0", digest="0" * 64)
+
+    with pytest.raises(Exception, match="DELIVERABLE_COMPOSITION_REQUIRED_VALUE_MISSING:artifact.CP-0"):
+        service.approve_filing(
+            case["id"], frozen["deliverable_id"], file_request(frozen), actor="approver-user",
+        )
+    assert service.frozen_record(case["id"], frozen["deliverable_id"])["status"] == "FROZEN"
+
+
 def test_gate_recomputes_stored_digest_and_refuses_tampered_frozen_content(service, store):
     case, revision, frozen = frozen_deliverable(service, store)
     service.tamper_frozen_payload_for_tests(frozen["deliverable_id"])
     with pytest.raises(Exception, match="PREVIEW|INTEGRITY"):
         service.approve_filing(case["id"], frozen["deliverable_id"], file_request(frozen), actor="approver-user")
     assert not [e for e in service.audit_events_for_tests(case["id"]) if e["action"] == "deliverable.filed"], "tamper-evident: nothing filed"
+
+
+def test_freeze_refuses_stored_revision_content_tampered_without_its_indexed_digest(
+    service, store,
+):
+    import sqlalchemy as sa
+
+    from caos.storage.deliverables import deliverable_revisions
+
+    case, _source, _template, revision = save_min_draft(service, store)
+    tampered = copy.deepcopy(revision["content"])
+    tampered["unreviewed_direct_row_edit"] = True
+    with service.records.engine.begin() as connection:
+        connection.execute(
+            sa.update(deliverable_revisions)
+            .where(deliverable_revisions.c.revision_id == revision["revision_id"])
+            .values(content=tampered)
+        )
+
+    with pytest.raises(ValueError, match="DELIVERABLE_REVISION_INTEGRITY_FAILED"):
+        service.freeze(case["id"], freeze_request(revision), actor="analyst")
+
+    assert service.records.frozen_for_pathway(case["id"], "FULL_CREDIT") == []
+
+
+def test_filing_rechecks_frozen_draft_digest_even_if_other_preview_digests_are_rebound(
+    service, store,
+):
+    import sqlalchemy as sa
+
+    from caos.contracts import digest
+    from caos.deliverables.graph import frozen_approval_digest
+    from caos.storage.deliverables import deliverable_frozen
+
+    case, _revision, frozen = frozen_deliverable(service, store)
+    payload = copy.deepcopy(frozen["payload"])
+    payload["content"]["unreviewed_direct_row_edit"] = True
+    payload["preview_digest"] = digest({
+        key: value for key, value in payload.items() if key != "preview_digest"
+    })
+    rebound = {**frozen, "payload": payload}
+    rebound["preview_digest"] = frozen_approval_digest(rebound)
+    with service.records.engine.begin() as connection:
+        connection.execute(
+            sa.update(deliverable_frozen)
+            .where(deliverable_frozen.c.deliverable_id == frozen["deliverable_id"])
+            .values(payload=payload, preview_digest=rebound["preview_digest"])
+        )
+
+    with pytest.raises(ValueError, match="DELIVERABLE_PREVIEW_INTEGRITY_FAILED"):
+        service.approve_filing(
+            case["id"], frozen["deliverable_id"], file_request(rebound), actor="approver-user",
+        )
+
+    assert service.frozen_record(case["id"], frozen["deliverable_id"])["status"] == "FROZEN"
+    assert service.thread_state_for_tests(frozen["thread_id"])["status"] == "PARKED"
 
 
 def test_resume_outside_a_parked_filing_gate_is_refused(service, store):
@@ -1256,6 +1696,30 @@ def test_approval_revalidates_current_accepted_snapshot_and_stale_leaves_no_resi
     record = service.frozen_record(case["id"], frozen["deliverable_id"])
     assert record["status"] == "FROZEN", "stale rejection leaves the record intact and retryable (after re-freeze)"
     assert not [e for e in service.audit_events_for_tests(case["id"]) if e["action"] == "deliverable.filed"], "no audit residue"
+
+
+def test_authority_move_during_approval_cannot_cross_the_filing_cas(
+    service,
+    store,
+    monkeypatch,
+):
+    case, _revision, frozen = frozen_deliverable(service, store)
+    resolve = service._resolve_stored_selection
+
+    def move_authority(case_id, stored):
+        resolved = resolve(case_id, stored)
+        service.supersede_accepted_authority_for_tests(case_id)
+        return resolved
+
+    monkeypatch.setattr(service, "_resolve_stored_selection", move_authority)
+    with pytest.raises(ValueError, match="FROZEN_AUTHORITY_STALE"):
+        service.approve_filing(
+            case["id"],
+            frozen["deliverable_id"],
+            file_request(frozen),
+            actor="approver-user",
+        )
+    assert service.frozen_record(case["id"], frozen["deliverable_id"])["status"] == "FROZEN"
 
 
 def test_stale_or_duplicate_resume_returns_resume_not_applied_never_success(client, settings, store):
@@ -1279,6 +1743,7 @@ def test_later_filing_supersedes_prior_with_pointer_and_terminalizes_its_thread(
     case, source, r1, frozen_a = freeze_min(service, store)  # frozen A parks its gate, never filed
     add_approver(store, case)
     template = service.templates()["FULL_CREDIT"]
+    template[_TEST_MODEL_SELECTION] = r1["content"]["model_selection"]
 
     r2 = service.save_draft(
         case["id"], "FULL_CREDIT",
@@ -1324,6 +1789,76 @@ def test_http_request_changes_requires_approver_and_nonblank_comment_and_appends
     draft = svc.workspace(case["id"], "FULL_CREDIT")["draft"]
     assert draft["version"] == revision["version"] + 1, "a traceable replacement draft is appended"
     assert "Tighten the covenant discussion." in str(draft["content"]), "the replacement draft carries the comment"
+
+
+def test_change_request_revision_conflict_rolls_back_frozen_and_thread_transition(
+    service, store, monkeypatch,
+):
+    import threading
+
+    from caos.contracts import RequestDeliverableChangesRequest
+    from caos.storage.deliverables import DeliverableVersionConflict
+
+    case, source, revision, frozen = freeze_min(service, store)
+    head_read = threading.Event()
+    release_request = threading.Event()
+    real_head_revision = service.records.head_revision
+
+    def pause_change_request_after_head_read(case_id, pathway):
+        head = real_head_revision(case_id, pathway)
+        if threading.current_thread().name == "change-request":
+            head_read.set()
+            assert release_request.wait(5), "test did not release the paused change request"
+        return head
+
+    monkeypatch.setattr(service.records, "head_revision", pause_change_request_after_head_read)
+    request = RequestDeliverableChangesRequest(
+        preview_digest=frozen["preview_digest"],
+        input_fingerprint=frozen["input_fingerprint"],
+        comment="Address the newer analyst view.",
+    )
+    request_error = []
+
+    def request_changes():
+        try:
+            service.request_changes(
+                case["id"], frozen["deliverable_id"], request, actor="approver-user",
+            )
+        except Exception as exc:  # noqa: BLE001 — asserted after joining the thread
+            request_error.append(exc)
+
+    worker = threading.Thread(target=request_changes, name="change-request")
+    worker.start()
+    assert head_read.wait(5), "change request did not reach its revision CAS"
+    template = service.templates()["FULL_CREDIT"]
+    try:
+        analyst_revision = service.save_draft(
+            case["id"],
+            "FULL_CREDIT",
+            draft_request(
+                template,
+                blocks=required_blocks(template, source, narrative_text="Concurrent analyst revision."),
+                expected_version=revision["version"],
+                model_selection=revision["content"]["model_selection"],
+            ),
+            actor="analyst",
+        )
+    finally:
+        release_request.set()
+    worker.join(5)
+
+    assert not worker.is_alive()
+    assert len(request_error) == 1 and isinstance(request_error[0], DeliverableVersionConflict)
+    assert request_error[0].current["revision_id"] == analyst_revision["revision_id"]
+    assert service.frozen_record(case["id"], frozen["deliverable_id"])["status"] == "FROZEN"
+    assert service.thread_state_for_tests(frozen["thread_id"])["status"] == "PARKED"
+    assert [item["revision_id"] for item in service.revision_history(case["id"], "FULL_CREDIT")] == [
+        revision["revision_id"], analyst_revision["revision_id"],
+    ]
+    assert not [
+        event for event in service.audit_events_for_tests(case["id"])
+        if event["action"] == "deliverable.changes_requested"
+    ]
 
 
 def test_http_filing_gate_denies_outsiders_404_readers_403_analysts_403_for_every_global_role(client, settings, store):
@@ -1400,6 +1935,80 @@ def test_tampered_or_missing_stored_export_fails_closed_with_no_audit_residue(se
     with pytest.raises(Exception, match="EXPORT_UNAVAILABLE"):
         service.export(frozen["deliverable_id"], "pdf")
     assert service.audit_events_for_tests(case["id"]) == before, "failed downloads mutate nothing and leave no audit residue"
+
+
+def test_filing_refuses_a_missing_frozen_export_and_keeps_the_gate_parked(service, store):
+    case, _revision, frozen = frozen_deliverable(service, store)
+    service.delete_export_for_tests(frozen["deliverable_id"], "pdf")
+
+    with pytest.raises(ValueError, match="DELIVERABLE_EXPORT_UNAVAILABLE"):
+        service.approve_filing(
+            case["id"], frozen["deliverable_id"], file_request(frozen), actor="approver-user"
+        )
+
+    assert service.frozen_record(case["id"], frozen["deliverable_id"])["status"] == "FROZEN"
+    assert service.thread_state_for_tests(frozen["thread_id"])["status"] == "PARKED"
+
+
+def test_filing_refuses_export_metadata_substituted_from_another_reviewed_draft(service, store):
+    import sqlalchemy as sa
+
+    from caos.storage.deliverables import deliverable_frozen
+
+    case, source, _authority = seed_ready_case(service, store)
+    template = service.templates()["FULL_CREDIT"]
+    bind_default_model_for_tests(service, case, template)
+    first_revision = service.save_draft(
+        case["id"], "FULL_CREDIT", draft_request(template, source), actor="analyst"
+    )
+    first = service.freeze(case["id"], freeze_request(first_revision), actor="analyst")
+    second_revision = service.save_draft(
+        case["id"],
+        "FULL_CREDIT",
+        draft_request(
+            template,
+            blocks=required_blocks(template, source, narrative_text="Different reviewed conclusion."),
+            expected_version=first_revision["version"],
+        ),
+        actor="analyst",
+    )
+    second = service.freeze(case["id"], freeze_request(second_revision), actor="analyst")
+    assert service.export(first["deliverable_id"], "md")[0] != service.export(second["deliverable_id"], "md")[0]
+
+    with service.records.engine.begin() as connection:
+        connection.execute(
+            sa.update(deliverable_frozen)
+            .where(deliverable_frozen.c.deliverable_id == first["deliverable_id"])
+            .values(exports=second["exports"])
+        )
+    audit_before = service.audit_events_for_tests(case["id"])
+
+    with pytest.raises(ValueError, match="DELIVERABLE_PREVIEW_INTEGRITY_FAILED"):
+        service.approve_filing(
+            case["id"], first["deliverable_id"], file_request(first), actor="approver-user"
+        )
+
+    assert service.frozen_record(case["id"], first["deliverable_id"])["status"] == "FROZEN"
+    assert service.thread_state_for_tests(first["thread_id"])["status"] == "PARKED"
+    assert service.audit_events_for_tests(case["id"]) == audit_before
+
+    with service.records.engine.begin() as connection:
+        connection.execute(
+            sa.update(deliverable_frozen)
+            .where(deliverable_frozen.c.deliverable_id == first["deliverable_id"])
+            .values(exports=first["exports"])
+        )
+    service.approve_filing(
+        case["id"], first["deliverable_id"], file_request(first), actor="approver-user"
+    )
+    with service.records.engine.begin() as connection:
+        connection.execute(
+            sa.update(deliverable_frozen)
+            .where(deliverable_frozen.c.deliverable_id == first["deliverable_id"])
+            .values(exports=second["exports"])
+        )
+    with pytest.raises(ValueError, match="DELIVERABLE_PREVIEW_INTEGRITY_FAILED"):
+        service.export(first["deliverable_id"], "pdf")
 
 
 def test_xlsx_export_neutralizes_formula_text_and_preserves_typed_model_values(service, store):

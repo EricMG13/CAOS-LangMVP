@@ -109,6 +109,40 @@ def test_ceiling_rejected_read_leaves_no_citation_expectation(evidence_context):
     assert reader.delivered() == set(), "rejected read must not create an expectation"
 
 
+def test_module_delivers_at_most_the_canonical_reference_limit(store):
+    import hashlib
+
+    from caos.engine.evidence import EvidenceReader
+    from caos.methodology.canonical import MAX_EVIDENCE_REFS_PER_MODULE
+
+    case = store.create_case("Bounded evidence", "Issuer", "Services", "analyst")
+    body = b"bounded evidence"
+    blocks = [
+        {"block_id": f"b{index:05d}", "locator": {"line": index}, "text": body.decode(),
+         "extractor_version": "builtin-v1", "confidence": "MEDIUM", "untrusted_data": True}
+        for index in range(1, MAX_EVIDENCE_REFS_PER_MODULE + 2)
+    ]
+    source = store.ingest({
+        "case_id": case["id"], "filename": "bounded.txt", "media_type": "text/plain",
+        "bytes": len(body), "sha256": hashlib.sha256(body).hexdigest(), "vault_path": None,
+        "blocks": blocks, "withdrawn": False,
+    }, "analyst")
+    charges = []
+    reader = EvidenceReader(
+        store, case["id"], source["source_set"]["id"], "run-1",
+        read_limit=10,
+        on_read=lambda *_args: charges.append(1),
+    )
+    for start in range(1, MAX_EVIDENCE_REFS_PER_MODULE + 1, 50):
+        reader.read(source["id"], [f"b{index:05d}" for index in range(start, start + 50)])
+    assert len(reader.delivered()) == MAX_EVIDENCE_REFS_PER_MODULE
+    before = (reader.reads_used, reader.bytes_used, len(charges))
+    with pytest.raises(Exception, match="AGENT_BUDGET_EXCEEDED"):
+        reader.read(source["id"], [f"b{MAX_EVIDENCE_REFS_PER_MODULE + 1:05d}"])
+    assert (reader.reads_used, reader.bytes_used, len(charges)) == before
+    assert len(reader.delivered()) == MAX_EVIDENCE_REFS_PER_MODULE
+
+
 def test_evidence_bytes_measure_is_the_tool_result_serialization(evidence_context):
     """§12 Appendix A: the byte ceiling counts len(json.dumps(result, sort_keys=True)) —
     the identical serialization sent to the model as the tool_result."""
@@ -257,7 +291,7 @@ def _refusal(lab, scenario: str):
             _ingest_text(lab.store, lab.case["id"], OUT_OF_SET_TEXT)
             return reader, (source_id, ["b00002"]), "AGENT_OUTPUT_INVALID"
         case "empty_source_id":
-            return reader, ("", ["b00001"]), "AGENT_AUTHORITY_MISMATCH"
+            return reader, ("", ["b00001"]), "AGENT_OUTPUT_INVALID"
         case "empty_block_id":
             return reader, (source_id, [""]), "AGENT_OUTPUT_INVALID"
         case "unknown_source_id":
@@ -267,7 +301,7 @@ def _refusal(lab, scenario: str):
         case "lone_surrogate_block_id":
             return reader, (source_id, ["\ud800b00001"]), "AGENT_OUTPUT_INVALID"
         case "oversized_source_id":
-            return reader, ("s" * 1_000_000, ["b00001"]), "AGENT_AUTHORITY_MISMATCH"
+            return reader, ("s" * 1_000_000, ["b00001"]), "AGENT_OUTPUT_INVALID"
         case "oversized_block_id":
             return reader, (source_id, ["b" * 1_000_000]), "AGENT_OUTPUT_INVALID"
     raise AssertionError(f"unknown scenario: {scenario}")
@@ -399,10 +433,13 @@ class LoopingReadProvider:
     """Never volunteers a final answer — reads evidence for as long as it is let."""
 
     def __init__(self, source_id: str, block_id: str = "b00001", count: int = 1_000) -> None:
+        from caos.engine.provider import host_control_identity
+
         self.source_id = source_id
         self.block_id = block_id
         self.count = count
         self.turns = 0
+        self.identity = host_control_identity()
 
     def count_tokens(self, request) -> int:
         return self.count
@@ -417,46 +454,52 @@ class LoopingReadProvider:
 async def test_an_unbounded_read_loop_is_stopped_by_the_run_evidence_read_ceiling(
     tmp_path, settings, store,
 ):
-    """A module cannot stall the run by reading forever: the run-wide
-    evidence_reads ceiling refuses read N+1 and the run fails closed."""
+    """A module cannot consume sibling capacity: its 10-read allocation
+    refuses read 11 and the run fails closed without overspending the route."""
+    from caos.engine.budget import EVIDENCE_READS_PER_MODULE
     from caos.engine.runtime import Engine
 
     case, source = seed_case_with_source(store, body=PINNED_TEXT.encode())
     provider = LoopingReadProvider(source["id"])
     engine = Engine.create(settings=settings, store=store,
                            checkpoint_path=tmp_path / "checkpoints.db", provider=provider)
-    run = await engine.start_run(case_id=case["id"], pathway="FULL_CREDIT", depth="full", actor="analyst")
-    await engine.wait(run["id"])
+    try:
+        run = await engine.start_run_for_tests(
+            case_id=case["id"], pathway="FULL_CREDIT", depth="full", actor="analyst",
+            allow_placeholder_deterministic=True,
+        )
+        await engine.wait(run["id"])
 
-    record = engine.get_run(run["id"])
-    assert record["status"] == "failed"
-    # The blamed module is derived, not named: which node holds the looping
-    # provider is a property of the compiled route, and pinning it here would
-    # turn a catalog change into a failure of this boundary test.
-    assert set(record["error"]) == {"code", "module_id"}
-    assert record["error"]["code"] == "AGENT_BUDGET_EXCEEDED"
-    blamed = record["error"]["module_id"]
-    failed = {node["module_id"]: node for node in record["nodes"] if node.get("status") == "failed"}
-    assert blamed in failed, "a module is blamed, not the graph boundary"
-    assert failed[blamed]["error"]["code"] == "AGENT_BUDGET_EXCEEDED"
+        record = engine.get_run(run["id"])
+        assert record["status"] == "failed"
+        # The blamed module is derived, not named: which node holds the looping
+        # provider is a property of the compiled route, and pinning it here would
+        # turn a catalog change into a failure of this boundary test.
+        assert set(record["error"]) == {"code", "module_id"}
+        assert record["error"]["code"] == "AGENT_BUDGET_EXCEEDED"
+        blamed = record["error"]["module_id"]
+        failed = {node["module_id"]: node for node in record["nodes"] if node.get("status") == "failed"}
+        assert blamed in failed, "a module is blamed, not the graph boundary"
+        assert failed[blamed]["error"]["code"] == "AGENT_BUDGET_EXCEEDED"
 
-    # The bound is run-wide, not per-node: the reader a node is handed is sized
-    # `limits - used`, so the looping module drinks the whole run's allowance and
-    # is refused at read N+1. Nothing per-node caps it short of that.
-    budget = engine.runs.get_budget(run["id"])
-    ceiling = budget["limits"]["evidence_reads"]
-    assert ceiling > 0
-    assert provider.turns > ceiling, "the module really did loop"
-    assert budget["used"]["evidence_reads"] == ceiling, "the ceiling is exact, never overspent"
-    assert budget["used"]["turns"] <= budget["limits"]["turns"]
+        budget = engine.runs.get_budget(run["id"])
+        assert provider.turns == EVIDENCE_READS_PER_MODULE + 1
+        assert budget["used"]["evidence_reads"] == EVIDENCE_READS_PER_MODULE
+        assert budget["used"]["evidence_reads"] < budget["limits"]["evidence_reads"]
+        assert budget["used"]["turns"] <= budget["limits"]["turns"]
+    finally:
+        await engine.aclose()
 
 
 class OneBadReadProvider:
     """Reads one source the host must refuse, then would keep going forever."""
 
     def __init__(self, source_id: str) -> None:
+        from caos.engine.provider import host_control_identity
+
         self.source_id = source_id
         self.create_requests: list = []
+        self.identity = host_control_identity()
 
     def count_tokens(self, request) -> int:
         return 1_000
@@ -481,29 +524,35 @@ async def test_a_refused_read_ends_the_module_instead_of_returning_a_reason_to_t
     provider = OneBadReadProvider(outsider_id)
     engine = Engine.create(settings=settings, store=store,
                            checkpoint_path=tmp_path / "checkpoints.db", provider=provider)
-    run = await engine.start_run(case_id=case["id"], pathway="FULL_CREDIT", depth="full", actor="analyst")
-    # Ingested after gate exit: live, same case, outside the pinned set.
-    _ingest_text(store, case["id"], OUT_OF_SET_TEXT, source_id=outsider_id)
-    await engine.wait(run["id"])
+    try:
+        run = await engine.start_run_for_tests(
+            case_id=case["id"], pathway="FULL_CREDIT", depth="full", actor="analyst",
+            allow_placeholder_deterministic=True,
+        )
+        # Ingested after gate exit: live, same case, outside the pinned set.
+        _ingest_text(store, case["id"], OUT_OF_SET_TEXT, source_id=outsider_id)
+        await engine.wait(run["id"])
 
-    record = engine.get_run(run["id"])
-    assert record["status"] == "failed"
-    assert record["error"]["code"] == "AGENT_AUTHORITY_MISMATCH"
+        record = engine.get_run(run["id"])
+        assert record["status"] == "failed"
+        assert record["error"]["code"] == "AGENT_AUTHORITY_MISMATCH"
 
-    # Nothing the host ever put on the wire is a tool_result: a refused read is
-    # not answered, it ends the module. That is what makes "no text" total —
-    # there is no channel left to carry text, a code, or a reason — and it is
-    # also why a failing read cannot be looped.
-    for request in provider.create_requests:
-        for message in request.messages:
-            content = message.get("content")
-            blocks = content if isinstance(content, list) else []
-            assert not [b for b in blocks if isinstance(b, dict) and b.get("type") == "tool_result"]
+        # Nothing the host ever put on the wire is a tool_result: a refused read is
+        # not answered, it ends the module. That is what makes "no text" total —
+        # there is no channel left to carry text, a code, or a reason — and it is
+        # also why a failing read cannot be looped.
+        for request in provider.create_requests:
+            for message in request.messages:
+                content = message.get("content")
+                blocks = content if isinstance(content, list) else []
+                assert not [b for b in blocks if isinstance(b, dict) and b.get("type") == "tool_result"]
 
-    sent = json.dumps([request.messages for request in provider.create_requests], default=str)
-    assert "OUTOFSET-EVIDENCE-MARKER-c204" not in sent
-    assert "AGENT_AUTHORITY_MISMATCH" not in sent, "the refusal reason never reaches the model"
-    assert engine.runs.get_budget(run["id"])["used"]["evidence_reads"] == 0
+        sent = json.dumps([request.messages for request in provider.create_requests], default=str)
+        assert "OUTOFSET-EVIDENCE-MARKER-c204" not in sent
+        assert "AGENT_AUTHORITY_MISMATCH" not in sent, "the refusal reason never reaches the model"
+        assert engine.runs.get_budget(run["id"])["used"]["evidence_reads"] == 0
+    finally:
+        await engine.aclose()
 
 
 def test_the_run_error_surface_carries_a_code_and_never_a_message(evidence_lab, engine):

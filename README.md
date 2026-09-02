@@ -14,10 +14,12 @@ scaling, production service levels, or unrestricted external deployment. See
 `ENTERPRISE_TESTING_READINESS.md` for the binding gate.
 
 The run engine executes the vendored `deploy_v` methodology bundle on LangGraph
-with durable SQLite/Postgres checkpoints. Four pathways are in the MVP cut
+with durable SQLite checkpoints and a SQLite/PostgreSQL domain store. Four pathways are in the MVP cut
 (Full Credit, Earnings Update, Covenant & Refinancing, Relative Value) at two
-depths (screen, full). Screen-depth routes are fully deterministic and run
-without any model API key.
+depths (screen, full). Screen-depth routes are statically compiled and require
+source-computed deterministic executors. Executors that are still placeholders
+fail with `DETERMINISTIC_EXECUTOR_UNAVAILABLE`; they cannot create an ordinary
+success artifact.
 
 ## Layout
 
@@ -45,13 +47,18 @@ cd caos/server && python dev.py
 `dev.py` uses SQLite under `./.dev-data`, runs startup recovery, and — when
 `caos/frontend/out` exists from a build — serves the full app at
 `http://localhost:8000`. Agent (LLM) execution stays off unless
-`AGENT_EXECUTION_ENABLED=true` and `ANTHROPIC_API_KEY` are set; deterministic
-screen routes work end to end without either.
+`AGENT_EXECUTION_ENABLED=true` and exactly one development provider key is set.
+An ordinary screen run needs no provider key, but currently refuses at any
+placeholder deterministic executor instead of reporting false success.
 
 Production runs the same assembly through `caos/server/run.py` (the Docker
 `app` target) with `caos/server/worker.py` executing queued model builds and
-LibreOffice XLSX exports; `caos/deploy/` has the compose stack and
-`caos/.env.example` the environment to fill in.
+XLSX exports through the current Python renderer. The worker image contains
+LibreOffice for the separately verified bundle path, but runtime exports do not
+yet invoke that path. `caos/deploy/` has the compose stack and
+`caos/.env.example` the environment to fill in. Production agent execution is
+Anthropic-only and additionally requires an exact, digest-bound provider
+qualification record; dual credentials and OpenRouter are refused.
 
 Frontend, hot-reloading against that server:
 
@@ -61,12 +68,13 @@ cd caos/frontend && npm ci && npm run dev
 
 Then: create a case → upload a source → Run Console → Compile and run. Progress
 streams from the persisted graph event log (`run_events`) over SSE; accept the
-succeeded run to mint the case's analytical snapshot.
+succeeded run to mint the case's analytical snapshot. A run may instead end in
+a typed refusal; only a genuinely succeeded run can be accepted.
 
 ## Checks
 
 ```bash
-python -m pytest caos/tests -q            # full suite, green (384)
+python -m pytest caos/tests -q
 ruff check --config ruff.toml caos/server caos/tests --exclude caos/server/caos/methodology/vendor
 cd caos/frontend
 npm run lint && npx tsc --noEmit && npm run test:unit && npm run build

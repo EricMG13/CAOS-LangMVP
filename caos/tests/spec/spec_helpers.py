@@ -19,10 +19,13 @@ class ScriptedProvider:
     """
 
     def __init__(self, script=(), count: int = 1_000):
+        from caos.engine.provider import host_control_identity
+
         self.script = list(script)
         self.count = count
         self.count_requests = []
         self.create_requests = []
+        self.identity = host_control_identity()
 
     def count_tokens(self, request) -> int:
         self.count_requests.append(request)
@@ -44,6 +47,7 @@ def text_message(text: str, *, stop_reason: str = "end_turn", input_tokens: int 
         stop_reason=stop_reason,
         usage=ProviderUsage(input_tokens=input_tokens, output_tokens=output_tokens),
         request_id="req-scripted",
+        observed_model="deterministic",
     )
 
 
@@ -55,6 +59,7 @@ def tool_call_message(source_id: str, block_ids: list[str], *, input_tokens: int
         stop_reason="tool_use",
         usage=ProviderUsage(input_tokens=input_tokens, output_tokens=output_tokens),
         request_id="req-tool",
+        observed_model="deterministic",
     )
 
 
@@ -77,5 +82,8 @@ def seed_case_with_source(store: DomainStore, body: bytes = b"pinned evidence li
 
 async def start_full_credit_run(engine, store, *, depth: str = "full"):
     case, source = seed_case_with_source(store)
-    run = await engine.start_run(case_id=case["id"], pathway="FULL_CREDIT", depth=depth, actor="analyst")
+    run = await engine.start_run_for_tests(
+        case_id=case["id"], pathway="FULL_CREDIT", depth=depth, actor="analyst",
+        allow_placeholder_deterministic=True,
+    )
     return case, source, run

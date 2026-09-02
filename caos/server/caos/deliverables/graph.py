@@ -26,6 +26,24 @@ def filing_thread_id(*, case_id: str, pathway: str, draft_version: int, draft_di
     })
 
 
+def frozen_approval_digest(frozen: dict[str, Any]) -> str:
+    """Bind reviewed content, stored bytes, and immutable filing authority."""
+    return digest({
+        "schema_version": "caos.frozen-approval.v1",
+        "deliverable_id": frozen["deliverable_id"],
+        "thread_id": frozen["thread_id"],
+        "case_id": frozen["case_id"],
+        "pathway": frozen["pathway"],
+        "build_id": frozen["build_id"],
+        "draft_version": frozen["draft_version"],
+        "draft_digest": frozen["draft_digest"],
+        "content_digest": frozen["payload"]["preview_digest"],
+        "input_fingerprint": frozen["input_fingerprint"],
+        "exports": frozen["exports"],
+        "authority": frozen["authority"],
+    })
+
+
 def canonical_approval_hash(frozen: dict[str, Any]) -> str:
     return f"sha256:{frozen['preview_digest']}"
 

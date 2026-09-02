@@ -258,7 +258,7 @@ Each of the twelve route/depth cells requires a complete answer-keyed success pa
 - **RUN-027**: Atomically create the immutable snapshot and update the accepted pointer
 - **RUN-028**: Make repeated acceptance idempotent
 - **RUN-029**: Show snapshot drift and require an explicit switch to a newer accepted snapshot
-- **RUN-030**: Produce an identical deterministic screen artifact for identical pinned inputs and build
+- **RUN-030**: Produce identical host-validated screen identity for identical pinned inputs and build: the plan digest, source pins, calculation records (canonical input and output digests), and the canonical envelope are byte-equal across replays; provider prose is compared by validated canonical contract, as AUD-019 requires (`docs/DECISIONS.md` §14.3, §14.12)
 
 ## Qualify every provider and model
 

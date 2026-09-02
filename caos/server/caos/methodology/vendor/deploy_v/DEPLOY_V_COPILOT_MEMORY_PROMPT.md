@@ -15,7 +15,7 @@
   folder binding, evidence, or cross-session run state.
 - Resolve the requested ID from the current `CP_DEPLOY_V_RETRIEVAL_INDEX_v1.json`
   before opening a skill. Require `INDEX_BUILD_ID:
-  a6f9859cec54dd1da765cac180d988ce0643698801db40fe5452ff0d56c36f2a`; a missing or stale index is a stop,
+  237bf4bc56b616b1c679a32c3733a2d9baf580b113758329320478e0226bae9d`; a missing or stale index is a stop,
   not permission to scan sibling folders.
 
 `<ID>` is a placeholder. For example, `Run CP-1`, `CP-3A`, `Run CP-DR`, and

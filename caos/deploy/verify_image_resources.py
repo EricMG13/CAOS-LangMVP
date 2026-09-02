@@ -20,7 +20,7 @@ report = DeployVBundle(bundle_root).verify()
 # `raise`, not `assert`: this is the image's bundle gate, and every other check
 # in this file raises. An assert would vanish under `python -O` and pass an
 # image whose vendored authority was never counted.
-if report["checked"] != 307 or report["mismatches"]:
+if report["checked"] != 310 or report["mismatches"]:
     raise RuntimeError(f"Deploy V bundle gate failed: {report}")
 arguments = sys.argv[1:]
 runtime = None
@@ -29,6 +29,9 @@ if arguments:
         raise SystemExit("usage: verify_image_resources.py [--runtime app|worker]")
     runtime = arguments[1]
 office = shutil.which("soffice") or shutil.which("libreoffice")
+pango = shutil.which("pango-view")
+if runtime is not None and pango is None:
+    raise RuntimeError("pango-view is required for Unicode deliverable PDF exports")
 if runtime == "app" and office is not None:
     raise RuntimeError("LibreOffice must not be installed in the API image")
 if runtime == "worker" and office is None:
@@ -61,4 +64,4 @@ if runtime == "worker":
             "semantic_checks": result.semantic_checks,
             "calculation_engine": result.calculation_engine,
         }
-print({**report, "runtime": runtime, "libreoffice": office, "smoke": smoke})
+print({**report, "runtime": runtime, "libreoffice": office, "pango": pango, "smoke": smoke})

@@ -16,7 +16,7 @@ import logging
 import os
 import threading
 from concurrent.futures import Future
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterator
@@ -24,6 +24,13 @@ from uuid import uuid4
 
 import sqlalchemy as sa
 from sqlalchemy.exc import IntegrityError
+
+from ..atomic_files import (
+    MAX_EXPORT_BYTES,
+    VaultFileIntegrityError,
+    VaultFileUnavailable,
+    read_verified_vault_bytes,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -163,6 +170,10 @@ PUBLIC_SOURCE_HIDDEN = {"vault_path", "withdrawn_at"}
 _INSTANCE_LOCK_NAMESPACE = int.from_bytes(b"CAOS", "big")
 _INSTANCE_LOCK_ROLES = {"app": 1, "worker": 2}
 _INSTANCE_LOCK_HEARTBEAT_SECONDS = 5.0
+# ponytail: the app is deliberately single-instance; one process-wide lock
+# makes accepted analysis, source-set mutation, and filing linearizable. Move
+# this to per-case DB advisory locks if multi-app-instance throughput is added.
+_AUTHORITY_MUTATION_LOCK = threading.RLock()
 
 
 def _terminate_process(role: str) -> None:
@@ -177,14 +188,30 @@ def _public_source(row: dict[str, Any]) -> dict[str, Any]:
 
 
 class DomainStore:
-    def __init__(self, engine: sa.Engine) -> None:
+    def __init__(self, engine: sa.Engine, *, owns_engine: bool = False) -> None:
         self.engine = engine
+        self._owns_engine = owns_engine
+        self._closed = False
 
     @classmethod
     def from_url(cls, url: str) -> "DomainStore":
         engine = sa.create_engine(url, json_serializer=lambda value: json.dumps(value, sort_keys=True))
-        metadata.create_all(engine)
-        return cls(engine)
+        try:
+            metadata.create_all(engine)
+        except Exception:
+            engine.dispose()
+            raise
+        return cls(engine, owns_engine=True)
+
+    def close(self) -> None:
+        if self._closed:
+            return
+        if self._owns_engine:
+            self.engine.dispose()
+        self._closed = True
+
+    def authority_guard(self):
+        return _AUTHORITY_MUTATION_LOCK
 
     @contextmanager
     def single_instance(self, role: str) -> Iterator[None]:
@@ -331,7 +358,8 @@ class DomainStore:
         bad = set(changes) - allowed
         if bad:
             raise ValueError(f"unsupported case update: {sorted(bad)}")
-        with self.engine.begin() as conn:
+        guard = _AUTHORITY_MUTATION_LOCK if "accepted_snapshot_id" in changes else nullcontext()
+        with guard, self.engine.begin() as conn:
             conn.execute(sa.update(cases).where(cases.c.id == case_id).values(**changes))
 
     # -- sources / source sets --------------------------------------------
@@ -381,7 +409,7 @@ class DomainStore:
         saved.setdefault("created_at", now_iso())
         saved.setdefault("withdrawn", False)
         try:
-            with self.engine.begin() as conn:
+            with _AUTHORITY_MUTATION_LOCK, self.engine.begin() as conn:
                 duplicate = conn.execute(
                     sa.select(sources.c.id).where(
                         sources.c.case_id == saved["case_id"],
@@ -402,7 +430,7 @@ class DomainStore:
         return {**_public_source(saved), "source_set": source_set}
 
     def withdraw(self, case_id: str, source_id: str, actor: str) -> dict[str, Any] | None:
-        with self.engine.begin() as conn:
+        with _AUTHORITY_MUTATION_LOCK, self.engine.begin() as conn:
             row = conn.execute(sa.select(sources).where(sources.c.id == source_id)).mappings().first()
             if row is None or row["case_id"] != case_id or row["withdrawn"]:
                 return None
@@ -461,10 +489,29 @@ class DomainStore:
         row = self.get_source_private(source_id)
         vault_path = row.get("vault_path") if row else None
         path = Path(vault_path) if isinstance(vault_path, str) else None
-        if path is None or not path.is_file():
+        sha256 = row.get("sha256") if row else None
+        expected_parts = ("sources", sha256[:2], sha256) if isinstance(sha256, str) else ()
+        if (
+            path is None
+            or tuple(path.parts[-3:]) != expected_parts
+            or not isinstance(limit, int)
+            or isinstance(limit, bool)
+            or limit <= 0
+        ):
             raise FileNotFoundError("SOURCE_BYTES_UNAVAILABLE")
-        with path.open("rb") as stored:
-            return stored.read(limit)
+        try:
+            content = read_verified_vault_bytes(
+                path.parents[2],
+                "/".join(expected_parts),
+                expected_sha256=sha256,
+                expected_size=row.get("bytes"),
+                max_bytes=MAX_EXPORT_BYTES,
+            )
+        except VaultFileUnavailable as exc:
+            raise FileNotFoundError("SOURCE_BYTES_UNAVAILABLE") from exc
+        except VaultFileIntegrityError as exc:
+            raise ValueError("SOURCE_BYTES_INTEGRITY_MISMATCH") from exc
+        return content[:limit]
 
     def current_source_set(self, case_id: str) -> dict[str, Any] | None:
         with self.engine.connect() as conn:
@@ -476,6 +523,39 @@ class DomainStore:
         with self.engine.connect() as conn:
             row = conn.execute(sa.select(source_sets).where(source_sets.c.id == source_set_id)).mappings().first()
         return dict(row) if row else None
+
+    def sources_for_live_set(
+        self,
+        case_id: str,
+        source_set_id: str | None,
+        version: int | None = None,
+    ) -> list[dict[str, Any]] | None:
+        """Resolve every member from live source rows, or fail the whole set."""
+        if not source_set_id:
+            return None
+        with self.engine.connect() as conn:
+            row = conn.execute(
+                sa.select(source_sets).where(source_sets.c.id == source_set_id)
+            ).mappings().first()
+            if (
+                row is None
+                or row["case_id"] != case_id
+                or (version is not None and row["version"] != version)
+                or not row["source_ids"]
+            ):
+                return None
+            source_rows = conn.execute(
+                sa.select(sources).where(sources.c.id.in_(row["source_ids"]))
+            ).mappings().all()
+        by_id = {source["id"]: dict(source) for source in source_rows}
+        if len(by_id) != len(row["source_ids"]) or any(
+            source_id not in by_id
+            or by_id[source_id]["case_id"] != case_id
+            or by_id[source_id]["withdrawn"]
+            for source_id in row["source_ids"]
+        ):
+            return None
+        return [_public_source(by_id[source_id]) for source_id in row["source_ids"]]
 
     # -- notes -------------------------------------------------------------
 
@@ -498,7 +578,7 @@ class DomainStore:
     def promote_note(self, case_id: str, note_id: str, actor: str) -> dict[str, Any]:
         import hashlib
 
-        with self.engine.begin() as conn:
+        with _AUTHORITY_MUTATION_LOCK, self.engine.begin() as conn:
             note_row = conn.execute(sa.select(notes).where(notes.c.id == note_id)).mappings().first()
             if note_row is None or note_row["case_id"] != case_id:
                 raise KeyError("note not found")

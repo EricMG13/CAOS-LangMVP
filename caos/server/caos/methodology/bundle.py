@@ -2,10 +2,14 @@ from __future__ import annotations
 
 import hashlib
 import json
+import sys
+from functools import cached_property
 from pathlib import Path
+from types import ModuleType
 from typing import Any
 
 from ..contracts import Depth, INTERNAL_PATHWAYS, digest
+from .canonical import CanonicalValidationError, validate_visible_stable_tables
 
 
 class MethodologyError(ValueError):
@@ -20,6 +24,9 @@ class DeployVBundle:
         self.retrieval = self._read("CP_DEPLOY_V_RETRIEVAL_INDEX_v1.json")
         self.profiles = self._read("CP_DEPLOY_V_EXECUTION_PROFILES_v1.json")
         self.catalog = self._read("skills/cp-os-credit-os/references/CREDIT_OS_V_MODULE_CATALOG_v2.json")
+        # Fail before a plan or calculator runtime can consume a bundle whose
+        # file pins were rewritten while retaining the prior approved build ID.
+        self.verify()
 
     def _read(self, name: str) -> dict[str, Any]:
         path = self.root / name
@@ -31,9 +38,89 @@ class DeployVBundle:
     def build_id(self) -> str:
         return self.integrity["build_id"]
 
+    @cached_property
+    def _validate_handoff(self) -> Any:
+        path = self.root / "skills" / "cp-model" / "scripts" / "validate_handoff.py"
+        entry = next(
+            skill["relative_file_hashes"]["scripts/validate_handoff.py"]
+            for skill in self.integrity["skills"]
+            if skill["folder_slug"] == "cp-model"
+        )
+        source = path.read_bytes()
+        if (
+            len(source) != entry["bytes"]
+            or hashlib.sha256(source).hexdigest() != entry["sha256"]
+        ):
+            raise MethodologyError("Deploy V integrity mismatch: changed CP-MODEL handoff validator")
+        name = f"_caos_handoff_{entry['sha256']}_{id(self)}"
+        module = ModuleType(name)
+        module.__file__ = str(path)
+        module.__package__ = ""
+        sys.modules[name] = module
+        try:
+            exec(compile(source, str(path), "exec"), module.__dict__)
+        except BaseException:
+            sys.modules.pop(name, None)
+            raise
+        sys.modules.pop(name, None)
+        return module.validate_text
+
+    def validate_handoff(
+        self,
+        markdown: str,
+        *,
+        module_id: str,
+        run_id: str,
+        reporting_period: str,
+    ) -> Any:
+        """Apply the integrity-pinned common handoff validator before storage."""
+        try:
+            validate_visible_stable_tables(markdown)
+        except CanonicalValidationError as exc:
+            raise MethodologyError(str(exc)) from exc
+        result = self._validate_handoff(
+            markdown,
+            expected_module=module_id,
+            expected_run_id=run_id,
+            expected_period=reporting_period,
+        )
+        if result.exit_code:
+            raise MethodologyError("canonical handoff failed the pinned common validator")
+        return result
+
+    def _verify_build_identity(self) -> None:
+        expected = self.integrity.get("build_id")
+        actual = digest({
+            key: value for key, value in self.integrity.items()
+            if key != "build_id"
+        })
+        if (
+            not isinstance(expected, str)
+            or len(expected) != 64
+            or any(character not in "0123456789abcdef" for character in expected)
+            or actual != expected
+        ):
+            raise MethodologyError("Deploy V build identity mismatch")
+
     def verify(self) -> dict[str, Any]:
+        self._verify_build_identity()
         checked = 0
         mismatches: list[str] = []
+        source_files = {
+            "deployed_baseline": "DEPLOY_V_BASELINE.json",
+            "deployed_child_schema_registry": "CP_DEPLOY_V_CHILD_SCHEMA_REGISTRY_v1.json",
+            "deployed_manifest": "DEPLOY_V_MANIFEST.json",
+        }
+        source_hashes = self.integrity.get("source_hashes")
+        for identity, relative in source_files.items():
+            checked += 1
+            path = self.root / relative
+            expected = source_hashes.get(identity) if isinstance(source_hashes, dict) else None
+            if not path.is_file() or not isinstance(expected, str):
+                mismatches.append(f"missing:{relative}")
+                continue
+            if hashlib.sha256(path.read_bytes()).hexdigest() != expected:
+                mismatches.append(f"changed:{relative}")
         for skill in self.integrity["skills"]:
             folder = self.root / "skills" / skill["folder_slug"]
             for relative, expected in skill["relative_file_hashes"].items():

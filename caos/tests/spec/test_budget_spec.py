@@ -43,8 +43,11 @@ def test_registry_output_caps_literal():
 
     caps = {m: MODULES[m].max_output_tokens for m in MODULES if MODULES[m].mode_full == "agent"}
     assert caps == {
+        "CP-PARSE": 16_000, "CP-0": 24_000,
         "CP-1": 32_000, "CP-1A": 12_000, "CP-1B": 12_000, "CP-2": 16_000,
-        "CP-2A": 16_000, "CP-2G": 24_000, "CP-1C": 12_000, "CP-1D": 12_000, "CP-5": 24_000,
+        "CP-2A": 16_000, "CP-2E": 24_000, "CP-2G": 24_000, "CP-2H": 24_000,
+        "CP-1C": 12_000, "CP-1D": 12_000, "CP-3": 32_000, "CP-4": 32_000,
+        "CP-4C": 32_000, "CP-5": 24_000, "CP-6": 24_000, "CP-L10": 32_000,
     }
 
 
@@ -61,14 +64,26 @@ def test_route_envelopes_scale_per_module_and_reproduce_legacy_at_n6():
     assert env["evidence_bytes"] == 5 * 1024 * 1024
     assert env["input_tokens"] == 500_000
     assert env["output_tokens"] == (32_000 + 12_000 + 12_000 + 16_000 + 16_000 + 24_000) + 32_000, "Σ caps + max (repair headroom)"
-    assert env["turns"] == 60 + 6 + 1
+    assert env["turns"] == 60 + 4 + 6 + 1, "evidence + assigned calculators + finals + repair"
     assert env["active_minutes"] == 15 and env["provider_retries"] == 1 and env["repairs"] == 1
 
     earnings = ["CP-1", "CP-1B", "CP-2", "CP-5"]
     env4 = route_envelope(earnings, MODULES)
     assert env4["evidence_reads"] == 40
-    assert env4["turns"] == 40 + 4 + 1
+    assert env4["turns"] == 40 + 2 + 4 + 1
     assert env4["output_tokens"] == (32_000 + 12_000 + 16_000 + 24_000) + 32_000
+
+
+def test_runtime_budget_enumeration_uses_the_effective_depth(monkeypatch):
+    from caos.engine.runtime import _agent_module_ids_for_plan
+    from caos.modules.registry import MODULES, ModuleSpec
+
+    monkeypatch.setitem(MODULES, "FULL-ONLY", ModuleSpec("FULL-ONLY", "agent", mode_screen="deterministic"))
+    monkeypatch.setitem(MODULES, "SCREEN-ONLY", ModuleSpec("SCREEN-ONLY", "deterministic", mode_screen="agent"))
+    nodes = [{"module_id": "FULL-ONLY"}, {"module_id": "SCREEN-ONLY"}]
+
+    assert _agent_module_ids_for_plan({"depth": "full", "nodes": nodes}) == ["FULL-ONLY"]
+    assert _agent_module_ids_for_plan({"depth": "screen", "nodes": nodes}) == ["SCREEN-ONLY"]
 
 
 # --- reservation protocol (§12.12) ------------------------------------------------
@@ -89,16 +104,22 @@ async def test_unresolved_inflight_reservation_fails_closed_on_resume_without_re
     from caos.engine.runtime import Engine
 
     engine = Engine.create(settings=settings, store=store, checkpoint_path=tmp_path / "ck.db", provider=provider)
-    case, source, run = await start_full_credit_run(engine, store)
-    await engine.crash_mid_provider_call_for_tests(run["id"])  # inflight digest persisted, never reconciled
-    calls_before = len(provider.create_requests)
+    try:
+        case, source, run = await start_full_credit_run(engine, store)
+        await engine.crash_mid_provider_call_for_tests(run["id"])  # inflight digest persisted, never reconciled
+        calls_before = len(provider.create_requests)
+    finally:
+        await engine.aclose()
 
     revived = Engine.create(settings=settings, store=store, checkpoint_path=tmp_path / "ck.db", provider=provider)
-    await revived.recover()
-    await revived.wait(run["id"])
-    record = revived.get_run(run["id"])
-    assert record["status"] == "failed" and record["error"]["code"] == "AGENT_BUDGET_EXCEEDED"
-    assert len(provider.create_requests) == calls_before, "no re-spend after crash with unknown spend"
+    try:
+        await revived.recover()
+        await revived.wait(run["id"])
+        record = revived.get_run(run["id"])
+        assert record["status"] == "failed" and record["error"]["code"] == "AGENT_BUDGET_EXCEEDED"
+        assert len(provider.create_requests) == calls_before, "no re-spend after crash with unknown spend"
+    finally:
+        await revived.aclose()
 
 
 async def test_timeout_retry_must_be_byte_identical_and_single(engine, store, provider):
@@ -211,20 +232,69 @@ def test_provider_concurrency_denial_is_typed_and_reserves_nothing():
 
 
 def test_attempt_recorder_allowlist_truncation_and_asymmetric_caps():
-    from caos.engine.budget import AttemptRecorder
+    from caos.engine.budget import MAX_ATTEMPT_RECORDS, AttemptRecorder
 
     recorder = AttemptRecorder.for_tests()
     recorder.record("generation", note="x" * 500, structured={"not": "allowed"}, ok=True)
     row = recorder.rows()[-1]
     assert row["note"] == "x" * 200, "strings truncate to 200"
     assert "structured" not in row, "non-scalar values are dropped"
-    for _ in range(99):
+    for _ in range(MAX_ATTEMPT_RECORDS - 1):
         recorder.record("generation")
     with pytest.raises(Exception, match="AGENT_BUDGET_EXCEEDED"):
-        recorder.record("generation")  # non-terminal fails closed at 100
+        recorder.record("generation")
     recorder.record("terminal", terminal_code="AGENT_BUDGET_EXCEEDED")  # terminal is cap-exempt
     assert recorder.rows()[-1]["terminal_code"] == "AGENT_BUDGET_EXCEEDED"
-    assert len(recorder.rows()) == 100, "terminal appends into the [-100:] ring"
+    assert len(recorder.rows()) == MAX_ATTEMPT_RECORDS
+
+
+def test_store_attempt_recorder_uses_the_same_route_sized_cap(tmp_path):
+    import sqlalchemy as sa
+
+    from caos.engine.budget import MAX_ATTEMPT_RECORDS
+    from caos.storage.runs import RunStore, StoreConflict
+
+    db = sa.create_engine(f"sqlite:///{tmp_path / 'attempts.db'}")
+    try:
+        store = RunStore(db)
+        run_id = store.create_run("case-1", "FULL_CREDIT", "full", "analyst")["id"]
+        store.init_budget(run_id, {"turns": MAX_ATTEMPT_RECORDS})
+        for index in range(MAX_ATTEMPT_RECORDS):
+            store.record_attempt(run_id, {"kind": "generation", "index": index}, terminal=False)
+        with pytest.raises(StoreConflict, match="AGENT_BUDGET_EXCEEDED"):
+            store.record_attempt(run_id, {"kind": "generation"}, terminal=False)
+        store.record_attempt(run_id, {"kind": "terminal"}, terminal=True)
+        attempts = store.get_budget(run_id)["attempts"]
+        assert len(attempts) == MAX_ATTEMPT_RECORDS
+        assert attempts[0]["index"] == 1 and attempts[-1]["kind"] == "terminal"
+    finally:
+        db.dispose()
+
+
+def test_attempt_cap_covers_every_compiled_route(settings):
+    from caos.engine.budget import MAX_ATTEMPT_RECORDS, route_envelope
+    from caos.engine.runtime import MVP_PATHWAYS
+    from caos.contracts import Depth
+    from caos.methodology.bundle import DeployVBundle
+    from caos.modules.registry import MODULES
+
+    bundle = DeployVBundle(settings.deploy_v_root)
+    upper_bounds = []
+    for pathway in MVP_PATHWAYS:
+        for depth in (Depth.FULL, Depth.SCREEN):
+            plan = bundle.compile(pathway, depth, "set-1")
+            module_ids = [
+                node["module_id"] for node in plan["nodes"]
+                if (MODULES[node["module_id"]].mode_full if depth is Depth.FULL
+                    else MODULES[node["module_id"]].mode_screen) == "agent"
+            ]
+            envelope = route_envelope(module_ids, MODULES)
+            calculation_rows = sum(len(MODULES[module_id].calculators) for module_id in module_ids)
+            upper_bounds.append(
+                envelope["turns"] + calculation_rows
+                + envelope["provider_retries"] + envelope["repairs"] + 1
+            )
+    assert max(upper_bounds) <= MAX_ATTEMPT_RECORDS
 
 
 async def test_secret_bearing_provider_failure_never_persists_secret_or_evidence_text(engine, store, provider):
@@ -253,16 +323,32 @@ def test_reconcile_commits_the_actual_usage_before_it_refuses_the_overage(tmp_pa
 
     from caos.storage.runs import RunStore, StoreConflict
 
-    store = RunStore(sa.create_engine(f"sqlite:///{tmp_path / 'runs.db'}"))
-    run_id = store.create_run("case-1", "FULL_CREDIT", "full", "analyst")["id"]
-    store.init_budget(run_id, {"turns": 10, "input_tokens": 1_000, "output_tokens": 1_000})
-    store.reserve_provider(run_id, "digest-1", 100, 100, retry=False)
+    db = sa.create_engine(f"sqlite:///{tmp_path / 'runs.db'}")
+    try:
+        store = RunStore(db)
+        run_id = store.create_run("case-1", "FULL_CREDIT", "full", "analyst")["id"]
+        store.init_budget(run_id, {"turns": 10, "input_tokens": 1_000, "output_tokens": 1_000})
+        store.reserve_provider(run_id, "digest-1", 100, 100, retry=False)
 
-    with pytest.raises(StoreConflict, match="AGENT_BUDGET_EXCEEDED"):
-        store.reconcile_provider(run_id, "digest-1", 100, 100, 100, 5_000)
+        with pytest.raises(StoreConflict, match="AGENT_BUDGET_EXCEEDED"):
+            store.reconcile_provider(run_id, "digest-1", 100, 100, 100, 5_000)
 
-    budget = store.get_budget(run_id)
-    assert budget["used"]["output_tokens"] == 5_000, "the ledger records what was actually spent"
-    assert budget["inflight_request_digest"] is None, "the request is resolved, not stranded in flight"
-    with pytest.raises(StoreConflict, match="AGENT_BUDGET_EXCEEDED"):
-        store.reserve_provider(run_id, "digest-2", 1, 1, retry=False)
+        budget = store.get_budget(run_id)
+        assert budget["used"]["output_tokens"] == 5_000, "the ledger records what was actually spent"
+        assert budget["inflight_request_digest"] is None, "the request is resolved, not stranded in flight"
+        with pytest.raises(StoreConflict, match="AGENT_BUDGET_EXCEEDED"):
+            store.reserve_provider(run_id, "digest-2", 1, 1, retry=False)
+    finally:
+        db.dispose()
+
+
+async def test_actual_usage_overage_still_records_the_returned_response(engine, store, provider):
+    provider.script = [text_message("ignored", input_tokens=1, output_tokens=1_000_000)]
+    case, _source, run = await start_full_credit_run(engine, store)
+    await engine.wait(run["id"])
+
+    record = engine.get_run(run["id"])
+    attempts = engine.runs.get_budget(run["id"])["attempts"]
+    generations = [attempt for attempt in attempts if attempt["kind"] == "generation"]
+    assert record["error"]["code"] == "AGENT_BUDGET_EXCEEDED"
+    assert len(generations) == 1 and len(generations[0]["response_digest"]) == 64

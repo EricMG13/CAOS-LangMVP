@@ -90,3 +90,14 @@ a real full-depth scripted run, and no orchestrator-core file changed. The
 registry ended byte-identical to its pre-demonstration state. Splitting a
 consolidated module was not used and would not have counted: the three are
 live catalog modules the legacy runtime could never reach.
+
+## Amendment (2026-09-02, Deploy V build `237bf4bc…`)
+
+The CP-PARSE alias carve-out above is historical. Since `docs/DECISIONS.md`
+§14.13 the catalog records CP-PARSE as a `runnable_profile` of the
+`cp-0-source-readiness` skill, not an alias: `superseded_module_ids` no longer
+lists it, `preparation_stage {runnable: true, required_before: "CP-0"}` stands,
+`compile()` still emits it as its own stage-0 node, and the registry carries it
+as its own `ModuleSpec` (agent at both depths, the CP-PARSE reference files)
+rather than through the alias map. Counts are now 41 logical = 22 physical +
+18 aliases + 1 runnable profile.

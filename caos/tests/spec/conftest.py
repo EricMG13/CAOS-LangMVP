@@ -42,7 +42,11 @@ def settings(tmp_path: Path) -> Settings:
 
 @pytest.fixture()
 def store(tmp_path: Path) -> DomainStore:
-    return DomainStore.from_url(f"sqlite:///{tmp_path / 'caos.db'}")
+    value = DomainStore.from_url(f"sqlite:///{tmp_path / 'caos.db'}")
+    try:
+        yield value
+    finally:
+        value.close()
 
 
 from spec_helpers import ScriptedProvider, seed_case_with_source  # noqa: E402,F401
@@ -54,15 +58,19 @@ def provider() -> ScriptedProvider:
 
 
 @pytest.fixture()
-def engine(tmp_path: Path, settings: Settings, store: DomainStore, provider: ScriptedProvider):
+async def engine(tmp_path: Path, settings: Settings, store: DomainStore, provider: ScriptedProvider):
     from caos.engine.runtime import Engine
 
-    return Engine.create(
+    value = Engine.create(
         settings=settings,
         store=store,
         checkpoint_path=tmp_path / "checkpoints.db",
         provider=provider,
     )
+    try:
+        yield value
+    finally:
+        await value.aclose()
 
 
 @pytest.fixture()
@@ -76,4 +84,5 @@ def app(settings: Settings, store: DomainStore, engine):
 def client(app):
     from fastapi.testclient import TestClient
 
-    return TestClient(app)
+    with TestClient(app) as value:
+        yield value

@@ -20,4 +20,8 @@ def settings(tmp_path: Path) -> Settings:
 
 @pytest.fixture()
 def store(tmp_path: Path) -> DomainStore:
-    return DomainStore.from_url(f"sqlite:///{tmp_path / 'caos.db'}")
+    value = DomainStore.from_url(f"sqlite:///{tmp_path / 'caos.db'}")
+    try:
+        yield value
+    finally:
+        value.close()

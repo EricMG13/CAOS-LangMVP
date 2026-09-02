@@ -15,6 +15,7 @@ from typing import Any
 import sqlalchemy as sa
 from sqlalchemy.exc import IntegrityError
 
+from ..contracts import digest
 from .store import new_id, now_iso
 
 deliverable_metadata = sa.MetaData()
@@ -100,39 +101,93 @@ class DeliverableStore:
     # -- revisions ----------------------------------------------------------
 
     @staticmethod
-    def _revision(row: dict[str, Any]) -> dict[str, Any]:
-        return {key: row[key] for key in ("draft_id", "revision_id", "case_id", "pathway", "version",
-                                          "digest", "content", "created_by", "created_at")}
+    def _revision(row: dict[str, Any], **expected_identity: Any) -> dict[str, Any]:
+        keys = (
+            "draft_id", "revision_id", "case_id", "pathway", "version",
+            "digest", "content", "created_by", "created_at",
+        )
+        try:
+            revision = {key: row[key] for key in keys}
+            valid = (
+                isinstance(revision["content"], dict)
+                and revision["digest"] == digest(revision["content"])
+                and type(revision["version"]) is int
+                and revision["version"] >= 1
+                and all(
+                    isinstance(revision[key], str) and bool(revision[key])
+                    for key in (
+                        "draft_id", "revision_id", "case_id", "pathway",
+                        "digest", "created_by", "created_at",
+                    )
+                )
+                and all(revision.get(key) == value for key, value in expected_identity.items())
+            )
+        except (KeyError, TypeError, ValueError):
+            valid = False
+            revision = {}
+        if not valid:
+            raise ValueError(
+                "DELIVERABLE_REVISION_INTEGRITY_FAILED: stored revision envelope is invalid"
+            )
+        return revision
+
+    def _append_revision(
+        self,
+        conn: Any,
+        case_id: str,
+        pathway: str,
+        expected_version: int,
+        content: dict[str, Any],
+        content_digest: str,
+        actor: str,
+        audit: Any,
+    ) -> dict[str, Any]:
+        head = conn.execute(
+            sa.select(deliverable_revisions)
+            .where(
+                deliverable_revisions.c.case_id == case_id,
+                deliverable_revisions.c.pathway == pathway,
+            )
+            .order_by(deliverable_revisions.c.version.desc()).limit(1)
+        ).mappings().first()
+        current = (
+            self._revision(dict(head), case_id=case_id, pathway=pathway)
+            if head else None
+        )
+        current_version = current["version"] if current else 0
+        if expected_version != current_version:
+            raise DeliverableVersionConflict(current)
+        row = {
+            "revision_id": new_id("dlrev"),
+            "draft_id": current["draft_id"] if current else new_id("dldraft"),
+            "case_id": case_id,
+            "pathway": pathway,
+            "version": current_version + 1,
+            "digest": content_digest,
+            "content": content,
+            "created_by": actor,
+            "created_at": now_iso(),
+        }
+        try:
+            conn.execute(deliverable_revisions.insert().values(**row))
+        except IntegrityError as exc:  # pragma: no cover — lock serialises
+            raise DeliverableVersionConflict(current) from exc
+        audit(conn, "deliverable.draft.saved", actor, case_id=case_id,
+              pathway=pathway, revision_id=row["revision_id"], version=row["version"])
+        return self._revision(
+            row,
+            case_id=case_id,
+            pathway=pathway,
+            draft_id=row["draft_id"],
+            version=current_version + 1,
+        )
 
     def append_revision(self, case_id: str, pathway: str, expected_version: int,
                         content: dict[str, Any], content_digest: str, actor: str, audit: Any) -> dict[str, Any]:
         with self._WRITE_LOCK, self.engine.begin() as conn:
-            head = conn.execute(
-                sa.select(deliverable_revisions)
-                .where(deliverable_revisions.c.case_id == case_id, deliverable_revisions.c.pathway == pathway)
-                .order_by(deliverable_revisions.c.version.desc()).limit(1)
-            ).mappings().first()
-            current_version = head["version"] if head else 0
-            if expected_version != current_version:
-                raise DeliverableVersionConflict(self._revision(dict(head)) if head else None)
-            row = {
-                "revision_id": new_id("dlrev"),
-                "draft_id": head["draft_id"] if head else new_id("dldraft"),
-                "case_id": case_id,
-                "pathway": pathway,
-                "version": current_version + 1,
-                "digest": content_digest,
-                "content": content,
-                "created_by": actor,
-                "created_at": now_iso(),
-            }
-            try:
-                conn.execute(deliverable_revisions.insert().values(**row))
-            except IntegrityError as exc:  # pragma: no cover — lock serialises
-                raise DeliverableVersionConflict(self._revision(dict(head)) if head else None) from exc
-            audit(conn, "deliverable.draft.saved", actor, case_id=case_id,
-                  pathway=pathway, revision_id=row["revision_id"], version=row["version"])
-            return self._revision(row)
+            return self._append_revision(
+                conn, case_id, pathway, expected_version, content, content_digest, actor, audit,
+            )
 
     def head_revision(self, case_id: str, pathway: str) -> dict[str, Any] | None:
         with self.engine.connect() as conn:
@@ -141,7 +196,7 @@ class DeliverableStore:
                 .where(deliverable_revisions.c.case_id == case_id, deliverable_revisions.c.pathway == pathway)
                 .order_by(deliverable_revisions.c.version.desc()).limit(1)
             ).mappings().first()
-        return self._revision(dict(row)) if row else None
+        return self._revision(dict(row), case_id=case_id, pathway=pathway) if row else None
 
     def revision_history(self, case_id: str, pathway: str) -> list[dict[str, Any]]:
         with self.engine.connect() as conn:
@@ -150,7 +205,19 @@ class DeliverableStore:
                 .where(deliverable_revisions.c.case_id == case_id, deliverable_revisions.c.pathway == pathway)
                 .order_by(deliverable_revisions.c.version)
             ).mappings().all()
-        return [self._revision(dict(row)) for row in rows]
+        if not rows:
+            return []
+        draft_id = rows[0]["draft_id"]
+        return [
+            self._revision(
+                dict(row),
+                case_id=case_id,
+                pathway=pathway,
+                draft_id=draft_id,
+                version=version,
+            )
+            for version, row in enumerate(rows, start=1)
+        ]
 
     def revision_by_id(self, case_id: str, revision_id: str) -> dict[str, Any] | None:
         with self.engine.connect() as conn:
@@ -159,7 +226,31 @@ class DeliverableStore:
             ).mappings().first()
         if row is None or row["case_id"] != case_id:
             return None
-        return self._revision(dict(row))
+        return self._revision(dict(row), case_id=case_id, revision_id=revision_id)
+
+    def revision_for_freeze(
+        self,
+        case_id: str,
+        draft_id: str,
+        version: int,
+    ) -> dict[str, Any] | None:
+        with self.engine.connect() as conn:
+            rows = conn.execute(
+                sa.select(deliverable_revisions).where(
+                    deliverable_revisions.c.case_id == case_id,
+                    deliverable_revisions.c.draft_id == draft_id,
+                    deliverable_revisions.c.version == version,
+                ).limit(2)
+            ).mappings().all()
+        if not rows:
+            return None
+        if len(rows) != 1:
+            raise ValueError(
+                "DELIVERABLE_REVISION_INTEGRITY_FAILED: draft identity is ambiguous"
+            )
+        return self._revision(
+            dict(rows[0]), case_id=case_id, draft_id=draft_id, version=version,
+        )
 
     # -- frozen records and threads -----------------------------------------
 
@@ -257,7 +348,16 @@ class DeliverableStore:
             audit(conn, "deliverable.filed", actor, case_id=row["case_id"], deliverable_id=deliverable_id)
             return self._frozen(dict(row))
 
-    def mark_changes_requested(self, deliverable_id: str, actor: str, comment: str, audit: Any) -> dict[str, Any] | None:
+    def request_changes_and_append_revision(
+        self,
+        deliverable_id: str,
+        expected_version: int,
+        content: dict[str, Any],
+        content_digest: str,
+        actor: str,
+        comment: str,
+        audit: Any,
+    ) -> tuple[dict[str, Any], dict[str, Any]] | None:
         with self._WRITE_LOCK, self.engine.begin() as conn:
             changed = conn.execute(
                 sa.update(deliverable_frozen)
@@ -276,7 +376,17 @@ class DeliverableStore:
                          .values(status="TERMINATED", outcome="CHANGES_REQUESTED"))
             audit(conn, "deliverable.changes_requested", actor, case_id=row["case_id"],
                   deliverable_id=deliverable_id, comment=comment[:300])
-            return self._frozen(dict(row))
+            revision = self._append_revision(
+                conn,
+                row["case_id"],
+                row["pathway"],
+                expected_version,
+                content,
+                content_digest,
+                actor,
+                audit,
+            )
+            return self._frozen(dict(row)), revision
 
     def tamper_frozen_payload(self, deliverable_id: str) -> None:
         with self.engine.begin() as conn:

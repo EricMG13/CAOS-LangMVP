@@ -6,9 +6,10 @@ does not fetch or reshape them. A scripted provider deliberately isolates host
 controls; these tests prove upload, extraction, pinning, routing and citation
 validation, not live-model analytical quality.
 
-Default runs the cheaper document-classification subset and Full Credit at both
-depths. ``CORPUS_FULL=1`` classifies every document and runs every executable
-route. Routes outside the current MVP cut must still refuse without pinning.
+Default runs the cheaper document-classification subset plus Full Credit and
+Distressed at both depths. ``CORPUS_FULL=1`` classifies every document and runs
+every executable route. Routes outside the current MVP cut must still refuse
+without pinning.
 """
 
 from __future__ import annotations
@@ -33,6 +34,8 @@ from caos.contracts import INTERNAL_PATHWAYS, PATHWAYS, Depth  # noqa: E402
 from caos.engine.graphs import compiled_route  # noqa: E402
 from caos.engine.runtime import MVP_PATHWAYS, EngineError  # noqa: E402
 from caos.storage.store import DomainStore  # noqa: E402
+
+from calculator_fixtures import VALID_CALCULATION_INPUTS  # noqa: E402
 
 CORPUS = Path(__file__).resolve().parent / "corpus"
 DOCUMENTS = CORPUS / "documents"
@@ -73,7 +76,9 @@ pytestmark = pytest.mark.corpus_run
 GOLDEN = [(pathway, depth) for pathway in INTERNAL_PATHWAYS for depth in (Depth.SCREEN, Depth.FULL)]
 LIVE_ROUTES = [route for route in GOLDEN if route[0] in MVP_PATHWAYS]
 CUT_ROUTES = [route for route in GOLDEN if route[0] not in MVP_PATHWAYS]
-ROUTES = LIVE_ROUTES if CORPUS_FULL else [route for route in LIVE_ROUTES if route[0] == "FULL_CREDIT"]
+ROUTES = LIVE_ROUTES if CORPUS_FULL else [
+    route for route in LIVE_ROUTES if route[0] in {"FULL_CREDIT", "DISTRESSED_RESTRUCTURING"}
+]
 
 CANONICAL_BODY = "\n".join(
     f"## {heading}\n\nscripted"
@@ -165,11 +170,14 @@ class CorpusProvider:
     """Provider-port double for host controls; it is not an LLM qualification."""
 
     def __init__(self) -> None:
+        from caos.engine.provider import host_control_identity
+
         self.evidence: list[tuple[str, str]] = []
-        self.current: tuple[str, str] | None = None
         self.delivered: set[tuple[str, str]] = set()
+        self.delivery_log: list[set[tuple[str, str]]] = []
         self.calls = 0
         self.reads = 0
+        self.identity = host_control_identity()
 
     def bind(self, sources: list[dict]) -> None:
         self.evidence = [(source["id"], source["blocks"][0]["block_id"]) for source in sources]
@@ -182,12 +190,24 @@ class CorpusProvider:
 
         assert self.evidence, "CorpusProvider used before bind()"
         self.calls += 1
-        if self.calls % 2:
-            self.current = self.evidence[self.reads % len(self.evidence)]
+        tool_results = [
+            json.loads(block["content"])
+            for message in request.messages
+            if isinstance(message.get("content"), list)
+            for block in message["content"]
+            if isinstance(block, dict) and block.get("type") == "tool_result"
+        ]
+        calculation_tool = next(
+            (tool for tool in request.effective_tools()
+             if tool["name"] == "run_methodology_calculation"),
+            None,
+        )
+        if not tool_results:
+            current = self.evidence[self.reads % len(self.evidence)]
             self.reads += 1
-            source_id, block_id = self.current
+            source_id, block_id = current
             block = ProviderBlock(
-                type="tool_use", id="tool-1", name="read_evidence",
+                type="tool_use", id=f"tool-{self.calls}", name="read_evidence",
                 input={"source_id": source_id, "block_ids": [block_id]},
             )
             return ProviderMessage(
@@ -195,14 +215,42 @@ class CorpusProvider:
                 usage=ProviderUsage(input_tokens=1_000, output_tokens=50),
                 request_id="req-corpus-tool",
             )
-        tool_result = json.loads(request.messages[-1]["content"][0]["content"])
-        returned = {(row["source_id"], row["block_id"]) for row in tool_result}
-        assert self.current in returned
+        evidence_result = next(result for result in tool_results if isinstance(result, list))
+        returned = {(row["source_id"], row["block_id"]) for row in evidence_result}
         self.delivered.update(returned)
-        source_id, block_id = self.current
+        self.delivery_log.append(returned)
+        calculation_records = [result for result in tool_results if isinstance(result, dict)]
+        if calculation_tool is not None:
+            calculator_ids = calculation_tool["input_schema"]["properties"]["calculator_id"]["enum"]
+            if len(calculation_records) < len(calculator_ids):
+                calculator_id = calculator_ids[len(calculation_records)]
+                return ProviderMessage(
+                    content=[ProviderBlock(
+                        type="tool_use",
+                        id=f"tool-{self.calls}",
+                        name="run_methodology_calculation",
+                        input={
+                            "calculator_id": calculator_id,
+                            "input_json": json.dumps(self._calculation_input(calculator_id)),
+                        },
+                    )],
+                    stop_reason="tool_use",
+                    usage=ProviderUsage(input_tokens=1_000, output_tokens=50),
+                    request_id="req-corpus-calculation",
+                )
+        source_id, block_id = next(iter(returned))
         envelope = json.dumps({
-            "markdown": CANONICAL_BODY,
+            "markdown": (
+                CANONICAL_BODY
+                + f"\n\n| source_id | value |\n| --- | --- |\n| {source_id} | scripted |"
+            ),
             "evidence_refs": [{"source_id": source_id, "block_id": block_id}],
+            "calculation_refs": [
+                {field: record[field] for field in (
+                    "calculator_id", "script_digest", "calculator_digest", "input_digest", "output_digest",
+                )}
+                for record in calculation_records
+            ],
             "lineage_counts": {"directly_sourced": 1},
             "fields_present": 1,
             "fields_total": 1,
@@ -214,6 +262,12 @@ class CorpusProvider:
             request_id="req-corpus-final",
         )
 
+    @staticmethod
+    def _calculation_input(calculator_id: str) -> dict:
+        # Answer-keyed inputs for every assigned calculator: the host control
+        # proves the tool path completes, not that these numbers are Carnival's.
+        return VALID_CALCULATION_INPUTS[calculator_id]
+
 
 @pytest.fixture()
 def settings(tmp_path: Path) -> Settings:
@@ -222,7 +276,11 @@ def settings(tmp_path: Path) -> Settings:
 
 @pytest.fixture()
 def store(tmp_path: Path) -> DomainStore:
-    return DomainStore.from_url(f"sqlite:///{tmp_path / 'caos.db'}")
+    value = DomainStore.from_url(f"sqlite:///{tmp_path / 'caos.db'}")
+    try:
+        yield value
+    finally:
+        value.close()
 
 
 @pytest.fixture()
@@ -231,13 +289,17 @@ def provider() -> CorpusProvider:
 
 
 @pytest.fixture()
-def engine(tmp_path: Path, settings: Settings, store: DomainStore, provider: CorpusProvider):
+async def engine(tmp_path: Path, settings: Settings, store: DomainStore, provider: CorpusProvider):
     from caos.engine.runtime import Engine
 
-    return Engine.create(
+    value = Engine.create(
         settings=settings, store=store,
         checkpoint_path=tmp_path / "checkpoints.db", provider=provider,
     )
+    try:
+        yield value
+    finally:
+        await value.aclose()
 
 
 @pytest.fixture()
@@ -302,17 +364,15 @@ async def test_supported_routes_complete_host_path_on_30_document_upload(client,
 
     for pathway, depth in ROUTES:
         calls_before = provider.calls
-        delivered_before = set(provider.delivered)
-        started = client.post(
-            f"/api/cases/{case_id}/runs",
-            json={"pathway": pathway, "depth": depth.value},
+        deliveries_before = len(provider.delivery_log)
+        started = await engine.start_run(
+            case_id=case_id, pathway=pathway, depth=depth.value, actor="analyst",
         )
-        assert started.status_code == 201, started.text
-        run_id = started.json()["id"]
+        run_id = started["id"]
         await engine.wait(run_id)
         run = engine.get_run(run_id)
         assert run["status"] == "succeeded", run.get("error")
-        assert (provider.calls > calls_before) is (depth is Depth.FULL)
+        assert provider.calls > calls_before
         assert tuple(node["module_id"] for node in run["nodes"]) == compiled_route(pathway, depth.value).nodes
         assert run["plan"]["source_set_id"] == pinned["id"]
         artifacts = engine.artifacts_for_run(run_id)
@@ -326,10 +386,14 @@ async def test_supported_routes_complete_host_path_on_30_document_upload(client,
                     cited = (ref["source_id"], ref["block_id"])
                     assert cited in admitted_blocks
                     cited_blocks.add(cited)
-        if depth is Depth.FULL:
-            delivered_this_route = provider.delivered - delivered_before
-            assert delivered_this_route
-            assert delivered_this_route <= cited_blocks
+        delivered_this_route = set().union(*provider.delivery_log[deliveries_before:])
+        assert delivered_this_route
+        assert delivered_this_route <= cited_blocks
+        cp4c = next((artifact for artifact in artifacts if artifact["module_id"] == "CP-4C"), None)
+        if cp4c is not None:
+            assert {record["calculator_id"] for record in cp4c["payload"]["calculations"]} == {
+                "funding_gap", "recovery_waterfall",
+            }
 
 
 @requires_corpus

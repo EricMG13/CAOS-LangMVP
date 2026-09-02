@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, model_validator
 
 from .contracts import CanonicalDocumentSection
 
@@ -33,6 +33,29 @@ class IdentityResponse(WireModel):
     subject: str
     email: str | None
     role: str
+
+
+class ProviderIdentityResponse(WireModel):
+    provider_name: str
+    model: str
+    provider_version: str | None
+    adapter_version: str
+    parameter_context_digest: str
+    qualification_record_id: str | None
+    qualification_record_digest: str | None
+    qualification_status: str
+    qualification_expires_at: str | None
+    identity_digest: str
+
+    @model_validator(mode="after")
+    def verify_identity(self) -> "ProviderIdentityResponse":
+        from .engine.provider import AgentError, ProviderIdentity
+
+        try:
+            ProviderIdentity.from_dict(super().model_dump(mode="python"))
+        except AgentError as exc:
+            raise ValueError("provider identity is invalid") from exc
+        return self
 
 
 class HealthResponse(WireModel):
@@ -158,17 +181,37 @@ class RunResponse(WireModel):
     created_by: str
     created_at: str
     error: Any
+    provider_identity: ProviderIdentityResponse | None
+
+
+class ProviderAttemptResponse(WireModel):
+    run_id: str
+    module_id: str
+    kind: str
+    provider_identity: ProviderIdentityResponse | None
+    request_digest: str | None = None
+    response_digest: str | None = None
+    provider_request_id: str | None = None
+    observed_model: str | None = None
+    observed_provider_version: str | None = None
+    input_tokens: int | None = None
+    output_tokens: int | None = None
+    stop_reason: str | None = None
+    retry_index: int | None = None
+    terminal_code: str | None = None
+    operation: str | None = None
 
 
 class CanonicalGenerationResponse(WireModel):
     phase: str
-    model: str
+    model: str | None
+    provider_identity: ProviderIdentityResponse | None
     reporting_period: str
     module_output_tokens: dict[str, int]
     budget_limits: dict[str, Any]
     budget_used: dict[str, Any]
     inflight_request_digest: str | None
-    attempts: list[Any]
+    attempts: list[ProviderAttemptResponse]
     completed_modules: list[str] | None = None
 
 
@@ -196,6 +239,7 @@ class SnapshotResponse(WireModel):
     digest: str
     previous_snapshot_id: str | None
     accepted_at: str
+    provider_identity: ProviderIdentityResponse | None
 
 
 class SnapshotDiffEntryResponse(WireModel):
@@ -229,6 +273,7 @@ class ArtifactResponse(WireModel):
     input_fingerprint: str
     created_by: str
     created_at: str
+    provider_identity: ProviderIdentityResponse | None
 
 
 class CalculationRuntimeResponse(WireModel):
@@ -364,6 +409,7 @@ class AuditEventResponse(WireModel):
     preview_digest: str | None = None
     pathway: str | None = None
     comment: str | None = None
+    provider_identity_digest: str | None = None
 
 
 class ThesisResponse(WireModel):

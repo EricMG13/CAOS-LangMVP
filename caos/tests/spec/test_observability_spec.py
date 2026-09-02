@@ -33,6 +33,7 @@ from typing import Any
 
 import pytest
 
+from calculator_fixtures import VALID_CALCULATION_INPUTS
 from spec_helpers import text_message, tool_call_message
 
 # A sentence that exists nowhere else in this repo. If it turns up in a log
@@ -113,16 +114,16 @@ def ingest_sentinel_document(store, case_id: str, *, filename: str = "issuer-fil
     return store.ingest(payload, "analyst")
 
 
-def _tool_results(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    rows: list[dict[str, Any]] = []
+def _tool_results(messages: list[dict[str, Any]]) -> list[Any]:
+    results: list[Any] = []
     for message in messages:
         content = message.get("content")
         if not isinstance(content, list):
             continue
         for block in content:
             if isinstance(block, dict) and block.get("type") == "tool_result":
-                rows.extend(json.loads(block["content"]))
-    return rows
+                results.append(json.loads(block["content"]))
+    return results
 
 
 class ReadingProvider:
@@ -134,6 +135,8 @@ class ReadingProvider:
 
     def __init__(self, source_id: str, *, count: int = 1_000, read_source_id: str | None = None,
                  read_block_ids: list[str] | None = None, poison: bool = False) -> None:
+        from caos.engine.provider import host_control_identity
+
         self.source_id = source_id
         self.read_source_id = read_source_id or source_id
         self.read_block_ids = read_block_ids or ["b00001"]
@@ -143,20 +146,58 @@ class ReadingProvider:
         self.count_requests: list[Any] = []
         self.create_requests: list[Any] = []
         self.reads = 0
+        self.identity = host_control_identity()
 
     def count_tokens(self, request) -> int:
         self.count_requests.append(request)
         return self.count
 
     def create_message(self, request):
+        from caos.engine.provider import ProviderBlock, ProviderMessage, ProviderUsage
+
         self.create_requests.append(request)
-        rows = _tool_results(request.messages)
-        if not rows:
+        results = _tool_results(request.messages)
+        rows = next((result for result in results if isinstance(result, list)), None)
+        calculations = [result for result in results if isinstance(result, dict)]
+        calculation_tool = next(
+            (tool for tool in request.effective_tools()
+             if tool["name"] == "run_methodology_calculation"),
+            None,
+        )
+        if rows is None:
             self.reads += 1
             return tool_call_message(self.read_source_id, self.read_block_ids)
+        if calculation_tool is not None and len(calculations) < len(
+            calculation_tool["input_schema"]["properties"]["calculator_id"]["enum"]
+        ):
+            calculator_id = calculation_tool["input_schema"]["properties"]["calculator_id"]["enum"][len(calculations)]
+            return ProviderMessage(
+                content=[ProviderBlock(
+                    type="tool_use",
+                    id=f"calculation-{len(self.create_requests)}",
+                    name="run_methodology_calculation",
+                    input={
+                        "calculator_id": calculator_id,
+                        "input_json": json.dumps(VALID_CALCULATION_INPUTS[calculator_id], sort_keys=True),
+                    },
+                )],
+                stop_reason="tool_use",
+                usage=ProviderUsage(input_tokens=1_000, output_tokens=50),
+                request_id="req-calculation",
+            )
+        source_id = rows[0]["source_id"]
         return text_message(json.dumps({
-            "markdown": CANONICAL_BODY,
+            "markdown": (
+                CANONICAL_BODY
+                + f"\n\n| source_id | value |\n| --- | --- |\n| {source_id} | observed |"
+            ),
             "evidence_refs": [{"source_id": row["source_id"], "block_id": row["block_id"]} for row in rows],
+            "calculation_refs": [
+                {field: record[field] for field in (
+                    "calculator_id", "script_digest", "calculator_digest", "input_digest", "output_digest",
+                )}
+                for record in calculations
+            ],
             "lineage_counts": {"directly_sourced": 1},
             "fields_present": 4,
             "fields_total": 4,
@@ -179,14 +220,22 @@ class ReadingProvider:
 
 
 @pytest.fixture()
-def build_engine(tmp_path, settings, store):
+async def build_engine(tmp_path, settings, store):
+    engines = []
+
     def build(provider):
         from caos.engine.runtime import Engine
 
-        return Engine.create(settings=settings, store=store,
-                             checkpoint_path=tmp_path / "checkpoints.db", provider=provider)
+        engine = Engine.create(settings=settings, store=store,
+                               checkpoint_path=tmp_path / "checkpoints.db", provider=provider)
+        engines.append(engine)
+        return engine
 
-    return build
+    try:
+        yield build
+    finally:
+        for engine in reversed(engines):
+            await engine.aclose()
 
 
 async def _sentinel_agent_run(build_engine, store, **provider_kwargs):
@@ -194,7 +243,10 @@ async def _sentinel_agent_run(build_engine, store, **provider_kwargs):
     pinned = ingest_sentinel_document(store, case["id"])
     provider = ReadingProvider(pinned["id"], **provider_kwargs)
     engine = build_engine(provider)
-    run = await engine.start_run(case_id=case["id"], pathway="FULL_CREDIT", depth="full", actor="analyst")
+    run = await engine.start_run_for_tests(
+        case_id=case["id"], pathway="FULL_CREDIT", depth="full", actor="analyst",
+        allow_placeholder_deterministic=True,
+    )
     await engine.wait(run["id"])
     return engine, provider, case, pinned, engine.get_run(run["id"])
 
@@ -233,7 +285,10 @@ async def test_a_refused_read_logs_its_typed_code_and_none_of_the_document(build
     pinned = ingest_sentinel_document(store, case["id"])
     provider = ReadingProvider(pinned["id"], read_source_id="src-neverpinned00001")
     engine = build_engine(provider)
-    run = await engine.start_run(case_id=case["id"], pathway="FULL_CREDIT", depth="full", actor="analyst")
+    run = await engine.start_run_for_tests(
+        case_id=case["id"], pathway="FULL_CREDIT", depth="full", actor="analyst",
+        allow_placeholder_deterministic=True,
+    )
 
     # In the case, outside the pinned set: refused by membership (invariant 1).
     ingest_sentinel_document(store, case["id"], filename="restated.txt",
@@ -413,7 +468,10 @@ async def test_a_denied_provider_slot_logs_no_call_that_never_happened(build_eng
     provider = ReadingProvider(pinned["id"])
     engine = build_engine(provider)
     engine._slots = NeverReturnsTheSlot()
-    run = await engine.start_run(case_id=case["id"], pathway="FULL_CREDIT", depth="full", actor="analyst")
+    run = await engine.start_run_for_tests(
+        case_id=case["id"], pathway="FULL_CREDIT", depth="full", actor="analyst",
+        allow_placeholder_deterministic=True,
+    )
     await engine.wait(run["id"])
 
     record = engine.get_run(run["id"])
@@ -427,7 +485,8 @@ async def test_a_denied_provider_slot_logs_no_call_that_never_happened(build_eng
 async def test_the_gate_interrupt_is_logged_when_raised_and_when_resolved(build_engine, store, logs):
     """A run parked on an empty source set is the commonest stuck run there is."""
     case = store.create_case("Northwind", "Northwind Holdings", "Services", "analyst")
-    engine = build_engine(None)
+    source_id = "src-gate-observability"
+    engine = build_engine(ReadingProvider(source_id))
     run = await engine.start_run(case_id=case["id"], pathway="FULL_CREDIT", depth="screen", actor="analyst")
 
     assert engine.get_run(run["id"])["status"] == "paused"
@@ -436,7 +495,7 @@ async def test_the_gate_interrupt_is_logged_when_raised_and_when_resolved(build_
     assert raised[0]["reason"] == "SOURCE_SET_EMPTY"
     assert not of(logs, "gate.resolved"), "nothing has resolved it yet"
 
-    ingest_sentinel_document(store, case["id"])
+    ingest_sentinel_document(store, case["id"], source_id=source_id)
     await engine.resume(run["id"])
     await engine.wait(run["id"])
 
@@ -448,8 +507,8 @@ async def test_the_gate_interrupt_is_logged_when_raised_and_when_resolved(build_
 async def test_startup_recovery_is_logged(build_engine, store, logs):
     """A restart that silently re-admits runs is a restart you cannot audit."""
     case = store.create_case("Northwind", "Northwind Holdings", "Services", "analyst")
-    ingest_sentinel_document(store, case["id"])
-    engine = build_engine(None)
+    pinned = ingest_sentinel_document(store, case["id"])
+    engine = build_engine(ReadingProvider(pinned["id"]))
     run = await engine.start_run(case_id=case["id"], pathway="FULL_CREDIT", depth="screen", actor="analyst")
 
     logs.truncate(0), logs.seek(0)
@@ -705,12 +764,12 @@ def test_health_reports_degraded_when_the_app_has_no_engine(settings, store):
 
     from caos.api import create_app
 
-    client = TestClient(create_app(settings=settings, store=store, engine=None),
-                        raise_server_exceptions=False)
-    response = client.get("/api/health")
-    assert response.status_code == 503
-    assert response.json() == {"status": "degraded", "store": False, "bundle": False,
-                               "checkpointer": False}
+    with TestClient(create_app(settings=settings, store=store, engine=None),
+                    raise_server_exceptions=False) as client:
+        response = client.get("/api/health")
+        assert response.status_code == 503
+        assert response.json() == {"status": "degraded", "store": False, "bundle": False,
+                                   "checkpointer": False}
 
 
 def test_health_fails_closed_when_the_bundle_no_longer_verifies(client, engine):

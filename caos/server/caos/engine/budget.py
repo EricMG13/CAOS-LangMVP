@@ -1,8 +1,8 @@
 """Budget constants, envelope, ledger, manifest bounding, attempt recorder.
 
 Invariant 8 / DECISIONS §12.D and Appendix A: every ceiling is host-enforced and
-fails BEFORE overspend. Constants are literal transcriptions of the legacy
-values (Appendix A is the carrier); nothing here is inferred from methodology.
+fails BEFORE overspend. Legacy values remain literal unless a dated enterprise
+amendment records the replacement (DECISIONS §14).
 """
 
 from __future__ import annotations
@@ -29,10 +29,12 @@ PROVIDER_TIMEOUT_SECONDS = 150.0
 PROVIDER_CONCURRENCY_SLOTS = 2
 MAX_ACTIVE_JOBS = 20
 REPAIR_TEXT_LIMIT = 1_500
+MAX_ATTEMPT_RECORDS = 256
 
 # Per-module allowances (legacy canonical envelope ÷ 6, §12.20).
 EVIDENCE_READS_PER_MODULE = 10
 EVIDENCE_BYTES_PER_SIX = 5 * 1024 * 1024
+EVIDENCE_BYTES_PER_MODULE = math.ceil(EVIDENCE_BYTES_PER_SIX / 6)
 INPUT_TOKENS_PER_SIX = 500_000
 ACTIVE_MINUTES = 15
 PROVIDER_RETRIES = 1
@@ -56,8 +58,9 @@ def route_envelope(agent_module_ids: list[str], registry: dict[str, Any]) -> dic
     caps = [registry[module_id].max_output_tokens for module_id in agent_module_ids]
     n = len(agent_module_ids)
     evidence_reads = EVIDENCE_READS_PER_MODULE * n
+    calculation_turns = sum(len(registry[module_id].calculators) for module_id in agent_module_ids)
     return {
-        "turns": evidence_reads + n + REPAIRS,
+        "turns": evidence_reads + calculation_turns + n + REPAIRS,
         "evidence_reads": evidence_reads,
         "evidence_bytes": math.ceil(EVIDENCE_BYTES_PER_SIX * n / 6),
         "input_tokens": math.ceil(INPUT_TOKENS_PER_SIX * n / 6),
@@ -179,7 +182,8 @@ def bound_manifest(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 class AttemptRecorder:
     """§12.11 / Appendix A: scalar allowlist with truncation; non-terminal rows
-    fail closed at 100; terminal rows are cap-exempt into a [-100:] ring."""
+    fail closed at the fixed audit ceiling; terminal rows are cap-exempt into
+    the same bounded ring."""
 
     def __init__(self, base: dict[str, Any] | None = None) -> None:
         self.base = dict(base or {})
@@ -212,8 +216,8 @@ class AttemptRecorder:
         row = {**self.base, "kind": kind[:40], **self._allow(details)}
         if kind == "terminal":
             self._rows.append(row)
-            self._rows[:] = self._rows[-100:]
+            self._rows[:] = self._rows[-MAX_ATTEMPT_RECORDS:]
             return
-        if len(self._rows) >= 100:
+        if len(self._rows) >= MAX_ATTEMPT_RECORDS:
             raise AgentError("AGENT_BUDGET_EXCEEDED", "attempt metadata budget exhausted")
         self._rows.append(row)

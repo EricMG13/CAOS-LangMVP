@@ -14,10 +14,15 @@ untrusted code.
 from __future__ import annotations
 
 import copy
+import json
+from contextlib import contextmanager
+from contextvars import ContextVar
 import tempfile
 import threading
 import time
+from datetime import datetime
 from decimal import Decimal, InvalidOperation
+from functools import wraps
 from pathlib import Path
 from typing import Any, Callable
 
@@ -28,8 +33,11 @@ from ..contracts import (
     ModelSignOffRequest,
     ModelTornadoRequest,
     OneWaySensitivityRequest,
+    clean_json,
     digest,
 )
+from ..engine.provider import AgentError
+from ..engine.state import source_set_digest
 from ..atomic_files import (
     MAX_EXPORT_BYTES,
     VaultFileIntegrityError,
@@ -37,15 +45,46 @@ from ..atomic_files import (
     publish_hash_addressed_bytes,
     read_verified_vault_bytes,
 )
+from ..modules.registry import CP_MODEL_INPUT_MODULES
+from ..methodology.execution import MAX_CALCULATION_NODES, calculation_output_complete
 from ..storage.models import ModelStore
 from ..storage.store import DomainStore, now_iso
 from .engine import CpModelBundle, ModelInputError, json_value, project_cp2b
 
-CANONICAL_MODULES = ("CP-1", "CP-1A", "CP-1B", "CP-2", "CP-2A", "CP-2G")
+# Per-request memo of validated snapshot artifacts (F23): set by the public
+# entry points and by _resolve_snapshot when no scope is active.
+_RESOLUTION_MEMO: ContextVar[dict[tuple, Any] | None] = ContextVar("caos_model_resolution_memo", default=None)
+
+
+@contextmanager
+def _resolution_scope():
+    if _RESOLUTION_MEMO.get() is not None:
+        yield
+        return
+    token = _RESOLUTION_MEMO.set({})
+    try:
+        yield
+    finally:
+        _RESOLUTION_MEMO.reset(token)
+
+CANONICAL_MODULES = CP_MODEL_INPUT_MODULES
+DISTRESSED_PATHWAY = "DISTRESSED_RESTRUCTURING"
+DISTRESSED_CALCULATORS = frozenset({"funding_gap", "recovery_waterfall"})
+PRIOR_FULL_CREDIT_PUBLICATION_PATHWAYS = frozenset({
+    "EARNINGS_UPDATE",
+    "COVENANT_REFINANCING",
+})
+# ponytail: bounds a corrupted prior-snapshot chain; raise only if a legitimate
+# case ever approaches one thousand accepted analyses.
+MAX_SNAPSHOT_ANCESTORS = 1_000
 MAX_EFFECTIVE_ASSUMPTIONS = 256
 MAX_SENSITIVITY_POINTS = 41
 MAX_CALCULATION_SECONDS = 30.0
 MAX_ERROR_DETAIL_CHARS = 2_000
+MAX_PATHWAY_EFFECT_EXPORT_ROWS = (
+    MAX_CALCULATION_NODES * len(DISTRESSED_CALCULATORS) * 2 + 1_024
+)
+MAX_EXCEL_AUDIT_CELL_CHARS = 32_000
 LEGACY_TORNADO_DRIVERS = (
     (("operating.consolidated_revenue_growth", "operating.revenue_growth.division_1"), "Revenue growth", "0.025"),
     (("operating.adjusted_ebitda_margin",), "EBITDA margin", "0.015"),
@@ -59,6 +98,8 @@ LEGACY_TORNADO_DRIVERS = (
 # build they ever resolved. Raise it if a workload proves it needs to.
 MAX_CACHED_BUILDS = 8
 BUILD_ERROR_CODES = {
+    "MODEL_AUTHORITY_CHANGED",
+    "MODEL_EXPORT_AUTHORITY_CHANGED",
     "MODEL_INPUT_INVALID",
     "MODEL_CALCULATION_FAILED",
     "MODEL_EXPORT_FAILED",
@@ -73,6 +114,10 @@ class ModelBuildStale(ValueError):
     def __init__(self, current_build: dict[str, Any] | None) -> None:
         self.current_build = current_build
         super().__init__("MODEL_BUILD_STALE")
+
+
+class BuildAuthorityChanged(ValueError):
+    """A pinned source was withdrawn between validation and publication."""
 
 
 class BuildIdentityChanged(ValueError):
@@ -98,6 +143,197 @@ INPUTS_INVALID_DETAIL = (
     "The accepted Full Credit artifacts are missing, superseded, or fail "
     "CP-MODEL validation. Re-run Full Credit and accept it again."
 )
+DISTRESSED_BASE_MODEL_DETAIL = (
+    "Accept and complete a Full Credit model before building a Distressed "
+    "Restructuring overlay."
+)
+
+
+def _is_sha256(value: Any) -> bool:
+    return (
+        isinstance(value, str)
+        and len(value) == 64
+        and all(character in "0123456789abcdef" for character in value)
+    )
+
+
+def _is_aware_iso_timestamp(value: Any) -> bool:
+    if not isinstance(value, str):
+        return False
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00")).tzinfo is not None
+    except ValueError:
+        return False
+
+
+def _export_identity_digest(
+    case_id: str,
+    target_id: str,
+    export: dict[str, Any],
+) -> str:
+    return digest({
+        "schema_version": "caos.model-export.v1",
+        "case_id": case_id,
+        "target_id": target_id,
+        "vault_key": export.get("vault_key"),
+        "filename": export.get("filename"),
+        "sha256": export.get("sha256"),
+        "size": export.get("size"),
+    })
+
+
+def _pathway_effect_rows(effects: list[dict[str, Any]]):
+    """Flatten validated JSON into deterministic, formula-safe audit rows."""
+    stack: list[tuple[str, Any]] = [("pathway_effects", effects)]
+    row_count = 0
+    while stack:
+        path, value = stack.pop()
+        if isinstance(value, dict) and value:
+            stack.extend(
+                (f"{path}.{key}", value[key])
+                for key in reversed(sorted(value))
+            )
+            continue
+        if isinstance(value, list) and value:
+            stack.extend(
+                (f"{path}.{index}", item)
+                for index, item in reversed(list(enumerate(value)))
+            )
+            continue
+        rendered = (
+            value
+            if isinstance(value, (int, float)) and not isinstance(value, bool)
+            else json.dumps(value, ensure_ascii=False)
+        )
+        chunks = (
+            [rendered]
+            if not isinstance(rendered, str) or len(rendered) <= MAX_EXCEL_AUDIT_CELL_CHARS
+            else [
+                rendered[index:index + MAX_EXCEL_AUDIT_CELL_CHARS]
+                for index in range(0, len(rendered), MAX_EXCEL_AUDIT_CELL_CHARS)
+            ]
+        )
+        for index, chunk in enumerate(chunks, 1):
+            row_count += 1
+            if row_count > MAX_PATHWAY_EFFECT_EXPORT_ROWS:
+                raise ModelInputError("Distressed pathway effect is too large to export")
+            chunk_path = path if len(chunks) == 1 else f"{path}.chunk.{index:04d}"
+            yield chunk_path, chunk
+
+
+def _pathway_effect_tab(effects: list[dict[str, Any]]) -> dict[str, Any]:
+    rows = [("Field", "Value"), *_pathway_effect_rows(effects)]
+    cells = []
+    for row, values in enumerate(rows, 1):
+        for column, value in enumerate(values, 1):
+            cells.append({
+                "address": f"R{row}C{column}",
+                "row": row,
+                "column": column,
+                "value": value,
+                "value_type": (
+                    "number"
+                    if isinstance(value, (int, float)) and not isinstance(value, bool)
+                    else "text"
+                ),
+                "formula": None,
+                "semantic_id": None,
+                "owner": "CAOS",
+                "write_class": "AUDIT",
+                "period_id": None,
+                "source_refs": None,
+            })
+    return {
+        "id": "PATHWAY_EFFECTS",
+        "title": "Pathway Effects",
+        "max_row": len(rows),
+        "max_column": 2,
+        "cells": cells,
+    }
+
+
+def _with_pathway_effects(worksheet: dict[str, Any], effects: list[dict[str, Any]]) -> dict[str, Any]:
+    if not effects:
+        return worksheet
+    result = copy.deepcopy(worksheet)
+    if any(tab.get("title") == "Pathway Effects" for tab in result.get("tabs", [])):
+        raise ModelInputError("duplicate Pathway Effects worksheet")
+    result["tabs"].append(_pathway_effect_tab(effects))
+    return result
+
+
+def _materialize_workbook_tabs(path: Path, tabs: list[dict[str, Any]]) -> None:
+    from openpyxl import load_workbook
+    from openpyxl.styles import Font
+
+    workbook = load_workbook(path, data_only=False)
+    try:
+        changed = False
+        for tab in tabs:
+            title = tab["title"]
+            if title in workbook.sheetnames:
+                continue
+            sheet = workbook.create_sheet(title)
+            for item in tab["cells"]:
+                cell = sheet.cell(item["row"], item["column"])
+                formula = item.get("formula")
+                value = formula if isinstance(formula, str) else item.get("value")
+                cell.value = value
+                if isinstance(value, str) and formula is None:
+                    cell.data_type = "s"
+            sheet.freeze_panes = "A2"
+            for cell in sheet[1]:
+                cell.font = Font(bold=True)
+            changed = True
+        if changed:
+            workbook.save(path)
+    finally:
+        workbook.close()
+
+
+def _assert_workbook_semantics(path: Path, expected: dict[str, Any]) -> None:
+    from openpyxl import load_workbook
+
+    def normalized(value: Any) -> Any:
+        return None if value in (None, "") else json_value(value)
+
+    workbook = load_workbook(path, data_only=False)
+    try:
+        expected_titles = [tab["title"] for tab in expected["tabs"]]
+        if workbook.sheetnames != expected_titles:
+            raise ModelInputError("signed worksheet sheet set changed during export")
+        for tab in expected["tabs"]:
+            expected_cells = {
+                (item["row"], item["column"]): normalized(
+                    item["formula"] if isinstance(item.get("formula"), str) else item.get("value")
+                )
+                for item in tab["cells"]
+                if item.get("formula") not in (None, "") or item.get("value") not in (None, "")
+            }
+            actual_cells = {
+                (cell.row, cell.column): normalized(cell.value)
+                for row in workbook[tab["title"]].iter_rows()
+                for cell in row
+                if cell.value not in (None, "")
+            }
+            if actual_cells != expected_cells:
+                raise ModelInputError(f"signed worksheet changed during export: {tab['title']}")
+    finally:
+        workbook.close()
+
+
+def _authority_guarded(method):
+    @wraps(method)
+    def guarded(self, *args, **kwargs):
+        # The process-wide authority lock covers mutations only (queue, sign-off):
+        # it linearizes them against ingest, withdrawal and run finalization
+        # until Phase 5 replaces it with database locks. Transient reads run
+        # unguarded and publication is bound by a compare-and-swap instead,
+        # because the worker process never shares this lock (DECISIONS §14 D9).
+        with self.store.authority_guard():
+            return method(self, *args, **kwargs)
+
+    return guarded
 
 
 class ModelService:
@@ -105,7 +341,10 @@ class ModelService:
         self.store = store
         self.vault_dir = Path(vault_dir)
         self.engine = engine
-        self.bundle = CpModelBundle(engine.settings.deploy_v_root)
+        self.bundle = CpModelBundle(
+            engine.settings.deploy_v_root,
+            integrity=engine.bundle.integrity,
+        )
         self.builds = ModelStore(store.engine)
         self._sign_off_lock = threading.Lock()
         # test seams
@@ -129,7 +368,7 @@ class ModelService:
     def on_accepted(self, run: dict[str, Any], actor: str) -> None:
         """Accept-time auto-queue. Acceptance is already durable; any failure
         here (readiness, queue, dispatch) leaves it standing."""
-        if run.get("pathway") != "FULL_CREDIT":
+        if run.get("pathway") not in {"FULL_CREDIT", DISTRESSED_PATHWAY}:
             return
         self.queue_build(run["case_id"], actor)
 
@@ -151,22 +390,36 @@ class ModelService:
             return None
         return self.engine.runs.get_snapshot(case["accepted_snapshot_id"])
 
-    def _resolve_snapshot(self, snapshot: dict[str, Any]) -> dict[str, Any]:
-        """§10.6: only accepted FULL_CREDIT feeds model builds; the pathway
-        check precedes any validate_bundle invocation."""
-        runs = self.engine.runs
-        run = runs.get_run(snapshot["run_id"])
-        if run is None or run["pathway"] != "FULL_CREDIT":
+    def _resolve_snapshot(
+        self, snapshot: dict[str, Any], *, deadline: float | None = None,
+    ) -> dict[str, Any]:
+        """Resolve either a clean Full Credit model or its explicit Distressed overlay."""
+        with _resolution_scope():
+            run = self._validated_snapshot_run(snapshot)
+            if run["pathway"] == "FULL_CREDIT":
+                return self._resolve_full_credit_snapshot(snapshot, run)
+            if run["pathway"] == DISTRESSED_PATHWAY:
+                return self._resolve_distressed_snapshot(snapshot, run, deadline=deadline)
+            raise ModelInputError(
+                "accepted FULL_CREDIT or DISTRESSED_RESTRUCTURING run required",
+                code="ACCEPTED_FULL_CREDIT_REQUIRED",
+            )
+
+    def _resolve_full_credit_snapshot(
+        self,
+        snapshot: dict[str, Any],
+        run: dict[str, Any],
+    ) -> dict[str, Any]:
+        """§10.6 Full Credit input resolution and vendor validation."""
+        if run["pathway"] != "FULL_CREDIT":
             raise ModelInputError("accepted FULL_CREDIT run required",
                                   code="ACCEPTED_FULL_CREDIT_REQUIRED")
-        by_module: dict[str, dict[str, Any]] = {}
-        for reference in snapshot["artifacts"]:
-            if reference["module_id"] not in CANONICAL_MODULES:
-                continue
-            artifact = runs.get_artifact(reference["id"])
-            if artifact is None or artifact.get("digest") != reference.get("digest"):
-                raise ModelInputError("canonical artifact is unavailable")
-            by_module[reference["module_id"]] = artifact
+        artifacts, _inventory = self._validated_snapshot_artifacts(snapshot, run)
+        by_module = {
+            artifact["module_id"]: artifact
+            for artifact in artifacts
+            if artifact["module_id"] in CANONICAL_MODULES
+        }
         if set(by_module) != set(CANONICAL_MODULES):
             raise ModelInputError("canonical artifacts are incomplete")
         markdown = {module_id: by_module[module_id]["markdown"] for module_id in ("CP-1", "CP-1A", "CP-1B", "CP-2", "CP-2G")}
@@ -219,6 +472,426 @@ class ModelService:
             "input_fingerprint": fingerprint,
         }
 
+    def _validated_snapshot_run(
+        self,
+        snapshot: dict[str, Any],
+        *,
+        error_code: str = "CANONICAL_MODEL_INPUTS_INVALID",
+        require_live_sources: bool = True,
+    ) -> dict[str, Any]:
+        """Validate one identity-bound chain node before following its prior pointer.
+
+        Liveness of the pinned sources is required for the snapshot whose
+        artifacts are consumed; an intermediate ancestor that merely links the
+        chain is validated by identity only, so withdrawing a document that
+        only it pinned does not revoke an intact base."""
+        if not isinstance(snapshot, dict) or not isinstance(snapshot.get("id"), str):
+            raise ModelInputError(
+                "Accepted snapshot is unavailable",
+                code=error_code,
+            )
+        preimage = {
+            key: value
+            for key, value in snapshot.items()
+            if key not in {"digest", "id"}
+        }
+        run = self.engine.runs.get_run(snapshot.get("run_id"))
+        plan = run.get("plan") if run is not None else None
+        if (
+            run is None
+            or run.get("case_id") != snapshot.get("case_id")
+            or run.get("status") != "succeeded"
+            or run.get("accepted_snapshot_id") != snapshot["id"]
+            or not _is_aware_iso_timestamp(snapshot.get("accepted_at"))
+            or run.get("provider_identity") != snapshot.get("provider_identity")
+            or not isinstance(plan, dict)
+            or not _is_sha256(run.get("plan_digest"))
+            or digest(plan) != run["plan_digest"]
+            or plan.get("source_set_id") != snapshot.get("source_set_id")
+            or plan.get("source_set_version") != snapshot.get("source_set_version")
+            or not _is_sha256(snapshot.get("digest"))
+            or digest(preimage) != snapshot["digest"]
+        ):
+            raise ModelInputError(
+                "Accepted snapshot identity is invalid",
+                code=error_code,
+            )
+        source_set = self.store.source_set(snapshot["source_set_id"])
+        if (
+            source_set is None
+            or source_set.get("case_id") != snapshot["case_id"]
+            or source_set.get("version") != snapshot["source_set_version"]
+            or source_set_digest(source_set) != plan.get("source_set_digest")
+            or (
+                require_live_sources
+                and self.store.sources_for_live_set(
+                    snapshot["case_id"],
+                    snapshot["source_set_id"],
+                    snapshot["source_set_version"],
+                ) is None
+            )
+        ):
+            raise ModelInputError(
+                "Accepted snapshot source authority is unavailable",
+                code=error_code,
+            )
+        return run
+
+    def _prior_full_credit_snapshot(
+        self,
+        snapshot: dict[str, Any],
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
+        current = snapshot
+        seen = {snapshot["id"]}
+        for _ in range(MAX_SNAPSHOT_ANCESTORS):
+            previous_id = current.get("previous_snapshot_id")
+            if not isinstance(previous_id, str) or not previous_id or previous_id in seen:
+                break
+            seen.add(previous_id)
+            previous = self.engine.runs.get_snapshot(previous_id)
+            if previous is None or previous.get("case_id") != snapshot["case_id"]:
+                break
+            run = self._validated_snapshot_run(
+                previous,
+                error_code="DISTRESSED_BASE_MODEL_REQUIRED",
+                require_live_sources=False,
+            )
+            if run["pathway"] == "FULL_CREDIT":
+                self._validated_snapshot_run(previous, error_code="DISTRESSED_BASE_MODEL_REQUIRED")
+                return previous, run
+            current = previous
+        raise ModelInputError(
+            "A prior Full Credit snapshot is required for Distressed modeling",
+            code="DISTRESSED_BASE_MODEL_REQUIRED",
+        )
+
+    def _validated_base_build(
+        self,
+        snapshot: dict[str, Any],
+        resolved: dict[str, Any],
+        *,
+        deadline: float | None = None,
+    ) -> dict[str, Any]:
+        build = self.builds.build_for_fingerprint(
+            snapshot["case_id"], resolved["input_fingerprint"]
+        )
+        registry = self.bundle.assumption_registry
+        if (
+            build is None
+            or build.get("status") != "READY"
+            or build.get("accepted_run_id") != snapshot["run_id"]
+            or build.get("snapshot_id") != snapshot["id"]
+            or build.get("source_set_id") != snapshot["source_set_id"]
+            or build.get("input_fingerprint") != resolved["input_fingerprint"]
+            or build.get("methodology_build_id") != self.engine.bundle.build_id
+            or build.get("calculation_runtime") != self.bundle.calculation_runtime
+            or build.get("registry_version") != registry["version"]
+            or build.get("registry_digest") != registry["digest"]
+            or not _is_sha256(build.get("assumptions_digest"))
+            or not _is_sha256(build.get("outputs_digest"))
+            or not _is_sha256(build.get("payload_digest"))
+            or not isinstance(build.get("payload"), dict)
+            or not isinstance(build.get("qa"), dict)
+            or build["qa"].get("status") != "PASS"
+            or "pathway_effects" in build["payload"]
+        ):
+            raise ModelInputError(
+                "A validated READY Full Credit model is required",
+                code="DISTRESSED_BASE_MODEL_REQUIRED",
+            )
+        self._resolved_cache.pop(build["id"], None)
+        self._defaults_cache.pop(build["id"], None)
+        try:
+            expected_result, expected_identity = self._compute_build_result(build, deadline=deadline)
+        except (ModelInputError, ValueError):
+            raise ModelInputError(
+                "The prior Full Credit model calculation is invalid",
+                code="DISTRESSED_BASE_MODEL_REQUIRED",
+            ) from None
+        if (
+            build["payload"] != expected_result["payload"]
+            or build["payload_digest"] != expected_result["payload_digest"]
+            or build["qa"] != expected_result["qa"]
+            or build["assumptions_digest"] != expected_identity["assumptions_digest"]
+            or build["outputs_digest"] != expected_identity["outputs_digest"]
+        ):
+            raise ModelInputError(
+                "The prior Full Credit model identity is invalid",
+                code="DISTRESSED_BASE_MODEL_REQUIRED",
+            ) from None
+        return build
+
+    @staticmethod
+    def _publication_model_authority(
+        snapshot: dict[str, Any],
+        build: dict[str, Any],
+        *,
+        relationship: str,
+    ) -> dict[str, Any]:
+        return {
+            "relationship": relationship,
+            "snapshot_id": snapshot["id"],
+            "snapshot_digest": snapshot["digest"],
+            "run_id": snapshot["run_id"],
+            "source_set_id": snapshot["source_set_id"],
+            "source_set_version": snapshot["source_set_version"],
+            "input_fingerprint": build["input_fingerprint"],
+            "payload_digest": build["payload_digest"],
+        }
+
+    def _validated_prior_full_credit_publication_build(
+        self,
+        build_id: str | None,
+        accepted_snapshot: dict[str, Any],
+        accepted_run: dict[str, Any],
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
+        if accepted_run.get("pathway") not in PRIOR_FULL_CREDIT_PUBLICATION_PATHWAYS:
+            raise ModelInputError("accepted pathway cannot reuse a prior Full Credit model")
+        base_snapshot, base_run = self._prior_full_credit_snapshot(accepted_snapshot)
+        resolved = self._resolve_full_credit_snapshot(base_snapshot, base_run)
+        build = self._validated_base_build(base_snapshot, resolved)
+        if build_id is not None and build["id"] != build_id:
+            raise ModelBuildStale(build)
+        return build, self._publication_model_authority(
+            base_snapshot,
+            build,
+            relationship="PRIOR_FULL_CREDIT_BASE",
+        )
+
+    def _validated_snapshot_artifacts(
+        self,
+        snapshot: dict[str, Any],
+        run: dict[str, Any],
+    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+        # One resolution re-verifies each snapshot once: the Distressed chain
+        # otherwise re-hashes the vault and replays every calculation for the
+        # base four to twelve times per request.
+        memo = _RESOLUTION_MEMO.get()
+        key = (snapshot.get("id"), snapshot.get("digest"), run.get("id"))
+        if memo is not None and key in memo:
+            return memo[key]
+        try:
+            artifacts = self.engine.validated_snapshot_artifacts(snapshot, run)
+        except AgentError as exc:
+            raise ModelInputError("Accepted snapshot artifacts are invalid") from exc
+        inventory = [
+            {
+                "module_id": artifact["module_id"],
+                "artifact_id": artifact["id"],
+                "digest": artifact["digest"],
+                "status": "READY",
+            }
+            for artifact in artifacts
+        ]
+        if memo is not None:
+            memo[key] = (artifacts, inventory)
+        return artifacts, inventory
+
+    def _validated_distressed_calculations(
+        self,
+        artifact: dict[str, Any],
+    ) -> list[dict[str, Any]]:
+        records = artifact["payload"].get("calculations")
+        if not isinstance(records, list) or not records:
+            raise ModelInputError("CP-4C calculation records are unavailable")
+        try:
+            bindings = {
+                item["calculator_id"]: item
+                for item in self.engine._calculation_runtime.binding_manifest()
+                if item["module_id"] == "CP-4C"
+            }
+        except (AttributeError, KeyError, TypeError, ValueError):
+            raise ModelInputError("CP-4C calculation authority is unavailable") from None
+        if set(bindings) != DISTRESSED_CALCULATORS:
+            raise ModelInputError("CP-4C calculation authority is unavailable")
+        calculator_ids: set[str] = set()
+        validated: list[dict[str, Any]] = []
+        for record in records:
+            if not isinstance(record, dict):
+                raise ModelInputError("CP-4C calculation record is invalid")
+            calculator_id = record.get("calculator_id")
+            if calculator_id in calculator_ids:
+                raise ModelInputError("CP-4C calculation record is duplicated")
+            dependencies = record.get("dependency_digests")
+            binding = bindings.get(calculator_id)
+            if (
+                set(record) != {
+                    "schema_version",
+                    "methodology_build_id",
+                    "module_id",
+                    "calculator_id",
+                    "script_digest",
+                    "script_bytes",
+                    "dependency_digests",
+                    "calculator_digest",
+                    "canonical_input",
+                    "input_digest",
+                    "output_digest",
+                    "canonical_output",
+                }
+                or record.get("schema_version") != "caos.methodology-calculation.v1"
+                or record.get("methodology_build_id") != self.engine.bundle.build_id
+                or record.get("module_id") != "CP-4C"
+                or binding is None
+                or record.get("script_digest") != binding["script_digest"]
+                or record.get("script_bytes") != binding["script_bytes"]
+                or record.get("calculator_digest") != binding["calculator_digest"]
+                or dependencies != binding["dependency_digests"]
+                or not _is_sha256(record.get("input_digest"))
+                or not _is_sha256(record.get("output_digest"))
+            ):
+                raise ModelInputError("CP-4C calculation record identity is invalid")
+            try:
+                canonical_input = clean_json(record["canonical_input"])
+                canonical_output = clean_json(record["canonical_output"])
+            except (KeyError, TypeError, ValueError):
+                raise ModelInputError("CP-4C calculation output is invalid") from None
+            if (
+                type(canonical_input) is not dict
+                or digest(canonical_input) != record["input_digest"]
+                or digest(canonical_output) != record["output_digest"]
+            ):
+                raise ModelInputError("CP-4C calculation input or output digest is invalid")
+            try:
+                recalculated = self.engine._calculation_runtime.execute(
+                    "CP-4C",
+                    calculator_id,
+                    canonical_input,
+                )
+            except (AttributeError, KeyError, TypeError, ValueError):
+                raise ModelInputError("CP-4C calculation cannot be reconstructed") from None
+            if recalculated != record:
+                raise ModelInputError("CP-4C calculation reconstruction differs")
+            if not calculation_output_complete(
+                "CP-4C",
+                calculator_id,
+                recalculated["canonical_output"],
+            ):
+                raise ModelInputError("CP-4C calculation is incomplete")
+            calculator_ids.add(calculator_id)
+            validated.append(copy.deepcopy(record))
+        if calculator_ids != DISTRESSED_CALCULATORS:
+            raise ModelInputError("CP-4C funding gap and recovery calculations are required")
+        return validated
+
+    def _resolve_distressed_snapshot(
+        self,
+        snapshot: dict[str, Any],
+        run: dict[str, Any],
+        *,
+        deadline: float | None = None,
+    ) -> dict[str, Any]:
+        if run["pathway"] != DISTRESSED_PATHWAY:
+            raise ModelInputError("accepted Distressed run required")
+        artifacts, inventory = self._validated_snapshot_artifacts(snapshot, run)
+        cp4c = next(
+            (artifact for artifact in artifacts if artifact["module_id"] == "CP-4C"),
+            None,
+        )
+        if cp4c is None:
+            raise ModelInputError("CP-4C artifact is unavailable")
+
+        base_snapshot, base_run = self._prior_full_credit_snapshot(snapshot)
+        try:
+            self._validated_snapshot_artifacts(base_snapshot, base_run)
+            base_resolved = self._resolve_full_credit_snapshot(base_snapshot, base_run)
+        except (ModelInputError, ValueError):
+            raise ModelInputError(
+                "The prior Full Credit snapshot is invalid",
+                code="DISTRESSED_BASE_MODEL_REQUIRED",
+            ) from None
+        base_build = self._validated_base_build(base_snapshot, base_resolved, deadline=deadline)
+        calculations = self._validated_distressed_calculations(cp4c)
+        source_set = self.store.source_set(snapshot["source_set_id"])
+        if (
+            source_set is None
+            or source_set.get("case_id") != snapshot["case_id"]
+            or source_set.get("version") != snapshot["source_set_version"]
+        ):
+            raise ModelInputError("Distressed source set is unavailable")
+
+        effect = {
+            "schema_version": "caos.model-pathway-effect.v1",
+            "effect_id": "DISTRESSED_SCENARIO_RECOVERY",
+            "pathway": DISTRESSED_PATHWAY,
+            "treatment": "BASE_MODEL_REUSED_WITH_DISTRESSED_SCENARIO_OVERLAY",
+            "base_model": {
+                "build_id": base_build["id"],
+                "run_id": base_snapshot["run_id"],
+                "snapshot_id": base_snapshot["id"],
+                "snapshot_digest": base_snapshot["digest"],
+                "source_set_id": base_snapshot["source_set_id"],
+                "source_set_version": base_snapshot["source_set_version"],
+                "input_fingerprint": base_build["input_fingerprint"],
+                "payload_digest": base_build["payload_digest"],
+                "assumptions_digest": base_build["assumptions_digest"],
+                "outputs_digest": base_build["outputs_digest"],
+                "qa_digest": digest(base_build["qa"]),
+                "methodology_build_id": base_build["methodology_build_id"],
+                "calculation_runtime": base_build["calculation_runtime"],
+            },
+            "distressed_authority": {
+                "run_id": snapshot["run_id"],
+                "snapshot_id": snapshot["id"],
+                "snapshot_digest": snapshot["digest"],
+                "source_set_id": snapshot["source_set_id"],
+                "source_set_version": snapshot["source_set_version"],
+                "provider_identity_digest": (
+                    snapshot.get("provider_identity") or {}
+                ).get("identity_digest"),
+                "artifacts": [
+                    {
+                        "module_id": item["module_id"],
+                        "artifact_id": item["artifact_id"],
+                        "digest": item["digest"],
+                    }
+                    for item in inventory
+                ],
+                "cp4c_artifact_id": cp4c["id"],
+                "cp4c_artifact_digest": cp4c["digest"],
+            },
+            "calculations": calculations,
+            "calculation_records_digest": digest(calculations),
+            "methodology_build_id": self.engine.bundle.build_id,
+            "cp_model_runtime": self.bundle.calculation_runtime,
+            "scope": (
+                "The prior Full Credit operating model is reused unchanged; "
+                "only the CP-4C funding-gap and recovery analysis is overlaid."
+            ),
+        }
+        model_payload = copy.deepcopy(base_build["payload"])
+        model_payload["pathway_effects"] = [effect]
+        fingerprint = digest({
+            "case_id": snapshot["case_id"],
+            "accepted_run_id": snapshot["run_id"],
+            "accepted_snapshot_id": snapshot["id"],
+            "accepted_snapshot_digest": snapshot["digest"],
+            "previous_snapshot_id": snapshot.get("previous_snapshot_id"),
+            "source_set": {"id": source_set["id"], "version": source_set["version"]},
+            "artifacts": [
+                {
+                    "module_id": item["module_id"],
+                    "artifact_id": item["artifact_id"],
+                    "digest": item["digest"],
+                }
+                for item in inventory
+            ],
+            "base_model": effect["base_model"],
+            "calculation_records_digest": effect["calculation_records_digest"],
+            "methodology_build_id": self.engine.bundle.build_id,
+            "calculation_runtime": self.bundle.calculation_runtime,
+        })
+        return {
+            "snapshot": snapshot,
+            "source_set": {"id": source_set["id"], "version": source_set["version"]},
+            "artifact_inventory": inventory,
+            "markdown": base_resolved["markdown"],
+            "input_fingerprint": fingerprint,
+            "base_build": base_build,
+            "pathway_effect": effect,
+            "model_payload": model_payload,
+        }
+
     def readiness(self, case_id: str) -> dict[str, Any]:
         forced = self._forced_readiness.get(case_id)
         if forced:
@@ -242,6 +915,10 @@ class ModelService:
                 return {"status": "NOT_READY", "module_id": "CP-MODEL", "snapshot_id": snapshot["id"],
                         "blockers": [{"code": "ACCEPTED_FULL_CREDIT_REQUIRED",
                                       "detail": WRONG_PATHWAY_AUTHORITY_DETAIL}]}
+            if getattr(exc, "code", None) == "DISTRESSED_BASE_MODEL_REQUIRED":
+                return {"status": "NOT_READY", "module_id": "CP-MODEL", "snapshot_id": snapshot["id"],
+                        "blockers": [{"code": "DISTRESSED_BASE_MODEL_REQUIRED",
+                                      "detail": DISTRESSED_BASE_MODEL_DETAIL}]}
             return {"status": "CANONICAL_MODEL_INPUTS_INVALID", "module_id": "CP-MODEL",
                     "snapshot_id": snapshot["id"],
                     "blockers": [{"code": "CANONICAL_MODEL_INPUTS_INVALID",
@@ -268,6 +945,7 @@ class ModelService:
 
     # -- queue --------------------------------------------------------------
 
+    @_authority_guarded
     def queue_build(self, case_id: str, actor: str) -> dict[str, Any]:
         for callback in list(self._on_queue):
             callback(case_id)
@@ -284,6 +962,8 @@ class ModelService:
         except (ModelInputError, ValueError) as exc:
             if getattr(exc, "code", None) == "ACCEPTED_FULL_CREDIT_REQUIRED":
                 raise ValueError("MODEL_NOT_READY: accept a completed Full Credit run first") from exc
+            if getattr(exc, "code", None) == "DISTRESSED_BASE_MODEL_REQUIRED":
+                raise ValueError("DISTRESSED_BASE_MODEL_REQUIRED") from exc
             raise ValueError("MODEL_BUILD_INVALID: canonical model inputs are invalid") from exc
         registry = self.bundle.assumption_registry
         identity = {
@@ -362,14 +1042,16 @@ class ModelService:
 
     # -- build execution -----------------------------------------------------
 
-    def _resolved_inputs(self, build: dict[str, Any]) -> dict[str, Any]:
+    def _resolved_inputs(
+        self, build: dict[str, Any], *, deadline: float | None = None,
+    ) -> dict[str, Any]:
         cached = self._resolved_cache.get(build["id"])
         if cached is not None:
             return cached
         snapshot = self.engine.runs.get_snapshot(build["snapshot_id"])
         if snapshot is None or snapshot["case_id"] != build["case_id"]:
             raise ModelInputError("model snapshot is unavailable")
-        resolved = self._resolve_snapshot(snapshot)
+        resolved = self._resolve_snapshot(snapshot, deadline=deadline)
         if resolved["input_fingerprint"] != build["input_fingerprint"]:
             raise ModelInputError("model inputs changed")
         _remember(self._resolved_cache, build["id"], resolved)
@@ -438,6 +1120,8 @@ class ModelService:
         try:
             result, identity = self._compute_build_result(build)
             self._complete(build_id, result, identity, expected_fingerprint=fingerprint)
+        except BuildAuthorityChanged:
+            pass  # the FAILED record with its typed code is already committed
         except BuildIdentityChanged:
             # Re-pointed mid-flight: the requeued row wins, this calculation dies.
             pass
@@ -451,10 +1135,27 @@ class ModelService:
             self._fail(build_id, "MODEL_CALCULATION_FAILED", "The model calculation did not complete.", fingerprint)
         return self.builds.get_build(build_id)  # type: ignore[return-value]
 
-    def _compute_build_result(self, build: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
-        deadline = self._new_deadline()
+    def _compute_build_result(
+        self, build: dict[str, Any], *, deadline: float | None = None,
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
+        deadline = deadline if deadline is not None else self._new_deadline()
+        resolved = self._resolved_inputs(build, deadline=deadline)
+        if resolved.get("pathway_effect") is not None:
+            base_build = resolved["base_build"]
+            return (
+                {
+                    "payload": copy.deepcopy(resolved["model_payload"]),
+                    "payload_digest": digest(resolved["model_payload"]),
+                    "qa": copy.deepcopy(base_build["qa"]),
+                },
+                {
+                    "assumptions_digest": base_build["assumptions_digest"],
+                    "outputs_digest": base_build["outputs_digest"],
+                },
+            )
         model, calculations = self._calculate(build, None, deadline)
         serialized = self.bundle.serialize_workbook(model, calculations)
+        self._check_deadline(deadline)
         result = {
             "payload": serialized["payload"],
             "payload_digest": digest(serialized["payload"]),
@@ -478,17 +1179,41 @@ class ModelService:
         self._complete(build_id, copy.deepcopy(result), {})
         return self.builds.get_build(build_id)  # type: ignore[return-value]
 
+    def _pinned_source_ids(self, build: dict[str, Any]) -> list[str]:
+        """The source ids a build's snapshot pinned; publication is conditional on
+        every one of them still being live at the moment of the write."""
+        source_set = self.store.source_set(build.get("source_set_id"))
+        if source_set is None or source_set.get("case_id") != build.get("case_id"):
+            raise ModelInputError("model source authority is unavailable")
+        return list(source_set["source_ids"])
+
     def _complete(self, build_id: str, result: dict[str, Any], identity: dict[str, Any],
                   *, expected_fingerprint: str | None = None) -> None:
         self._validate_result(result)
+        build = self.builds.get_build(build_id)
+        if build is None:
+            raise BuildIdentityChanged("MODEL_RESULT_INVALID: build is not completable")
         changed = self.builds.update_build(
             build_id, expected_status=("QUEUED", "BUILDING"),
             expected_input_fingerprint=expected_fingerprint,
+            expected_live_source_ids=self._pinned_source_ids(build),
             status="READY", payload=result["payload"], payload_digest=result["payload_digest"],
             qa=result["qa"], error=None, completed_at=now_iso(), **identity,
         )
-        if not changed:
-            raise BuildIdentityChanged("MODEL_RESULT_INVALID: build is not completable")
+        if changed:
+            return
+        # Either the row was re-pointed mid-flight (the requeued row wins) or a
+        # pinned source was withdrawn while the result was being computed: the
+        # second is a typed failure the analyst must see, never a READY model.
+        if self.builds.update_build(
+            build_id, expected_status=("QUEUED", "BUILDING"),
+            expected_input_fingerprint=expected_fingerprint,
+            status="FAILED",
+            error={"code": "MODEL_AUTHORITY_CHANGED",
+                   "detail": "A pinned source was withdrawn before the model could be published."},
+        ):
+            raise BuildAuthorityChanged("MODEL_AUTHORITY_CHANGED")
+        raise BuildIdentityChanged("MODEL_RESULT_INVALID: build is not completable")
 
     @staticmethod
     def _validate_result(result: dict[str, Any]) -> None:
@@ -498,8 +1223,8 @@ class ModelService:
         if not isinstance(result, dict) or set(result) != {"payload", "payload_digest", "qa"}:
             raise invalid("result must carry exactly payload, payload_digest, qa")
         payload, qa = result["payload"], result["qa"]
-        if not isinstance(qa, dict) or not isinstance(qa.get("status"), str):
-            raise invalid("qa status is missing")
+        if not isinstance(qa, dict) or qa.get("status") != "PASS":
+            raise invalid("qa status must pass")
         if not isinstance(payload, dict) or not isinstance(payload.get("tabs"), list):
             raise invalid("payload tabs must be a list")
         for tab in payload["tabs"]:
@@ -560,6 +1285,27 @@ class ModelService:
         current = self.builds.current_build(case_id)
         if current is None or current["id"] != build_id:
             raise ModelBuildStale(current)
+        case = self.store.get_case(case_id)
+        snapshot = self.engine.runs.get_snapshot(build.get("snapshot_id"))
+        try:
+            if (
+                case is None
+                or case.get("accepted_snapshot_id") != build.get("snapshot_id")
+                or snapshot is None
+                or snapshot.get("case_id") != case_id
+            ):
+                raise ModelInputError("accepted model authority changed")
+            resolved = self._resolve_snapshot(snapshot)
+            if (
+                resolved.get("input_fingerprint") != build.get("input_fingerprint")
+                or resolved.get("source_set", {}).get("id") != build.get("source_set_id")
+            ):
+                raise ModelInputError("accepted model authority changed")
+        except (ModelInputError, ValueError) as exc:
+            self._resolved_cache.pop(build_id, None)
+            self._defaults_cache.pop(build_id, None)
+            raise ValueError("MODEL_BUILD_NOT_READY: accepted model authority is invalid") from exc
+        _remember(self._resolved_cache, build_id, resolved)
         return build
 
     def _validate_registry(self, registry_version: str, registry_digest: str) -> None:
@@ -600,7 +1346,10 @@ class ModelService:
         model, calculations = self._calculate(build, rows, deadline)
         normalized = _with_default_context(self._apply_evolution(build["id"], _assumption_rows(model)), defaults)
         outputs = _annual_outputs(calculations)
-        worksheet = self.bundle.serialize_workbook(model, calculations)["payload"]
+        worksheet = _with_pathway_effects(
+            self.bundle.serialize_workbook(model, calculations)["payload"],
+            (build.get("payload") or {}).get("pathway_effects") or [],
+        )
         baseline = parent["outputs"] if parent is not None else default_outputs
         envelope = {
             "case_id": case_id,
@@ -632,6 +1381,10 @@ class ModelService:
 
         if build["payload_digest"] != digest(build["payload"]):
             raise invalid("payload_digest")
+        if build.get("methodology_build_id") != self.engine.bundle.build_id:
+            raise invalid("methodology_build_id")
+        if build.get("calculation_runtime") != self.bundle.calculation_runtime:
+            raise invalid("calculation_runtime")
         if build["registry_digest"] != self.bundle.assumption_registry["digest"]:
             raise invalid("registry_digest")
         case = self.store.get_case(case_id)
@@ -646,16 +1399,30 @@ class ModelService:
             raise invalid("input_fingerprint") from exc
         if resolved["input_fingerprint"] != build["input_fingerprint"]:
             raise invalid("input_fingerprint")
-        defaults, outputs = self._defaults(build, deadline)
-        if digest(defaults) != build["assumptions_digest"]:
+        self._resolved_cache.pop(build["id"], None)
+        self._defaults_cache.pop(build["id"], None)
+        _remember(self._resolved_cache, build["id"], resolved)
+        expected_result, expected_identity = self._compute_build_result(build, deadline=deadline)
+        if build["payload"] != expected_result["payload"]:
+            raise invalid("payload")
+        if build["payload_digest"] != expected_result["payload_digest"]:
+            raise invalid("payload_digest")
+        if build["qa"] != expected_result["qa"]:
+            raise invalid("qa")
+        if build["assumptions_digest"] != expected_identity["assumptions_digest"]:
             raise invalid("assumptions_digest")
-        if digest(outputs) != build["outputs_digest"]:
+        if build["outputs_digest"] != expected_identity["outputs_digest"]:
             raise invalid("outputs_digest")
 
     def sign_off(self, case_id: str, request: ModelSignOffRequest, *, actor: str = "analyst") -> dict[str, Any]:
         deadline = self._new_deadline()
-        with self._sign_off_lock:
-            build = self._require_current(case_id, request.build_id)
+        with self.store.authority_guard(), self._sign_off_lock:
+            try:
+                build = self._require_current(case_id, request.build_id)
+            except ValueError as exc:
+                if str(exc).startswith("MODEL_BUILD_NOT_READY: accepted model authority"):
+                    raise ValueError("MODEL_REVISION_INVALID: accepted model authority is invalid") from exc
+                raise
             self._validate_build_identity(case_id, build, deadline)
             preview = self.preview(case_id, request, _deadline=deadline)
             if preview["preview_digest"] != request.preview_digest:
@@ -677,7 +1444,15 @@ class ModelService:
 
     def _revision_state(self, case_id: str, revision: dict[str, Any]) -> str:
         current = self.builds.current_build(case_id)
-        if current is None or revision.get("build_id") != current["id"]:
+        case = self.store.get_case(case_id)
+        accepted_snapshot_id = case.get("accepted_snapshot_id") if case is not None else None
+        if (
+            current is None
+            or accepted_snapshot_id is None
+            or current.get("snapshot_id") != accepted_snapshot_id
+            or revision.get("snapshot_id") != accepted_snapshot_id
+            or revision.get("build_id") != current["id"]
+        ):
             return "STALE"
         head = self.builds.head_revision(case_id)
         return "ACTIVE" if head is not None and head["id"] == revision["id"] else "SUPERSEDED"
@@ -705,12 +1480,86 @@ class ModelService:
             return None
         return {**head, "state": self._revision_state(case_id, head)}
 
+    def publication_guard(self):
+        """Serialize filing authority checks with analyst model sign-off."""
+        return self._sign_off_lock
+
     def default_outputs(self, case_id: str, build_id: str) -> dict[str, Any]:
         """The current build's outputs under registry defaults (the fallback
         model authority a Deliverable may pin when no revision is signed)."""
         build = self._require_current(case_id, build_id)
         _defaults_rows, outputs = self._defaults(build, self._new_deadline())
         return outputs
+
+    def validated_build(self, case_id: str, build_id: str) -> dict[str, Any]:
+        """Reconstruct and verify a READY build before another service publishes it."""
+        try:
+            build = self._require_current(case_id, build_id)
+        except ValueError as exc:
+            if str(exc).startswith(
+                "MODEL_BUILD_NOT_READY: accepted model authority"
+            ):
+                raise ValueError(
+                    "MODEL_REVISION_INVALID: accepted model authority is invalid"
+                ) from exc
+            raise
+        self._validate_build_identity(case_id, build, self._new_deadline())
+        return build
+
+    def validated_publication_build(
+        self,
+        case_id: str,
+        build_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Resolve the model a deliverable may publish under current authority.
+
+        Model Builder remains current-snapshot-only. Earnings and covenant
+        deliverables are the narrow exception: they may reuse the nearest
+        validated Full Credit ancestor while their own accepted analysis stays
+        the publication authority.
+        """
+        try:
+            accepted_snapshot = self._accepted_snapshot(case_id)
+            if accepted_snapshot is None:
+                raise ModelInputError("accepted model authority is unavailable")
+            accepted_run = self._validated_snapshot_run(accepted_snapshot)
+            if accepted_run["pathway"] in PRIOR_FULL_CREDIT_PUBLICATION_PATHWAYS:
+                build, model_authority = (
+                    self._validated_prior_full_credit_publication_build(
+                        build_id,
+                        accepted_snapshot,
+                        accepted_run,
+                    )
+                )
+            else:
+                candidate = (
+                    self.builds.get_build(build_id)
+                    if build_id is not None
+                    else self.builds.current_build(case_id)
+                )
+                if candidate is None:
+                    raise ModelBuildStale(None)
+                build = self._require_current(case_id, candidate["id"])
+                self._validate_build_identity(case_id, build, self._new_deadline())
+                model_authority = self._publication_model_authority(
+                    accepted_snapshot,
+                    build,
+                    relationship="CURRENT_ACCEPTED_MODEL",
+                )
+            _defaults_rows, outputs = self._defaults(build, self._new_deadline())
+            return {
+                "build": build,
+                "outputs": outputs,
+                "model_authority": model_authority,
+            }
+        except ModelBuildStale:
+            raise
+        except ValueError as exc:
+            if str(exc).startswith("MODEL_REVISION_INVALID"):
+                raise
+            raise ValueError(
+                "MODEL_REVISION_INVALID: accepted model authority is invalid"
+            ) from exc
 
     # -- transient calculations ---------------------------------------------
 
@@ -975,6 +1824,7 @@ class ModelService:
         if build is not None:
             if (build.get("export") or {}).get("status") == "READY":
                 return build
+            self.validated_build(build["case_id"], build["id"])
             self.builds.update_build(target_id, export={"status": "QUEUED"})
             return self.builds.get_build(target_id)  # type: ignore[return-value]
         revision = self.builds.get_revision(target_id)
@@ -982,6 +1832,7 @@ class ModelService:
             raise ValueError("MODEL_EXPORT_TARGET_NOT_FOUND")
         if (revision.get("export") or {}).get("status") == "READY":
             return revision
+        self.validated_build(revision["case_id"], revision["build_id"])
         self.builds.update_revision_export(target_id, {"status": "QUEUED"})
         return self.builds.get_revision(target_id)  # type: ignore[return-value]
 
@@ -997,15 +1848,36 @@ class ModelService:
             self.vault_dir, ("models", case_id, target_id), "xlsx", content,
             expected_sha256=sha256, max_bytes=MAX_EXPORT_BYTES,
         )
-        return {"status": "READY", "vault_key": vault_key, "filename": f"{target_id}.xlsx",
-                "sha256": sha256, "size": size}
+        export = {
+            "status": "READY",
+            "vault_key": vault_key,
+            "filename": f"{target_id}.xlsx",
+            "sha256": sha256,
+            "size": size,
+        }
+        export["identity_digest"] = _export_identity_digest(case_id, target_id, export)
+        return export
 
-    def _render_bytes(self, build: dict[str, Any], effective: list[dict[str, Any]] | None) -> bytes:
+    def _render_bytes(
+        self,
+        build: dict[str, Any],
+        effective: list[dict[str, Any]] | None,
+        signed_worksheet: dict[str, Any] | None = None,
+    ) -> bytes:
         deadline = self._new_deadline()
         model, calculations = self._calculate(build, effective, deadline)
         with tempfile.TemporaryDirectory(prefix="caos-model-export-") as temporary:
             output = Path(temporary) / "model.xlsx"
             self.bundle.render_workbook(model, calculations, output)
+            effects = (build.get("payload") or {}).get("pathway_effects") or []
+            tabs = (
+                signed_worksheet["tabs"]
+                if signed_worksheet is not None
+                else ([_pathway_effect_tab(effects)] if effects else [])
+            )
+            _materialize_workbook_tabs(output, tabs)
+            if signed_worksheet is not None:
+                _assert_workbook_semantics(output, signed_worksheet)
             return output.read_bytes()
 
     def run_export_for_tests(self, target_id: str) -> dict[str, Any]:
@@ -1017,9 +1889,17 @@ class ModelService:
                     "status": "FAILED", "error": {"code": "MODEL_EXPORT_FAILED", "detail": "The XLSX export did not complete."},
                 })
                 return self.builds.get_build(target_id)  # type: ignore[return-value]
+            build = self.validated_build(build["case_id"], build["id"])
             self._export_input_reads += 1
             export = self._publish(build["case_id"], target_id, self._render_bytes(build, None))
-            self.builds.update_build(target_id, export=export)
+            if not self.builds.update_build(
+                target_id, expected_live_source_ids=self._pinned_source_ids(build), export=export,
+            ):
+                self.builds.update_build(target_id, export={
+                    "status": "FAILED",
+                    "error": {"code": "MODEL_EXPORT_AUTHORITY_CHANGED",
+                              "detail": "A pinned source was withdrawn before the export could be published."},
+                })
             return self.builds.get_build(target_id)  # type: ignore[return-value]
         revision = self.builds.get_revision(target_id)
         if revision is None:
@@ -1041,10 +1921,22 @@ class ModelService:
                 "status": "FAILED", "error": {"code": "MODEL_REVISION_EXPORT_FAILED", "detail": "The signed revision XLSX export did not complete."},
             })
             return self.builds.get_revision(target_id)  # type: ignore[return-value]
+        source_build = self.validated_build(revision["case_id"], source_build["id"])
         self._export_input_reads += 1
-        content = self._render_bytes(source_build, revision["effective_assumptions"])
+        content = self._render_bytes(
+            source_build,
+            revision["effective_assumptions"],
+            revision["worksheet"],
+        )
         export = self._publish(revision["case_id"], target_id, content)
-        self.builds.update_revision_export(target_id, export)
+        if not self.builds.update_revision_export(
+            target_id, export, expected_live_source_ids=self._pinned_source_ids(source_build),
+        ):
+            self.builds.update_revision_export(target_id, {
+                "status": "FAILED",
+                "error": {"code": "MODEL_EXPORT_AUTHORITY_CHANGED",
+                          "detail": "A pinned source was withdrawn before the export could be published."},
+            })
         return self.builds.get_revision(target_id)  # type: ignore[return-value]
 
     # The worker's entry points. The `_for_tests` suffix on the underlying
@@ -1061,6 +1953,21 @@ class ModelService:
         export = record.get("export") or {}
         if export.get("status") != "READY":
             raise ValueError("MODEL_EXPORT_NOT_READY")
+        integrity_error = (
+            "MODEL_REVISION_EXPORT_INTEGRITY_FAILED"
+            if is_revision
+            else "MODEL_EXPORT_INTEGRITY_FAILED"
+        )
+        expected_vault_key = (
+            f"models/{case_id}/{target_id}/{export.get('sha256')}.xlsx"
+        )
+        if (
+            export.get("vault_key") != expected_vault_key
+            or export.get("filename") != f"{target_id}.xlsx"
+            or export.get("identity_digest")
+            != _export_identity_digest(case_id, target_id, export)
+        ):
+            raise ValueError(integrity_error)
         # Read through the no-follow descriptor chain: the stored bytes are
         # verified against the recorded digest AND length, and a symlink or a
         # non-regular file where the export should be is refused outright.
@@ -1070,9 +1977,7 @@ class ModelService:
                 expected_size=export["size"], max_bytes=MAX_EXPORT_BYTES,
             )
         except (VaultFileUnavailable, VaultFileIntegrityError) as exc:
-            raise ValueError(
-                "MODEL_REVISION_EXPORT_INTEGRITY_FAILED" if is_revision else "MODEL_EXPORT_INTEGRITY_FAILED"
-            ) from exc
+            raise ValueError(integrity_error) from exc
         return content, export["sha256"]
 
     # -- test seams ----------------------------------------------------------

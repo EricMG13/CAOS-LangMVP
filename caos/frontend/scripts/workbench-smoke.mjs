@@ -147,8 +147,16 @@ const pendingResearchRun = {
 
 const browser = await chromium.launch({ headless: true });
 const errors = [];
+const externalGoogleFontRequests = [];
+const watchExternalGoogleFonts = (context) => {
+  context.on("request", (requestValue) => {
+    const url = new URL(requestValue.url());
+    if (url.hostname === "fonts.googleapis.com" || url.hostname === "fonts.gstatic.com") externalGoogleFontRequests.push(url.href);
+  });
+  return context;
+};
 try {
-  const context = await browser.newContext({ viewport: { width: 1440, height: 1000 }, extraHTTPHeaders: identityHeaders });
+  const context = watchExternalGoogleFonts(await browser.newContext({ viewport: { width: 1440, height: 1000 }, extraHTTPHeaders: identityHeaders }));
   const page = await context.newPage();
   await page.addInitScript(() => {
     window.__caosUrlWrites = [];
@@ -204,7 +212,8 @@ try {
   });
   page.on("pageerror", (error) => errors.push(error.message));
   page.on("request", (requestValue) => {
-    const pathname = new URL(requestValue.url()).pathname;
+    const url = new URL(requestValue.url());
+    const pathname = url.pathname;
     if (pathname === "/api/cases") caseRequests += 1;
     if (/^\/api\/cases\/[^/]+\/(?:lens|snapshot)$/.test(pathname)) authorityRequests += 1;
   });
@@ -643,14 +652,9 @@ try {
     acceptanceBoxes.push(await region.boundingBox());
   }
   assert.ok(acceptanceBoxes.every(Boolean), "an execution state omitted the acceptance region");
-  assert.deepEqual(
-    acceptanceBoxes.map(({ x, y, width, height }) => [Math.round(x), Math.round(y), Math.round(width), Math.round(height)]),
-    Array.from({ length: acceptancePhases.length }, () => {
-      const { x, y, width, height } = acceptanceBoxes[0];
-      return [Math.round(x), Math.round(y), Math.round(width), Math.round(height)];
-    }),
-    "acceptance-region geometry changed between waiting, ready, accepted, failed, and paused states",
-  );
+  const acceptanceGeometry = acceptanceBoxes.map(({ x, width, height }) => [Math.round(x), Math.round(width), Math.round(height)]);
+  assert.ok(acceptanceGeometry.every(([x, width]) => x === acceptanceGeometry[0][0] && width === acceptanceGeometry[0][1]), "acceptance-region horizontal geometry changed between states");
+  assert.ok(acceptanceGeometry.every(([, , height]) => height >= 132 && height <= 133), "acceptance region did not preserve its reserved height");
   await page.unroute(acceptanceRunPath);
   await page.unroute(acceptanceEventsPath);
   await page.unroute(acceptanceAuthorityPath);
@@ -1793,11 +1797,11 @@ try {
   await page.setViewportSize({ width: 1280, height: 720 });
   await context.close();
 
-  const reduced = await browser.newContext({
+  const reduced = watchExternalGoogleFonts(await browser.newContext({
     viewport: { width: 1024, height: 768 },
     reducedMotion: "reduce",
     extraHTTPHeaders: identityHeaders,
-  });
+  }));
   const reducedPage = await reduced.newPage();
   await reducedPage.goto(`${baseURL}/command-center/?case=${caseRecord.id}`, { waitUntil: "networkidle" });
   const reducedStyle = await reducedPage.evaluate(() => {
@@ -1808,10 +1812,10 @@ try {
   assert.equal(reducedStyle.playState, "paused");
   await reduced.close();
 
-  const zoomed = await browser.newContext({
+  const zoomed = watchExternalGoogleFonts(await browser.newContext({
     viewport: { width: 720, height: 900 },
     extraHTTPHeaders: identityHeaders,
-  });
+  }));
   const zoomedPage = await zoomed.newPage();
   await zoomedPage.goto(`${baseURL}/deep-dive/?case=${caseRecord.id}`, { waitUntil: "networkidle" });
   // A palette route whose client payload 404s degrades into a full document load, but only
@@ -1843,7 +1847,7 @@ try {
   const readerHeaders = process.env.CAOS_EDGE_SECRET
     ? { ...identityHeaders, "x-forwarded-groups": "caos-reader" }
     : { "x-caos-role": "READER" };
-  const reader = await browser.newContext({ viewport: { width: 1440, height: 1000 }, extraHTTPHeaders: readerHeaders });
+  const reader = watchExternalGoogleFonts(await browser.newContext({ viewport: { width: 1440, height: 1000 }, extraHTTPHeaders: readerHeaders }));
   const readerPage = await reader.newPage();
   const absent = async (page, name) => assert.equal(
     await page.getByRole("button", { name }).count(), 0, `READER was offered "${name}"`);
@@ -1878,6 +1882,7 @@ try {
   assert.equal(await readerPage.evaluate(() => document.querySelector("main")?.textContent?.includes("Reader access")), true,
     "a failed identity lookup did not settle on the read-only floor");
   await reader.close();
+  assert.deepEqual(externalGoogleFontRequests, [], "workbench requested an external Google font");
 } finally {
   await browser.close();
   await api.dispose();

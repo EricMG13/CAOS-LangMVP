@@ -62,6 +62,19 @@ _HEALTH_KEYS = {
     "checkpointer": None,
 }
 
+_PROVIDER_IDENTITY_KEYS = {
+    "provider_name": None,
+    "model": None,
+    "provider_version": None,
+    "adapter_version": None,
+    "parameter_context_digest": None,
+    "qualification_record_id": None,
+    "qualification_record_digest": None,
+    "qualification_status": None,
+    "qualification_expires_at": None,
+    "identity_digest": None,
+}
+
 KEY_SETS = {
     "case": {
         "id": None,
@@ -130,6 +143,7 @@ KEY_SETS = {
         "created_by": None,
         "created_at": None,
         "error": None,
+        "provider_identity": _PROVIDER_IDENTITY_KEYS,
     },
     "snapshot": {
         "id": None,
@@ -141,6 +155,7 @@ KEY_SETS = {
         "digest": None,
         "previous_snapshot_id": None,
         "accepted_at": None,
+        "provider_identity": _PROVIDER_IDENTITY_KEYS,
     },
     "artifact": {
         "id": None,
@@ -153,6 +168,7 @@ KEY_SETS = {
         "input_fingerprint": None,
         "created_by": None,
         "created_at": None,
+        "provider_identity": _PROVIDER_IDENTITY_KEYS,
     },
     "model_readiness": {
         "status": None,
@@ -315,9 +331,10 @@ async def payloads(client, store, engine) -> dict:
         files={"file": ("evidence.txt", b"Revenue 1,160\nEBITDA 222", "text/plain")},
     ).json()
     assert source["blocks"], "the representative source must carry extracted blocks"
-    started = client.post(
-        f"/api/cases/{case_id}/runs", json={"pathway": "EARNINGS_UPDATE", "depth": "screen"}
-    ).json()
+    started = await engine.start_run_for_tests(
+        case_id=case_id, pathway="EARNINGS_UPDATE", depth="screen", actor="analyst",
+        allow_placeholder_deterministic=True,
+    )
     await engine.wait(started["id"])
     run = client.get(f"/api/runs/{started['id']}").json()
     assert run["status"] == "succeeded" and run["nodes"] and run["events"]
@@ -549,6 +566,33 @@ def test_upload_route_enforces_the_same_admission_as_the_ingestion_helper(client
     assert len(client.get(f"/api/cases/{case['id']}/sources").json()) == 1, "only the admitted source landed"
 
 
+def test_upload_route_closes_multipart_files_on_success_and_refusal(client, monkeypatch):
+    from starlette.formparsers import MultiPartParser
+
+    parsed = []
+    real_parse = MultiPartParser.parse
+
+    async def capture_form(parser):
+        form = await real_parse(parser)
+        parsed.append(form)
+        return form
+
+    monkeypatch.setattr(MultiPartParser, "parse", capture_form)
+    case = client.post(
+        "/api/cases", json={"name": "Upload owner", "issuer": "Issuer", "sector": "Services"}
+    ).json()
+    url = f"/api/cases/{case['id']}/sources"
+
+    assert client.post(url, files={"file": ("evidence.txt", b"Debt 100", "text/plain")}).status_code == 201
+    assert client.post(
+        url, files={"file": ("payload.exe", b"MZ", "application/octet-stream")}
+    ).status_code == 415
+
+    assert len(parsed) == 2
+    assert all(form["file"].file.closed for form in parsed), \
+        "the route owns parsed multipart files on success and exception paths"
+
+
 def test_every_response_carries_the_browser_hardening_headers(client):
     """The app is the origin for the static export and the JSON API alike, so
     the headers ride here rather than only at the reverse proxy."""
@@ -579,6 +623,44 @@ def test_focus_questions_and_thesis_items_are_bounded_per_item(client):
     under = client.post(f"/api/cases/{case['id']}/runs", json={
         "pathway": "FULL_CREDIT", "depth": "screen", "focus_questions": ["q" * 400]})
     assert under.status_code in {200, 201}
+
+
+def test_client_cannot_enable_the_placeholder_deterministic_test_seam(client):
+    case = client.post(
+        "/api/cases", json={"name": "No test seam", "issuer": "Issuer", "sector": "Services"}
+    ).json()
+    response = client.post(f"/api/cases/{case['id']}/runs", json={
+        "pathway": "FULL_CREDIT",
+        "depth": "screen",
+        "allow_placeholder_deterministic": True,
+    })
+    assert response.status_code == 422
+
+
+@pytest.mark.parametrize("code", [
+    "AGENT_EXECUTION_DISABLED",
+    "AGENT_PROVIDER_UNAVAILABLE",
+    "AGENT_QUALIFICATION_MISSING",
+    "AGENT_QUALIFICATION_EXPIRED",
+    "AGENT_PROVIDER_UNQUALIFIED",
+    "AGENT_IDENTITY_MISMATCH",
+])
+def test_provider_preflight_refusals_are_service_unavailable(client, engine, monkeypatch, code):
+    from caos.engine.runtime import EngineError
+
+    case = client.post(
+        "/api/cases", json={"name": "Provider preflight", "issuer": "Issuer", "sector": "Services"}
+    ).json()
+
+    async def refuse(**_kwargs):
+        raise EngineError(code)
+
+    monkeypatch.setattr(engine, "start_run", refuse)
+    response = client.post(
+        f"/api/cases/{case['id']}/runs", json={"pathway": "FULL_CREDIT", "depth": "full"}
+    )
+    assert response.status_code == 503
+    assert response.json() == {"detail": {"code": code}}
 
 
 def test_distinct_duplicate_note_promotion_is_a_structured_source_conflict(client):
@@ -704,9 +786,10 @@ async def test_run_events_sse_tails_the_event_log_with_last_event_id_resume(clie
         f"/api/cases/{case_id}/sources",
         files={"file": ("evidence.txt", b"Revenue 1,160\nEBITDA 222", "text/plain")},
     )
-    started = client.post(
-        f"/api/cases/{case_id}/runs", json={"pathway": "EARNINGS_UPDATE", "depth": "screen"}
-    ).json()
+    started = await engine.start_run_for_tests(
+        case_id=case_id, pathway="EARNINGS_UPDATE", depth="screen", actor="analyst",
+        allow_placeholder_deterministic=True,
+    )
     await engine.wait(started["id"])
 
     def read_frames(headers: dict | None = None) -> list[tuple[int, str]]:
@@ -753,6 +836,7 @@ def _run_payload(extension: dict) -> dict:
         "created_by": "analyst",
         "created_at": "2026-08-26T00:00:00+00:00",
         "error": None,
+        "provider_identity": None,
         **extension,
     }
 
@@ -771,9 +855,13 @@ def _budgets() -> dict:
 
 
 def _generation_payload() -> dict:
+    from caos.engine.provider import host_control_identity
+
+    identity = host_control_identity().as_dict()
     return {
         "phase": "generating",
-        "model": "model",
+        "model": identity["model"],
+        "provider_identity": identity,
         "reporting_period": "2026-08-26",
         "module_output_tokens": {
             "CP-1": 32_000,
@@ -810,6 +898,80 @@ def test_canonical_generation_rejects_unknown_keys():
         CanonicalRunResponse.model_validate(
             _run_payload({"canonical_generation": {**_generation_payload(), "unexpected": True}})
         )
+
+
+def test_provider_identity_wire_contract_verifies_the_self_digest_and_exact_keys():
+    from pydantic import ValidationError
+
+    from caos.engine.provider import host_control_identity
+    from caos.responses import ProviderIdentityResponse
+
+    identity = host_control_identity().as_dict()
+    assert _round_trips(ProviderIdentityResponse, identity)
+    with pytest.raises(ValidationError):
+        ProviderIdentityResponse.model_validate({**identity, "model": "tampered"})
+    with pytest.raises(ValidationError):
+        ProviderIdentityResponse.model_validate({**identity, "unexpected": True})
+
+
+def test_generation_attempt_identity_is_never_synthesized_or_open_ended(client, engine, store):
+    from caos.engine.provider import host_control_identity
+
+    case = store.create_case("Attempt authority", "Issuer", "Services", "analyst")
+    run = engine.runs.create_run(
+        case["id"], "FULL_CREDIT", "full", "analyst",
+        provider_identity=host_control_identity(),
+    )
+    engine.runs.init_budget(run["id"], _budgets())
+    engine.runs.record_attempt(
+        run["id"],
+        {
+            "run_id": run["id"], "module_id": "CP-1", "kind": "generation",
+            "raw_body": "must-not-cross-the-wire",
+        },
+        terminal=False,
+    )
+
+    served = client.get(f"/api/runs/{run['id']}").json()
+    assert served["provider_identity"] == host_control_identity().as_dict()
+    assert served["canonical_generation"]["attempts"][0]["provider_identity"] is None
+    assert "raw_body" not in served["canonical_generation"]["attempts"][0]
+
+
+async def test_malformed_provider_attempt_scalars_remain_strictly_servable(
+    client, engine, store, provider,
+):
+    from caos.engine.provider import ProviderBlock, ProviderMessage, ProviderUsage
+
+    case = store.create_case("Malformed provider", "Issuer", "Services", "analyst")
+    body = b"evidence"
+    import hashlib
+
+    store.ingest({
+        "case_id": case["id"], "filename": "evidence.txt", "media_type": "text/plain",
+        "bytes": len(body), "sha256": hashlib.sha256(body).hexdigest(), "vault_path": None,
+        "blocks": [{"block_id": "b00001", "locator": {"line": 1}, "text": "evidence",
+                    "extractor_version": "builtin-v1", "confidence": "MEDIUM", "untrusted_data": True}],
+        "withdrawn": False,
+    }, "analyst")
+    provider.script = [ProviderMessage(
+        content=[ProviderBlock(type="text", text="ignored")],
+        stop_reason=7, usage=ProviderUsage(input_tokens=1, output_tokens=1),
+        request_id=8, observed_model=9, observed_provider_version=10,
+    )]
+    run = await engine.start_run_for_tests(
+        case_id=case["id"], pathway="FULL_CREDIT", depth="full", actor="analyst",
+        allow_placeholder_deterministic=True,
+    )
+    await engine.wait(run["id"])
+
+    response = client.get(f"/api/runs/{run['id']}")
+    assert response.status_code == 200
+    attempt = response.json()["canonical_generation"]["attempts"][0]
+    assert attempt["provider_request_id"] is None
+    assert attempt["observed_model"] is None
+    assert attempt["observed_provider_version"] is None
+    assert attempt["stop_reason"] is None
 
 
 # --- loan-universe import results are strict to the leaf --------------------------

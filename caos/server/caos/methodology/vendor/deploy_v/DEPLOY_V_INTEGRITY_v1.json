@@ -1,24 +1,22 @@
 {
   "authority": "DEPLOY_V_INTEGRITY_v1",
-  "build_id": "7fa967c472e8d185f6b7c0e716628de5aea9367f059f6e3fe307224fdd9ee213",
+  "build_id": "237bf4bc56b616b1c679a32c3733a2d9baf580b113758329320478e0226bae9d",
   "routing_index": "CP_DEPLOY_V_RETRIEVAL_INDEX_v1.json",
   "schema_version": "1.0",
   "skills": [
     {
-      "aliases": [
-        "CP-PARSE"
-      ],
+      "aliases": [],
       "companion_count": 13,
       "companion_limit": 20,
       "companion_limit_exception": false,
-      "entry_bytes": 30165,
-      "entry_sha256": "5683fdd21c5b4009d6ff3ad9a7eeb78f1051f6a92eba605bda97b2a03311ca05",
+      "entry_bytes": 30597,
+      "entry_sha256": "1bce46dc758747898187b54f8fb619839dfbf2557fd43bce8b3f51efcc33a4f3",
       "folder_slug": "cp-0-source-readiness",
       "module_id": "CP-0",
       "relative_file_hashes": {
         "SKILL.md": {
-          "bytes": 30165,
-          "sha256": "5683fdd21c5b4009d6ff3ad9a7eeb78f1051f6a92eba605bda97b2a03311ca05"
+          "bytes": 30597,
+          "sha256": "1bce46dc758747898187b54f8fb619839dfbf2557fd43bce8b3f51efcc33a4f3"
         },
         "references/CP-0_SCHEMA_REFERENCE.md": {
           "bytes": 2823,
@@ -72,7 +70,11 @@
           "bytes": 35004,
           "sha256": "6e7cb91632fba8ad9e621cdb7085497aa600213c5d4cd9c0e1887fa13110c3b2"
         }
-      }
+      },
+      "runnable_module_ids": [
+        "CP-PARSE",
+        "CP-0"
+      ]
     },
     {
       "aliases": [],
@@ -241,30 +243,30 @@
       "companion_count": 9,
       "companion_limit": 20,
       "companion_limit_exception": false,
-      "entry_bytes": 21921,
-      "entry_sha256": "6741d02da12847f8895652c8bcb21e6e0aed523b0561ea2aef44245c4c77f690",
+      "entry_bytes": 22074,
+      "entry_sha256": "a260a71ab616269126566b16d832dfaf67774469d4873782e5a6225d93981fe1",
       "folder_slug": "cp-1c-peer-benchmark",
       "module_id": "CP-1C",
       "relative_file_hashes": {
         "SKILL.md": {
-          "bytes": 21921,
-          "sha256": "6741d02da12847f8895652c8bcb21e6e0aed523b0561ea2aef44245c4c77f690"
+          "bytes": 22074,
+          "sha256": "a260a71ab616269126566b16d832dfaf67774469d4873782e5a6225d93981fe1"
         },
         "references/CP-1C_SCHEMA_REFERENCE.md": {
-          "bytes": 3163,
-          "sha256": "b85719891c3b688f49dd636416f02460d1d9b71e33d8fa01a6bc42ef335f7aad"
+          "bytes": 3269,
+          "sha256": "eecd8555ea5204e633506e2f04c4450d70dcb83d925d95d9c143660ae8e1f5b4"
         },
         "references/CP-1C_SYSTEM_REFERENCE.md": {
-          "bytes": 1962,
-          "sha256": "d85a1cc17ec9a079054a58761efba98ccacef58cd0a15ed084e39b5b38104048"
+          "bytes": 1979,
+          "sha256": "3bd7ed0fd5f9f9f4384a2f0a8d4f55d95a8a7b793c5ad70893b76074b37d4260"
         },
         "references/CP-1C__PeerBenchmark__payload.schema.txt": {
           "bytes": 698,
           "sha256": "76de802455505ba43735873a84d9d87ade3b9c673493738f4194e3605d8081e5"
         },
         "references/REF_CP-1C_STEPS.md": {
-          "bytes": 24735,
-          "sha256": "d2077d8e0a8936f26023313ca46e2b4b86d8650a3642afedd71457a5aafbafe7"
+          "bytes": 25153,
+          "sha256": "a630be1ba396c06ba74bdb786dda589f87f96019d9abcfe6db7e1084d9aced30"
         },
         "scripts/completeness_check.py": {
           "bytes": 17807,
@@ -279,8 +281,8 @@
           "sha256": "e8286e65b0356e486e822f7bb255c188ac1e6557a7d7e00973970a690642a520"
         },
         "scripts/peer_statistics.py": {
-          "bytes": 27264,
-          "sha256": "00922ebf0eef9c25a53b2af538e5a774638a97d464bee707706ffdbf88f8c96a"
+          "bytes": 27287,
+          "sha256": "dcdf78f65739dc036e9f59dee0152d9a9ff7f7847b12ca84634c2134e4cad219"
         },
         "scripts/validate_handoff.py": {
           "bytes": 35004,
@@ -625,8 +627,8 @@
           "sha256": "4dbdb64d1eb671bcaca4b2f13b74ab4f730672af005a8250b26ba8e1668ed570"
         },
         "scripts/bond_analytics.py": {
-          "bytes": 10354,
-          "sha256": "6fef23dbd1c7010e8a3f7d096c9eb007d756eb5a4a4bdcf7b463f8c1fac8a648"
+          "bytes": 10872,
+          "sha256": "405f7a92ad7bbce51e33dcbf73020a1217469d13f20d157257d094158377d3da"
         },
         "scripts/completeness_check.py": {
           "bytes": 17807,
@@ -750,14 +752,14 @@
       "companion_count": 18,
       "companion_limit": 20,
       "companion_limit_exception": false,
-      "entry_bytes": 38746,
-      "entry_sha256": "af3d0c9b9e518b023470c3f855c435ec8706c50ded24523528ae8744310ddb89",
+      "entry_bytes": 38671,
+      "entry_sha256": "7ac723f6dab9f107bc5a1785b125d3136217990803f69debfd81abacf0384511",
       "folder_slug": "cp-4-legal-covenant-interpreter",
       "module_id": "CP-4",
       "relative_file_hashes": {
         "SKILL.md": {
-          "bytes": 38746,
-          "sha256": "af3d0c9b9e518b023470c3f855c435ec8706c50ded24523528ae8744310ddb89"
+          "bytes": 38671,
+          "sha256": "7ac723f6dab9f107bc5a1785b125d3136217990803f69debfd81abacf0384511"
         },
         "references/CP-4A_RUNBOOK.md": {
           "bytes": 11568,
@@ -788,8 +790,8 @@
           "sha256": "0695f3917d43bba80aafe5e4d29045afbd00acbefd6ad55b3e40913141328cf8"
         },
         "references/CP-4_RUNBOOK.md": {
-          "bytes": 28060,
-          "sha256": "abe96a72629686818d5697fbf7a9ccedaf90c3f6d80ca8c46fa3dd27b461ad57"
+          "bytes": 18750,
+          "sha256": "14f832139c88f049eda3093f37083f1c936db127f992a0420e1191e6310bf691"
         },
         "references/CP-4_SCHEMA_REFERENCE.md": {
           "bytes": 4237,
@@ -804,12 +806,12 @@
           "sha256": "592fff340b5701ef3cf536364860ea480e5c30398a2e912f03361436b3bd0824"
         },
         "references/REF_CP-4B_STEPS.md": {
-          "bytes": 20377,
-          "sha256": "66cc95e7007d279caf6f97729c3e40ec0d8745c777ed588054cd388c832f3794"
+          "bytes": 20232,
+          "sha256": "150c3615d327afabf401816f272455f48870636ce28213fb81f5ffede45aa2a7"
         },
         "references/REF_CP-4_STEPS.md": {
-          "bytes": 45530,
-          "sha256": "3742f5e432d657ac38ed49005e3d6bd553db56740c950ca3326787c90f402d0e"
+          "bytes": 35561,
+          "sha256": "b199ef1327407b87ef5a12493be758a0f9a1b2e2cc62012ef39b94e2f402f2d4"
         },
         "scripts/completeness_check.py": {
           "bytes": 17807,
@@ -1447,8 +1449,8 @@
           "sha256": "109e4978940130fc8d7b9fd50cf6beb43dcc4d77a4e94a60ada8e3849f98f8a7"
         },
         "references/CREDIT_OS_V_MODULE_CATALOG_v2.json": {
-          "bytes": 72167,
-          "sha256": "e6a048813b07977144a8faa75d27e059c5b50098febd1b2e7f917987c946570c"
+          "bytes": 72549,
+          "sha256": "e7c512ce7f35da1aa0df15128fdb74c62573135be4dd6356a7b6846c2bc70795"
         },
         "references/CREDIT_OS_V_NUMBERED_UX_v2.md": {
           "bytes": 1197,
@@ -1530,8 +1532,8 @@
     }
   ],
   "source_hashes": {
-    "deployed_baseline": "4572210267eb6df248fbbe77830bf02e1d3c071fe319bad0f77e3f9f39f3a0dd",
+    "deployed_baseline": "682dc54e242f8e27202327e22d2628f7b1c754ad4823b21c1227440909bd6689",
     "deployed_child_schema_registry": "6b1766e5698632e277ede71037bee2fcd3e02b726c43b76fc4fe0f8b47c5ef48",
-    "deployed_manifest": "1e4ca1ec02c43efd096915a56d4e0aad6525ffe5babdce8ee0d01f31a7fb3823"
+    "deployed_manifest": "e9ada5a377048851416c8f031a91cd5dc521529c0c8a2877aac5a797b1777d6b"
   }
 }

@@ -10,16 +10,70 @@ output mode; the host owns retry policy (`max_retries=0`).
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
+from ..config import Settings
 from .provider import AgentError, ProviderBlock, ProviderMessage, ProviderRequest, ProviderUsage
+from .provider import (
+    ProviderIdentity,
+    ProviderQualification,
+    installed_dependencies,
+    methodology_binding,
+    parameter_context_digest,
+)
 from .budget import PROVIDER_TIMEOUT_SECONDS
 
 
+ADAPTER_VERSION = "caos.anthropic.v1"
+
+
 class AnthropicProvider:
-    def __init__(self, api_key: str, model: str) -> None:
+    def __init__(
+        self,
+        api_key: str,
+        model: str,
+        *,
+        qualification: ProviderQualification | None = None,
+        methodology_root: Path | None = None,
+    ) -> None:
         if not api_key:
             raise AgentError("AGENT_PROVIDER_UNAVAILABLE", "ANTHROPIC_API_KEY is not configured")
+        self.model = model
+        context_digest = parameter_context_digest(
+            provider_name="anthropic",
+            model=model,
+            provider_version=None,
+            adapter_version=ADAPTER_VERSION,
+            runtime_dependencies=installed_dependencies("langchain-anthropic", "anthropic"),
+            transport={"mode": "anthropic-messages"},
+            counting={"mode": "provider-count-tokens"},
+        )
+        qualification_fields: dict[str, str | None] = {
+            "qualification_record_id": None,
+            "qualification_record_digest": None,
+            "qualification_expires_at": None,
+        }
+        status = "unqualified"
+        if qualification is not None:
+            build_id, manifest_digest = methodology_binding(methodology_root or Settings().deploy_v_root)
+            qualification.validate_binding(
+                provider_name="anthropic", model=model, provider_version=None,
+                adapter_version=ADAPTER_VERSION,
+                parameter_context_digest=context_digest, methodology_build_id=build_id,
+                methodology_manifest_digest=manifest_digest,
+            )
+            qualification_fields = {
+                "qualification_record_id": qualification.record_id,
+                "qualification_record_digest": qualification.record_digest,
+                "qualification_expires_at": qualification.expires_at,
+            }
+            status = "qualified"
+        self.identity = ProviderIdentity(
+            provider_name="anthropic", model=model, provider_version=None,
+            adapter_version=ADAPTER_VERSION, parameter_context_digest=context_digest,
+            qualification_status=status, **qualification_fields,
+        )
         from langchain_anthropic import ChatAnthropic
 
         # §12.18 adapter pins: the host owns retries, streaming is disabled,
@@ -33,19 +87,45 @@ class AnthropicProvider:
             cache=False,
             default_request_timeout=PROVIDER_TIMEOUT_SECONDS,
         )
-        self.model = model
+        self._closed = False
+
+    async def aclose(self) -> None:
+        if self._closed:
+            return
+        first_error = None
+        try:
+            await self.chat._async_client.close()
+        except BaseException as exc:
+            first_error = exc
+        try:
+            self.chat._client.close()
+        except BaseException as exc:
+            if first_error is None:
+                first_error = exc
+        if first_error is not None:
+            raise first_error
+        # ChatAnthropic caches its raw httpx clients process-wide. Once this
+        # adapter has closed both, do not let a later adapter inherit those
+        # closed cache entries.
+        from langchain_anthropic._client_utils import (
+            _get_default_async_httpx_client,
+            _get_default_httpx_client,
+        )
+
+        _get_default_async_httpx_client.cache_clear()
+        _get_default_httpx_client.cache_clear()
+        self._closed = True
 
     def _payload(self, request: ProviderRequest) -> dict[str, Any]:
-        from .provider import READ_EVIDENCE_TOOL
-
         payload: dict[str, Any] = {
             "model": self.model,
             "system": request.system,
             "messages": [self._wire_message(message) for message in request.messages],
             "output_config": {"format": {"type": "json_schema", "schema": request.schema}},
         }
-        if request.tools_enabled:
-            payload["tools"] = [READ_EVIDENCE_TOOL]
+        tools = request.effective_tools()
+        if tools:
+            payload["tools"] = list(tools)
             payload["tool_choice"] = {"type": "auto", "disable_parallel_tool_use": True}
         if request.max_tokens is not None:
             payload["max_tokens"] = request.max_tokens
@@ -96,4 +176,6 @@ class AnthropicProvider:
                 output_tokens=getattr(usage, "output_tokens", None),
             ),
             request_id=getattr(response, "_request_id", None),
+            observed_model=getattr(response, "model", None),
+            observed_provider_version=getattr(response, "provider_version", None),
         )
