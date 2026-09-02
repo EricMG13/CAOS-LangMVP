@@ -126,7 +126,7 @@ Consolidation note: where §6 conflicts with §10/§11/§12 (output Σ vs Σ+max
 
 ### 12.A Pin, digest, and state discipline
 
-1. **Digest-preimage meta-rule.** Every digest preimage is an exact pinned projection — fields × order × time-source — implemented once per record type and shared by the writer and every later verifier. Digests are carried outside the digested blob; preimage = record minus the per-type exclusion set ({plan_digest}; snapshot {digest, id, previous_snapshot_id}; …). Optional keys are absent, never null. Golden tests: compile → checkpoint round-trip → re-assert passes; one-byte mutation fails.
+1. **Digest-preimage meta-rule.** Every digest preimage is an exact pinned projection — fields × order × time-source — implemented once per record type and shared by the writer and every later verifier. Digests are carried outside the digested blob; preimage = record minus the per-type exclusion set ({plan_digest}; snapshot {digest, id}; …). A snapshot binds `previous_snapshot_id` because that chain edge selects the prior model authority for Distressed overlays. Optional keys are absent, never null. Golden tests: compile → checkpoint round-trip → re-assert passes; one-byte mutation fails.
 2. **State is JSON-native plain data only** (str/int/float/bool/None/list/dict). No Pydantic models, tuples, datetimes, Decimals, or dataclasses in channel values; models exist only inside node bodies. The plan blob is deepcopied at gate exit and treated read-only. CI round-trips every state field through JsonPlusSerializer against BOTH savers asserting equality and recursive type identity. `durability="sync"` on gate and finalize supersteps.
 3. **Unicode boundary.** Every string that can enter pinned state or events is validated at the API boundary: must UTF-8-encode, lone surrogates rejected, NFC-normalized — before any pin is computed.
 4. **Single time authority.** The only timestamp below the pin is the pinned run `created_at` (microsecond-truncated ISO); `reporting_period`, analysis dates, and filenames are slices of it; nodes never call the clock for artifact content. Snapshot `accepted_at` is the recorded exception (snapshot digests are integrity-only, never content addresses). Test: mocked day-later clock reproduces identical artifact digests.
@@ -142,7 +142,7 @@ Consolidation note: where §6 conflicts with §10/§11/§12 (output Σ vs Σ+max
 8. **complete_node semantics.** (run_id, module_id, input_fingerprint) is a unique key enforced at commit with validate-then-replace arbitration: existing valid artifact → discard candidate, relink old id; existing invalid → delete and insert fresh id; final candidate re-validated. The relink path emits byte-identical write payloads (ids from the store lookup, never regenerated). Completion markers (completed_modules, phase) commit in the same transaction as artifact link/relink. All three branches tested.
 9. **Error taxonomy is contract.** Store failure codes are a typed enum with the exact legacy strings; in evidence reads, authority checks (case/set/withdrawn) precede block-existence checks — AGENT_AUTHORITY_MISMATCH before AGENT_OUTPUT_INVALID; the adversarial suite asserts which code each refusal carries. Agent-module failures surface at run level as CANONICAL_GENERATION_FAILED with the specific code in the terminal attempt row.
 10. **Citation contract = delivered-evidence exact set.** Inside the read_evidence tool: ledger charge → returned-set update → return is one ordered unit; a ceiling-rejected read leaves no expectation; final validation requires evidence_refs to equal the delivered set exactly.
-11. **Repair and recorder rules.** Repairable iff ValueError-family raised by validate; the repair turn is tool-less; repair text ≤ 1,500 chars; a max_tokens stop-reason is immediate AGENT_OUTPUT_INVALID and does not consume the repair. Attempt recorder: scalar allowlist with str[:200], lists only ≤50 items × ≤160-char strings, kind[:40]; terminal rows are cap-exempt (append then [-100:] trim) and recorded only after provider interaction; non-terminal rows fail closed at 100; every row snapshots the digests in force at write time.
+11. **Repair and recorder rules.** Repairable iff ValueError-family raised by validate; the repair turn is tool-less; repair text ≤ 1,500 chars; a max_tokens stop-reason is immediate AGENT_OUTPUT_INVALID and does not consume the repair. Attempt recorder: scalar allowlist with str[:200], lists only ≤50 items × ≤160-char strings, kind[:40]; terminal rows are cap-exempt and recorded only after provider interaction; the cap and terminal ring are superseded by §14.7; every row snapshots the digests in force at write time.
 12. **Reservation semantics.** Canonical rules only: reserve persists the inflight digest before create; a timeout retry requires inflight == digest and is budget-free; reconcile adjusts to actuals and clears inflight; an unresolved inflight on resume is terminal budget-exceeded. CP-DR's divergent double-charging retry semantics do not port; affected re-hosted rows adjust with one-line justifications.
 13. **Finalization prepay exception.** Terminal commits are prepaid at the fixed 5.0s allowance and bounded by a monotonic deadline enforced inside the store transaction (TimeoutError → budget-exceeded, rolled back).
 
@@ -194,7 +194,7 @@ Consolidation note: where §6 conflicts with §10/§11/§12 (output Σ vs Σ+max
 | Provider concurrency slots | 2 (non-blocking, typed denial) | provider semaphore | budget/constants.py | test_provider_slots |
 | Evidence read block_ids per call | 1–50 unique | domain.py read_evidence | evidence tool | test_read_evidence_bounds |
 | Evidence bytes measure | len(json.dumps(result, sort_keys=True)) — identical serialization to the tool_result | domain.py:1447, provider.py:412 | shared function | test_evidence_bytes_identity |
-| Attempt caps | non-terminal fail at 100; terminal [-100:] ring | domain.py:1359-1376 | recorder | test_attempt_recorder |
+| Attempt caps | legacy 100; superseded by §14.7 | domain.py:1359-1376 | recorder | test_attempt_recorder |
 | Repair text limit | 1,500 chars | provider.py:437 | loop | test_repair_rules |
 | Max active jobs (admission) | 20, derived by COUNT(non-terminal RUNNING executions); interrupt-paused threads hold no slot | store.py MAX_ACTIVE_JOBS | admission gate | test_admission_ceiling |
 | Lease/heartbeat/fencing | replaced by: per-thread locks + advisory lock + execution epoch WHERE-predicate on every ledger/event/artifact write + resume tickets | store.py, domain.py | storage layer | test_epoch_fencing (re-hosts excluded fencing rows) |
@@ -264,3 +264,98 @@ Consolidation note: where §6 conflicts with §10/§11/§12 (output Σ vs Σ+max
     commit never lands past the budget ceiling (the 174+10 contract, expressed
     as charge-then-commit rather than a literal deadline parameter). Suite:
     380 passed, 1 red (§13.10).
+
+## 14. Enterprise-testing amendments (2026-09-01, user approved — binding; wins over §§1–13 where they conflict)
+
+1. **The MVP qualification scope is six pathways.** Full Credit, Earnings
+   Update, Covenant & Refinancing, Relative Value, Distressed & Restructuring,
+   and Deep Research must pass their supported-depth contracts. The four-path
+   cut in §1 and `docs/SCOPING_PROPOSAL.md` is superseded. Deep Research keeps
+   its governed-brief and approval contract; this amendment does not invent an
+   unsupported screen depth.
+2. **Source documents are the sole analytical input.** Runtime ingestion is
+   user-upload only. EDGAR, filing fetch, peer discovery, web acquisition, and
+   implicit source retrieval remain prohibited. The host owns document
+   classification, source dispositions, route selection, pinning, and the
+   recovery journey.
+3. **Fixed prose is never deterministic analysis.** The placeholder
+   `SYSTEM_ANALYSIS` payload remains a development host control and cannot
+   authorize ordinary completion, acceptance, modelling, publication, or
+   qualification. A semantic module executes through the one qualified
+   provider binding at every supported depth. Host-deterministic execution is
+   limited to extraction, normalization, allowlisted calculations, validation,
+   canonicalization, rendering, and other operations whose result is fully
+   determined by pinned inputs.
+4. **CP-PARSE and CP-0 remain separate static graph nodes.** CP-PARSE owns the
+   preparation inventory and fidelity disposition; CP-0 owns analytical source
+   readiness. Both consume the host-built pinned source manifest and the
+   verified CP-0/CP-PARSE methodology authority. This preserves the existing
+   graph identity without treating a filename inventory as source-readiness
+   analysis.
+5. **Provider qualification follows effective execution policy.** Widening a
+   module or depth from fixed host control to provider execution changes the
+   parameter/context digest and invalidates earlier qualification records.
+   Enterprise startup still exposes exactly one current qualified Anthropic
+   binding and no picker or fallback.
+6. **Host controls are not candidate evidence.** Scripted providers, golden
+   outputs, and placeholder capabilities may prove orchestration and failure
+   boundaries only. A pathway is available for enterprise testing only after
+   its ordinary run, source coverage, model effect, deliverable, publication,
+   and reconstruction contracts pass. Live-model analytical qualification is
+   retained separately and fails closed when credentials, corpus bytes, answer
+   keys, or reviewer evidence are absent.
+7. **Enterprise route expansion changes two host ceilings.** Each module is
+   limited to 10 evidence reads, 873,814 returned bytes, and 200 distinct
+   evidence references (with 1–50 unique block IDs per read), so every delivered
+   set remains representable by the canonical schema. The attempt audit cap and
+   terminal ring are 256 records, with a test proving that this covers the upper
+   bound for every MVP pathway/depth including calculation, retry, repair, and
+   terminal rows. These values are included in the provider parameter-context
+   digest; changing them invalidates prior provider qualifications.
+8. **Methodology calculations have host-owned work-factor bounds.** The
+   recovery-waterfall calculator is limited to 100,000 case/claim/cost work
+   units before verified vendor code executes. The limit is part of the
+   provider parameter-context digest and rejects oversized valid JSON as
+   `METHODOLOGY_INPUT_INVALID`.
+9. **Confidence provenance is explicit.** The host validates bounds and
+   recomputes score arithmetic, but the lineage/finding/coverage counts remain
+   qualified-provider declarations until analyst acceptance. Every canonical
+   artifact labels that basis and states that analyst review is required; it
+   never represents those inputs as host-attested facts.
+10. **Analytical insufficiency is not malformed output.** A valid canonical
+    result with source gate `fail` or `partial` terminates immediately as
+    `SOURCE_EVIDENCE_INSUFFICIENT` or `SOURCE_EVIDENCE_RESTRICTED`; it does not
+    consume the single JSON-repair allowance or collapse into
+    `AGENT_OUTPUT_INVALID`.
+11. **The vendored Deploy V bundle is now maintained in-tree, and that is a
+    deviation — recorded here rather than left implicit.** Item 2's
+    supplied-only prohibition was applied by editing the vendored methodology
+    itself, not by wrapper or registry: CP-1C's peer-source hierarchy drops its
+    web-scrape tier and its declared default becomes
+    `{"peer_set":"supplied_or_document_disclosed","source_mode":"supplied_only"}`;
+    CP-4's `REF_CP-4_EDGAR` acquisition lane is deleted from `CP-4_RUNBOOK.md`
+    and `REF_CP-4_STEPS.md`; `CANON_SHARED.md`'s "Controlled Public-Web
+    Exception" becomes the "Supplied-Evidence Boundary". Sixteen files change,
+    build id `7fa967c4…` → `1912cb03…`, and the 307-file inventory and path set
+    are unchanged; the manifests are regenerated by
+    `caos/scripts/regenerate_deploy_v_integrity.py`.
+
+    This **supersedes** §12.27's parenthetical "the bundle is never edited" and
+    the identically worded standing rule under invariant 4 in `CLAUDE.md`. Both
+    must be amended rather than left asserting something untrue.
+
+    Invariant 4 itself is unchanged: authority is still the verified bundle,
+    still hashed on the bytes at use, and a run pinned to one build still never
+    executes under another. What changes is *who may issue a build* — this repo
+    may now, where previously only an upstream release could.
+
+    The cost is explicit. Regenerating the integrity manifest is part of a
+    bundle change, so the whole-tree pin in
+    `test_vendored_bundle_is_the_approved_unmodified_release` moves with every
+    such change and stops being independent evidence that the tree is
+    unmodified; it degrades to a consistency check. This dated entry, not that
+    test, is therefore the authority for the current bundle contents, and any
+    further bundle change requires its own entry. Where the sanctioned seam can
+    carry the behaviour instead — the wrapper's inert-phrase declaration, or a
+    registry field such as CP-1C's existing `source_mode` — it remains
+    preferred, because it leaves the pin meaningful.
