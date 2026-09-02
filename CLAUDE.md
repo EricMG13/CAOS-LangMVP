@@ -20,8 +20,15 @@ vacuously is wrong even if the suite stays green.
    checkpointed digests are expectations re-verified against the store.
 4. Methodology authority is the verified vendored bundle — integrity checked on
    the bytes at use. A run pinned to one build never executes under another.
-   The vendored bundle under `caos/server/caos/methodology/vendor/` is never
-   edited; behavior changes ride wrappers or registry entries.
+   Behavior changes ride wrappers or registry entries *where they can*: that
+   seam leaves the whole-tree pin meaningful and stays preferred. The bundle
+   under `caos/server/caos/methodology/vendor/` may be edited in-tree, but only
+   under a dated `DECISIONS.md` entry recording the change and regenerating the
+   manifests (`caos/scripts/regenerate_deploy_v_integrity.py`) — see §14.11,
+   which supersedes §12.27's "the bundle is never edited". Because a bundle
+   change moves the pin with it, that entry, not
+   `test_vendored_bundle_is_the_approved_unmodified_release`, is the authority
+   for what the tree should contain.
 5. Every gate where execution waits on a human is a digest-bound interrupt;
    approval binds the exact reviewed content (preview digest + input
    fingerprint). Single-actor releases (model Sign-Off) are store CAS
