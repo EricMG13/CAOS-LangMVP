@@ -493,3 +493,57 @@ Consolidation note: where §6 conflicts with §10/§11/§12 (output Σ vs Σ+max
     file and reconstruction path is the ordinary one. Host control proves
     orchestration only; the C22 pack and live-model qualification are
     external inputs.
+17. **Document-first intake (2026-09-02, Task 8, ETR-B01).** Supplied
+    documents are the only analytical input of the golden journey.
+    `POST /api/intake` is one strict multipart transaction (`files`, optional
+    `case_id`) served by `intake/service.py`, which orchestrates the existing
+    domain services and never another route. Admission is prepare-all then
+    admit-all: `sources/domain.py::prepare_upload` is the single-source
+    route's own check sequence split off from the store write (`ingest_upload`
+    composes the two, so the route and its tripwires do not move); any file
+    that fails refuses the whole pack with a typed `422` and one structured
+    finding per file, persisting nothing but a content-addressed vault blob
+    and an `intake.refused` audit row. `DomainStore.admit_intake` commits the
+    case (when new, with its membership and `case.created`), every source
+    row, one source-set version, `source.ingested` per source, the
+    `case_intakes` row and `intake.admitted` in one transaction, so no
+    partial, invisible or unaudited admission can exist. Host classification
+    (`sources/classify.py`) is deterministic and bounded: document type,
+    period, revision status, issuer candidate and text layer are read through
+    fixed signal tables over the first blocks and the filename; each value
+    carries its signals and a confidence, the wire labels the set
+    `host_classification`, and the UI shows them as machine suggestions.
+    Instructions in documents are inert because type and route depend on
+    structural signals — a form heading, a legal instrument, a brief that
+    validates against `ResearchBrief`, a workbook that parses against the
+    CP-3 template — never on imperative text. The route is Full Credit at
+    full depth unless the pack proves a narrower objective: a valid brief
+    file selects Deep Research (the brief is still the analyst's, supplied as
+    a file); a valid loan-universe workbook selects Relative Value and is
+    imported through `import_loan_source` so the gate pins it; a
+    restructuring instrument selects Distressed; an earnings-only pack
+    selects Earnings Update; a legal-only pack selects Covenant &
+    Refinancing. Case resolution never crosses membership: an explicit case
+    needs write standing (404 outsiders, 403 readers); otherwise the actor's
+    own cases are matched by normalized issuer and only an unambiguous match
+    resolves; mixed issuers (`INTAKE_ISSUER_AMBIGUOUS`) and a pack that
+    disagrees with the explicit case (`INTAKE_ISSUER_MISMATCH`) are refused.
+    Exact duplicates collapse to one source with both names on the manifest;
+    a same-name different-bytes pair is `INTAKE_SOURCE_CONFLICT`; a restated
+    document supersedes the original for its period and both stay admitted
+    and linked. A pack with no usable evidence stays admitted and returns
+    the typed `INTAKE_EVIDENCE_INSUFFICIENT` clarification with its next
+    action; dropping the missing document into the same case admits only
+    what is new and starts the run. An engine refusal leaves the pack
+    admitted in `execution_unavailable` with its typed code. The intake key
+    (actor, normalized issuer, sorted digests) makes a double submit return
+    the same intake and run; `GET /api/cases/{id}/intake` and
+    `cases.current_execution_id` are what refresh and restart read. The
+    frontend adds the reserved `.cases-intake` panel — a real multi-file
+    input behind its label plus a drop region, fenced by a local request
+    counter and the authority match, adopting the case then the run through
+    the reducer under the inert `intake` scope — and keeps the run console
+    as the one home for progress and acceptance; a completed intake run is
+    presented for review and never accepted on the analyst's behalf. Known
+    bound: the 32 MiB edge body cap limits one request; a larger pack is
+    admitted across intakes into the same case.

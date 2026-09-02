@@ -151,6 +151,15 @@ engine, the bundle, or the routes.
   Deep-Dive reads accepted artifacts; neither renders the compile form or the
   accept control. Run progress, compilation and acceptance stay in
   `/run-console/`.
+- The golden journey is document-first (Task 8, DECISIONS §14.17): the Cases
+  page's `.cases-intake` panel posts files and nothing else to
+  `POST /api/intake`; the server creates or resolves the case, admits every
+  file or none in one transaction, classifies the evidence, selects the route
+  and starts the run. Issuer, label, document types, periods, dispositions and
+  the route are served as labelled machine suggestions and never taken from
+  the browser or from document instructions. The create-case and compile
+  forms remain as advanced controls; a completed intake run is opened for
+  review in the run console and is never accepted on the analyst's behalf.
 - Visual language is established: dark institutional terminal, semantic color
   only, motion only for live state. `DESIGN.md` and `.impeccable.md` govern;
   inherit, don't reinvent.
