@@ -24,8 +24,9 @@ intake, Distressed and deliverable specs.
 ## Status
 
 Complete on the branch: every gate in "Commands and results" is green on the
-final code (the full backend suite row carries its own result), and a draft
-pull request to `main` carries the same table. Licensed market marks and
+final code (the full backend suite row carries its own result), and the draft
+pull request https://github.com/EricMG13/CAOS-LangMVP/pull/44 to `main` carries
+the same table. Licensed market marks and
 live-model qualification of every effect stay BLOCKED EXTERNAL (Open items).
 
 ## Design (decided before the first test)
