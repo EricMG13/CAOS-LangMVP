@@ -111,3 +111,60 @@ Red-first evidence for the behaviours this task added (each test was run and fai
 `::test_build_does_not_complete_ready_after_a_withdrawal_between_resolution_and_commit`,
 `test_methodology_execution.py::test_bond_work_factor_is_bounded_by_the_host_before_vendor_code_runs` → `10 failed, 9 passed` on the first run, all green after.
 The host-control provider's tests (`test_host_control_provider.py`) were written together with the module; their red state was the missing module, not a failing assertion.
+
+## After the rebase onto `origin/main` (43 commits ahead, 0 behind)
+
+The rebase stopped only on `run_sec_audit.py`, `CLAUDE.md` and `docs/QUALITY_LEDGER.csv`
+(the first replayed commit) and then repeatedly on the ledger CSV, which git
+treats as one hunk; every stop was resolved toward the branch's contracts,
+because the branch's API is what the audit and the ledger must describe. The
+Dockerfile keeps main's newer Python digest and the branch's pango packages;
+nightly keeps 3.14; the image gate keeps 310; CI keeps the host-control
+binding. Every gate was rerun on the rebased tree:
+
+```text
+python -m pytest caos/tests -q -p no:cacheprovider          → 945 passed, 2 skipped, 1 warning in 846.55s (0:14:06)
+python -m ruff check … --exclude …/vendor                    → All checks passed!
+python run_sec_audit.py                                      → {'audited_routes': 50, 'case_boundary_routes': 42, 'failures': 0}
+python docs/quality_ledger_coverage.py                       → routes checked: 45   product files: 242   features: 120 / documents every route and every product file
+CORPUS_FULL=1 python -m pytest caos/tests/test_corpus_pathways.py -q → 34 passed, 1 warning in 175.24s (0:02:55)
+cd caos/frontend && npm ci && npm run lint && npx tsc --noEmit && npm run test:unit && npm run build → all exit 0; unit: ℹ pass 116 / fail 0
+CAOS_DATA_DIR=<scratch> PORT=8765 CAOS_PROVIDER=host_control AGENT_EXECUTION_ENABLED=true ANTHROPIC_API_KEY="" python caos/server/dev.py
+  CAOS_URL=http://127.0.0.1:8765 npm run a11y            → exit 0 ({"routes":9,"viewports":6,"combinations":70,…})
+  CAOS_URL=http://127.0.0.1:8765 npm run test:workbench  → exit 0 ({"timing":{"domContentLoaded":65.9,"firstContentfulPaint":156},"caseRequests":1})
+```
+
+The workbench smoke failed once while the backend suite was saturating the
+machine, at `workbench-smoke.mjs:1099` (a focus-restoration wait after the
+dirty-draft dialog, an area main's last dozen commits tuned for timing); on a
+quiet machine it passes. That flakiness is main's frontend timing, not this
+task's change, and is noted for the browser-health loop.
+
+## Confidence review
+
+- `Engine.accept` now waits for the authority lock in a worker thread; the
+  route is `async def accept_run` and awaits it, and the model service uses no
+  event-loop API, so nothing in the accept path needs the loop thread.
+- `storage/models.py` imports the `sources` table from `storage/store.py`; the
+  store module does not import the model store, so no cycle.
+- The resolution memo is a `ContextVar` scoped to one `_resolve_snapshot` call
+  (nested resolutions share it); `sign_off` still resolves three times, so the
+  cost drops from 4–12 validations per snapshot to one per resolution, not to
+  one per request. Recorded as a follow-up in the plan delta for Task 9.
+- The CI browser job runs `run.py` on Python 3.12 with the host-control
+  binding; nothing this task added uses 3.13+ syntax, and the suite matrix
+  already covered 3.12.
+- The D8 provider's tests were written together with the module (their red
+  state was the missing module); the behavioural test drives EARNINGS_UPDATE
+  screen and FULL_CREDIT full through ordinary `start_run` and `accept`.
+- Not exercised here: PostgreSQL (the two optional tests skipped without
+  `CAOS_TEST_POSTGRES_URL`), so the `ModelStore` DDL-on-every-boot branch and
+  the statement-level residual of the publication CAS remain Task 12's.
+
+## BLOCKED EXTERNAL
+
+- Live-model qualification of any cell (credentials, answer keys, reviewer
+  evidence): Tasks 11 and 13.
+- The C21 stressed pack, C22 research pack and licensed market marks: Task 11.
+- PostgreSQL two-connection evidence for acceptance and publication races:
+  Task 12.
