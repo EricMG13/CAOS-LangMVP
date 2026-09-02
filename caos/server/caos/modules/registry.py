@@ -26,6 +26,9 @@ class ModuleSpec:
     calculators: tuple[str, ...] = ()
     derived_projections: tuple[str, ...] = ()
     source_mode: str = "supplied_only"
+    # A module whose substantive work waits on a digest-bound human approval of
+    # the host-proposed plan (invariant 5); CP-DR only (DECISIONS §14.16).
+    plan_approval: bool = False
 
     @property
     def authority_digest(self) -> str:
@@ -56,6 +59,8 @@ GOLDEN_AUTHORITY_DIGESTS = {
     "CP-5": "034e0f7b00010b9ca756cbc567d629bef05809a4e5f8b059b9a3735d7a35d46f",
     "CP-6": "0c4516de061b4785684269b8783ab7555a6b170561b780466a33723d77039146",
     "CP-L10": "bf9a6248b361134ce691cbaaff5b7c1a3078c5d93705d89f04d2e2b56f323915",
+    # Recorded 2026-09-02 (Task 7) over the same pinned build.
+    "CP-DR": "76e990f44a773b0ca718576d96c591e83cfcce5b2aaeea03af80b4f1456c254b",
 }
 
 
@@ -206,6 +211,13 @@ MODULES: dict[str, ModuleSpec] = {
             "references/REF_CP-6A_STEPS.md",
         ),
         max_output_tokens=24_000,
+    ),
+    "CP-DR": ModuleSpec(
+        "CP-DR", "agent", skill_slug="cp-dr-deep-research",
+        reference_files=("references/REF_CP-DR_STEPS.md", "references/CP-DR_DeepResearch.schema.md"),
+        max_output_tokens=32_000,
+        source_mode="supplied_only",  # invariant 1: no web, email, filesystem or network evidence
+        plan_approval=True,
     ),
     "CP-L10": ModuleSpec(
         "CP-L10", "agent", skill_slug="cp-l10-financial-change-screen",
