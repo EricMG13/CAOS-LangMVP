@@ -77,7 +77,10 @@ jobs:
         run: npx playwright install --with-deps chromium
       - name: Start combined app
         run: |
-          nohup env ANTHROPIC_API_KEY="" python caos/server/run.py > server.log 2>&1 &
+          # Same binding as ci.yml's browser job: the keyless gates need the
+          # development-only host-control provider, which run.py's production
+          # environment refuses — so the gates run dev.py.
+          nohup env ANTHROPIC_API_KEY="" CAOS_PROVIDER=host_control AGENT_EXECUTION_ENABLED=true python caos/server/dev.py > server.log 2>&1 &
           for i in $(seq 1 30); do
             curl -sf http://127.0.0.1:8000/api/health && exit 0
             sleep 1

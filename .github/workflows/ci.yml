@@ -117,8 +117,9 @@ jobs:
         run: |
           # Every route is provider-backed; the keyless browser gates bind the
           # development-only host-control provider (DECISIONS §14 D8), which is
-          # orchestration proof, never analysis.
-          nohup env ANTHROPIC_API_KEY="" CAOS_PROVIDER=host_control AGENT_EXECUTION_ENABLED=true python caos/server/run.py > server.log 2>&1 &
+          # orchestration proof, never analysis. That binding is production-refused,
+          # so the gates run dev.py — run.py is the production entrypoint only.
+          nohup env ANTHROPIC_API_KEY="" CAOS_PROVIDER=host_control AGENT_EXECUTION_ENABLED=true python caos/server/dev.py > server.log 2>&1 &
           for i in $(seq 1 30); do
             curl -sf http://127.0.0.1:8000/api/health && exit 0
             sleep 1
