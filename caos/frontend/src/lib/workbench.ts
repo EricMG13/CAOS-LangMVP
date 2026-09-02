@@ -73,6 +73,9 @@ export type CaseRecord = {
   available_pathways?: string[];
   deep_research_available?: boolean;
   deep_research_unavailable_reason?: string | null;
+  // The case's latest document-first intake; the Cases page reads the record
+  // only when this names one, never by probing for a 404.
+  latest_intake_id?: string | null;
 };
 
 export type Workflow = {
