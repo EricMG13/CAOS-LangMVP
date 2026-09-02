@@ -9,6 +9,7 @@ payload; analyst text with a formula prefix is neutralized to a literal.
 
 from __future__ import annotations
 
+import html
 import io
 import math
 import os
@@ -174,12 +175,23 @@ def _unicode_pdf(pages_of_lines: list[list[str]]) -> bytes:
         for index, lines in enumerate(pages_of_lines):
             source = workspace / f"page-{index:04d}.txt"
             rendered = workspace / f"page-{index:04d}.pdf"
-            source.write_text("\n".join(lines), encoding="utf-8")
+            # Pango markup so the font's standard ligatures can be switched off:
+            # a Linux sans shapes "fi"/"fl" into one glyph and the PDF then
+            # extracts U+FB01, so the shipped text would no longer equal the
+            # canonical document byte for byte (and "Falsifiers" would not be
+            # searchable). html.escape covers Pango's markup metacharacters.
+            source.write_text(
+                '<span font_features="liga=0, clig=0, dlig=0">'
+                + html.escape("\n".join(lines), quote=False)
+                + "</span>",
+                encoding="utf-8",
+            )
             try:
                 subprocess.run(
                     [
                         executable,
                         "--no-display",
+                        "--markup",
                         "--font=sans 10",
                         "--margin=54",
                         "--width=504",

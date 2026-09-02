@@ -1334,7 +1334,7 @@ def test_downgraded_global_reader_loses_filing_authority_despite_case_standing(c
 def test_canonical_document_is_the_only_cross_format_export_source(service, store):
     case, source, _ = seed_ready_case(service, store)
     governed_tail = "END-OF-GOVERNED-NARRATIVE"
-    unicode_marker = "“Downside”—£95m 债务重组"
+    unicode_marker = "“Downside”—£95m 债务重组 fi fl ffi ffl"  # ligature pairs must extract verbatim
     long_narrative = f"Committee-ready analysis {unicode_marker} {'x' * 140} {governed_tail}"
     model = seed_model(service, case, outputs={
         "BASE": {"FY2027": {"total_leverage": 3.8}},
