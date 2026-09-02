@@ -156,6 +156,24 @@ rv_universes = sa.Table(
     sa.Column("created_at", sa.String, nullable=False),
 )
 
+# Document-first intake (Task 8): one row per submitted pack — the manifest,
+# the host route decision, the suggestions, the run it started and any typed
+# clarification — written in the same transaction as the sources it admitted,
+# so refresh and restart read exactly what the analyst was shown.
+case_intakes = sa.Table(
+    "case_intakes", metadata,
+    sa.Column("id", sa.String, primary_key=True),
+    sa.Column("case_id", sa.String, sa.ForeignKey("cases.id"), nullable=False),
+    sa.Column("intake_key", sa.String, nullable=False),
+    sa.Column("status", sa.String, nullable=False),
+    sa.Column("record", sa.JSON, nullable=False),
+    sa.Column("run_id", sa.String),
+    sa.Column("refusal", sa.JSON),
+    sa.Column("created_by", sa.String, nullable=False),
+    sa.Column("created_at", sa.String, nullable=False),
+    sa.Column("updated_at", sa.String, nullable=False),
+)
+
 audit_events = sa.Table(
     "audit_events", metadata,
     sa.Column("seq", sa.Integer, primary_key=True, autoincrement=True),
@@ -428,6 +446,121 @@ class DomainStore:
         except IntegrityError as exc:
             raise ValueError("source content already active") from exc
         return {**_public_source(saved), "source_set": source_set}
+
+    # -- document-first intake (Task 8) ----------------------------------------
+
+    def admit_intake(
+        self,
+        *,
+        actor: str,
+        case_id: str | None,
+        new_case: dict[str, Any] | None,
+        prepared: list[dict[str, Any]],
+        intake_key: str,
+        status: str,
+        record: dict[str, Any],
+        refusal: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Admit a whole pack in ONE transaction: the case when it is new (with
+        its creator's membership and `case.created`), every source row, one
+        source-set version carrying all of them, one `source.ingested` audit row
+        per source, the intake row, and `intake.admitted`. Nothing here can be
+        half-done: a duplicate or a failing insert rolls the whole pack back."""
+        intake_id = new_id("intk")
+        now = now_iso()
+        try:
+            with _AUTHORITY_MUTATION_LOCK, self.engine.begin() as conn:
+                if case_id is None:
+                    if new_case is None:
+                        raise ValueError("intake needs a case or a new case")
+                    case_id = new_id("case")
+                    conn.execute(cases.insert().values(
+                        id=case_id, name=new_case["name"], issuer=new_case["issuer"],
+                        sector=new_case["sector"], created_by=actor, created_at=now,
+                    ))
+                    conn.execute(case_members.insert().values(case_id=case_id, subject=actor, role="ANALYST"))
+                    self._audit(conn, "case.created", actor, case_id=case_id)
+                admitted_ids: list[str] = []
+                for source in prepared:
+                    saved = {
+                        **source, "id": source.get("id") or new_id("src"), "case_id": case_id,
+                        "created_by": actor, "created_at": now, "withdrawn": False,
+                    }
+                    source["id"] = saved["id"]
+                    duplicate = conn.execute(
+                        sa.select(sources.c.id).where(
+                            sources.c.case_id == case_id,
+                            sources.c.sha256 == saved["sha256"],
+                            sources.c.withdrawn.is_(False),
+                        )
+                    ).first()
+                    if duplicate:
+                        raise ValueError("source content already active")
+                    conn.execute(sources.insert().values(**{k: saved.get(k) for k in (
+                        "id", "case_id", "filename", "media_type", "bytes", "sha256",
+                        "vault_path", "blocks", "created_by", "created_at", "withdrawn", "source_kind",
+                    )}))
+                    admitted_ids.append(saved["id"])
+                    self._audit(conn, "source.ingested", actor, case_id=case_id, source_id=saved["id"], sha256=saved["sha256"])
+                if admitted_ids:
+                    self._next_source_set(conn, case_id, actor, add=admitted_ids, remove=set())
+                conn.execute(case_intakes.insert().values(
+                    id=intake_id, case_id=case_id, intake_key=intake_key, status=status,
+                    record=record, run_id=None, refusal=refusal, created_by=actor,
+                    created_at=now, updated_at=now,
+                ))
+                self._audit(conn, "intake.admitted", actor, case_id=case_id, intake_id=intake_id,
+                            source_count=len(admitted_ids))
+        except IntegrityError as exc:
+            raise ValueError("source content already active") from exc
+        return self.get_intake(intake_id)  # type: ignore[return-value]
+
+    def refuse_intake(self, actor: str, code: str, *, case_id: str | None) -> None:
+        """A refused pack persists nothing but its audit row; the case, if any,
+        is untouched."""
+        with self.engine.begin() as conn:
+            self._audit(conn, "intake.refused", actor, case_id=case_id, code=code)
+
+    def update_intake(self, intake_id: str, **changes: Any) -> dict[str, Any] | None:
+        allowed = {"status", "run_id", "refusal", "record"}
+        bad = set(changes) - allowed
+        if bad:
+            raise ValueError(f"unsupported intake update: {sorted(bad)}")
+        with self.engine.begin() as conn:
+            conn.execute(sa.update(case_intakes).where(case_intakes.c.id == intake_id)
+                         .values(**changes, updated_at=now_iso()))
+        return self.get_intake(intake_id)
+
+    def record_intake_run(self, intake_id: str, actor: str, *, run_id: str, pathway: str) -> dict[str, Any] | None:
+        with self.engine.begin() as conn:
+            case_id = conn.execute(sa.select(case_intakes.c.case_id).where(case_intakes.c.id == intake_id)).scalar()
+            conn.execute(sa.update(case_intakes).where(case_intakes.c.id == intake_id)
+                         .values(status="started", run_id=run_id, refusal=None, updated_at=now_iso()))
+            self._audit(conn, "intake.run_started", actor, case_id=case_id, intake_id=intake_id,
+                        run_id=run_id, pathway=pathway)
+        return self.get_intake(intake_id)
+
+    def get_intake(self, intake_id: str) -> dict[str, Any] | None:
+        with self.engine.connect() as conn:
+            row = conn.execute(sa.select(case_intakes).where(case_intakes.c.id == intake_id)).mappings().first()
+        return dict(row) if row else None
+
+    def latest_intake(self, case_id: str) -> dict[str, Any] | None:
+        with self.engine.connect() as conn:
+            row = conn.execute(
+                sa.select(case_intakes).where(case_intakes.c.case_id == case_id)
+                .order_by(case_intakes.c.created_at.desc(), case_intakes.c.id.desc()).limit(1)
+            ).mappings().first()
+        return dict(row) if row else None
+
+    def find_intake_by_key(self, actor: str, intake_key: str) -> dict[str, Any] | None:
+        with self.engine.connect() as conn:
+            row = conn.execute(
+                sa.select(case_intakes).where(
+                    case_intakes.c.intake_key == intake_key, case_intakes.c.created_by == actor,
+                ).order_by(case_intakes.c.created_at.desc()).limit(1)
+            ).mappings().first()
+        return dict(row) if row else None
 
     def withdraw(self, case_id: str, source_id: str, actor: str) -> dict[str, Any] | None:
         with _AUTHORITY_MUTATION_LOCK, self.engine.begin() as conn:

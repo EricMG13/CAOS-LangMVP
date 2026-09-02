@@ -92,6 +92,7 @@ KEY_SETS = {
         "deep_research_available": None,
         "deep_research_unavailable_reason": None,
         "pathway_fit": {"fit": None, "message": None},
+        "latest_intake_id": None,
     },
     "source": {
         "id": None,
@@ -228,6 +229,9 @@ AUDIT_ACTION_DETAILS = {
     "note.promoted": {"case_id": "case", "note_id": "note", "source_id": "source"},
     "assumption.created": {"case_id": "case", "assumption_id": "assumption"},
     "rv.universe_versioned": {"case_id": "case", "version": 1},
+    "intake.admitted": {"case_id": "case", "intake_id": "intake", "source_count": 3},
+    "intake.run_started": {"case_id": "case", "intake_id": "intake", "run_id": "run", "pathway": "FULL_CREDIT"},
+    "intake.refused": {"case_id": None, "code": "INTAKE_ADMISSION_REFUSED"},
 }
 
 FULL_RUNTIME = {
@@ -760,6 +764,8 @@ def test_openapi_refs_a_named_component_schema_for_every_2xx_json_response(clien
         "VisualRecipeValidationResponse",
         "ResearchStateResponse",
         "ResearchPlanResponse",
+        "IntakeResponse",
+        "IntakeDocumentResponse",
     ],
 )
 def test_openapi_named_response_schemas_forbid_additional_properties(client, schema_name):

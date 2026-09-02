@@ -326,6 +326,10 @@ def create_app(*, settings: Settings, store: DomainStore, engine: Any) -> FastAP
     def identity(request: Request):
         return identity_from_request(request, settings)
 
+    from ..intake.service import MAX_INTAKE_FILES, IntakeRefused, IntakeService
+
+    intake_service = IntakeService(store=store, engine=engine, settings=settings)
+
     @app.get("/api/health", response_model=wire.HealthResponse)
     def health(response: Response) -> dict[str, Any]:
         # Liveness is "this answered at all"; readiness is the three booleans.
@@ -373,6 +377,7 @@ def create_app(*, settings: Settings, store: DomainStore, engine: Any) -> FastAP
             "deep_research_available": research_available,
             "deep_research_unavailable_reason": research_reason,
             "pathway_fit": {"fit": fit["fit"], "message": fit["message"]},
+            "latest_intake_id": (store.latest_intake(case["id"]) or {}).get("id"),
         }
 
     @app.post("/api/cases", status_code=201, response_model=wire.CaseDetailResponse)
@@ -426,6 +431,55 @@ def create_app(*, settings: Settings, store: DomainStore, engine: Any) -> FastAP
             saved = await ingest_upload(store, Vault(settings), case_id, who.subject,
                                         upload, max_bytes=settings.max_source_bytes)
         return _wire_source(saved, source_set=saved["source_set"])
+
+    # -- document-first intake (Task 8) ----------------------------------------
+
+    _INTAKE_RECORD_KEYS = ("suggestions", "route", "coverage", "documents")
+
+    def _wire_intake(intake: dict[str, Any]) -> dict[str, Any]:
+        case = store.get_case(intake["case_id"])
+        if case is None:
+            raise HTTPException(status_code=404, detail="case not found")
+        run = engine.get_run(intake["run_id"]) if engine is not None and intake.get("run_id") else None
+        return {
+            "intake_id": intake["id"],
+            "case_id": intake["case_id"],
+            "status": intake["status"],
+            "created_at": intake["created_at"],
+            "case": _wire_case(case),
+            "run": _wire_run(run) if run is not None else None,
+            **{key: intake["record"][key] for key in _INTAKE_RECORD_KEYS},
+            "refusal": intake.get("refusal"),
+        }
+
+    @app.post("/api/intake", status_code=201, response_model=wire.IntakeResponse,
+              response_model_exclude_unset=True, responses={200: {"model": wire.IntakeResponse}})
+    async def submit_intake(request: Request, response: Response) -> dict[str, Any]:
+        """One strict multipart transaction: `files` (one or more) and an
+        optional `case_id`. Admission stays in prepare_upload; the service
+        orchestrates the domain services and never another route."""
+        who = identity(request)
+        require_role(who, "ANALYST", "APPROVER", "ADMIN")
+        async with request.form(max_files=MAX_INTAKE_FILES + 24, max_fields=8) as form:
+            uploads = [item for item in form.getlist("files") if not isinstance(item, str)]
+            raw_case_id = form.get("case_id")
+            case_id = str(raw_case_id).strip() if isinstance(raw_case_id, str) and raw_case_id.strip() else None
+            if case_id is not None:
+                require_case(store, case_id, who, write=True)
+            try:
+                record, created = await intake_service.submit(actor=who.subject, uploads=uploads, case_id=case_id)
+            except IntakeRefused as exc:
+                raise HTTPException(status_code=422, detail=exc.detail()) from exc
+        response.status_code = 201 if created else 200
+        return _wire_intake(record)
+
+    @app.get("/api/cases/{case_id}/intake", response_model=wire.IntakeResponse, response_model_exclude_unset=True)
+    def latest_intake(case_id: str, request: Request) -> dict[str, Any]:
+        require_case(store, case_id, identity(request))
+        record = store.latest_intake(case_id)
+        if record is None:
+            raise HTTPException(status_code=404, detail="intake not found")
+        return _wire_intake(record)
 
     def visible_source(case_id: str, source_id: str, request: Request) -> dict[str, Any]:
         require_case(store, case_id, identity(request))
