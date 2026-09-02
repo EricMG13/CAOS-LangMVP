@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { chromium, request } from "playwright";
 
 const baseURL = process.env.CAOS_URL || "http://127.0.0.1:8000";
@@ -177,8 +178,15 @@ try {
   let expectedPreviewValidationFailures = 0;
   let expectedSignOffConflicts = 0;
   let expectedReportConflicts = 0;
+  let expectedIntakeRefusals = 0;
   page.on("console", (message) => {
     if (message.type() !== "error") return;
+    if (expectedIntakeRefusals > 0
+      && message.location().url.endsWith("/api/intake")
+      && /^Failed to load resource: the server responded with a status of 422 \(Unprocessable (?:Entity|Content)\)$/.test(message.text())) {
+      expectedIntakeRefusals -= 1;
+      return;
+    }
     if (message.location().url === expectedNotFoundURL
       && message.text() === "Failed to load resource: the server responded with a status of 404 (Not Found)") {
       expectedNotFoundURL = "";
@@ -310,7 +318,7 @@ try {
     const url = new URL(window.location.href);
     return url.searchParams.get("case") === expectedCaseId && !url.searchParams.has("run");
   }, idleCase.id);
-  await page.getByText("No current execution. Select a purpose and depth to create an immutable plan.", { exact: true }).waitFor();
+  await page.getByText("No current execution. Drop documents on Cases to start analysis, or compile a route here.", { exact: true }).waitFor();
   // The URL settling correctly is not enough: a stale route replay can re-attach the
   // previous issuer's run and then self-correct, which is still a wrong read.
   const boundaryUrlWrites = await page.evaluate(([boundaryCaseId, staleRunId]) => {
@@ -421,6 +429,120 @@ try {
   await assert.doesNotReject(() => paletteTrigger.evaluate((element) => {
     if (document.activeElement !== element) throw new Error("focus did not return to the palette trigger");
   }));
+
+  // --- Document-first intake (Task 8; UX-001 to UX-020) ------------------------------
+  // The golden journey asks for nothing but files: no case form, no pathway, no
+  // depth, no model, no budget. The six route selections are data cases of this one
+  // journey, and a refused pack creates nothing.
+  const intakeDoc = (kind, issuer, options = {}) => {
+    const fy = options.fiscalYear ?? 2024;
+    const texts = {
+      annual: `${issuer}\nFORM 10-K\nANNUAL REPORT\nFor the fiscal year ended November 30, ${fy}\n${issuer} reports consolidated results for fiscal ${fy}.\nRevenue 1,160\nEBITDA 222\nTotal debt 3,400\n`,
+      quarterly: `${issuer}\nFORM 10-Q\nQUARTERLY REPORT\nFor the quarterly period ended August 31, ${fy + 1}\nThree months ended August 31, ${fy + 1}\nRevenue 310\nEBITDA 61\n`,
+      earnings: `${issuer} Reports Third Quarter ${fy + 1} Results\nEARNINGS RELEASE\nThree months ended August 31, ${fy + 1}\nAdjusted EBITDA 64\n`,
+      guidance: `${issuer}\nBUSINESS UPDATE AND GUIDANCE\nFull year ${fy + 1} outlook\nManagement forecast: adjusted EBITDA guidance of 250 to 260.\n`,
+      agreement: `CREDIT AGREEMENT\ndated as of March 15, 2023\namong ${issuer}, as Borrower,\nthe Lenders party hereto and the Administrative Agent.\nSection 6.10 Financial Covenants. Term Loan B. Revolving Credit Facility.\n`,
+      amendment: `AMENDMENT NO. 2 TO CREDIT AGREEMENT\ndated as of June 1, 2025\namong ${issuer}, as Borrower, and the Lenders.\nAmended and Restated Section 6.10.\n`,
+      restructuring: `${issuer}\nTRANSACTION SUPPORT AGREEMENT\nExchange offer for the senior unsecured notes; restructuring support agreement\nwith the ad hoc group of lenders. Forbearance through December 2025.\n`,
+      brief: JSON.stringify({ research_question: "How resilient is liquidity through the next refinancing?", decision_context: "Committee review of an existing position.", as_of_date: "2026-01-01", time_horizon: "12 months", must_answer: ["Nearest maturity"], exclusions: [] }),
+    };
+    const names = { annual: "10k-fy2024.txt", quarterly: "10q-q3.txt", earnings: "q3-earnings.txt", guidance: "guidance.txt", agreement: "credit-agreement.txt", amendment: "amendment-2.txt", restructuring: "tsa.txt", brief: "research-brief.json" };
+    return { name: `${issuer.split(" ")[0].toLowerCase()}-${names[kind]}`, mimeType: kind === "brief" ? "application/json" : "text/plain", buffer: Buffer.from(texts[kind]) };
+  };
+  const loanUniverseWorkbook = { name: "REF_CP-3_Sector_RV.xlsx", mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", buffer: readFileSync(new URL("../../tests/fixtures/documents/REF_CP-3_Sector_RV.xlsx", import.meta.url)) };
+  const intakeCases = [
+    { pathway: "FULL_CREDIT", issuer: `Goldenpack-${fixtureSuffix} Holdings`, docs: (issuer) => [intakeDoc("annual", issuer), intakeDoc("quarterly", issuer), intakeDoc("agreement", issuer)] },
+    { pathway: "EARNINGS_UPDATE", issuer: `Earningspack-${fixtureSuffix} Holdings`, docs: (issuer) => [intakeDoc("earnings", issuer), intakeDoc("guidance", issuer)] },
+    { pathway: "COVENANT_REFINANCING", issuer: `Legalpack-${fixtureSuffix} Holdings`, docs: (issuer) => [intakeDoc("agreement", issuer), intakeDoc("amendment", issuer)] },
+    { pathway: "RELATIVE_VALUE", issuer: `Marketpack-${fixtureSuffix} Holdings`, docs: (issuer) => [intakeDoc("annual", issuer), intakeDoc("quarterly", issuer), loanUniverseWorkbook] },
+    { pathway: "DISTRESSED_RESTRUCTURING", issuer: `Stresspack-${fixtureSuffix} Holdings`, docs: (issuer) => [intakeDoc("annual", issuer), intakeDoc("agreement", issuer), intakeDoc("restructuring", issuer)] },
+    { pathway: "DEEP_RESEARCH", issuer: `Researchpack-${fixtureSuffix} Holdings`, docs: (issuer) => [intakeDoc("annual", issuer), intakeDoc("quarterly", issuer), intakeDoc("brief", issuer)] },
+  ];
+  const listCases = async () => {
+    const response = await api.get("/api/cases");
+    const body = await response.json();
+    assert.ok(Array.isArray(body), `GET /api/cases answered ${response.status()}: ${JSON.stringify(body).slice(0, 200)}`);
+    return body;
+  };
+  const casesBefore = (await listCases()).length;
+  // The six route selections are data cases of the one server journey: every pack
+  // goes through POST /api/intake and its route is read back from the durable
+  // record. Two of them also drive the browser surface (the golden Full Credit pack
+  // end to end, and the Deep Research pack whose brief is a file); driving all six
+  // through the browser would push the smoke past the per-subject request ceiling
+  // (300/min), because every adopted run streams a refetch per run event.
+  for (const intakeCase of intakeCases) {
+    const form = new FormData();
+    for (const document of intakeCase.docs(`Api${intakeCase.issuer}`)) form.append("files", new Blob([document.buffer], { type: document.mimeType }), document.name);
+    const submitted = await api.post("/api/intake", { multipart: form });
+    assert.equal(submitted.status(), 201, `${intakeCase.pathway} pack was not admitted: ${(await submitted.text()).slice(0, 200)}`);
+    const record = await submitted.json();
+    assert.equal(record.status, "started");
+    assert.equal(record.route.pathway, intakeCase.pathway, `host classification selected ${record.route.pathway} for the ${intakeCase.pathway} pack`);
+    assert.equal(record.route.selected_by, "host_classification");
+    assert.equal(record.run.plan.pathway, intakeCase.pathway);
+    assert.equal(record.run.plan.depth, "full");
+    assert.equal(record.case.issuer, `Api${intakeCase.issuer}`, "the case issuer was not derived from the documents");
+    assert.ok(record.documents.every((document) => document.disposition === "used"), "a pack document was not used as evidence");
+  }
+  // One page load for the browser packs: each intake adopts its own new case in place.
+  await page.goto(`${baseURL}/cases/`, { waitUntil: "networkidle" });
+  const browserCases = intakeCases.filter((item) => item.pathway === "FULL_CREDIT" || item.pathway === "DEEP_RESEARCH");
+  for (const [index, intakeCase] of browserCases.entries()) {
+    const intakePanel = page.getByRole("region", { name: "Analyze documents" });
+    await intakePanel.waitFor();
+    assert.equal(await page.locator("#pathway").count(), 0, "the golden journey exposes a pathway picker");
+    assert.equal(await intakePanel.getByRole("combobox").count(), 0, "the intake panel asks for an analytical choice");
+    const fileInput = intakePanel.locator("#intake-files");
+    await fileInput.setInputFiles(intakeCase.docs(intakeCase.issuer));
+    const analyze = intakePanel.getByRole("button", { name: /^Analyze \d+ documents?$/ });
+    await analyze.focus();
+    await page.keyboard.press("Enter");
+    await page.getByRole("status").getByText(/documents? admitted\. .* selected by host classification\. Execution started\./).waitFor({ timeout: 60_000 });
+    const manifest = intakePanel.getByRole("region", { name: "Source disposition manifest" });
+    await manifest.waitFor();
+    assert.equal(await manifest.locator("tbody tr").count(), intakeCase.docs(intakeCase.issuer).length, "the manifest does not list every document");
+    await intakePanel.getByText("selected by host classification", { exact: false }).first().waitFor();
+    const intakeCaseRecord = (await listCases()).find((item) => item.issuer === intakeCase.issuer);
+    assert.ok(intakeCaseRecord, `no case was derived for ${intakeCase.issuer}`);
+    const intakeRecord = await (await api.get(`/api/cases/${intakeCaseRecord.id}/intake`)).json();
+    assert.equal(intakeRecord.status, "started");
+    assert.equal(intakeRecord.route.pathway, intakeCase.pathway, `host classification selected ${intakeRecord.route.pathway} for the ${intakeCase.pathway} pack`);
+    assert.equal(intakeRecord.route.depth, "full");
+    assert.equal(intakeRecord.run.plan.pathway, intakeCase.pathway);
+    assert.equal(intakeRecord.run.accepted_snapshot_id, null, "an intake run was accepted on the analyst's behalf");
+    if (index === 0) {
+      // The golden journey: the run completes on the host-control provider and the
+      // panel opens the review, which is the run console's ready-for-acceptance
+      // state — the analyst still has to decide.
+      await intakePanel.getByRole("link", { name: "Open review" }).waitFor({ timeout: 120_000 });
+      await intakePanel.getByRole("link", { name: "Open review" }).click();
+      await page.waitForURL((url) => url.pathname === "/run-console/" && url.searchParams.get("case") === intakeCaseRecord.id);
+      await page.getByRole("status").getByText("Run status: succeeded", { exact: true }).waitFor();
+      await page.getByRole("button", { name: "Accept analytical snapshot" }).waitFor();
+      const reviewed = await (await api.get(`/api/cases/${intakeCaseRecord.id}`)).json();
+      assert.equal(reviewed.accepted_snapshot_id, null, "completion was presented as the analyst's acceptance");
+      await page.setViewportSize({ width: 720, height: 900 });
+      await page.goto(`${baseURL}/cases/?case=${intakeCaseRecord.id}`, { waitUntil: "networkidle" });
+      await page.getByRole("region", { name: "Source disposition manifest" }).waitFor();
+      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth), false, "the intake evidence overflows at 200% desktop zoom width");
+      await page.setViewportSize({ width: 1440, height: 1000 });
+      await page.goto(`${baseURL}/cases/`, { waitUntil: "networkidle" });
+    }
+  }
+  // A refused pack: one malformed PDF refuses the whole pack and creates nothing.
+  await page.goto(`${baseURL}/cases/`, { waitUntil: "networkidle" });
+  const refusedPanel = page.getByRole("region", { name: "Analyze documents" });
+  await refusedPanel.locator("#intake-files").setInputFiles([
+    intakeDoc("annual", `Refusedpack-${fixtureSuffix} Holdings`),
+    { name: "scan.pdf", mimeType: "application/pdf", buffer: Buffer.from("%PDF-1.4\nnot a pdf object stream") },
+  ]);
+  expectedIntakeRefusals = 1;
+  await refusedPanel.getByRole("button", { name: /^Analyze 2 documents$/ }).click();
+  const refusalBlock = page.getByRole("alert").filter({ hasText: "Documents not admitted" });
+  await refusalBlock.waitFor();
+  await refusalBlock.getByText("scan.pdf", { exact: true }).waitFor();
+  assert.equal((await listCases()).length, casesBefore + intakeCases.length + browserCases.length, "a refused pack created a case");
 
   await page.goto(`${baseURL}/run-console/?case=${caseRecord.id}`, { waitUntil: "networkidle" });
   // Deep Research availability is derived from runtime truth. This server binds
@@ -1886,6 +2008,7 @@ try {
   assert.equal(await readerPage.evaluate(() => document.querySelector("main")?.textContent?.includes("Reader access")), true,
     "Cases did not say why the write panels are absent");
   await absent(readerPage, "Create case");
+  await absent(readerPage, "Analyze documents");
   assert.ok(await readerPage.getByRole("row").count() > 1, "READER lost read access to the case register");
 
   await readerPage.goto(`${baseURL}/sources/?case=${caseRecord.id}`, { waitUntil: "networkidle" });
@@ -1906,6 +2029,7 @@ try {
   await readerPage.goto(`${baseURL}/cases/?case=${caseRecord.id}`, { waitUntil: "networkidle" });
   await readerPage.waitForTimeout(500);
   await absent(readerPage, "Create case");
+  await absent(readerPage, "Analyze documents");
   await absent(readerPage, "Upload and version");
   assert.equal(await readerPage.locator("main input[type=file]").count(), 0,
     "an unresolved identity left a write control on the page");

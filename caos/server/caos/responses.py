@@ -97,6 +97,9 @@ class CaseResponse(WireModel):
     deep_research_available: bool
     deep_research_unavailable_reason: str | None
     pathway_fit: CasePathwayFitResponse
+    # The case's latest document-first intake, so a client reads the record only
+    # when one exists instead of probing GET …/intake for a 404 on every visit.
+    latest_intake_id: str | None
 
 
 class CaseDetailResponse(CaseResponse):
@@ -478,6 +481,90 @@ class AuditEventResponse(WireModel):
     pathway: str | None = None
     comment: str | None = None
     provider_identity_digest: str | None = None
+    intake_id: str | None = None
+    source_count: int | None = None
+
+
+# --- document-first intake (Task 8) -------------------------------------------------
+
+
+class IntakePeriodResponse(WireModel):
+    fiscal_year: int | None
+    quarter: int | None
+    label: str | None
+
+
+class IntakeDocumentResponse(WireModel):
+    """One manifest row per uploaded file: what the host classified it as, how
+    it is used, and why — machine suggestions from prepared evidence, never
+    authority taken from the document."""
+
+    filename: str
+    source_id: str | None
+    sha256: str
+    document_type: str
+    period: IntakePeriodResponse | None
+    version_status: str
+    disposition: Literal["used", "superseded", "conflicting", "out_of_scope", "insufficient", "duplicate"]
+    reason: str
+    consumers: list[str]
+    confidence: Literal["high", "medium", "low"]
+    signals: list[str]
+
+
+class IntakeSuggestionsResponse(WireModel):
+    issuer: str
+    label: str
+    sector: str
+    issuer_confidence: Literal["high", "medium", "low"]
+    basis: Literal["host_classification"]
+
+
+class IntakeRouteResponse(WireModel):
+    pathway: str
+    depth: str
+    reason: str
+    selected_by: Literal["host_classification"]
+    evidence: list[str]
+
+
+class IntakeCoverageResponse(WireModel):
+    fiscal_years: list[int]
+    quarters: list[str]
+    latest_period: str | None
+    gaps: list[str]
+
+
+class IntakeFindingResponse(WireModel):
+    filename: str
+    status: int | None
+    code: str | None
+    detail: str
+
+
+class IntakeRefusalResponse(WireModel):
+    code: str
+    message: str
+    next_action: str
+    findings: list[IntakeFindingResponse]
+
+
+class IntakeResponse(WireModel):
+    """The durable intake record: case, run, manifest, route and any typed
+    clarification. `run` is the same strict run projection the run routes
+    serve; `refusal` is set for `clarification` and `execution_unavailable`."""
+
+    intake_id: str
+    case_id: str
+    status: Literal["started", "clarification", "execution_unavailable"]
+    created_at: str
+    case: CaseDetailResponse
+    run: CanonicalRunResponse | None
+    suggestions: IntakeSuggestionsResponse
+    route: IntakeRouteResponse
+    coverage: IntakeCoverageResponse
+    documents: list[IntakeDocumentResponse]
+    refusal: IntakeRefusalResponse | None
 
 
 class ThesisResponse(WireModel):

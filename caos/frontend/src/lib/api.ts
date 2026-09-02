@@ -3,6 +3,7 @@ export type { CaseRecord, Snapshot, Snapshot as SnapshotRecord, SnapshotView } f
 // whose ESM resolver does not add one. The type-only re-export above is erased, so
 // this is the first import here that has to resolve at runtime.
 import { humanizeCode } from "./workbench.ts";
+import type { CaseRecord } from "./workbench";
 
 export type ResearchWorkstream = { id: string; kind: string; question: string; assigned_questions?: string[]; perspective: string; hypothesis: string; evidence_needs: string[]; source_classes: string[]; disconfirming_test: string; completion_test: string; effort_cap: string };
 export type ResearchPlan = { methodology_build_id: string; brief_digest: string; source_set: { id: string; version: number }; upstream_artifacts: { module_id: string; artifact_id: string; digest: string }[]; scope: { type?: string | null; key?: string | null; source_mode?: string | null }; workstreams: ResearchWorkstream[] };
@@ -11,6 +12,29 @@ export type ResearchPlan = { methodology_build_id: string; brief_digest: string;
 // declaration only surfaces it to the client.
 export type RunRecord = { id: string; case_id: string; status: string; plan: { pathway: string; depth: string; profile_id: string; selection_id: string; source_set_id?: string; source_set_version?: number; source_set_digest?: string }; nodes: { id: string; module_id: string; status: string; artifact_id?: string | null }[]; accepted_snapshot_id?: string | null; error?: { code?: string; message?: string } | null; research?: { phase?: string; proposed_plan_hash?: string | null; approved_plan_hash?: string | null; proposed_plan?: ResearchPlan | null } | null };
 export type SourceRecord = { id: string; filename: string; sha256: string; blocks: { block_id: string; locator: Record<string, unknown>; text?: string }[] };
+// Document-first intake (POST /api/intake, GET /api/cases/{case_id}/intake; IntakeResponse in
+// caos/server/caos/responses.py). Every analytical value here is a labelled machine suggestion
+// derived server-side from the documents; the browser sends files and nothing else.
+export type IntakeFinding = { filename: string; status?: number | null; code?: string | null; detail: string };
+export type IntakeRefusal = { code: string; message: string; next_action: string; findings: IntakeFinding[] };
+export type IntakeDocument = { filename: string; source_id: string | null; sha256: string; document_type: string; period: { fiscal_year: number | null; quarter: number | null; label: string | null } | null; version_status: string; disposition: string; reason: string; consumers: string[]; confidence: string; signals: string[] };
+export type IntakeRecord = {
+  intake_id: string;
+  case_id: string;
+  status: "started" | "clarification" | "execution_unavailable";
+  created_at: string;
+  case: CaseRecord;
+  run: RunRecord | null;
+  suggestions: { issuer: string; label: string; sector: string; issuer_confidence: string; basis: string };
+  route: { pathway: string; depth: string; reason: string; selected_by: string; evidence: string[] };
+  coverage: { fiscal_years: number[]; quarters: string[]; latest_period: string | null; gaps: string[] };
+  documents: IntakeDocument[];
+  refusal: IntakeRefusal | null;
+};
+export function isIntakeRefusal(detail: unknown): detail is IntakeRefusal {
+  return typeof detail === "object" && detail !== null && typeof (detail as IntakeRefusal).code === "string"
+    && typeof (detail as IntakeRefusal).next_action === "string" && Array.isArray((detail as IntakeRefusal).findings);
+}
 // Envelope: GET /api/cases/{case_id}/artifacts/{artifact_id} (ArtifactResponse in
 // caos/server/caos/responses.py). `markdown` is null for deterministic payloads
 // (caos.system_analysis.v1) and holds the canonical six-section document for agent

@@ -407,14 +407,13 @@ def pack_blocks(text: str) -> list[dict[str, Any]]:
     return blocks
 
 
-async def ingest_upload(
-    catalog: DomainStore,
-    vault: Vault,
-    case_id: str,
-    actor: str,
-    upload: UploadFile,
-    max_bytes: int,
-) -> dict[str, Any]:
+async def prepare_upload(vault: Vault, upload: UploadFile, max_bytes: int) -> dict[str, Any]:
+    """Every admission check, in the order the single-source route has always
+    applied them, ending with the content-addressed vault write. Returns the
+    source row minus its case binding; nothing touches the store. The intake
+    (Task 8) prepares a whole pack through here before admitting any of it, so
+    admission stays in one place (the route comment above records the drift a
+    second copy caused)."""
     filename = Path(upload.filename or "source.bin").name
     suffix = Path(filename).suffix.lower()
     if suffix not in ALLOWED_SUFFIXES:
@@ -429,17 +428,31 @@ async def ingest_upload(
     sha256 = hashlib.sha256(content).hexdigest()
     blocks = extract_blocks(filename, content)
     vault_path = vault.put(content, sha256)
-    source = {
-        "case_id": case_id,
+    return {
         "filename": filename,
         "media_type": upload.content_type or "application/octet-stream",
         "bytes": len(content),
         "sha256": sha256,
         "vault_path": vault_path,
         "blocks": blocks,
+        "withdrawn": False,
+    }
+
+
+async def ingest_upload(
+    catalog: DomainStore,
+    vault: Vault,
+    case_id: str,
+    actor: str,
+    upload: UploadFile,
+    max_bytes: int,
+) -> dict[str, Any]:
+    prepared = await prepare_upload(vault, upload, max_bytes)
+    source = {
+        **prepared,
+        "case_id": case_id,
         "created_by": actor,
         "created_at": now_iso(),
-        "withdrawn": False,
     }
     try:
         return catalog.ingest(source, actor)
