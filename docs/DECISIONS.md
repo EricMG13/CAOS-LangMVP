@@ -446,3 +446,50 @@ Consolidation note: where §6 conflicts with §10/§11/§12 (output Σ vs Σ+max
     keyless browser gates; production refuses it at the provider builder and at
     engine construction. Local development evidence is produced on Python 3.14
     (decision D3), matching nightly and the image.
+16. **Deep Research: governed brief and digest-bound plan approval (2026-09-02,
+    Task 7).** `DEEP_RESEARCH` joins the engine cut at full depth only
+    (`runtime.supported_depths`; the LITE route still compiles, the engine
+    never starts it, so `startable_routes()` is the one list the case wire,
+    the corpus control and the probes enumerate). CP-DR is a registry entry
+    (`modules/registry.py`, `plan_approval=True`, golden authority digest
+    `76e990f4…`) over the vendored `cp-dr-deep-research` skill; the bundle is
+    untouched. The brief (`contracts.ResearchBrief`, every string
+    `BoundaryText`) is validated before any row exists, locked in the run's
+    creating transaction (`run_research`), and bound into run authority as
+    `plan.research_brief_digest` at gate exit; it selects nothing about the
+    node set (invariant 10). After CP-0 succeeds, the CP-DR node builds the
+    plan as a pure function of the pinned run plan, the brief and the upstream
+    artifacts (`engine/research.py`: three workstreams — primary, adversarial,
+    synthesis — `source_mode` fixed to `supplied_only`), persists it with
+    `sha256:<canonical digest>` and parks the run on the second interrupt
+    `PLAN_APPROVAL_REQUIRED` (events `run.paused`, `research.plan_ready`;
+    no metered bracket covers the wait). Approval is a store compare-and-swap
+    on the exact proposed hash while the run is parked on this gate
+    (`RESEARCH_PLAN_STALE`, `RESEARCH_PLAN_NOT_PENDING`), one transaction
+    with the run transition, the ticket, the run event
+    `research.plan_approved` and the audit event of the same name; the engine
+    re-checks provider identity and pinned-source liveness first and never
+    drives the graph inline. On re-entry the node recomputes the plan and
+    refuses `RESEARCH_PLAN_MISMATCH` when the approved hash is not the plan
+    that would execute; a `POST /resume` re-parks, and startup recovery
+    re-enters an interrupted thread whose run is already `running` (approved,
+    then crashed before the continuation) rather than skipping it. The approved scope rides the
+    module's host identity (`research`: brief, brief digest, approved hash,
+    workstreams) into the prompt under the untrusted label and into the
+    artifact, and the host stamps the nine CP-DR envelope fields the pinned
+    common validator requires (`scope_type`, `scope_key`, `subject_name`,
+    `research_question`, `source_mode`, `approved_plan_hash`,
+    `coverage_score` = validated field coverage, `research_status`,
+    `research_stop_reason`) — a stored CP-DR artifact is always `Complete`
+    because a partial or failed gate is a typed refusal in the validate step.
+    Wire: `CanonicalRunResponse.research` (`ResearchStateResponse`, present on
+    Deep Research runs only), `GET /api/runs/{id}/research-plan` (case member)
+    and `POST /api/runs/{id}/research-plan/approve` (case writer; 404 for
+    outsiders, 403 for readers, 409 stale/not-pending, 422 malformed hash).
+    `deep_research_available` is `Engine.deep_research_availability()` — the
+    cut, the compiled route, the registry and the provider binding — never a
+    literal. Deep Research is model-optional: acceptance queues no build and
+    `queue_build` answers `MODEL_NOT_READY`; the deliverable draft, freeze,
+    file and reconstruction path is the ordinary one. Host control proves
+    orchestration only; the C22 pack and live-model qualification are
+    external inputs.

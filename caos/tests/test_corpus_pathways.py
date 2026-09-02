@@ -32,7 +32,7 @@ if str(SERVER) not in sys.path:
 from caos.config import Settings  # noqa: E402
 from caos.contracts import INTERNAL_PATHWAYS, PATHWAYS, Depth  # noqa: E402
 from caos.engine.graphs import compiled_route  # noqa: E402
-from caos.engine.runtime import MVP_PATHWAYS, EngineError  # noqa: E402
+from caos.engine.runtime import MVP_PATHWAYS, EngineError, startable_routes  # noqa: E402
 from caos.storage.store import DomainStore  # noqa: E402
 
 from calculator_fixtures import VALID_CALCULATION_INPUTS  # noqa: E402
@@ -74,8 +74,22 @@ requires_corpus = pytest.mark.skipif(len(DOCS) != len(PACK_NAMES), reason=f"corp
 pytestmark = pytest.mark.corpus_run
 
 GOLDEN = [(pathway, depth) for pathway in INTERNAL_PATHWAYS for depth in (Depth.SCREEN, Depth.FULL)]
-LIVE_ROUTES = [route for route in GOLDEN if route[0] in MVP_PATHWAYS]
+# The engine's own startable list: every cut pathway at every depth it runs
+# (Deep Research is full-depth only, §14.1).
+LIVE_ROUTES = [route for route in GOLDEN if (route[0], route[1].value) in set(startable_routes())]
 CUT_ROUTES = [route for route in GOLDEN if route[0] not in MVP_PATHWAYS]
+DEPTH_CUT_ROUTES = [route for route in GOLDEN if route[0] in MVP_PATHWAYS and route not in LIVE_ROUTES]
+# A fixture brief for the Deep Research host control: orchestration proof only
+# — it proves the brief, the approval gate and the route complete on a supplied
+# pack, not that any research question about Carnival was answered.
+RESEARCH_BRIEF = {
+    "research_question": "How resilient is liquidity through the next refinancing?",
+    "decision_context": "Committee review of an existing position.",
+    "as_of_date": "2026-01-01",
+    "time_horizon": "12 months",
+    "must_answer": ["Nearest maturity"],
+    "exclusions": [],
+}
 ROUTES = LIVE_ROUTES if CORPUS_FULL else [
     route for route in LIVE_ROUTES if route[0] in {"FULL_CREDIT", "DISTRESSED_RESTRUCTURING"}
 ]
@@ -367,10 +381,20 @@ async def test_supported_routes_complete_host_path_on_30_document_upload(client,
         deliveries_before = len(provider.delivery_log)
         started = await engine.start_run(
             case_id=case_id, pathway=pathway, depth=depth.value, actor="analyst",
+            research_brief=RESEARCH_BRIEF if pathway == "DEEP_RESEARCH" else None,
         )
         run_id = started["id"]
-        await engine.wait(run_id)
-        run = engine.get_run(run_id)
+        run = await engine.wait(run_id)
+        if pathway == "DEEP_RESEARCH":
+            # The governed gate: the run parks on the host-proposed plan and
+            # resumes only on the exact approved hash (invariant 5).
+            assert run["status"] == "paused" and run["error"]["code"] == "PLAN_APPROVAL_REQUIRED"
+            assert run["research"]["brief"] == RESEARCH_BRIEF
+            await engine.approve_research_plan(
+                run_id, plan_hash=run["research"]["proposed_plan_hash"], actor="analyst",
+            )
+            run = await engine.wait(run_id)
+            assert run["research"]["approved_plan_hash"] == run["research"]["proposed_plan_hash"]
         assert run["status"] == "succeeded", run.get("error")
         assert provider.calls > calls_before
         assert tuple(node["module_id"] for node in run["nodes"]) == compiled_route(pathway, depth.value).nodes
@@ -408,17 +432,24 @@ async def test_unavailable_routes_refuse_without_pinning_30_document_case(client
         assert store.current_source_set(case_id) == pinned
         assert engine.active_execution_count() == 0
 
-        if pathway in PATHWAYS and not (pathway == "DEEP_RESEARCH" and depth is Depth.SCREEN):
-            body = {"pathway": pathway, "depth": depth.value}
-            if pathway == "DEEP_RESEARCH":
-                body["research_brief"] = {
-                    "research_question": "How resilient is liquidity through the next refinancing?",
-                    "decision_context": "Committee review of an existing position.",
-                    "as_of_date": "2026-01-01",
-                    "time_horizon": "12 months",
-                    "must_answer": ["Nearest maturity"],
-                    "exclusions": [],
-                }
-            response = client.post(f"/api/cases/{case_id}/runs", json=body)
+        if pathway in PATHWAYS:
+            response = client.post(f"/api/cases/{case_id}/runs", json={"pathway": pathway, "depth": depth.value})
             assert response.status_code == 422, response.text
             assert response.json()["detail"] == {"code": "PATHWAY_NOT_AVAILABLE"}
+
+    # A cut pathway at a depth the engine does not run (Deep Research at
+    # screen) is refused by the depth rule, again without pinning.
+    assert DEPTH_CUT_ROUTES == [("DEEP_RESEARCH", Depth.SCREEN)]
+    for pathway, depth in DEPTH_CUT_ROUTES:
+        with pytest.raises(EngineError, match="DEPTH_NOT_SUPPORTED"):
+            await engine.start_run(
+                case_id=case_id, pathway=pathway, depth=depth.value, actor="analyst",
+                research_brief=RESEARCH_BRIEF,
+            )
+        assert store.current_source_set(case_id) == pinned
+        assert engine.active_execution_count() == 0
+        response = client.post(
+            f"/api/cases/{case_id}/runs",
+            json={"pathway": pathway, "depth": depth.value, "research_brief": RESEARCH_BRIEF},
+        )
+        assert response.status_code == 422, response.text

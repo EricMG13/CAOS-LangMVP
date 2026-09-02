@@ -178,7 +178,10 @@ class ConfirmDraftRequest(StrictModel):
     confirmation: Literal["CONFIRM_DRAFT"]
 
 
-ResearchBriefItem = Annotated[str, Field(min_length=1, max_length=200)]
+# The brief reaches pinned run state (the plan digest binds its digest), so
+# every string is BoundaryText, never a bare str.
+ResearchBriefItem = Annotated[BoundaryText, Field(min_length=1, max_length=200)]
+ResearchBriefText = Annotated[BoundaryText, Field(min_length=1, max_length=400)]
 # Item-level caps for the other wire string lists. A `max_length` on the list
 # bounds the count only; without these each element is unbounded.
 FocusQuestion = Annotated[BoundaryText, Field(min_length=1, max_length=400)]
@@ -187,10 +190,10 @@ IdentifierItem = Annotated[str, Field(min_length=1, max_length=120)]
 
 
 class ResearchBrief(StrictModel):
-    research_question: str = Field(min_length=1, max_length=400)
-    decision_context: str = Field(min_length=1, max_length=400)
+    research_question: ResearchBriefText
+    decision_context: ResearchBriefText
     as_of_date: date
-    time_horizon: str = Field(min_length=1, max_length=200)
+    time_horizon: Annotated[BoundaryText, Field(min_length=1, max_length=200)]
     must_answer: list[ResearchBriefItem] = Field(default_factory=list, max_length=10)
     exclusions: list[ResearchBriefItem] = Field(default_factory=list, max_length=10)
 

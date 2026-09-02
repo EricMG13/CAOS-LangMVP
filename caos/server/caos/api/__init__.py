@@ -26,6 +26,7 @@ from ..artifacts.loan_universe import (
 )
 from ..config import Settings
 from ..contracts import (
+    ApproveResearchPlanRequest,
     BoundaryText,
     CreateCaseRequest,
     DeliverableDraftRequest,
@@ -55,6 +56,17 @@ RUNTIME_KEYS = (
 )
 _SOURCE_BLOCK_KEYS = ("block_id", "text", "locator", "confidence", "untrusted_data", "extractor_version")
 _RUN_NODE_KEYS = ("id", "run_id", "case_id", "module_id", "stage", "dependencies", "status", "attempt", "artifact_id", "error")
+_RESEARCH_KEYS = (
+    "phase", "brief", "brief_digest", "proposed_plan_hash", "approved_plan_hash",
+    "approved_by", "approved_at", "proposed_plan",
+)
+# Preflight refusals that mean "this instance cannot execute agents right now",
+# served as 503 so a probe stops routing rather than reading a body.
+_PROVIDER_PREFLIGHT_CODES = frozenset({
+    "AGENT_EXECUTION_DISABLED", "AGENT_PROVIDER_UNAVAILABLE",
+    "AGENT_QUALIFICATION_MISSING", "AGENT_QUALIFICATION_EXPIRED",
+    "AGENT_PROVIDER_UNQUALIFIED", "AGENT_IDENTITY_MISMATCH",
+})
 _ATTEMPT_KEYS = (
     "run_id", "module_id", "kind", "provider_identity", "request_digest", "response_digest",
     "provider_request_id", "observed_model", "observed_provider_version", "input_tokens",
@@ -344,6 +356,13 @@ def create_app(*, settings: Settings, store: DomainStore, engine: Any) -> FastAP
 
         current = store.current_source_set(case["id"])
         fit = pathway_fit(store, case["id"])
+        # Derived from runtime truth (the cut, the compiled route, the registry,
+        # the provider binding), never a literal: an instance that cannot start
+        # a Deep Research run says so with the reason (Task 7).
+        research_available, research_reason = (
+            engine.deep_research_availability() if engine is not None
+            else (False, "The run engine is not attached to this instance.")
+        )
         return {
             **case,
             "source_count": len(current["source_ids"]) if current else 0,
@@ -351,8 +370,8 @@ def create_app(*, settings: Settings, store: DomainStore, engine: Any) -> FastAP
             # against. A pathway added there lights up in the workbench with no
             # second list to keep in step.
             "available_pathways": sorted(MVP_PATHWAYS),
-            "deep_research_available": False,
-            "deep_research_unavailable_reason": "Deep Research is disabled for this deployment.",
+            "deep_research_available": research_available,
+            "deep_research_unavailable_reason": research_reason,
             "pathway_fit": {"fit": fit["fit"], "message": fit["message"]},
         }
 
@@ -568,7 +587,13 @@ def create_app(*, settings: Settings, store: DomainStore, engine: Any) -> FastAP
         generation = _generation_state(run)
         if generation is not None:
             projected["canonical_generation"] = generation
+        research = run.get("research")
+        if research is not None:
+            projected["research"] = _wire_research(research)
         return projected
+
+    def _wire_research(research: dict[str, Any]) -> dict[str, Any]:
+        return {key: research.get(key) for key in _RESEARCH_KEYS}
 
     @app.post("/api/cases/{case_id}/runs", status_code=201,
               response_model=wire.CanonicalRunResponse, response_model_exclude_unset=True)
@@ -579,6 +604,9 @@ def create_app(*, settings: Settings, store: DomainStore, engine: Any) -> FastAP
             run = await engine.start_run(
                 case_id=case_id, pathway=body.pathway, depth=body.depth.value,
                 actor=who.subject, focus_questions=list(body.focus_questions),
+                research_brief=(
+                    body.research_brief.model_dump(mode="json") if body.research_brief is not None else None
+                ),
             )
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
@@ -586,11 +614,7 @@ def create_app(*, settings: Settings, store: DomainStore, engine: Any) -> FastAP
             code = getattr(exc, "code", "RUN_START_FAILED")
             if code == "ADMISSION_BUSY":
                 status = 409
-            elif code in {
-                "AGENT_EXECUTION_DISABLED", "AGENT_PROVIDER_UNAVAILABLE",
-                "AGENT_QUALIFICATION_MISSING", "AGENT_QUALIFICATION_EXPIRED",
-                "AGENT_PROVIDER_UNQUALIFIED", "AGENT_IDENTITY_MISMATCH",
-            }:
+            elif code in _PROVIDER_PREFLIGHT_CODES:
                 status = 503
             else:
                 status = 422
@@ -658,6 +682,34 @@ def create_app(*, settings: Settings, store: DomainStore, engine: Any) -> FastAP
     async def resume_run(run_id: str, request: Request) -> dict[str, Any]:
         visible_run(run_id, identity(request), write=True)
         return _wire_run(await engine.resume(run_id))
+
+    # -- Deep Research plan approval (Task 7; invariant 5) ------------------------
+
+    @app.get("/api/runs/{run_id}/research-plan", response_model=wire.ResearchStateResponse)
+    def research_plan(run_id: str, request: Request) -> dict[str, Any]:
+        run = visible_run(run_id, identity(request))
+        if run.get("research") is None:
+            raise HTTPException(status_code=404, detail="research plan not found")
+        return _wire_research(run["research"])
+
+    @app.post("/api/runs/{run_id}/research-plan/approve",
+              response_model=wire.CanonicalRunResponse, response_model_exclude_unset=True)
+    async def approve_research_plan(
+        run_id: str, request: Request, body: ApproveResearchPlanRequest = Body(...),
+    ) -> dict[str, Any]:
+        who = identity(request)
+        run = visible_run(run_id, who, write=True)
+        if run.get("research") is None:
+            raise HTTPException(status_code=404, detail="research plan not found")
+        try:
+            run = await engine.approve_research_plan(run_id, plan_hash=body.plan_hash, actor=who.subject)
+        except RuntimeError as exc:
+            code = getattr(exc, "code", "RESEARCH_PLAN_NOT_PENDING")
+            if code == "RUN_NOT_FOUND":
+                raise HTTPException(status_code=404, detail="run not found") from exc
+            status = 503 if code in _PROVIDER_PREFLIGHT_CODES else 409
+            raise HTTPException(status_code=status, detail={"code": code}) from exc
+        return _wire_run(run)
 
     @app.post("/api/runs/{run_id}/upgrade", response_model=wire.CanonicalRunResponse, response_model_exclude_unset=True)
     async def upgrade_run(run_id: str, request: Request) -> dict[str, Any]:

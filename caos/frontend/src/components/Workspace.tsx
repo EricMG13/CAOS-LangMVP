@@ -1357,12 +1357,12 @@ function RunConsole({ writeAccess, caseId, selectedCase, run, runLoading, runErr
     </section>
     <section className="panel span-8">
       <div className="panel-header"><h2>Execution route</h2><RunStatusBadge run={run} /></div>
-      <div className="panel-body flow"><RunStatus writeAccess={writeAccess} caseId={caseId} run={run} runLoading={runLoading} runError={runError} acceptRun={acceptRun} acceptedSnapshotId={acceptedSnapshotId} visibleSnapshotId={visibleSnapshotId} switchRequired={switchRequired} pendingAction={pendingAction} resumeSlot={resumeSlot} approvalSlot={approvalPlan && approvalHash ? <ResearchPlanView plan={approvalPlan} planHash={approvalHash} approving={pendingAction === "approve-research-plan"} approvalUnavailable={approvalUnavailable} onApprove={approveResearchPlan} /> : <StateBlock tone="warning" live="status" code="PLAN_APPROVAL_REQUIRED" body="The persisted approval plan is unavailable; approval remains blocked." />} /></div>
+      <div className="panel-body flow"><RunStatus writeAccess={writeAccess} caseId={caseId} run={run} runLoading={runLoading} runError={runError} acceptRun={acceptRun} acceptedSnapshotId={acceptedSnapshotId} visibleSnapshotId={visibleSnapshotId} switchRequired={switchRequired} pendingAction={pendingAction} resumeSlot={resumeSlot} approvalSlot={approvalPlan && approvalHash ? <ResearchPlanView plan={approvalPlan} planHash={approvalHash} approving={pendingAction === "approve-research-plan"} approvalUnavailable={approvalUnavailable} writeAccess={writeAccess} onApprove={approveResearchPlan} /> :<StateBlock tone="warning" live="status" code="PLAN_APPROVAL_REQUIRED" body="The persisted approval plan is unavailable; approval remains blocked." />} /></div>
     </section>
   </div>;
 }
 
-function ResearchPlanView({ plan, planHash, approving, approvalUnavailable, onApprove }: { plan: ResearchPlan; planHash: string; approving: boolean; approvalUnavailable: boolean; onApprove: (planHash: string) => void }) {
+function ResearchPlanView({ plan, planHash, approving, approvalUnavailable, writeAccess, onApprove }: { plan: ResearchPlan; planHash: string; approving: boolean; approvalUnavailable: boolean; writeAccess: WriteAccess; onApprove: (planHash: string) => void }) {
   const scalar = (value: string | number | null | undefined) => value === "" || value == null ? <span className="muted">None</span> : value;
   return <section className="research-plan" role="region" aria-labelledby="research-plan-heading">
     <h3 id="research-plan-heading">Proposed research plan</h3>
@@ -1394,7 +1394,9 @@ function ResearchPlanView({ plan, planHash, approving, approvalUnavailable, onAp
     </li>)}</ol> : <p className="muted">Empty</p>}
     {approvalUnavailable
       ? <Unavailable title="Research plan approval" context="The plan above stays readable; execution remains paused on this run." />
-      : <button className="button primary" type="button" disabled={approving} onClick={() => onApprove(planHash)}>{approving ? "Approving…" : "Approve research plan"}</button>}
+      : writeAccess === "yes"
+        ? <button className="button primary" type="button" disabled={approving} onClick={() => onApprove(planHash)}>{approving ? "Approving…" : "Approve research plan"}</button>
+        : <WriteBlocked access={writeAccess} action="approving the research plan" />}
   </section>;
 }
 

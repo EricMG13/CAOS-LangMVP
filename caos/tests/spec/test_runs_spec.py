@@ -679,24 +679,35 @@ async def test_case_wire_offers_exactly_the_pathways_the_engine_will_start(clien
     four, so Distressed & Restructuring compiled straight into a 422 dead end.
     Serving the cut is what keeps the two in step; this test is what keeps the
     serving honest."""
-    from caos.contracts import PATHWAYS
-    from caos.engine.runtime import MVP_PATHWAYS
+    from caos.contracts import PATHWAYS, Depth
+    from caos.engine.runtime import MVP_PATHWAYS, supported_depths
 
     case, _source = seed_case_with_source(store)
     served = client.get(f"/api/cases/{case['id']}", headers={"x-forwarded-user": "analyst"}).json()
     assert served["available_pathways"] == sorted(MVP_PATHWAYS)
+    assert served["deep_research_available"] is True, served["deep_research_unavailable_reason"]
 
+    research_brief = {
+        "research_question": "How resilient is liquidity through the next refinancing?",
+        "decision_context": "Committee review of an existing position.",
+        "as_of_date": "2026-01-01", "time_horizon": "12 months",
+        "must_answer": ["Nearest maturity"], "exclusions": [],
+    }
     for pathway in PATHWAYS:
-        response = client.post(f"/api/cases/{case['id']}/runs", json={"pathway": pathway, "depth": "screen"},
-                               headers={"x-forwarded-user": "analyst"})
-        detail = response.json().get("detail") if response.status_code >= 400 else None
-        if pathway in served["available_pathways"]:
-            assert response.status_code == 201, f"{pathway} is offered but did not start: {detail}"
-        else:
-            # Which layer says no is not the point — DEEP_RESEARCH is refused by
-            # the depth rule before the cut check is reached. Nothing outside the
-            # served cut may start.
-            assert response.status_code != 201, f"{pathway} started but is not offered"
+        for depth in Depth:
+            body = {"pathway": pathway, "depth": depth.value}
+            if pathway == "DEEP_RESEARCH":
+                body["research_brief"] = research_brief
+            response = client.post(f"/api/cases/{case['id']}/runs", json=body,
+                                   headers={"x-forwarded-user": "analyst"})
+            detail = response.json().get("detail") if response.status_code >= 400 else None
+            if pathway in served["available_pathways"] and depth.value in supported_depths(pathway):
+                assert response.status_code == 201, f"{pathway}/{depth.value} is offered but did not start: {detail}"
+            else:
+                # Which layer says no is not the point — DEEP_RESEARCH/screen is
+                # refused by the depth rule before the engine is reached. Nothing
+                # outside the served cut, at a depth the engine does not run, may start.
+                assert response.status_code != 201, f"{pathway}/{depth.value} started but is not offered"
 
 
 # --- source pinning at the entry gate (invariant 1; §10.4, §11.1) -----------------
@@ -1676,9 +1687,14 @@ async def test_replay_from_same_pinned_sources_and_build_is_equivalent_by_the_sa
 
 async def test_started_pathways_are_restricted_to_the_mvp_set(engine, store):
     case, _ = seed_case_with_source(store)
-    for pathway in ("DEEP_RESEARCH", "PORTFOLIO_DECISION", "DECISION_LEDGER"):
-        with pytest.raises(Exception):
+    for pathway in ("PORTFOLIO_DECISION", "DECISION_LEDGER"):
+        with pytest.raises(Exception, match="PATHWAY_NOT_AVAILABLE"):
             await engine.start_run(case_id=case["id"], pathway=pathway, depth="full", actor="analyst")
+    # DEEP_RESEARCH is in the cut but runs at full depth only (§14.1); the
+    # depth refusal lands before any row exists.
+    with pytest.raises(Exception, match="DEPTH_NOT_SUPPORTED"):
+        await engine.start_run(case_id=case["id"], pathway="DEEP_RESEARCH", depth="screen", actor="analyst")
+    assert engine.runs.non_terminal_runs() == []
 
 
 # --- kill / resume (success criterion; §10.1, §12.28) -----------------------------

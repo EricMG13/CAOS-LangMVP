@@ -219,8 +219,76 @@ class CanonicalGenerationProgressResponse(CanonicalGenerationResponse):
     pass
 
 
+class ResearchBriefResponse(WireModel):
+    research_question: str
+    decision_context: str
+    as_of_date: str
+    time_horizon: str
+    must_answer: list[str]
+    exclusions: list[str]
+
+
+class ResearchWorkstreamResponse(WireModel):
+    id: str
+    kind: str
+    question: str
+    assigned_questions: list[str]
+    perspective: str
+    hypothesis: str
+    evidence_needs: list[str]
+    source_classes: list[str]
+    disconfirming_test: str
+    completion_test: str
+    effort_cap: str
+
+
+class ResearchPlanSourceSetResponse(WireModel):
+    id: str
+    version: int
+
+
+class ResearchPlanUpstreamResponse(WireModel):
+    module_id: str
+    artifact_id: str
+    digest: str
+
+
+class ResearchPlanScopeResponse(WireModel):
+    type: str
+    key: str
+    source_mode: str
+
+
+class ResearchPlanResponse(WireModel):
+    """The host-proposed plan exactly as reviewed; its canonical digest is the
+    approval hash (invariant 5). Served only on DEEP_RESEARCH runs."""
+
+    schema_version: str
+    methodology_build_id: str
+    run_plan_digest: str
+    brief_digest: str
+    source_set: ResearchPlanSourceSetResponse
+    upstream_artifacts: list[ResearchPlanUpstreamResponse]
+    scope: ResearchPlanScopeResponse
+    workstreams: list[ResearchWorkstreamResponse]
+
+
+class ResearchStateResponse(WireModel):
+    phase: Literal["brief_locked", "awaiting_approval", "approved"]
+    brief: ResearchBriefResponse
+    brief_digest: str
+    proposed_plan_hash: str | None
+    approved_plan_hash: str | None
+    approved_by: str | None
+    approved_at: str | None
+    proposed_plan: ResearchPlanResponse | None
+
+
 class CanonicalRunResponse(RunResponse):
     canonical_generation: CanonicalGenerationResponse | None = None
+    # Present on DEEP_RESEARCH runs only; omitted (never null) elsewhere, so the
+    # pinned run key set does not move for the five other pathways.
+    research: ResearchStateResponse | None = None
 
 
 class SnapshotArtifactRefResponse(WireModel):

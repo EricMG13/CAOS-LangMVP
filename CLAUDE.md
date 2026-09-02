@@ -95,7 +95,14 @@ Standing rules that back them:
   (`interrupt_after=["gate"]`) so the immutable plan returns immediately. The
   serving entrypoint calls `engine.enable_auto_continue()` to schedule the rest
   on its loop; tests keep explicit control with `engine.wait(run_id)`. Never
-  drive one run from two event loops.
+  drive one run from two event loops. A module registered with
+  `plan_approval=True` (CP-DR) parks its run on a second digest-bound
+  interrupt, `PLAN_APPROVAL_REQUIRED`, before any reuse or provider call:
+  `engine/research.py` proposes the plan from the pinned run plan, the brief
+  and the upstream artifacts, `RunStore.propose_research_plan` persists it with
+  its `sha256:` hash, and `Engine.approve_research_plan` is the expected-hash
+  compare-and-swap that lets `wait()` re-enter the node (invariant 5,
+  DECISIONS §14.16).
 - Run progress reaches the UI as graph events: `GET /api/runs/{id}/events` is a
   thin SSE tail of `run_events` (Last-Event-ID resume; stream closes once a
   terminal run is fully delivered). The frontend never reads event payloads —
@@ -219,10 +226,19 @@ engine, the bundle, or the routes.
 ## Known gaps (honest ledger)
 
 - Admin Studio remains an explicit unavailable capability (`/admin/audit`,
-  `/admin/bundle`), as does deep-research plan approval
-  (`/runs/{id}/research-plan/approve`). Worksheet reads, one-way sensitivity,
-  tornado, revision rebase preview, and build/revision export and download
-  routes are served and must not be re-added to this gap list.
+  `/admin/bundle`). Worksheet reads, one-way sensitivity, tornado, revision
+  rebase preview, build/revision export and download, and the Deep Research
+  plan routes (`GET /runs/{id}/research-plan`,
+  `POST /runs/{id}/research-plan/approve`, Task 7) are served and must not be
+  re-added to this gap list. `deep_research_available` on the case wire is
+  derived from the engine (cut, compiled route, registry, provider binding),
+  never a literal.
+- Deep Research is qualified by host control only. The corpus test runs
+  `DEEP_RESEARCH` at full depth on the Carnival pack with a fixture brief and
+  proves the brief, the approval gate and the route complete; it proves nothing
+  about any research question. The question-specific C22 pack and live-model
+  qualification remain external inputs (BLOCKED EXTERNAL in
+  `.superpowers/sdd/enterprise-task-7-report.md`).
 - The governed builder and canonical deliverable implementation exists, but its
   deterministic/scripted development proof does not qualify live analysis.
   Enterprise qualification across all six pathways remains open.
