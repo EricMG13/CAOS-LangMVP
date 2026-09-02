@@ -1,6 +1,6 @@
 # Enterprise-Testing Readiness Execution Plan
 
-> **For Codex:** Execute this plan task by task with `subagent-driven-development`. Use a fresh implementer and a fresh reviewer for each task, keep `.superpowers/sdd/progress.md` current, and run `rewrite-tournament` plus `confidence-review` when their trigger conditions apply.
+> **For Codex:** Execute this plan task by task with `subagent-driven-development`. Use a fresh implementer and a fresh reviewer for each task, keep `.superpowers/sdd/progress.md` current, and run `confidence-review` when its trigger conditions apply. The user expressly disabled rewrite tournaments for this execution.
 
 **Goal:** Make the MVP enterprise-testing ready: a user uploads a complete issuer source pack, CAOS runs every one of the six governed pathways with the sole qualified machine-generation binding, produces source-complete analysis and a financial model, lets an analyst own the opinion, publishes institutional deliverables through a separate approver, and retains enough immutable evidence to reconstruct every machine-produced output.
 
@@ -128,7 +128,7 @@
 
 **Step 5 — Verify.** Run provider matrix host controls, runtime/budget/evidence tests, strict response tests, security audit, and full backend suite.
 
-## Task 6: Execute Distressed & Restructuring end to end
+## Task 6: Correct semantic execution and execute Distressed & Restructuring end to end
 
 **Files:**
 - Modify: `caos/server/caos/engine/runtime.py`
@@ -140,13 +140,15 @@
 - Test: `caos/tests/test_corpus_pathways.py`
 - Test: deliverable/model/browser specs
 
-**Step 1 — Add failing full and screen route tests.** Require compile, start, evidence pin, module completion, acceptance, model revalidation/update, deliverable draft/freeze/file, and reconstruction identity.
+**Step 1 — Replace the false-success substrate.** Add failing ordinary-run tests proving every existing route reaches semantic execution rather than the test-only fixed payload. Run semantic modules through the sole qualified provider at both supported depths; reserve deterministic execution for source extraction, allowlisted calculation, validation, canonicalization, and rendering. Bind CP-PARSE and CP-0 to their verified existing methodology authority. Updating execution modes must invalidate the provider parameter/context digest.
 
-**Step 2 — Add only missing module contracts.** Reuse the static compiler and existing deterministic/agent module registry. No Distressed-specific orchestration engine.
+**Step 2 — Add failing Distressed full and screen route tests.** Require compile, start, evidence pin, module completion, acceptance, model revalidation/update, deliverable draft/freeze/file, and reconstruction identity through ordinary runtime APIs. Scripted and placeholder execution can prove host controls but cannot satisfy this step.
 
-**Step 3 — Expose availability from runtime truth.** Add Distressed to the canonical available set only when both depths and downstream contracts pass.
+**Step 3 — Add only missing module and route contracts.** Reuse the static compiler and existing module registry. Correct only dependency edges that omit an in-route governed upstream handoff. No Distressed-specific orchestration engine or second route catalog.
 
-**Step 4 — Verify with a designated positive stressed pack.** A complete positive pack succeeds; sparse/legal-gap packs return answer-keyed typed refusals.
+**Step 4 — Expose availability from runtime truth.** Add Distressed to the canonical available set only when both depths and downstream model, deliverable, and reconstruction contracts pass.
+
+**Step 5 — Verify with a designated positive stressed pack.** A complete positive pack succeeds; sparse/legal-gap packs return answer-keyed typed refusals. Local answer-keyed providers prove orchestration only; protected live-model evidence remains a separate blocking qualification gate.
 
 ## Task 7: Execute Deep Research with a governed brief and approval gate
 
