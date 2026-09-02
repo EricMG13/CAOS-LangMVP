@@ -116,6 +116,33 @@ class CanonicalHandoffMetadata(BaseModel):
         BoundaryText,
         Field(pattern=r"^[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?$", max_length=200),
     ]
+    # CP-DR research envelope (Task 7): every value host-derived from the
+    # approved plan, the pinned brief and the validated contract fields; the
+    # pinned common validator requires all nine on CP-DR. Absent — never null —
+    # on every other module, so no other artifact's frontmatter moves.
+    scope_type: Literal["issuer", "sector"] | None = None
+    scope_key: Annotated[
+        BoundaryText,
+        Field(pattern=r"^[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?$", max_length=200),
+    ] | None = None
+    subject_name: Annotated[NonBlankBoundaryText, Field(min_length=1, max_length=160)] | None = None
+    research_question: BoundedHandoffText | None = None
+    source_mode: Literal["supplied_only"] | None = None
+    approved_plan_hash: Annotated[str, Field(pattern=r"^sha256:[0-9a-f]{64}$")] | None = None
+    coverage_score: Annotated[int, Field(strict=True, ge=0, le=100)] | None = None
+    research_status: Literal["Complete", "Complete with Gaps", "Blocked"] | None = None
+    research_stop_reason: Literal[
+        "coverage_satisfied", "budget_exhausted", "sources_exhausted", "blocked", "user_stopped",
+    ] | None = None
+
+
+# The CP-DR envelope fields (schema: CP-DR_DeepResearch.schema.md § Required
+# output-envelope extension): stamped by the host on plan-approval modules,
+# listed in the artifact's host-derived provenance, absent everywhere else.
+RESEARCH_HANDOFF_FIELDS = (
+    "scope_type", "scope_key", "subject_name", "research_question", "source_mode",
+    "approved_plan_hash", "coverage_score", "research_status", "research_stop_reason",
+)
 
 
 class CanonicalModuleOutput(BaseModel):
@@ -608,7 +635,8 @@ def strip_provider_frontmatter(markdown: str) -> str:
 
 
 def _render_frontmatter(metadata: CanonicalHandoffMetadata) -> str:
-    fields = metadata.model_dump()
+    # The optional CP-DR fields are omitted, never rendered as null (§12.1).
+    fields = metadata.model_dump(exclude_none=True)
     lines = ["---"]
     for key, value in fields.items():
         if key != "upstream_artifacts_used" or not value:
@@ -677,7 +705,7 @@ def canonicalize_for_tests(
         },
         "methodology": {"build_id": build_id or _default_build_id()},
         "host_identity": dict(run_identity),
-        **({"handoff_metadata": metadata.model_dump()} if metadata is not None else {}),
+        **({"handoff_metadata": metadata.model_dump(exclude_none=True)} if metadata is not None else {}),
         "evidence_refs": [
             {"source_id": source_id, "block_id": block_id} for source_id, block_id in sorted(delivered)
         ],

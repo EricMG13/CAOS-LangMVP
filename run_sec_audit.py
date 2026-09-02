@@ -45,6 +45,7 @@ BODY_PROBES = {
     ("POST", "/api/cases/{case_id}/rv/loan-universes"): {"source_id": "foreign-source"},
     ("POST", "/api/cases/{case_id}/runs"): {"pathway": "FULL_CREDIT", "depth": "screen"},
     ("POST", "/api/cases/{case_id}/snapshot/switch"): {"snapshot_id": "foreign-snapshot"},
+    ("POST", "/api/runs/{run_id}/research-plan/approve"): {"plan_hash": f"sha256:{ZERO_DIGEST}"},
     ("POST", "/api/cases/{case_id}/models"): {},
     ("POST", "/api/cases/{case_id}/models/previews"): {
         "build_id": "foreign-build", "registry_version": "audit", "registry_digest": ZERO_DIGEST,
