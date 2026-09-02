@@ -165,10 +165,10 @@ suite passed and the process did not exit.
 
 Two things follow, independent of which connection is at fault:
 
-- The `server` job has **no `timeout-minutes`**, so it inherits the 360-minute
-  default. `frontend` (15) and `browser` (20) have one; `server`, `deploy-assets`,
-  `image` and `security` do not. A cap of ~40 min would turn six wasted hours
-  into a fast, clearly-labelled timeout.
+- The `server` job had **no `timeout-minutes`**, so it inherited the 360-minute
+  default; `deploy-assets`, `image`, `security`, `nightly.operational` and
+  `security-review` were the same. **Fixed** — see recommendation 1. This bounds
+  the symptom; it does not fix the leak.
 - PR #25 has therefore **never had a completed server run** since it was opened on
   2026-08-29. Dependency PRs are not being verified at all.
 
@@ -214,11 +214,16 @@ it should be checked against tomorrow's run rather than assumed.
 
 ## Recommendations, in the order I would do them
 
-1. **Cap the unguarded jobs.** `timeout-minutes` on `server` (~40),
-   `deploy-assets`, `image`, `security`. Cheapest possible change; converts
-   finding C from six silent hours into a labelled failure.
-2. **Raise nightly's cap** to match the suite's real runtime, or split the
-   regression job. Do this before 06:00 UTC.
+1. ~~**Cap the unguarded jobs.**~~ **Done.** Every job in all three workflows
+   now carries `timeout-minutes`: `server` 45, `image` 20, `security` 15,
+   `deploy-assets` 10, `nightly.operational` 30, `security-review` 30. Finding
+   C now costs 45 minutes and reports as a timeout instead of costing six hours
+   and reporting as `cancelled`.
+2. ~~**Raise nightly's cap.**~~ **Done.** `nightly.regression` 30 → 90. It runs
+   `CORPUS_FULL=1` plus lint, frontend, build, Playwright and both browser
+   sweeps, against a CI subset that alone measured 24m42s/31m28s. Deliberately
+   loose — a scheduled job pays nothing for headroom, and too tight a cap is
+   the failure being fixed.
 3. **Fix the focus race properly** (issue #38) — one owner for focus
    restoration. Not a fourth referee.
 4. **Root-cause the non-exit** — find the unclosed aiosqlite connection. With

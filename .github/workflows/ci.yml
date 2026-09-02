@@ -36,6 +36,18 @@ jobs:
   server:
     name: Server — tests and full lint
     runs-on: ubuntu-latest
+    # A hang here is not hypothetical. On PR #25 (runs 33385731195 and
+    # 33264033292) pytest printed "556 passed, 12 skipped in 147.96s" and the
+    # step then sat until GitHub's 360-minute default killed it — both matrix
+    # legs, twice, ~12 runner-hours a go. Worse than the cost: the platform
+    # reports that as `cancelled`, the same word `cancel-in-progress` produces,
+    # so it reads as routine and nobody looks.
+    # 45 is sized off measured worst case, not off the suite's average: the
+    # backend suite alone ran 24m42s (3.14) and 31m28s (3.12) on one green run
+    # of the same commit, so runner variance is already ~6 minutes wide on
+    # identical work. Raise this when the suite legitimately outgrows it; do
+    # not remove it.
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
@@ -153,6 +165,9 @@ jobs:
   deploy-assets:
     name: Deploy — scripts, compose, authority
     runs-on: ubuntu-latest
+    # Seconds in practice; the cap exists so a wedged docker/compose call fails
+    # fast instead of inheriting the 360-minute default.
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Shell syntax
@@ -188,6 +203,9 @@ jobs:
   image:
     name: Image — build and resource verification
     runs-on: ubuntu-latest
+    # ~2 minutes observed, but this job builds two images, boots PostgreSQL and
+    # pulls the Trivy DB, so it has the most legitimate reasons to be slow.
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Build app image
@@ -272,6 +290,7 @@ jobs:
   security:
     name: Security — dependency and SAST gates
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
