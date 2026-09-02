@@ -152,7 +152,7 @@ engine, the bundle, or the routes.
   `caos/server/worker.py` (polls the store for QUEUED model builds/exports and
   executes them; the only process with LibreOffice, so XLSX rendering lives
   here and nowhere else). `worker.py --once` runs a single pass.
-- Suite: `python -m pytest caos/tests -q` — 630 passed and 2 optional PostgreSQL
+- Suite: `python -m pytest caos/tests -q` — 655 passed and 2 optional PostgreSQL
   tests skipped in the default invocation with the retained corpus present.
   Both optional tests pass against the local PostgreSQL 17 QA container.
   Spec tests (`caos/tests/spec/`) are the contractual surface —
