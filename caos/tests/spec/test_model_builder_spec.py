@@ -1127,16 +1127,17 @@ async def test_acceptance_survives_dispatch_failure_with_a_retryable_queued_buil
     assert len(models.list_builds(case["id"])) == 1
 
 
-async def test_accepting_non_full_credit_queues_nothing(models, engine, store):
-    """Row 120 + §10.6: only accepted FULL_CREDIT feeds model builds, and the
-    six-module validate_bundle never runs for any other pathway."""
+async def test_accepting_non_full_credit_without_a_base_model_queues_nothing(models, engine, store):
+    """Row 120 + §10.6, as amended by §14.18: an overlay pathway accepted before
+    any Full Credit model exists queues nothing, the six-module validate_bundle
+    never runs, and the refusal names the base requirement."""
     case, _source = seed_case_with_source(store)
     run = await engine.run_scripted_for_tests(case["id"], pathway="EARNINGS_UPDATE")
     await engine.accept(run["id"], actor="analyst")
 
     assert models.list_builds(case["id"]) == []
     assert models.validate_bundle_calls_for_tests() == []
-    with pytest.raises(Exception, match="MODEL_BUILD_INVALID|NOT_READY"):
+    with pytest.raises(Exception, match="MODEL_NOT_READY: PRIOR_FULL_CREDIT_MODEL_REQUIRED"):
         models.queue_build(case["id"], "analyst")
 
 
@@ -1156,7 +1157,7 @@ async def test_non_full_credit_authority_reads_as_not_ready_not_as_invalid_input
 
     readiness = models.readiness(case["id"])
     assert readiness["status"] == "NOT_READY", "the wrong pathway must leave the Run Console way out visible"
-    assert [blocker["code"] for blocker in readiness["blockers"]] == ["ACCEPTED_FULL_CREDIT_REQUIRED"]
+    assert [blocker["code"] for blocker in readiness["blockers"]] == ["PRIOR_FULL_CREDIT_MODEL_REQUIRED"]
     assert readiness["blockers"][0]["detail"], "the callout renders the detail; a blank one tells the analyst nothing"
 
     with pytest.raises(Exception, match="MODEL_NOT_READY"):

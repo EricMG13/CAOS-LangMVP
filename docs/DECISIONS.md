@@ -488,11 +488,14 @@ Consolidation note: where §6 conflicts with §10/§11/§12 (output Σ vs Σ+max
     outsiders, 403 for readers, 409 stale/not-pending, 422 malformed hash).
     `deep_research_available` is `Engine.deep_research_availability()` — the
     cut, the compiled route, the registry and the provider binding — never a
-    literal. Deep Research is model-optional: acceptance queues no build and
-    `queue_build` answers `MODEL_NOT_READY`; the deliverable draft, freeze,
-    file and reconstruction path is the ordinary one. Host control proves
-    orchestration only; the C22 pack and live-model qualification are
-    external inputs.
+    literal. Deep Research is model-optional: it declares no numeric effect
+    (item 18 supersedes the original "acceptance queues no build" —
+    acceptance now queues a `DEEP_RESEARCH_REVALIDATION` overlay when a Full
+    Credit model exists in the case, and `queue_build` answers
+    `MODEL_NOT_READY: DEEP_RESEARCH_NO_NUMERIC_EFFECT` when none does); the
+    deliverable draft, freeze, file and reconstruction path is the ordinary
+    one. Host control proves orchestration only; the C22 pack and live-model
+    qualification are external inputs.
 17. **Document-first intake (2026-09-02, Task 8, ETR-B01).** Supplied
     documents are the only analytical input of the golden journey.
     `POST /api/intake` is one strict multipart transaction (`files`, optional
@@ -547,3 +550,73 @@ Consolidation note: where §6 conflicts with §10/§11/§12 (output Σ vs Σ+max
     presented for review and never accepted on the analyst's behalf. Known
     bound: the 32 MiB edge body cap limits one request; a larger pack is
     admitted across intakes into the same case.
+18. **Every pathway declares one model effect, and a model is source-complete
+    or it is not READY (2026-09-02, Task 9, ETR-B12).** Full Credit builds the
+    complete model from the six canonical artifacts as before. Every other
+    pathway resolves through one overlay mechanism
+    (`models/service.py::_resolve_overlay_snapshot`): the nearest validated
+    Full Credit ancestor in the acceptance chain (intermediate snapshots by
+    identity, the base fully live), the base build re-verified by
+    recomputation, the accepted run's calculation records re-executed against
+    the pinned binding record for record (`_validated_calculations`,
+    generalised from the CP-4C check), and one `pathway_effects` entry
+    (`caos.model-pathway-effect.v1`) on a byte-identical copy of the base tabs
+    under the overlay's own input fingerprint. The base model's periods,
+    assumptions and outputs are never rewritten (CALC-006 by construction);
+    reported actuals, external forecasts and analyst scenarios keep distinct
+    `authority` labels inside the effect. Effects: Earnings Update
+    `EARNINGS_PERIOD_FORECAST_VARIANCE` (the run's verified CP-1/CP-1B
+    `credit_metrics` periods as `REPORTED_ACTUAL`, and reported-minus-forecast
+    per base and downside column for the same fiscal year, with
+    `FORECAST_PERIOD_NOT_MODELLED`, `ACTUAL_NOT_DISCLOSED` and
+    `ZERO_FORECAST_DENOMINATOR` as named gaps — never zero); Covenant &
+    Refinancing `COVENANT_REFINANCING_ASSUMPTIONS` (CP-4 `covenant_headroom`
+    tests and CP-4C `funding_gap` views as documentary terms, plus
+    `assumption_updates` mapping a maximum-leverage test to
+    `covenant.max_total_leverage`: `PROPOSED_FOR_SIGN_OFF` when the base slot is
+    READY, `PROPOSED_REQUIRES_FULL_CREDIT_HANDOFF` when the accepted CP-2G
+    handoff left it UNAVAILABLE, because the pinned engine lets a preview move
+    a value and never a status; `UNMAPPED_COVENANT_TEST` otherwise); Relative
+    Value `RELATIVE_VALUE_MARKET_MARKS` (the loan universe the run pinned at its
+    gate, re-read and digest-verified, attached as a bounded row projection
+    with `time_alignment` against the base model's latest reported period end
+    and the run's analysis date — `ALIGNED`, `PRECEDES_LATEST_REPORTED_PERIOD`
+    or `POSTDATES_ANALYSIS`, the last two as named limitations; a run with no
+    pinned workbook reads `RELATIVE_VALUE_MARKET_MARKS_REQUIRED`); Distressed
+    `DISTRESSED_SCENARIO_RECOVERY` (shape unchanged from §14.15); Deep Research
+    `DEEP_RESEARCH_REVALIDATION` (`numeric_effect: NONE`, the base recomputed
+    and compared, the brief digest and approved plan hash bound; with no Full
+    Credit model in the case readiness is `DEEP_RESEARCH_NO_NUMERIC_EFFECT` —
+    this supersedes item 16's "acceptance queues no build"). Acceptance of any
+    of the six pathways queues its effect (`on_accepted`). Two further truthful
+    readiness states: `FULL_DEPTH_REQUIRED` when the accepted route lacks the
+    modules the effect consumes (screen-depth Full Credit, Earnings, Covenant
+    and Relative Value; Distressed screen keeps CP-4C and overlays), and
+    `PRIOR_FULL_CREDIT_MODEL_REQUIRED` for an overlay pathway with no Full
+    Credit model in its chain (Distressed keeps `DISTRESSED_BASE_MODEL_REQUIRED`);
+    `queue_build` answers `MODEL_NOT_READY: <code>` so the wire code is
+    unchanged. Source lineage is part of every build: one row per source in the
+    accepted snapshot's set with the intake disposition and reason (every intake
+    of the case, later rows superseding), the expected consumers, the artifacts
+    that cite it, whether a model-facing table names it, and one binding —
+    `MODEL_INPUT`, `CITED_ANALYSIS`, `MARKET_MARKS`, `RESEARCH_BRIEF`,
+    `SUPERSEDED`, `NOT_REQUIRED` or `UNBOUND`. A `used` document of a relevant
+    class (annual, quarterly, earnings, guidance, legal, restructuring, market
+    marks, brief) that is `UNBOUND` makes the model
+    `MODEL_SOURCE_LINEAGE_INCOMPLETE` (NOT_READY, the detail naming the source
+    ids); an `other` document nothing consumed is `NOT_REQUIRED` with its reason,
+    never silently discarded. The lineage digest is in the input fingerprint,
+    the lineage rides the payload, the preview worksheet and the export
+    ("Source Lineage" audit sheet beside "Pathway Effects"), and the READY
+    transition writes `model.build_ready` (build, snapshot, run, payload
+    digest) in the same transaction. `HostControlProvider` reads one block of
+    every pinned source, bounded by the module read allowance, so keyless runs
+    are source-complete up to that allowance; the corpus double spreads one
+    read of each of the thirty documents across the route. Loan-workbook cell
+    text passes `validate_boundary_text` at the importer
+    (`RV_CELL_TEXT_INVALID`, workbook REJECTED), closing the `CLAUDE.md` gap at
+    the one seam every path shares. Deliverables still bind the prior Full
+    Credit base for Earnings and Covenant (§10.10 as amended by §14.15) and the
+    current overlay for Distressed; rendering the new effects in published
+    outputs is Task 10's. Licensed market marks and live-model qualification
+    of every effect remain external inputs.

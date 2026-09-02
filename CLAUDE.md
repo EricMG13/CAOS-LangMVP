@@ -103,6 +103,21 @@ Standing rules that back them:
   its `sha256:` hash, and `Engine.approve_research_plan` is the expected-hash
   compare-and-swap that lets `wait()` re-enter the node (invariant 5,
   DECISIONS §14.16).
+- Every pathway declares one model effect (DECISIONS §14.18). Full Credit
+  builds the complete model from the six canonical artifacts; Earnings Update,
+  Covenant & Refinancing, Relative Value, Distressed and Deep Research resolve
+  through `models/service.py::_resolve_overlay_snapshot` — the nearest
+  validated Full Credit ancestor, its build re-verified by recomputation, the
+  accepted run's calculation records re-executed, one `pathway_effects` entry
+  on a byte-identical copy of the base tabs under the overlay's own input
+  fingerprint. Every build carries `source_lineage` (one row per pinned
+  source: intake disposition, consumers, citing artifacts, model tables,
+  binding); a `used` relevant document bound to nothing is
+  `MODEL_SOURCE_LINEAGE_INCOMPLETE` and never READY. Readiness answers
+  `FULL_DEPTH_REQUIRED`, `PRIOR_FULL_CREDIT_MODEL_REQUIRED`,
+  `DEEP_RESEARCH_NO_NUMERIC_EFFECT` and `RELATIVE_VALUE_MARKET_MARKS_REQUIRED`
+  as NOT_READY preconditions; the READY transition audits `model.build_ready`
+  in its own transaction.
 - Run progress reaches the UI as graph events: `GET /api/runs/{id}/events` is a
   thin SSE tail of `run_events` (Last-Event-ID resume; stream closes once a
   terminal run is fully delivered). The frontend never reads event payloads —
@@ -335,15 +350,22 @@ engine, the bundle, or the routes.
   would pass while scanning nothing. The step now asserts bandit's JSON report
   carries no parse errors and covers the server, so a naive version bump fails
   loudly instead of silently.
-- Loan-workbook cell text is not `BoundaryText`. `artifacts/loan_universe.py::_text`
-  strips and bounds at 32 KB but does not run the control-byte / bidi-override /
-  NFC checks, so a borrower name carrying U+202E rides the CP-3 artifact and the
-  API response into a rendered deliverable. It cannot mint two lineages —
-  `universe_digest` is content-addressed over exactly the stored bytes and
-  `instrument_key` is the uppercased FIGI/Bloomberg id — so this is a render
-  defect, not an identity one. Closing it changes what the importer accepts
-  (rejected rows become structured findings), which is a wire-visible contract
-  change; `SPEC_RECONCILIATION.md` carries the analysis.
+- Loan-workbook cell text is `BoundaryText` at the importer since Task 9:
+  `artifacts/loan_universe.py::_text` runs `validate_boundary_text` after the
+  32 KB bound, and a failing cell is the structured finding
+  `RV_CELL_TEXT_INVALID` (the workbook is REJECTED). This is the one seam every
+  path shares — the CP-3 artifact, the Relative Value model effect and every
+  renderer read the stored rows.
+- Deliverables for Earnings Update and Covenant & Refinancing still bind the
+  prior Full Credit base build (`PRIOR_FULL_CREDIT_BASE`), not the overlay
+  build that carries their pathway effect; Relative Value and Deep Research
+  deliverables bind no overlay either. The effects ride the overlay builds'
+  payloads and exports today; rendering them in published outputs is Task 10.
+- Cross-intake restatement is not recorded by intake: a restated annual dropped
+  into a case whose original came from an earlier intake is admitted as `used`
+  without marking the original `superseded` (`intake/service.py::
+  _apply_dispositions` groups the current pack only). The model's lineage then
+  binds both by citation. Supersession across intakes is a follow-up.
 - Blocks live in one JSON column on the source row, so `read_evidence` parses
   every block of a source on each call. Measured at the ceiling: a 10 MB source
   costs 17 ms per read, so a run's ~80 reads cost about 1.4 s. Fine at current

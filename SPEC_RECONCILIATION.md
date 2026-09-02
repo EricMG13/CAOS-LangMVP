@@ -692,3 +692,67 @@ calculators must run each through `run_methodology_calculation`
   (`caos/tests/test_runtime_calculations.py`: limitation, retry-as-repair,
   core-terminal), never `SOURCE_EVIDENCE_INSUFFICIENT`, which stays the
   provider-declared source gate's code (`test_sparse_or_legally_incomplete_pack_returns_a_typed_refusal`).
+
+## Source-complete modelling (2026-09-02, Task 9, ETR-B12)
+
+`caos/tests/spec/test_source_complete_modelling_spec.py` drives the
+document-first journey (`POST /api/intake` → run → accept → build) with an
+answer-keyed provider double at the ordinary provider port (identity
+`answer_key_fixture`, never `host_control`; no `run_scripted_for_tests`). The
+answer key is the pack: the annual report is the canonical data source, the
+quarterly reaches the CP-1B snapshot table, guidance is the forecast-driver
+authority, a restated annual supersedes the original and moves the FY2025
+margin, a press clipping is never requested. `test_corpus_pathways.py` runs the
+same lineage and model-effect assertions over the thirty-document Carnival
+pack on every startable route (`CORPUS_FULL=1`).
+
+### CALC-001–020 → retained tests
+
+| Check | Test |
+| --- | --- |
+| CALC-001 input validation incl. relevance-manifest membership | `test_full_credit_build_binds_every_relevant_document_to_the_model_or_the_analysis`; `test_a_used_document_that_nothing_consumed_is_a_typed_incomplete_model_never_ready`; `test_model_builder_spec::test_golden_cp_model_fixtures_pass_vendor_validation` |
+| CALC-002 refuse when an unconditional stable table is absent | `test_model_builder_spec::test_cp_model_rejects_hidden_stable_tables`; `test_removing_the_annual_report_refuses_at_the_source_gate` |
+| CALC-003 unavailable optional assumptions stay null with a named gap | `test_model_builder_spec::test_allowed_unavailable_liquidity_degrades_to_named_nulls_not_zeros`; `test_removing_the_forecast_source_is_a_typed_model_refusal_never_a_default` |
+| CALC-004 NaN, infinity, invalid decimal text, zero denominators, out-of-bound | `test_model_builder_spec::test_finite_guards_reject_non_finite_and_zero_denominators`, `::test_assumption_inputs_fail_closed_on_unit_nonfinite_and_bounds`, `::test_zero_denominators_yield_none_metrics_and_nonfinite_cp1_fails_validation` |
+| CALC-005 derived quarter / YTD / FY / LTM / pro-forma / base / downside | `test_derived_periods_follow_the_governed_formulas_and_never_overwrite_a_reported_one` |
+| CALC-006 a derived period never overwrites a reported one | the same test, plus `test_every_pathway_overlays_its_declared_effect_on_the_full_credit_model` (overlay tabs byte-identical to the base) |
+| CALC-007 identical outputs from identical inputs | `test_model_builder_spec::test_accepted_full_credit_queues_and_builds_an_idempotent_content_addressed_model`; `test_an_irrelevant_document_changes_no_result_and_is_never_silently_discarded` |
+| CALC-008 workbook formulas match the engine | `test_model_builder_spec::test_workbook_pins_registry_identity_and_cell_expectations_match_engine` |
+| CALC-009 every workbook formula accounted for | `test_model_builder_spec::test_workbook_pins_registry_identity_and_cell_expectations_match_engine`, `::test_worksheet_serialization_requires_no_external_binaries` |
+| CALC-010 first breach recorded consistently | `test_model_builder_spec::test_first_breach_identity_family_sign_and_committee_visibility` |
+| CALC-011 scenario / sensitivity / preview / rebase transient until sign-off | `test_model_builder_spec::test_preview_and_signoff_share_exact_calculation_and_previews_persist_nothing`, `::test_scenario_and_one_way_are_transient_with_registry_guardrails`, `::test_newer_accepted_build_stales_revisions_and_rebase_preview_is_transient` |
+| CALC-012 hard bounds one below, at, one above | `test_hard_bounds_apply_one_value_below_at_and_above_each_boundary` (six cells) |
+| CALC-013 preview bound to build, registry, assumptions, draft, output | `test_model_builder_spec::test_preview_and_signoff_share_exact_calculation_and_previews_persist_nothing`, `::test_http_preview_signoff_history_and_stale_head_conflict` |
+| CALC-014 stale preview / build / source set / registry / assumptions refused | `test_model_builder_spec::test_sign_off_validates_exact_current_build_identity`, `::test_sign_off_against_superseded_build_reports_current_build_identity`, `::test_warmed_model_caches_cannot_outlive_withdrawn_source_authority` |
+| CALC-015 signed revision + audit committed atomically by CAS | `test_model_builder_spec::test_sign_off_cas_is_append_only_with_separate_head_and_monotonic_order`, `::test_two_concurrent_sign_offs_have_one_atomic_winner` |
+| CALC-016 immutable revision history | `test_model_builder_spec::test_signed_revision_database_guard_refuses_every_immutable_mutation_and_delete`, `::test_signed_revision_immutability_ddl_covers_sqlite_and_postgres` |
+| CALC-017 rebase only compatible assumptions | `test_model_builder_spec::test_rebase_reports_source_context_drift_and_unmapped_assumptions` |
+| CALC-018 export the exact signed revision, digest verified | `test_model_builder_spec::test_signed_export_is_runtime_pinned_hash_verified_and_never_demotes`, `::test_revision_download_rejects_another_revisions_valid_export_manifest` |
+| CALC-019 concurrent build / preview / sign-off / export idempotent or conflicting | `test_model_builder_spec::test_concurrent_queue_is_idempotent_and_attributes_the_winner`, `::test_sign_off_serializes_with_a_concurrent_newer_build_completion`, `::test_calculations_share_one_aggregate_deadline_without_persistence` |
+| CALC-020 reproduce a signed model from retained inputs, engine, registry | `test_distressed_model_overlay::test_distressed_recomputes_calculation_outputs_before_model_use`; `test_an_overlay_effect_is_rebuilt_from_the_records_it_names_and_refuses_a_forged_one`; `test_model_builder_spec::test_validated_build_rejects_tampered_publishing_identity` |
+
+### Metamorphic cases
+
+| Change | Answer-keyed effect asserted |
+| --- | --- |
+| Remove the annual report | run refused `SOURCE_EVIDENCE_INSUFFICIENT` (provider-declared gate), no snapshot, readiness `ACCEPTED_FULL_CREDIT_REQUIRED`, no build |
+| Remove the quarterly report | READY; outputs and assumption values identical; fingerprint differs; CP-1B input differs; quarterly lineage row absent |
+| Remove the forecast source | run succeeds; the CP-2G driver is `UNAVAILABLE / MANAGEMENT_GUIDANCE_UNAVAILABLE`; readiness `CANONICAL_MODEL_INPUTS_INVALID`; no build — never a default |
+| Add an irrelevant document (same case) | READY; model tabs, outputs, assumptions and QA identical; fingerprint differs; manifest row `other/used` with reason; lineage `NOT_REQUIRED`, never discarded |
+| Add a restatement | original `SUPERSEDED`, restated `MODEL_INPUT`; outputs and assumptions differ; margin 0.22 sourced to the guidance document |
+| Add a conflict (same name, different bytes) | `INTAKE_SOURCE_CONFLICT` 422; nothing admitted; `intake.refused` audit |
+| Withdraw a bound source | readiness `CANONICAL_MODEL_INPUTS_INVALID`; registry read refused; `source.withdrawn` audit; re-run refused at the source gate |
+| Corrupt a bound source (store blocks) | readiness `CANONICAL_MODEL_INPUTS_INVALID`; registry read refused |
+
+### Anti-vacuity ledger
+
+- The lineage oracle is reached: `test_a_used_document_that_nothing_consumed…`
+  makes the double skip one relevant document and asserts the typed
+  `MODEL_SOURCE_LINEAGE_INCOMPLETE` naming that source id, with no build row.
+- The overlay record check is reached: `test_an_overlay_effect_is_rebuilt…`
+  forges a CP-4 output digest and asserts acceptance refuses (`RUN_NOT_READY`).
+- Every delivered block must be cited (`validate_citations`), so "unused"
+  means "never requested": the double's `unread_kinds` is the only way a
+  document stays uncited, and the corpus double reads every document once.
+- The provider identity is `answer_key_fixture`, `qualification_status`
+  `unqualified`; nothing here is live-model qualification.

@@ -49,7 +49,17 @@ class ModelInputError(ValueError):
     (bundle paths, table ids) and must never reach the wire.
     """
 
-    def __init__(self, message: str, code: str = "CANONICAL_MODEL_INPUTS_INVALID") -> None:
+    def __init__(
+        self,
+        message: str,
+        code: str = "CANONICAL_MODEL_INPUTS_INVALID",
+        *,
+        detail: str | None = None,
+    ) -> None:
+        # `detail` is the analyst-facing sentence readiness may render; it is
+        # written from host identifiers only, never from the message, which can
+        # interpolate bundle paths and table ids.
+        self.detail = detail
         super().__init__(message)
         self.code = code
 

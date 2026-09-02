@@ -215,10 +215,10 @@ function WorksheetSurface({ payload }: { payload: WorksheetPayload }) {
   return <>
     <div className="worksheet-tabs" role="tablist" aria-label="Model worksheets">{payload.tabs.map((item, index) => <button id={`model-tab-${item.id}`} key={item.id} className="worksheet-tab" type="button" role="tab" aria-selected={item.id === tab.id} aria-controls="model-worksheet-panel" tabIndex={item.id === tab.id ? 0 : -1} onClick={() => selectTab(item)} onKeyDown={(event) => onTabKeyDown(event, index)}>{item.title}</button>)}</div>
     <div id="model-worksheet-panel" role="tabpanel" aria-labelledby={`model-tab-${tab.id}`}><WorksheetGrid tab={tab} selected={selectedCell} onSelect={setSelectedCell} /></div>
-    <aside className={styles.lineage} id="model-cell-lineage" aria-labelledby="model-cell-lineage-heading">
+    <section className={styles.lineage} id="model-cell-lineage" aria-labelledby="model-cell-lineage-heading">
       <h3 id="model-cell-lineage-heading">Cell lineage</h3>
       {selectedCell ? <><dl className="state-facts"><dt>Cell</dt><dd className="mono">{tab.title}!{selectedCell.address}</dd><dt>Owner</dt><dd>{selectedCell.owner || "CP-MODEL"}</dd><dt>Period</dt><dd className="mono">{selectedCell.period_id || "—"}</dd></dl>{selectedCell.formula ? <code className="lineage-code">{selectedCell.formula}</code> : null}<p className="mono lineage-source">{selectedCell.source_refs || "Calculated on the server from mapped inputs."}</p></> : <p className="muted">Select a sourced or calculated worksheet value to inspect its lineage.</p>}
-    </aside>
+    </section>
   </>;
 }
 
