@@ -16,7 +16,7 @@ larger sample, the correction is kept rather than the first impression.
 |---|---------|-----|--------|
 | A | Unicode PDF path: missing shaper, then font ligatures | `Server` (both legs) | **Fixed and confirmed green** — `4b2195e`, `1013d47` |
 | B | Dirty-draft focus-restoration race | `Browser` | **Open** — issue #38, red on main now |
-| C | Suite passes, process never exits, job burns to the 360-min cap | `Server` | **Open, previously unrecorded** |
+| C | Suite passes, process never exits, job burns to the 360-min cap | `Server` | **Root-caused and fixed** — teardown race in `Engine._drain_tasks` |
 | D | Consecutive pushes to main cancel their own CI | all | **Open, process** |
 
 The recurring theme in A and C is the same: **CI does not fail loudly enough**.
@@ -190,8 +190,9 @@ aiosqlite runs each connection on its own non-daemon `threading.Thread`, and
 CPython joins non-daemon threads at interpreter shutdown — an unclosed connection
 is therefore a coherent mechanism for "tests finished, interpreter will not
 exit", and the `Terminate orphan process: (python)` line is consistent with it.
-**Stated as the leading hypothesis, not as proven**: the proven part is that the
-suite passed and the process did not exit.
+That was recorded as the leading hypothesis. **It is now the confirmed root
+cause, and the connection is not leaked by accident — `aclose()` is aborted
+before it ever closes the savers.** See the next subsection.
 
 Two things follow, independent of which connection is at fault:
 
@@ -201,6 +202,101 @@ Two things follow, independent of which connection is at fault:
   the symptom; it does not fix the leak.
 - PR #25 has therefore **never had a completed server run** since it was opened on
   2026-08-29. Dependency PRs are not being verified at all.
+
+### Root cause found: a teardown race in `Engine._drain_tasks`
+
+The lead came from an unrelated CI failure on PR #39
+(run 33670291048, `Server 3.12`):
+
+```
+FAILED caos/tests/spec/test_runs_spec.py::test_engine_close_drains_foreign_loop_continuation
+  - RuntimeError: cannot close a task without a runnable owner loop
+```
+
+`Engine._drain_tasks` cancels a continuation that lives on a *foreign* event
+loop, then re-checks that the loop is still runnable before waiting on it:
+
+```python
+if cancel:
+    owner.call_soon_threadsafe(task.cancel)     # ends the foreign loop
+...
+owner.call_soon_threadsafe(wait_on_owner)
+if not self._owner_loop_runnable(owner, loop):  # ...and then complains it ended
+    raise RuntimeError("cannot close a task without a runnable owner loop")
+```
+
+**The cancel is what ends the owner loop.** Once the task is cancelled its
+`run_until_complete` returns and the thread closes the loop, so "the loop is
+gone" and "the task finished" are the same event observed from two threads. The
+window between issuing the cancel and re-checking liveness is exactly the window
+in which the loop legitimately dies, which is why it shows up on contended CI
+runners and not on an idle laptop.
+
+Two landing points, same race:
+
+- loop closes **before** `call_soon_threadsafe(wait_on_owner)` → `RuntimeError:
+  Event loop is closed`
+- loop closes **between** that and the re-check → `RuntimeError: cannot close a
+  task without a runnable owner loop` (what CI hit)
+
+**Reproduced twice, locally, on stock code:**
+
+| method | result |
+|---|---|
+| the CI test run 60× unmodified | **1 failure**, the exact CI error |
+| window widened 150 ms (slowing the first statement after the cancel; no logic changed) | **fails every time**, with `aclose outcome='RuntimeError: Event loop is closed'`, `cancelled=True`, `engine._closed=False` |
+
+`cancelled=True` with `engine._closed=False` is the whole bug in one line: the
+drain **succeeded** — the task really was cancelled — and the code reported that
+success as a failure.
+
+### Why this is finding C
+
+`aclose()` drains continuations *before* it closes savers, in the same `try`:
+
+```python
+if continuations:
+    await self._drain_tasks(continuations, cancel=True)   # <- raises here
+...
+for key, saver in savers:
+    await saver.conn.close()                              # <- never reached
+```
+
+`self._savers` holds `AsyncSqliteSaver` instances wrapping `aiosqlite.connect`
+connections, and **aiosqlite runs each connection on a non-daemon thread**. So
+the chain is:
+
+1. the drain race makes `aclose()` raise,
+2. the raise skips every `saver.conn.close()` and never sets `_closed`,
+3. the aiosqlite connections stay open on non-daemon threads,
+4. CPython joins non-daemon threads at interpreter shutdown, so the process
+   hangs after pytest has already printed its summary,
+5. the job burns to the 360-minute cap and reports as `cancelled`.
+
+That is finding C exactly, including the unclosed-`aiosqlite` ResourceWarning
+and the `Terminate orphan process: (python)` line.
+
+### The fix
+
+A task that has finished is a drained task. `_drain_tasks` now treats "the owner
+loop is gone" as a failure **only while the task is still pending**, and the two
+`call_soon_threadsafe` calls that can race the loop's close are guarded the same
+way. The genuine error is preserved: `test_engine_close_refuses_owner_loop_stopped_during_waiter_handoff`
+stops the owner loop while its task is still pending and still expects the
+`RuntimeError`, and it passes.
+
+| check | before | after |
+|---|---|---|
+| CI test, 60 / 200 runs | 1 failure in 60 | **0 failures in 200** |
+| widened-window probe | raises, `_closed=False` | **clean, `_closed=True`** |
+| `caos/tests/spec/test_runs_spec.py` | — | 77 passed |
+| suite minus corpus | — | see the commit |
+
+Landed in `caos/server/caos/engine/runtime.py`. Note what this does **not**
+prove: no CI job has yet been observed hanging *and then* recovering under the
+fix, because the hang is rare. The mechanism is evidenced end to end and the
+race is closed; the six-hour symptom should not recur, and the 45-minute cap
+from recommendation 1 now bounds it if some other path produces one.
 
 ## D. Consecutive pushes to main cancel their own CI
 
