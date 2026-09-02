@@ -142,6 +142,39 @@ This is a delta plan, not a rebuild. Preserve proven controls and target the rem
 | Loan-workbook text can bypass `BoundaryText` and bidirectional-control validation | Close that boundary before corpus/model qualification |
 | The frontend advertises an unavailable Admin Studio | Remove the destination now; add an authenticated audit/package route later only if the product actually needs it |
 
+## Deliberate scope reductions
+
+The binding release gates remain unchanged. These reductions remove duplicated
+implementation and development-time qualification work; they do not turn a
+required candidate gate into a waiver.
+
+- **Reuse green controls.** The ten engine invariants, 223 mapped contractual
+  rows, source-ingestion controls, deterministic calculations, strict response
+  contracts, crash/resume seams, the 30-document Carnival host-control pack,
+  and existing route/security checks are retained as candidate reruns. They are
+  not separate rebuilds or new test families.
+- **Keep corpus material proportionate.** Carnival is the shared complete
+  performing-credit pack for C01/C17/C18/C19; C20 adds one licensed
+  market-marks pack; C21 adds one stressed/restructuring pack; and C22 adds one
+  question-specific research pack. C02–C16 are small, composable synthetic
+  fixtures unless a live qualification answer key genuinely needs a complete
+  document pack.
+- **Implement one journey, parameterize its cases.** Phase 3 builds one
+  document-first intake/review flow. Its six pathway selections use data-driven
+  tests, not six implementations. The full three-browser matrix belongs to the
+  enterprise candidate stages.
+- **Use a representative presentation baseline.** Phase 4 keeps a compact
+  cross-format golden set for normal, dense, long-text, multilingual, held,
+  and filed output. Per-pathway visual and blind-review evidence is collected
+  once on the frozen candidate in Phase 7.
+- **Extend existing failure seams.** Phase 5 first reuses the existing
+  kill-after-module, commit-gap, unresolved-spend, stale-worker,
+  renderer-tamper, and route-injection seams. New simulation work is limited to
+  unrepresented faults and two-connection PostgreSQL behaviour.
+- **Candidate-only scale proof.** The declared saturation workload, full
+  browser matrix, eight-hour soak, and reviewer panels are protected Phase 6–7
+  work, not normal development gates.
+
 ## Phase 0 — Establish a truthful baseline
 
 ### Objective
@@ -150,11 +183,10 @@ Make G0 measurable before changing behaviour. Remove stale counts and prose-only
 
 ### Implement
 
-1. Extend `docs/quality_ledger_coverage.py` so each in-scope feature and enterprise-readiness ID maps to:
-   - an existing test, simulation, review, or deliberately new test ID;
-   - a current result artifact type;
-   - one or more G0–G9 gates;
-   - a candidate status that cannot be `PASS` without a retained result from the same commit.
+1. Extend `docs/quality_ledger_coverage.py` only for unmapped enterprise IDs.
+   Preserve existing test mappings, require an artifact type and G0–G9 gate for
+   each added row, and reject a candidate `PASS` without a retained result from
+   the same commit.
 2. Generate the API route inventory from `app.openapi()["paths"]`, preserving the current explicit SSE and binary-response exemptions.
 3. Generate the UI destination inventory from the actual workspace destination declarations. Replace `production-inventory.mjs` as a release gate; do not patch its foreign routes or fixture IDs.
 4. Reconcile route scope across engine, OpenAPI contracts, Run Console, Report Studio, qualification, and publishing. The target is all six named pathways; while Distressed and Deep Research remain unimplemented, mark them unavailable rather than advertising false execution.
@@ -164,8 +196,8 @@ Make G0 measurable before changing behaviour. Remove stale counts and prose-only
 8. Keep the ordinary CI fast. Put live credentials, approved corpus, model qualification, simulations, and human sign-off behind a protected candidate run of the existing workflow.
 9. Add this plan and `ENTERPRISE_TESTING_READINESS.md` to version control before implementation. Fix the current `LICENSE` ledger-coverage failure and replace stale test-count claims with collected candidate results.
 10. Remove the unavailable Admin Studio destination and its nonexistent `/api/admin/bundle` and `/api/admin/audit` calls. Add audit-package UI/API later only when Phase 4 requires a user-facing download.
-11. Define and pin the deliverable benchmark commit, approved screenshots, pathway content rubric, minimum print sizes, and blind-review threshold. The benchmark is an input to acceptance, not a runtime dependency.
-12. Define enterprise-test data classes, retention, bounded logging, reset ownership, and permitted corpus handling. Full production data-lifecycle automation remains excluded.
+11. Check in the benchmark commit, a compact representative rubric, minimum print size, and reviewer threshold. Collect pathway-specific visual and blind-review evidence only in the frozen candidate run.
+12. Record the minimum enterprise-test data handling, bounded logging, and reset ownership in the environment manifest. Full production lifecycle automation remains excluded.
 
 ### Primary files
 
@@ -323,7 +355,7 @@ Those are product/input gaps, not corpus-count problems.
 
 ### Implement
 
-1. Extend the digest-pinned Carnival baseline into one versioned manifest covering C01–C22. Include complete multi-period packs with audited annual reports, every relevant quarterly/interim report, management and lender forecasts, forecast revisions, restatements, debt/covenant documents, presentations, and market data. Record retained filename, provenance, licence/classification, SHA-256, document type, reporting/forecast period, supersession status, expected facts, conflicts, forbidden conclusions, route expectation, and analyst-approved answer-key version.
+1. Keep Carnival as the shared complete performing-credit pack for C01/C17/C18/C19; add one licensed market-marks pack for C20, one stressed/restructuring pack for C21, and one question-specific pack for C22. Build C02–C16 as composable synthetic fixtures unless a live answer key requires a full pack. Record retained filename, provenance, licence/classification, SHA-256, document type, reporting/forecast period, supersession status, expected facts, conflicts, forbidden conclusions, route expectation, and analyst-approved answer-key version.
 2. For every supplied file, create a governed disposition: `used`, `superseded`, `conflicting`, `out_of_scope`, or `insufficient`. Every `used` file must reach evidence/model lineage; every other disposition needs a bounded auditable reason. Source-set membership alone is not proof of use.
 3. Reconcile annual, quarterly/interim, LTM, management/lender forecast, analyst base, and analyst downside periods by issuer perimeter, fiscal calendar, as-of date, currency, units, accounting definition, and restatement precedence. Preserve reported actuals, external forecasts, and analyst scenarios as distinct authorities.
 4. Keep network retrieval outside pytest. Make the fetch step verify every digest. Candidate qualification must hard-fail on missing or mismatched required bytes.
@@ -517,7 +549,7 @@ Every pathway publishes a decision-first report, the relevant model appendix/wor
 10. Render browser, Markdown, PDF, and XLSX from one server-frozen typed content payload. Prove semantic parity for headings, facts, numbers, units, citations, labels, limitations, model identity, and opinion across formats.
 11. Replace plain critical `write_bytes` publication with the existing hash-addressed atomic publication and verified-read pattern.
 12. Keep filed downloads byte-for-byte identical to the approved stored payload. Never rerender on download.
-13. Add approved visual goldens for every pathway and representative normal, dense, long-text, null, negative, multilingual, conditional, held, and filed states. Inspect every PDF page and XLSX sheet, then run a blind rubric review by two credit analysts and one external-stakeholder reviewer. Any material inferiority in hierarchy, legibility, print fidelity, evidence clarity, or decision usefulness fails the gate.
+13. Add approved cross-format goldens for representative normal, dense, long-text, multilingual, held, and filed states. Inspect every affected PDF page and XLSX sheet. Run the per-pathway blind rubric review by two credit analysts and one external-stakeholder reviewer once on the frozen Phase 7 candidate; material inferiority in hierarchy, legibility, print fidelity, evidence clarity, or decision usefulness fails the gate.
 14. Add missing governed audit events for source scanning/extraction, relevance disposition, evidence reads, provider activity, preview, rebase, sign-off, freeze, export, approval, filing, download, and typed refusals.
 15. Make audit storage append-only at the database boundary and add a hash-linked sequence or equivalent integrity proof that detects mutation, deletion, insertion, and reordering.
 16. Add one case-scoped audit-package builder containing manifests and bounded metadata for sources/dispositions, route/plan, evidence reads, provider attempts, artifacts, snapshots, models, report revisions, opinion sign-off, approval receipt, filed bytes, methodology, runtime, and environment.
@@ -598,9 +630,9 @@ Close durability and failure-under-load gaps under the declared single-instance 
 3. Prove database serialization for run-event sequence allocation, budget reserve/reconcile, snapshot acceptance, model/deliverable/opinion revisions, sign-off, freeze, and filing. The loser must receive a typed retry/conflict, never a raw integrity error or divergent state.
 4. Preserve SQLite unit tests and compiled `FOR UPDATE` checks as fast mechanism tests, but never label them PostgreSQL behavioural proof.
 5. Eliminate unclosed SQLite/aiosqlite connections, file handles, and worker resources before load testing. A soak with leak warnings or monotonically growing orphan state fails.
-6. Run SIM-001–030 from the readiness standard. Extend existing kill-after-module, commit-gap, unresolved-spend, stale-worker, renderer-tamper, and browser-route injection seams before creating new fault hooks.
-7. Add missing simulations for checkpoint absent/truncated/locked/corrupt, disk-full writes, database disconnect-after-ack, scanner/IdP outage, LibreOffice hang, repeated restart loop, and audit-package interruption. Qualify paused/in-flight checkpoint recovery; terminal checkpoint cleanup already exists and should remain.
-8. Repeat representative database, provider, scanner, SSE, renderer, disk, and restart faults while a route-balanced six-pathway workload is saturated.
+6. Map SIM-001–030 to existing kill-after-module, commit-gap, unresolved-spend, stale-worker, renderer-tamper, and browser-route injection seams before creating new fault hooks.
+7. Add only missing simulations for checkpoint absent/truncated/locked/corrupt, disk-full writes, database disconnect-after-ack, scanner/IdP outage, LibreOffice hang, repeated restart loop, and audit-package interruption. Qualify paused/in-flight checkpoint recovery; terminal checkpoint cleanup already exists and should remain.
+8. Use focused development faults for the changed path. Repeat the route-balanced six-pathway saturated workload only in the protected candidate run.
 9. After every simulation, assert one valid final state across domain data, checkpoints, files, budget, events, audit, and user-visible status both before and after restart.
 10. Enforce the single application instance with an exclusive operating-system lock on the durable checkpoint location or an equally small native guard. A second instance must fail startup clearly before serving traffic.
 11. Record the one-app/one-worker ceiling in the environment manifest and verify Compose creates exactly that topology.
@@ -671,10 +703,10 @@ Run the completed journey through the actual enterprise perimeter and client mat
 7. Parameterize the existing Playwright journey for Chromium, Firefox, and WebKit. Add structured reports and traces/screenshots on failure using the installed framework.
 8. Replace source-regex assertions with rendered behavioural tests only where the enterprise guarantee is otherwise unproved. Keep useful structural tripwires as mechanism tests.
 9. Run WCAG 2.1 AA automation plus keyboard-only, focus, zoom/reflow, screen-reader, status announcement, and reduced-motion manual checks over empty, loading, populated, error, refusal, review, and filed states.
-10. Test the exact declared profile from `PERF-001–015`: 25 authenticated subjects, 20 active mixed-pathway jobs, four streams and two previews per subject, 300 requests per subject/minute, 100 cases × 100 retained documents, 25 MB sources, 32 MB requests, and every configured maximum model/evidence/report shape.
+10. Keep limit-boundary tests in development. Run the full declared `PERF-001–015` profile—25 authenticated subjects, 20 active mixed-pathway jobs, four streams and two previews per subject, 300 requests per subject/minute, 100 cases × 100 retained documents, 25 MB sources, 32 MB requests, and every configured maximum model/evidence/report shape—only as protected candidate evidence.
 11. For each admission and size limit, run one below, exactly at, and one above. Above-limit work must refuse before consuming provider/worker capacity and must not degrade other subjects.
-12. Run a route-balanced mixed workload covering all six pathways and both depths, document intake, evidence reads, SSE, acceptance, model build/preview/sign-off, report draft/freeze/file/download, filing receipt, and audit export. Retain latency, throughput, CPU, memory, database connections, open handles, checkpoint/vault growth, provider usage, success/refusal counts, and error classifications.
-13. Run the eight-hour soak with restart and reconnect events. Repeat all six documents-only journeys afterward and compare authorities, model hashes, filed bytes, and offline reconstruction with the pre-soak baseline.
+12. Run the route-balanced mixed workload covering all six pathways and both depths only as protected candidate evidence; retain latency, throughput, CPU, memory, database connections, open handles, checkpoint/vault growth, provider usage, success/refusal counts, and error classifications.
+13. Run the eight-hour soak with restart and reconnect events only on the candidate. Repeat all six documents-only journeys afterward and compare authorities, model hashes, filed bytes, and offline reconstruction with the pre-soak baseline.
 14. Prove deterministic reset, declared retention, and tenant/case isolation between enterprise test cycles.
 
 ### Primary files
@@ -727,13 +759,13 @@ Run the completed journey through the actual enterprise perimeter and client mat
 
 ### Objective
 
-Run every release gate against one immutable candidate and retain enough evidence for independent review.
+Run the already-built gates against one immutable candidate and retain enough evidence for independent review. Phase 7 contains no new product implementation.
 
 ### Implement
 
 1. Build application and worker images once. Record commit, clean/dirty state, image digests, dependency locks, SBOM, runtime versions, and enterprise topology.
 2. Freeze the corpus manifest, qualified provider binding, methodology manifest, environment manifest, expected performance envelope, and test inventory before the candidate run.
-3. Execute deterministic CI, corpus host controls, the final `one binding × six pathways × two depths × required packs × three cold repetitions` live matrix, PostgreSQL races, SIM-001–030, three-browser journeys, accessibility, security, performance, saturation faults, eight-hour soak, reset, backup/restore, deliverable benchmark review, and audit reconstruction against those exact identities.
+3. Execute the previously built deterministic CI, corpus host controls, final `one binding × six pathways × two depths × required packs × three cold repetitions` live matrix, PostgreSQL races, mapped SIM-001–030 evidence, three-browser journeys, accessibility, security, performance, saturation faults, eight-hour soak, reset, backup/restore, deliverable benchmark review, and audit reconstruction against those exact identities. Do not create a second release-only implementation or test framework.
 4. Run six golden journeys from documents through source-disposition review, pathway execution, model creation/update, deliverable review, analyst opinion sign-off, separate approval, exact filed download plus filing receipt, and offline audit verification.
 5. Conduct REV-001–015 with independent analysts, model risk, security, accessibility, external-stakeholder, audit, operations, and enterprise-test reviewers.
 6. Adjudicate every finding. Rerunning after a code, corpus, model-policy, image, methodology, or environment change creates a new candidate; do not mix results.
