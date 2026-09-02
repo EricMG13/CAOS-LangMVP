@@ -1,9 +1,10 @@
 # CI investigation — 2026-09-02
 
 Asked to find the cause of the repository's CI issues. There is not one cause.
-There are **four independent failure modes**, two of them already fixed, one open
-and tracked, and one that had never been recorded because it disguises itself as
-a routine cancellation.
+There are **four independent failure modes**: one already fixed (in two commits,
+for two manifestations of a single root cause), one open and tracked, one that
+had never been recorded because it disguises itself as a routine cancellation,
+and one that is a process pattern rather than a defect.
 
 Evidence is workflow-run logs and a local reproduction; every claim below names
 the run or job it came from. Where a reading turned out to be wrong under a
@@ -13,7 +14,7 @@ larger sample, the correction is kept rather than the first impression.
 
 | # | Failure | Job | Status |
 |---|---------|-----|--------|
-| A | Unicode PDF path: missing shaper, then font ligatures | `Server` (both legs) | **Fixed** — `4b2195e`, `1013d47` |
+| A | Unicode PDF path: missing shaper, then font ligatures | `Server` (both legs) | **Fixed and confirmed green** — `4b2195e`, `1013d47` |
 | B | Dirty-draft focus-restoration race | `Browser` | **Open** — issue #38, red on main now |
 | C | Suite passes, process never exits, job burns to the 360-min cap | `Server` | **Open, previously unrecorded** |
 | D | Consecutive pushes to main cancel their own CI | all | **Open, process** |
@@ -51,11 +52,10 @@ It surfaced twice, as two different red states with one root cause:
    the word is not searchable. Fixed by `1013d47` (Pango markup with
    `liga/clig/dlig` off).
 
-Both fixes are in `main` as of `91d9038`. The confirming run (33649802750) was
-still executing its server legs when this was written, so A is recorded as fixed
-on the strength of the two commits and the author's Debian-container
-verification, not on a green run on main. **Check that run before treating A as
-closed.**
+**Confirmed closed.** Both fixes are in `main` as of `91d9038`, and run
+33649802750 finished green on both server legs — 3.14 in 24 m 42 s (job
+100313637508), 3.12 in 31 m 28 s (job 100313637515). Both processes exited
+cleanly, so this run is also a negative observation for finding C.
 
 **The durable lesson is not the ligature.** It is that a new *runtime* dependency
 landed with no gate asserting CI and the image agree. `verify_image_resources.py`
@@ -188,13 +188,15 @@ and the cancellations camouflage finding C.
 
 The merge of PR #37 changed the shape of the pipeline:
 
-| | Before (run 33609642643) | After (run 33644890370) |
-|---|---|---|
-| Server 3.12 backend suite | 4 m 24 s | 20 m 57 s |
-| Server 3.14 backend suite | 8 m 13 s | 27 m 32 s |
-| Tests | 655 passed, 2 skipped | 946 passed, 2 skipped |
+| | Before (run 33609642643) | After (run 33644890370) | On main, green (run 33649802750) |
+|---|---|---|---|
+| Server 3.12 backend suite | 4 m 24 s | 20 m 57 s | **31 m 28 s** |
+| Server 3.14 backend suite | 8 m 13 s | 27 m 32 s | 24 m 42 s |
+| Tests | 655 passed, 2 skipped | 946 passed, 2 skipped | — |
 
-Tests +45 %, wall time +235 %. That is expected — every module is now
+Tests +45 %, wall time +235 %. The 31 m 28 s leg is the important number: it is
+the *smaller* matrix leg (no corpus) on a slower runner, so runner variance alone
+spans 25–31 minutes for work nightly has to beat. That is expected — every module is now
 provider-backed and calculations replay — and it is not a defect. But it has a
 consequence nobody has adjusted for:
 
@@ -206,8 +208,9 @@ Playwright install, the workbench journey and the accessibility sweep. The last
 nightly (run 33618906258, pre-merge) took 14 m 25 s end to end.
 
 **Prediction: the next scheduled nightly (06:00 UTC) will exceed its 30-minute
-cap.** This is the one finding here that is not yet observable in a log, and it
-should be checked tomorrow rather than assumed.
+cap.** A single observed server leg on main already took 31 m 28 s doing *less*
+than nightly does. This is the one finding here not yet observable in a log, so
+it should be checked against tomorrow's run rather than assumed.
 
 ## Recommendations, in the order I would do them
 
