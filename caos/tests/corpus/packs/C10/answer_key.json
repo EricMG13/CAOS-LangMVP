@@ -1,0 +1,73 @@
+{
+  "schema_version": "caos.answer-key.v1",
+  "pack_id": "C10",
+  "version": "1.0.0",
+  "authored_by": "Claude Fable 5.1 (ER-G6 implementer)",
+  "status": "draft-host-control",
+  "intake": null,
+  "expected_facts": [],
+  "conflicts": [],
+  "forbidden_conclusions": [],
+  "cells": {
+    "RELATIVE_VALUE/full": {
+      "outcome": "ingest",
+      "proves_pathway": false,
+      "refusal_code": null,
+      "model_effect": null,
+      "readiness": null,
+      "max_latency_seconds": 900,
+      "prerequisite": null,
+      "host_control": null,
+      "after_run": null
+    }
+  },
+  "ingest_steps": [
+    {
+      "filename": "marks-valid.xlsx",
+      "via": "loan_universe",
+      "expect": {
+        "status": 201
+      }
+    },
+    {
+      "filename": "marks-duplicate-conflict.xlsx",
+      "via": "loan_universe",
+      "expect": {
+        "status": 422,
+        "code": "RV_WORKBOOK_INVALID",
+        "findings": [
+          "RV_DUPLICATE_CONFLICT"
+        ]
+      }
+    },
+    {
+      "filename": "marks-alias-conflict.xlsx",
+      "via": "loan_universe",
+      "expect": {
+        "status": 422,
+        "code": "RV_WORKBOOK_INVALID",
+        "findings": [
+          "RV_ID_CONFLICT"
+        ]
+      }
+    },
+    {
+      "filename": "marks-date-conflict.xlsx",
+      "via": "loan_universe",
+      "expect": {
+        "status": 422,
+        "code": "RV_WORKBOOK_INVALID",
+        "findings": [
+          "RV_WORKBOOK_DATE_CONFLICT"
+        ]
+      }
+    },
+    {
+      "filename": "marks-blank-optional.xlsx",
+      "via": "loan_universe",
+      "expect": {
+        "status": 201
+      }
+    }
+  ]
+}

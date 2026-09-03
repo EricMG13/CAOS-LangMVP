@@ -1,0 +1,126 @@
+{
+  "schema_version": "caos.corpus-pack.v1",
+  "pack_id": "C16",
+  "version": "1.0.0",
+  "title": "Subsequent-event pack with post-period refinancing and disposal",
+  "purpose": "C16: a press release after the balance-sheet date extends the term loan and approves a disposal; the analysis flags the subsequent event and never restates the period.",
+  "kind": "negative",
+  "stage": "run",
+  "issuer": "Northstar Cruise Holdings Inc",
+  "licence_class": "synthetic",
+  "provenance": "caos/tests/corpus/synthetic.py",
+  "bytes": {
+    "source": "synthetic",
+    "location": "caos/tests/corpus/synthetic.py",
+    "owner": null,
+    "artifact": null
+  },
+  "documents": [
+    {
+      "filename": "northstar-10k-fy2024.txt",
+      "sha256": "7e3da1da91e6959fb7ef339d78c20df171b467016b68c2bf7a65ba4f8b6641ef",
+      "media_type": "text/plain",
+      "document_type": "annual_report",
+      "period": "FY2024",
+      "supersession": "current",
+      "provenance": "caos/tests/corpus/synthetic.py::c16_subsequent_events",
+      "disposition": "used",
+      "analytical_role": "relevant",
+      "reason": "audited annual report; model input"
+    },
+    {
+      "filename": "northstar-10q-q3-2025.txt",
+      "sha256": "9693c5af5106a7477ae6d9be04b03fc124e74fda8f0f51f68f9a4f383f789966",
+      "media_type": "text/plain",
+      "document_type": "quarterly_report",
+      "period": "FY2025-Q3",
+      "supersession": "current",
+      "provenance": "caos/tests/corpus/synthetic.py::c16_subsequent_events",
+      "disposition": "used",
+      "analytical_role": "relevant",
+      "reason": "latest interim statement"
+    },
+    {
+      "filename": "northstar-q3-2025-earnings.txt",
+      "sha256": "5a2a0a4f70eb8b6c890af3813ed8fea83aa45191ae8851e0074ee13c56ce4d01",
+      "media_type": "text/plain",
+      "document_type": "earnings_release",
+      "period": "FY2025-Q3",
+      "supersession": "current",
+      "provenance": "caos/tests/corpus/synthetic.py::c16_subsequent_events",
+      "disposition": "used",
+      "analytical_role": "relevant",
+      "reason": "earnings release for the interim period"
+    },
+    {
+      "filename": "northstar-fy2025-guidance.txt",
+      "sha256": "9ad163c93e15f9380428fab411358ff2c05067982e3903e6ff769a4aabbbae9b",
+      "media_type": "text/plain",
+      "document_type": "management_guidance",
+      "period": "FY2025",
+      "supersession": "current",
+      "provenance": "caos/tests/corpus/synthetic.py::c16_subsequent_events",
+      "disposition": "used",
+      "analytical_role": "relevant",
+      "reason": "management forecast"
+    },
+    {
+      "filename": "northstar-credit-agreement.txt",
+      "sha256": "d8e07f5fee49f0ea46df09beed10d8493e315476bdbca273c573862bf5e81223",
+      "media_type": "text/plain",
+      "document_type": "credit_agreement",
+      "period": null,
+      "supersession": "current",
+      "provenance": "caos/tests/corpus/synthetic.py::c16_subsequent_events",
+      "disposition": "used",
+      "analytical_role": "relevant",
+      "reason": "covenant terms"
+    },
+    {
+      "filename": "northstar-amendment-2.txt",
+      "sha256": "b5fec57dc2735ead08f4a6668b012bd956077165c2af0cea1930ca26238934b9",
+      "media_type": "text/plain",
+      "document_type": "amendment",
+      "period": null,
+      "supersession": "amendment",
+      "provenance": "caos/tests/corpus/synthetic.py::c16_subsequent_events",
+      "disposition": "used",
+      "analytical_role": "relevant",
+      "reason": "covenant reset; linked to the base agreement"
+    },
+    {
+      "filename": "northstar-subsequent-event-release.txt",
+      "sha256": "923130567855c952eda5a54293c1d1d2ecc38126e0d660d9bc4d39f8bcbc5be5",
+      "media_type": "text/plain",
+      "document_type": "other",
+      "period": "FY2025",
+      "supersession": "subsequent",
+      "provenance": "caos/tests/corpus/synthetic.py::c16_subsequent_events",
+      "disposition": "used",
+      "analytical_role": "subsequent",
+      "reason": "post-period refinancing and disposal; flagged as a subsequent event, not applied to FY2024"
+    }
+  ],
+  "documents_from": null,
+  "applies_to": [
+    {
+      "pathway": "FULL_CREDIT",
+      "depth": "full",
+      "outcome": "succeeded",
+      "proves_pathway": false
+    }
+  ],
+  "answer_key": {
+    "file": "answer_key.json",
+    "version": "1.0.0",
+    "sha256": "ae02bc976e3c644c8d3d04ccea762dab54d9186381f5c418a3ceca521e58fb7e",
+    "approvals": [
+      {
+        "scope": "host_control",
+        "reviewer": "Claude Fable 5.1 (ER-G6 implementer)",
+        "approved_at": "2026-09-03",
+        "note": "host-control attestation of the draft key: orchestration proof only, never analysis"
+      }
+    ]
+  }
+}

@@ -1,0 +1,66 @@
+{
+  "schema_version": "caos.corpus-pack.v1",
+  "pack_id": "C11",
+  "version": "1.0.0",
+  "title": "Covenant and refinancing pack with insufficient inputs for exact capacity",
+  "purpose": "C11: thresholds are documented but no financials or definitions support an exact headroom; the run completes with the calculators declared not computable.",
+  "kind": "negative",
+  "stage": "run",
+  "issuer": "Northstar Cruise Holdings Inc",
+  "licence_class": "synthetic",
+  "provenance": "caos/tests/corpus/synthetic.py",
+  "bytes": {
+    "source": "synthetic",
+    "location": "caos/tests/corpus/synthetic.py",
+    "owner": null,
+    "artifact": null
+  },
+  "documents": [
+    {
+      "filename": "northstar-credit-agreement-no-definitions.txt",
+      "sha256": "27ede25a37bc0e7836e0a79137f50d6ac0d1fdc4b22ec5a1cb3285c4bbec2dfa",
+      "media_type": "text/plain",
+      "document_type": "credit_agreement",
+      "period": null,
+      "supersession": "current",
+      "provenance": "caos/tests/corpus/synthetic.py::c11_covenant_insufficient",
+      "disposition": "used",
+      "analytical_role": "relevant",
+      "reason": "covenant thresholds without the EBITDA definition or financials"
+    },
+    {
+      "filename": "northstar-amendment-2.txt",
+      "sha256": "b5fec57dc2735ead08f4a6668b012bd956077165c2af0cea1930ca26238934b9",
+      "media_type": "text/plain",
+      "document_type": "amendment",
+      "period": null,
+      "supersession": "amendment",
+      "provenance": "caos/tests/corpus/synthetic.py::c11_covenant_insufficient",
+      "disposition": "used",
+      "analytical_role": "relevant",
+      "reason": "covenant reset"
+    }
+  ],
+  "documents_from": null,
+  "applies_to": [
+    {
+      "pathway": "COVENANT_REFINANCING",
+      "depth": "full",
+      "outcome": "succeeded",
+      "proves_pathway": false
+    }
+  ],
+  "answer_key": {
+    "file": "answer_key.json",
+    "version": "1.0.0",
+    "sha256": "42b41ff474ca7c52d2ca6d84dcc3eeae8079d1329e41d4f6b4178dd83eee3242",
+    "approvals": [
+      {
+        "scope": "host_control",
+        "reviewer": "Claude Fable 5.1 (ER-G6 implementer)",
+        "approved_at": "2026-09-03",
+        "note": "host-control attestation of the draft key: orchestration proof only, never analysis"
+      }
+    ]
+  }
+}

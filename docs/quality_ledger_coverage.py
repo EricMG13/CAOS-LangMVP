@@ -82,6 +82,7 @@ FILE_MAP = {
     r"^\.github/workflows/ci\.yml": "F-OPS-07, F-OPS-09, F-OPS-11",
     r"^\.github/workflows/nightly\.yml": "F-OPS-07",
     r"^\.github/workflows/security-review\.yml": "F-OPS-10",
+    r"^\.github/workflows/enterprise-qualification\.yml": "F-QUAL-03",
     r"^\.github/dependabot\.yml": "F-OPS-09",
     r"^run_sec_audit\.py": "F-SEC-09",
     r"^(pytest\.ini|ruff\.toml)": "F-OPS-07",

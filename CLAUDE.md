@@ -257,6 +257,22 @@ engine, the bundle, or the routes.
   classifies every document and runs every executable route. CI and nightly
   hard-fail when a required fixture cannot be acquired and cache only a complete
   fetch.
+- Qualification corpus and harness (Task 11, DECISIONS §14.20): every pack
+  C01–C22 is a versioned manifest plus an attested answer key under
+  `caos/tests/corpus/packs/<id>/` (`manifests.py` validates and resolves bytes;
+  `synthetic.py` regenerates C02–C16, digest-checked; C20–C22 are external
+  under `$CAOS_CORPUS_EXTERNAL_DIR`). `caos/tests/corpus/qualify.py` runs the
+  matrix (`plan`, `cell`, `matrix`, `verdict`, `pin`): one cell per fresh
+  process, scored by `scoring.py`, bound to provider identity, corpus digest,
+  build, date, expiry and reviewer; a host-control binding reads
+  ORCHESTRATION_PROOF, never QUALIFIED. Run it keyless:
+  `ANTHROPIC_API_KEY= CAOS_PROVIDER= caos/server/.venv314/bin/python
+  caos/tests/corpus/qualify.py matrix --binding host_control --packs C03
+  --reviewer <name>`. A fixture or key change is re-pinned with `pin`; the
+  tool refuses to re-sign an analyst-approved key. The protected
+  `.github/workflows/enterprise-qualification.yml` runs the live matrix on
+  dispatch. `docs/QUALITY_QUALIFICATION.csv` maps MOD-001–MOD-025 to the
+  harness, the runtime or an external input.
 - Lint: `ruff check --config ruff.toml caos/server caos/tests --exclude
   caos/server/caos/methodology/vendor`.
 - Dependencies: `caos/server/pyproject.toml` is the single source of truth.
@@ -420,6 +436,16 @@ engine, the bundle, or the routes.
   shapes and advances in those scripts follow the host. Vendoring a CJK face
   (16 MB and up per weight) is the upgrade path if those scripts become
   routine.
+- Live qualification has not run. The harness, the manifests and the draft
+  answer keys exist; the provider credential, every analyst-scope approval,
+  the licensed marks (C20), the Lumen stressed pack (C21) and the research
+  pack (C22) are external inputs listed as BLOCKED EXTERNAL in
+  `.superpowers/sdd/enterprise-task-11-report.md`. Until they exist every
+  `verdict --binding live` is UNQUALIFIED by construction.
+- The loan-universe importer opens workbooks `data_only`, so a formula cell
+  has no cached value and reads as blank; a formula in an optional numeric
+  column imports silently (C08 records this as observed behaviour, not a
+  refusal). Refusing formula cells outright is a product decision left open.
 - Blocks live in one JSON column on the source row, so `read_evidence` parses
   every block of a source on each call. Measured at the ceiling: a 10 MB source
   costs 17 ms per read, so a run's ~80 reads cost about 1.4 s. Fine at current

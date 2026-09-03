@@ -1,0 +1,77 @@
+{
+  "schema_version": "caos.answer-key.v1",
+  "pack_id": "C20",
+  "version": "1.0.0",
+  "authored_by": "Claude Fable 5.1 (ER-G6 implementer)",
+  "status": "draft-unsigned",
+  "intake": {
+    "status": "refused",
+    "route": null,
+    "dispositions": {},
+    "refusal_code": "INTAKE_ISSUER_AMBIGUOUS",
+    "note": "The document-first intake refuses the whole 30-document pack: the annual-report PDFs' text layer splits the cover name as 'CARNIV AL CORPORATION & PLC' and the half-year report's cover reads 'RELEASE OF CARNIVAL CORPORATION & PLC', so the host sees three issuers (INTAKE_ISSUER_AMBIGUOUS). The harness scores that refusal and admits the pack through the advanced create-case and source routes. Follow-up recorded in enterprise-task-11-report.md."
+  },
+  "expected_facts": [],
+  "conflicts": [],
+  "forbidden_conclusions": [
+    {
+      "id": "X1",
+      "description": "No covenant breach or event of default is evidenced in the pack",
+      "match": [
+        "covenant breach",
+        "event of default has occurred",
+        "in default"
+      ]
+    },
+    {
+      "id": "X2",
+      "description": "No going-concern doubt is evidenced",
+      "match": [
+        "going concern doubt",
+        "substantial doubt about"
+      ]
+    },
+    {
+      "id": "X3",
+      "description": "Refinancing risk is not zero; the pack shows a maturity wall",
+      "match": [
+        "no refinancing risk"
+      ]
+    }
+  ],
+  "cells": {
+    "RELATIVE_VALUE/screen": {
+      "outcome": "succeeded",
+      "proves_pathway": true,
+      "refusal_code": null,
+      "model_effect": "FULL_DEPTH_REQUIRED",
+      "readiness": "NOT_READY",
+      "max_latency_seconds": 900,
+      "prerequisite": null,
+      "host_control": {
+        "model_fixtures": false,
+        "calculators": "fixtures",
+        "source_gate": "pass",
+        "gaps": []
+      },
+      "after_run": null
+    },
+    "RELATIVE_VALUE/full": {
+      "outcome": "succeeded",
+      "proves_pathway": true,
+      "refusal_code": null,
+      "model_effect": "RELATIVE_VALUE_MARKET_MARKS",
+      "readiness": "READY_TO_BUILD",
+      "max_latency_seconds": 900,
+      "prerequisite": "FULL_CREDIT/full",
+      "host_control": {
+        "model_fixtures": true,
+        "calculators": "fixtures",
+        "source_gate": "pass",
+        "gaps": []
+      },
+      "after_run": null
+    }
+  },
+  "authoring_note": "Expected marks facts (bid, ask, mid YTM, DM per comparable) are authored by the analyst once the licensed workbook exists."
+}

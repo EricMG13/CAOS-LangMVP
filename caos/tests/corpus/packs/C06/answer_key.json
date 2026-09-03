@@ -1,0 +1,77 @@
+{
+  "schema_version": "caos.answer-key.v1",
+  "pack_id": "C06",
+  "version": "1.0.0",
+  "authored_by": "Claude Fable 5.1 (ER-G6 implementer)",
+  "status": "draft-host-control",
+  "intake": {
+    "status": "started",
+    "route": [
+      "FULL_CREDIT",
+      "full"
+    ],
+    "refusal_code": null,
+    "dispositions": {
+      "northstar-10k-fy2024.txt": "used",
+      "northstar-10q-q3-2025.txt": "used",
+      "northstar-credit-agreement.txt": "used"
+    }
+  },
+  "expected_facts": [
+    {
+      "id": "F1",
+      "statement": "Industrial perimeter total debt",
+      "value": "2,400",
+      "unit": "USD millions",
+      "period": "FY2024",
+      "source": "northstar-10k-fy2024.txt",
+      "match": [
+        "Industrial perimeter total debt 2,400"
+      ],
+      "required": true,
+      "cells": null
+    },
+    {
+      "id": "F2",
+      "statement": "Financing subsidiary debt (non-recourse)",
+      "value": "1,000",
+      "unit": "USD millions",
+      "period": "FY2024",
+      "source": "northstar-10k-fy2024.txt",
+      "match": [
+        "Northstar Finance Co. (financing subsidiary) debt 1,000"
+      ],
+      "required": true,
+      "cells": null
+    }
+  ],
+  "conflicts": [],
+  "forbidden_conclusions": [
+    {
+      "id": "X1",
+      "description": "The two perimeters must not be collapsed",
+      "match": [
+        "single perimeter",
+        "treated as one perimeter"
+      ]
+    }
+  ],
+  "cells": {
+    "FULL_CREDIT/full": {
+      "outcome": "succeeded",
+      "proves_pathway": false,
+      "refusal_code": null,
+      "model_effect": null,
+      "readiness": null,
+      "max_latency_seconds": 900,
+      "prerequisite": null,
+      "host_control": {
+        "model_fixtures": false,
+        "calculators": "fixtures",
+        "source_gate": "pass",
+        "gaps": []
+      },
+      "after_run": null
+    }
+  }
+}

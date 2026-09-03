@@ -1,0 +1,138 @@
+{
+  "schema_version": "caos.corpus-pack.v1",
+  "pack_id": "C08",
+  "version": "1.0.0",
+  "title": "Valid and invalid spreadsheets",
+  "purpose": "C08: hidden sheets, formulas, external links, macros, blank cells and extreme dimensions through the loan-universe import; valid workbooks import, each invalid one is a typed finding.",
+  "kind": "negative",
+  "stage": "ingest",
+  "issuer": "Northstar Cruise Holdings Inc",
+  "licence_class": "synthetic",
+  "provenance": "caos/tests/corpus/synthetic.py",
+  "bytes": {
+    "source": "synthetic",
+    "location": "caos/tests/corpus/synthetic.py",
+    "owner": null,
+    "artifact": null
+  },
+  "documents": [
+    {
+      "filename": "marks-valid.xlsx",
+      "sha256": "a66cbf28c3b4cc33f466cce7d68a68daeac7b010eb76e7e8bf8b202d7f7c930d",
+      "media_type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      "document_type": "market_marks",
+      "period": null,
+      "supersession": "current",
+      "provenance": "caos/tests/corpus/synthetic.py::c08_spreadsheets",
+      "disposition": "used",
+      "analytical_role": "relevant",
+      "reason": "valid CP-3 template workbook"
+    },
+    {
+      "filename": "marks-hidden-sheet.xlsx",
+      "sha256": "23a00ca6505e70e186a5070a607960067188879f82f40b4a8540132ac5088c7d",
+      "media_type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      "document_type": "market_marks",
+      "period": null,
+      "supersession": "current",
+      "provenance": "caos/tests/corpus/synthetic.py::c08_spreadsheets",
+      "disposition": "used",
+      "analytical_role": "relevant",
+      "reason": "hidden support sheet is ignored; visible sheet imports"
+    },
+    {
+      "filename": "marks-formula.xlsx",
+      "sha256": "a094fa40c4681177b75bc9b370bc42765f83266a11d635bcd4a3f56c63e6807b",
+      "media_type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      "document_type": "market_marks",
+      "period": null,
+      "supersession": "current",
+      "provenance": "caos/tests/corpus/synthetic.py::c08_spreadsheets",
+      "disposition": "used",
+      "analytical_role": "relevant",
+      "reason": "formula in an optional numeric cell reads as blank (data_only import); imports"
+    },
+    {
+      "filename": "marks-external-link.xlsx",
+      "sha256": "22239a0c8431b243592245c0f2355fba635e82cf86e45e10c92775d529413f3f",
+      "media_type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      "document_type": "other",
+      "period": null,
+      "supersession": "current",
+      "provenance": "caos/tests/corpus/synthetic.py::c08_spreadsheets",
+      "disposition": "used",
+      "analytical_role": "invalid",
+      "reason": "external package relationship"
+    },
+    {
+      "filename": "marks-macro.xlsx",
+      "sha256": "31d715614ba772357451f158a8558717aa0a91f7ad4312abe0dc096f4a37f0bd",
+      "media_type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      "document_type": "other",
+      "period": null,
+      "supersession": "current",
+      "provenance": "caos/tests/corpus/synthetic.py::c08_spreadsheets",
+      "disposition": "used",
+      "analytical_role": "invalid",
+      "reason": "macro-enabled content type and vbaProject part"
+    },
+    {
+      "filename": "marks-blank-optional.xlsx",
+      "sha256": "d59bd7f04f5f0d624f33d3052b30e336f76e3d55d6ced915fa839e710bf7308d",
+      "media_type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      "document_type": "market_marks",
+      "period": null,
+      "supersession": "current",
+      "provenance": "caos/tests/corpus/synthetic.py::c08_spreadsheets",
+      "disposition": "used",
+      "analytical_role": "relevant",
+      "reason": "blank optional cells import"
+    },
+    {
+      "filename": "marks-empty.xlsx",
+      "sha256": "01818dc7ca76253902a3b90e19828a753a397f89f9fa51bbebb645e4d8947181",
+      "media_type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      "document_type": "other",
+      "period": null,
+      "supersession": "current",
+      "provenance": "caos/tests/corpus/synthetic.py::c08_spreadsheets",
+      "disposition": "used",
+      "analytical_role": "invalid",
+      "reason": "template header with no data rows"
+    },
+    {
+      "filename": "marks-wide.xlsx",
+      "sha256": "9c69363da34abc5f0d424acd6b7081f64851791aa0937893ba3909b5129a4d61",
+      "media_type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      "document_type": "other",
+      "period": null,
+      "supersession": "current",
+      "provenance": "caos/tests/corpus/synthetic.py::c08_spreadsheets",
+      "disposition": "used",
+      "analytical_role": "invalid",
+      "reason": "column count beyond the extraction limit; refused at the source boundary"
+    }
+  ],
+  "documents_from": null,
+  "applies_to": [
+    {
+      "pathway": "RELATIVE_VALUE",
+      "depth": "full",
+      "outcome": "ingest",
+      "proves_pathway": false
+    }
+  ],
+  "answer_key": {
+    "file": "answer_key.json",
+    "version": "1.0.0",
+    "sha256": "7f82426a5a0a29e475776033135a8a420278473e45cf8c7e853fbebc1722d6d7",
+    "approvals": [
+      {
+        "scope": "host_control",
+        "reviewer": "Claude Fable 5.1 (ER-G6 implementer)",
+        "approved_at": "2026-09-03",
+        "note": "host-control attestation of the draft key: orchestration proof only, never analysis"
+      }
+    ]
+  }
+}

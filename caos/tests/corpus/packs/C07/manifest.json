@@ -1,0 +1,90 @@
+{
+  "schema_version": "caos.corpus-pack.v1",
+  "pack_id": "C07",
+  "version": "1.0.0",
+  "title": "Textless scanned PDF, poor OCR, tables and footnotes",
+  "purpose": "C07: a scan with no text layer and an OCR-degraded note alongside real evidence; the scan is dispositioned insufficient and never cited, the run still completes.",
+  "kind": "negative",
+  "stage": "run",
+  "issuer": "Northstar Cruise Holdings Inc",
+  "licence_class": "synthetic",
+  "provenance": "caos/tests/corpus/synthetic.py",
+  "bytes": {
+    "source": "synthetic",
+    "location": "caos/tests/corpus/synthetic.py",
+    "owner": null,
+    "artifact": null
+  },
+  "documents": [
+    {
+      "filename": "northstar-scan.pdf",
+      "sha256": "3663f01c6363484a876579f2b593bde6e6fbc59aea891fe95c6fdc8841a8edf4",
+      "media_type": "application/pdf",
+      "document_type": "other",
+      "period": null,
+      "supersession": "current",
+      "provenance": "caos/tests/corpus/synthetic.py::c07_scanned",
+      "disposition": "insufficient",
+      "analytical_role": "insufficient",
+      "reason": "textless scanned PDF; stored, no quotable evidence"
+    },
+    {
+      "filename": "northstar-ocr-note.txt",
+      "sha256": "9afd00bff791d3a81aad932ded36c12a7799c56808e86bce552d977e9bf67304",
+      "media_type": "text/plain",
+      "document_type": "other",
+      "period": null,
+      "supersession": "current",
+      "provenance": "caos/tests/corpus/synthetic.py::c07_scanned",
+      "disposition": "used",
+      "analytical_role": "irrelevant",
+      "reason": "poor-OCR note with a table and a footnote; admitted, not evidence for a figure"
+    },
+    {
+      "filename": "northstar-10k-fy2024.txt",
+      "sha256": "7e3da1da91e6959fb7ef339d78c20df171b467016b68c2bf7a65ba4f8b6641ef",
+      "media_type": "text/plain",
+      "document_type": "annual_report",
+      "period": "FY2024",
+      "supersession": "current",
+      "provenance": "caos/tests/corpus/synthetic.py::c07_scanned",
+      "disposition": "used",
+      "analytical_role": "relevant",
+      "reason": "annual report"
+    },
+    {
+      "filename": "northstar-credit-agreement.txt",
+      "sha256": "d8e07f5fee49f0ea46df09beed10d8493e315476bdbca273c573862bf5e81223",
+      "media_type": "text/plain",
+      "document_type": "credit_agreement",
+      "period": null,
+      "supersession": "current",
+      "provenance": "caos/tests/corpus/synthetic.py::c07_scanned",
+      "disposition": "used",
+      "analytical_role": "relevant",
+      "reason": "covenant terms"
+    }
+  ],
+  "documents_from": null,
+  "applies_to": [
+    {
+      "pathway": "FULL_CREDIT",
+      "depth": "full",
+      "outcome": "succeeded",
+      "proves_pathway": false
+    }
+  ],
+  "answer_key": {
+    "file": "answer_key.json",
+    "version": "1.0.0",
+    "sha256": "1685a3b71cd5b69cbc205065b4daf0b99e7653d8d258c76a95dad748122983c5",
+    "approvals": [
+      {
+        "scope": "host_control",
+        "reviewer": "Claude Fable 5.1 (ER-G6 implementer)",
+        "approved_at": "2026-09-03",
+        "note": "host-control attestation of the draft key: orchestration proof only, never analysis"
+      }
+    ]
+  }
+}

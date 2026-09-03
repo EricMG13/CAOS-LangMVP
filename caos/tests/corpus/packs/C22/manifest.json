@@ -1,0 +1,59 @@
+{
+  "schema_version": "caos.corpus-pack.v1",
+  "pack_id": "C22",
+  "version": "1.0.0",
+  "title": "Real-issuer Deep Research pack with a bounded research question",
+  "purpose": "C22: a question-specific pack — an approved research brief, the complete relevant evidence set for that question, the expected synthesis, forbidden conclusions and an independently authored conclusion, plus time-bounded external evidence supplied as documents (never fetched by the application).",
+  "kind": "positive",
+  "stage": "run",
+  "issuer": "(named by the research brief)",
+  "licence_class": "analyst-authored",
+  "provenance": "Research analyst: brief, evidence set and conclusion authored and approved outside the repository",
+  "bytes": {
+    "source": "external",
+    "location": "$CAOS_CORPUS_EXTERNAL_DIR/C22",
+    "owner": "research analyst (decision owner delegate)",
+    "artifact": "research-brief.json satisfying the brief contract, the evidence documents the question needs, the expected synthesis and forbidden conclusions in the answer key, all digest-pinned"
+  },
+  "documents": [
+    {
+      "filename": "research-brief.json",
+      "sha256": null,
+      "media_type": "application/json",
+      "document_type": "research_brief",
+      "period": null,
+      "supersession": "current",
+      "provenance": "research analyst",
+      "disposition": "used",
+      "analytical_role": "relevant",
+      "reason": "the governed brief; the host proposes the plan from it and the analyst approves the exact hash"
+    },
+    {
+      "filename": "evidence-set.pdf",
+      "sha256": null,
+      "media_type": "application/pdf",
+      "document_type": "annual_report",
+      "period": null,
+      "supersession": "current",
+      "provenance": "issuer or named public source",
+      "disposition": "used",
+      "analytical_role": "relevant",
+      "reason": "placeholder row: the analyst replaces it with the question's complete evidence set (one row per document)"
+    }
+  ],
+  "documents_from": null,
+  "applies_to": [
+    {
+      "pathway": "DEEP_RESEARCH",
+      "depth": "full",
+      "outcome": "succeeded",
+      "proves_pathway": true
+    }
+  ],
+  "answer_key": {
+    "file": "answer_key.json",
+    "version": "1.0.0",
+    "sha256": null,
+    "approvals": []
+  }
+}
