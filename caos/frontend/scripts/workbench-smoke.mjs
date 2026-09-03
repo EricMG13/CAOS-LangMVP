@@ -31,6 +31,15 @@ const maxDomContentLoadedMs = Number(process.env.CAOS_MAX_DCL_MS || 250);
 const maxFirstContentfulPaintMs = Number(process.env.CAOS_MAX_FCP_MS || 400);
 assert.ok(Number.isFinite(maxDomContentLoadedMs) && maxDomContentLoadedMs > 0, "CAOS_MAX_DCL_MS must be a positive finite number");
 assert.ok(Number.isFinite(maxFirstContentfulPaintMs) && maxFirstContentfulPaintMs > 0, "CAOS_MAX_FCP_MS must be a positive finite number");
+// Those budgets are a Chromium regression tripwire: every sample behind them is
+// Chromium on a shared runner. Firefox and WebKit have no calibration yet — on
+// the runner where Chromium read DCL 76 / FCP 284 ms, Firefox read DCL 303 ms and
+// WebKit FCP 1077 ms against the same bytes, which is engine start-up cost, not a
+// product regression. Those engines record the timing in the report (retained as
+// a CI artifact, so a budget can be calibrated from samples) and do not enforce
+// it. CAOS_ENFORCE_TIMING=1|0 overrides the default for any engine.
+const enforceTimingBudget = process.env.CAOS_ENFORCE_TIMING ? process.env.CAOS_ENFORCE_TIMING === "1" : browserName === "chromium";
+let pageTiming = null;
 const identityHeaders = process.env.CAOS_EDGE_SECRET ? {
   "x-edge-authorization": process.env.CAOS_EDGE_SECRET,
   "x-forwarded-user": process.env.CAOS_TEST_USER || "analyst.qa@local.invalid",
@@ -324,9 +333,13 @@ try {
       firstContentfulPaint: paint?.startTime ?? null,
     };
   });
-  assert.ok(timing.domContentLoaded !== null && timing.domContentLoaded <= maxDomContentLoadedMs, `DCL ${timing.domContentLoaded}ms exceeds ${maxDomContentLoadedMs}ms`);
-  assert.ok(timing.firstContentfulPaint !== null && timing.firstContentfulPaint <= maxFirstContentfulPaintMs, `FCP ${timing.firstContentfulPaint}ms exceeds ${maxFirstContentfulPaintMs}ms`);
-  console.log(JSON.stringify({ timing, caseRequests }));
+  pageTiming = { ...timing, budget: { domContentLoaded: maxDomContentLoadedMs, firstContentfulPaint: maxFirstContentfulPaintMs, enforced: enforceTimingBudget } };
+  assert.ok(timing.domContentLoaded !== null && timing.firstContentfulPaint !== null, "the first page reported no navigation or paint timing");
+  if (enforceTimingBudget) {
+    assert.ok(timing.domContentLoaded <= maxDomContentLoadedMs, `DCL ${timing.domContentLoaded}ms exceeds ${maxDomContentLoadedMs}ms`);
+    assert.ok(timing.firstContentfulPaint <= maxFirstContentfulPaintMs, `FCP ${timing.firstContentfulPaint}ms exceeds ${maxFirstContentfulPaintMs}ms`);
+  }
+  console.log(JSON.stringify({ browser: browserName, timing, budgetEnforced: enforceTimingBudget, caseRequests }));
   await page.getByRole("link", { name: "Sources & evidence" }).click();
   await page.waitForURL((url) => url.pathname.replace(/\/$/, "") === "/sources" && url.searchParams.get("case") === caseRecord.id);
   await page.unroute(heldAuthorityDetail, holdAuthorityDetail);
@@ -2266,6 +2279,7 @@ function report(outcome) {
     base_url: baseURL,
     started_at: new Date(startedAt).toISOString(),
     duration_ms: Date.now() - startedAt,
+    timing: pageTiming,
     console_errors: errors,
     ...outcome,
   };

@@ -547,3 +547,30 @@ gates finish):
   smoke because it turned an opaque console line into a named source.
 
 Draft pull request: https://github.com/EricMG13/CAOS-LangMVP/pull/55 (branch `claude/er-task-12b-perimeter`, commit `259318b` plus this URL commit).
+
+## CI follow-up (2026-09-03, after the draft PR)
+
+The first two CI runs of the branch were red on the Firefox and WebKit legs
+of the browser job (Chromium and every other job green; the babysit loop had
+meanwhile landed `de66a66` — `acceptOpener` read as state rather than a ref
+during render, and a gitleaks allowlist entry for the review test's
+deliberately secret-shaped fixture — and `9731401`, a checkout depth fix).
+
+Evidence, read before any change: both engines failed at the smoke's
+first-page timing budget, before any functional step — Firefox `DCL 303ms
+exceeds 250ms` and `DCL 424ms exceeds 250ms`, WebKit `FCP 1077ms exceeds
+400ms` and `FCP 634ms exceeds 400ms`, on runners where Chromium read DCL
+74–76 / FCP 284–308 ms against the same static bytes; locally Firefox reads
+≈160 / 210 ms and WebKit ≈16 / 95 ms and both engines pass the whole
+journey. The budget (250 / 400 ms) was calibrated from eight Chromium-only
+CI samples, as the smoke's own comment records, and the same comment warns
+that an uncalibrated budget "fails on load, not on regression" — which is
+what an engine's start-up cost on a shared runner is.
+
+Fix (one variable): the budget is enforced on Chromium, where it is
+calibrated, and recorded for every engine in `workbench-report.json`
+(`timing`, with the budget and whether it was enforced), so the retained CI
+artifacts accumulate the samples a per-engine budget needs;
+`CAOS_ENFORCE_TIMING=1|0` overrides the default for any engine. The presence
+of navigation and paint timing is still asserted everywhere. Ledger notes
+WEB-002 and PERF-011 record the policy and the samples.
