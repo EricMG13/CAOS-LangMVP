@@ -598,3 +598,11 @@ $ CAOS_URL=http://127.0.0.1:8766 node scripts/run-browsers.mjs        # fixture-
 → chromium passed 134 548 ms (DCL 69 / FCP 172, budget enforced) · firefox passed 142 108 ms (148 / 208, recorded)
   · webkit passed 140 700 ms (32 / 112, recorded); exit 0
 ```
+
+CI on `6ab6e2e` (run 33785728230): the browser matrix is green in all three
+engines — chromium `success` (5 m 11 s), firefox `success` (3 m 49 s), webkit
+`success` (4 m 55 s) — with the timing recorded per engine in the retained
+`browser-<engine>-<sha>` artifacts. Follow-up commits on the branch after the
+draft PR: `de66a66` and `9731401` (babysit loop: opener as state, gitleaks
+allowlist for the review test's fixture, checkout depth), `6641951`
+(engine-aware timing budget) and `6ab6e2e` (fixture-derived draft versions).
