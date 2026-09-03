@@ -106,6 +106,57 @@ after "Keep editing" is a legitimate repair the guard suppresses. Reverted. Any
 fix has to separate "focus moved on" from "focus is mid-handoff during dialog
 close", and that distinction is the whole problem.
 
+### 2026-09-03: the yank is the browser's native modal-close restore
+
+This is the finding that reframes the issue, and it explains why every fix
+attempted so far — three before today, one more today — has failed.
+
+Instrumenting the whole journey (focusin/focusout, `<dialog>` `close`/`cancel`,
+and a patched `HTMLElement.prototype.focus`) over 20 isolated runs, 4 of which
+failed:
+
+```
+t=957  MARK       POST-assumption-focus     <- journey focuses the input
+t=982  DLG-close  discard-dialog-title      <- the dialog's close fires LATE
+t=988  out        Revenue growth, FY2025, BASE
+t=989  in         Open command palette      <- focus taken, no .focus() call
+```
+
+**No `FOCUS-CALL` is ever recorded at the yank.** The patched
+`HTMLElement.prototype.focus` captures every application call and sees none. So
+nothing in the app moves focus here: closing a modal `<dialog>` makes the
+*browser* restore focus to whatever was focused before `showModal()`, which for
+this dialog is the command-palette button it was raised from.
+
+That is why handler-level fixes cannot work, and it retro-explains the failures:
+
+- guarding `dismiss()`'s retry chain — no effect, the chain is not the mover
+- `guardBrowserHistory`'s trigger ternary — refuted earlier, same reason
+- removing the `ForecastScrubber` remount — reduced churn, did not touch this
+- guarding `WorkbenchShell`'s palette `onClose` — no effect; the palette's own
+  handler is not what fires either
+
+The remaining variable is **when** the discard dialog's `close` lands. When it
+fires while the dialog still owns focus, the native restore is correct and the
+run passes. When it fires a render later — after `dismiss()` has already restored
+focus and the journey has moved on — the native restore is a theft.
+
+Attempted today and **reverted, because it reduced without eliminating**:
+remembering the last focused element and re-focusing it after a close that moved
+focus from outside the dialog. Measured 1 failure in 13 against a baseline of 4
+in 20 — better, but n=13 cannot carry that claim, and this is WCAG-governed focus
+code where a partial fix is not worth the risk. `tsc`, `eslint` and the 123 unit
+tests were green on it; the change is recoverable from this session if wanted.
+
+**The real fix is to stop the late close, not to compensate for it.** `dismiss()`
+calls `onClose()` and then `dialogRef.current?.close()`; the effect below also
+closes on a later render when `open` flips false. In the failing runs no `close`
+event is observed at `dismiss()` time and one arrives ~25 ms later, so the
+element is being closed by the second path, after focus has already been placed.
+Make the close happen exactly once, synchronously, inside `dismiss()` — and have
+the effect close only a dialog that `dismiss()` did not — and the native restore
+lands while the dialog still owns focus, which is when it is correct.
+
 Remaining direction, still unverified:
 
 - Make the repair effect and the dialog restore re-find the element that just
