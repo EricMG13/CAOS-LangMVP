@@ -1,0 +1,2 @@
+{"browser":"webkit","timing":{"domContentLoaded":46,"firstContentfulPaint":141},"budgetEnforced":false,"caseRequests":1}
+{"browser":"webkit","browser_version":"26.5","status":"passed","duration_ms":151520,"results":"/Users/ericguei/Claude/Projects/CAOS-LangMVP/.claude/worktrees/open-session-bcaed2/.superpowers/sdd/candidates/2026-09-03-c4f0270/gates/browser/test-results/webkit"}

@@ -1,0 +1,5 @@
+recipient age1c5nucajmsd8qsfyp9fd5v0mu3x2xjw2j8ma467ppmpmsc8tmueuq3ymfzq
+vault_volume caos-cand-20260903_vault-data
+snapshot_point paused-writers
+caos.dump.age 43c6da35f90f611cab0944e4f4075643b94da3cbc092b978e42593937b55a1b4
+vault.tgz.age f80151dbf39d10ed63dc6dd10a1c9b77575d6a25eb2d5554cd76c95ed3c9f338

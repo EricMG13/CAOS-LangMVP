@@ -1,0 +1,4 @@
+## post-reset golden journey (G9 repeat), chromium, stack reset by down -v / up
+{"browser":"chromium","timing":{"domContentLoaded":89.89999997615814,"firstContentfulPaint":180},"budgetEnforced":true,"caseRequests":1}
+{"browser":"chromium","browser_version":"151.0.7922.34","status":"passed","duration_ms":138246,"results":"/Users/ericguei/Claude/Projects/CAOS-LangMVP/.claude/worktrees/open-session-bcaed2/.superpowers/sdd/candidates/2026-09-03-c4f0270/gates/stack/post-reset-test-results/chromium"}
+exit 0

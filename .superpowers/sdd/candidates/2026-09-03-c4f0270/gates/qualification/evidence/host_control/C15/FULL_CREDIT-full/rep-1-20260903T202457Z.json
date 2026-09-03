@@ -1,0 +1,169 @@
+{
+  "binding": {
+    "adapter_version": "caos.answer-keyed.host-control.v1",
+    "identity_digest": "4e3a6e8fbd028475ac4acb81466ecfad1d867697b7bd74d6c8e888e2fd7b3137",
+    "model": "deterministic",
+    "parameter_context_digest": "358e4ecee6ab8bcb3e2a7aac127223bfd0abe93fe2acbdd7acc7269d680eb3c2",
+    "provider_name": "host_control",
+    "provider_version": null,
+    "qualification_expires_at": null,
+    "qualification_record_digest": null,
+    "qualification_record_id": null,
+    "qualification_status": "host_control"
+  },
+  "binding_kind": "host_control",
+  "binding_view": {
+    "commit": "c4f0270104ad659f7d54dd530b74ba4fd5bb6ccc",
+    "corpus_digest": "460e3ad6a64c8f78632862921f4d181f0fcb866160a6aa2f44b8c476d70ae7e3",
+    "identity_digest": "4e3a6e8fbd028475ac4acb81466ecfad1d867697b7bd74d6c8e888e2fd7b3137",
+    "methodology_build_id": "237bf4bc56b616b1c679a32c3733a2d9baf580b113758329320478e0226bae9d",
+    "methodology_manifest_digest": "d320bc44ccec402dba3bca1d8cb340de85f68d3f4560e9ac7ba2234e882b6231",
+    "policy_digest": "986e65236178128abeca0168c914c177310b15290e40fe89fb9c0b3f9b998f3f"
+  },
+  "blocked_code": null,
+  "blocked_detail": null,
+  "build": {
+    "commit": "c4f0270104ad659f7d54dd530b74ba4fd5bb6ccc",
+    "image_digest": "sha256:cae0ed6b5c55696c44495825552353a4fdd51ff1f63ee6521bf18d89e5bd14fa",
+    "methodology_build_id": "237bf4bc56b616b1c679a32c3733a2d9baf580b113758329320478e0226bae9d",
+    "methodology_manifest_digest": "d320bc44ccec402dba3bca1d8cb340de85f68d3f4560e9ac7ba2234e882b6231",
+    "python": "3.14.6"
+  },
+  "cell_id": "FULL_CREDIT/full",
+  "cell_key": "C15/FULL_CREDIT/full",
+  "corpus": {
+    "answer_key_digest": "ed4f6ed43382dae0f83e5ed1e85aec02b6fa18e5625e449b5f22b87c52c68f3c",
+    "answer_key_version": "1.0.0",
+    "approval": {
+      "approved_at": "2026-09-03",
+      "note": "host-control attestation of the draft key: orchestration proof only, never analysis",
+      "reviewer": "Claude Fable 5.1 (ER-G6 implementer)",
+      "scope": "host_control"
+    },
+    "corpus_digest": "460e3ad6a64c8f78632862921f4d181f0fcb866160a6aa2f44b8c476d70ae7e3",
+    "manifest_digest": "7f3a0738332c333a4bd017eccc8a0854f3c9b354739c1f4b0cd2959fa8dfaa1e",
+    "pack_version": "1.0.0"
+  },
+  "date": "2026-09-03T20:24:57Z",
+  "depth": "full",
+  "expires_at": "2026-12-02T20:24:57Z",
+  "kind": "negative",
+  "pack_id": "C15",
+  "pathway": "FULL_CREDIT",
+  "policy": {
+    "averaging": false,
+    "host_control_is_qualification": false,
+    "live_repetitions": 3,
+    "refusal_proves_pathway": false,
+    "review_days": 90,
+    "schema_version": "caos.qualification-policy.v1"
+  },
+  "proves_pathway": false,
+  "repetition": 1,
+  "result_id": "98f24b82c8f0fe8665503a68891885ca50d2d12e223a512a965e3d09f4807654",
+  "reviewer": "Claude Fable 5.1 (ER-G9, orchestration proof only)",
+  "run": {
+    "budget_used": null,
+    "error_code": null,
+    "latency_seconds": 0.0,
+    "provider_calls": 0,
+    "run_id": null,
+    "status": "ingest"
+  },
+  "schema_version": "caos.qualification-result.v1",
+  "scores": {
+    "dimensions": {
+      "after_run": {
+        "applicable": false,
+        "detail": {},
+        "pass": true,
+        "score": null
+      },
+      "budget": {
+        "applicable": false,
+        "detail": {},
+        "pass": true,
+        "score": null
+      },
+      "citations": {
+        "applicable": false,
+        "detail": {},
+        "pass": true,
+        "score": null
+      },
+      "conflicts": {
+        "applicable": false,
+        "detail": {},
+        "pass": true,
+        "score": null
+      },
+      "document_use": {
+        "applicable": false,
+        "detail": {},
+        "pass": true,
+        "score": null
+      },
+      "facts": {
+        "applicable": false,
+        "detail": {},
+        "pass": true,
+        "score": null
+      },
+      "ingest": {
+        "applicable": true,
+        "detail": {
+          "problems": [],
+          "steps": 8
+        },
+        "pass": true,
+        "score": 1.0
+      },
+      "injection": {
+        "applicable": false,
+        "detail": {},
+        "pass": true,
+        "score": null
+      },
+      "latency": {
+        "applicable": true,
+        "detail": {
+          "limit": 900.0,
+          "seconds": 0.0
+        },
+        "pass": true,
+        "score": null
+      },
+      "model_effect": {
+        "applicable": false,
+        "detail": {},
+        "pass": true,
+        "score": null
+      },
+      "outcome": {
+        "applicable": false,
+        "detail": {},
+        "pass": true,
+        "score": null
+      },
+      "refusal": {
+        "applicable": false,
+        "detail": {
+          "expected": null,
+          "observed": null
+        },
+        "pass": true,
+        "score": null
+      },
+      "unsupported_claims": {
+        "applicable": false,
+        "detail": {},
+        "pass": true,
+        "score": null
+      }
+    },
+    "failed_dimensions": [],
+    "pass": true
+  },
+  "stage": "ingest",
+  "verdict": "pass"
+}

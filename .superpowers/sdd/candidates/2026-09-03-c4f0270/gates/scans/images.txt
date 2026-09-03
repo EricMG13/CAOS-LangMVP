@@ -1,0 +1,39 @@
+## app caos-cand-20260903-app:c4f0270 sha256:cae0ed6b5c55696c44495825552353a4fdd51ff1f63ee6521bf18d89e5bd14fa
+# verify_image_resources.py --runtime app
+{'build_id': '237bf4bc56b616b1c679a32c3733a2d9baf580b113758329320478e0226bae9d', 'checked': 310, 'mismatches': 0, 'logical_entries': 41, 'physical_skills': 22, 'runtime': 'app', 'libreoffice': None, 'pango': '/usr/bin/pango-view', 'smoke': {}}
+verify exit 0
+# trivy image --scanners vuln --list-all-pkgs (json)
+2026-09-03T21:00:10+01:00	INFO	Number of language-specific files	num=1
+2026-09-03T21:00:10+01:00	INFO	[python-pkg] Detecting vulnerabilities...
+2026-09-03T21:00:10+01:00	WARN	Using severities from other vendors for some vulnerabilities. Read https://trivy.dev/docs/v0.72/guide/scanner/vulnerability#severity-selection for details.
+trivy inventoried 181 packages of image sha256:cae0ed6b5c55…
+floor exit 0
+# trivy image --format cyclonedx
+2026-09-03T21:00:10+01:00	INFO	Detected OS	family="debian" version="13.6"
+2026-09-03T21:00:10+01:00	INFO	Number of language-specific files	num=1
+SBOM for caos-cand-20260903-app:c4f0270 lists 182 components
+floor exit 0
+# trivy image --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1
+Report Summary
+fixable HIGH/CRITICAL gate exit 0
+## worker caos-cand-20260903-worker:c4f0270 sha256:61283796a3d6df4987514e1c5a80310a5073c1652b2796d346cc3f8650dfe7a6
+# verify_image_resources.py --runtime worker
+{'build_id': '237bf4bc56b616b1c679a32c3733a2d9baf580b113758329320478e0226bae9d', 'checked': 310, 'mismatches': 0, 'logical_entries': 41, 'physical_skills': 22, 'runtime': 'worker', 'libreoffice': '/usr/bin/soffice', 'pango': '/usr/bin/pango-view', 'smoke': {'workbook': 'Acme-Credit_CP-MODEL-v3_FY2024_Q1-FY2024_Q4_20250215.xlsx', 'formulas_validated': 345, 'semantic_checks': 20, 'calculation_engine': 'LibreOffice 25.2.3.2 520(Build:2)'}}
+verify exit 0
+# trivy image --scanners vuln --list-all-pkgs (json)
+2026-09-03T21:00:25+01:00	INFO	Number of language-specific files	num=1
+2026-09-03T21:00:25+01:00	INFO	[python-pkg] Detecting vulnerabilities...
+2026-09-03T21:00:25+01:00	WARN	Using severities from other vendors for some vulnerabilities. Read https://trivy.dev/docs/v0.72/guide/scanner/vulnerability#severity-selection for details.
+trivy inventoried 390 packages of image sha256:61283796a3d6…
+floor exit 0
+# trivy image --format cyclonedx
+2026-09-03T21:00:25+01:00	WARN	[cyclonedx] Unable to marshal SPDX licenses	license="MPL | GPL2+ | LGPL2+"
+2026-09-03T21:00:25+01:00	WARN	[cyclonedx] Unable to marshal SPDX licenses	license="MPL-1.1 | GPL-3+ | LGPL-3+"
+SBOM for caos-cand-20260903-worker:c4f0270 lists 391 components
+floor exit 0
+# trivy image --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1
+Report Summary
+fixable HIGH/CRITICAL gate exit 0
+# scan manifest bound to the commit and both image ids
+scan manifest binds 8 reports to 3 image(s) at c4f0270104ad
+manifest exit 0

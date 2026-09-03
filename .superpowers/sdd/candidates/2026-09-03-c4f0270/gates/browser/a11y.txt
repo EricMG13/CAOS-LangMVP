@@ -1,0 +1,35 @@
+{
+  "violations": [
+    {
+      "viewport": "state-loading",
+      "route": "/command-center/",
+      "id": "landmark-one-main",
+      "impact": "moderate",
+      "nodes": [
+        {
+          "target": [
+            "html"
+          ],
+          "html": "<html lang=\"en\">",
+          "summary": "Fix all of the following:\n  Document does not have a main landmark"
+        }
+      ]
+    },
+    {
+      "viewport": "state-loading",
+      "route": "/command-center/",
+      "id": "page-has-heading-one",
+      "impact": "moderate",
+      "nodes": [
+        {
+          "target": [
+            "html"
+          ],
+          "html": "<html lang=\"en\">",
+          "summary": "Fix all of the following:\n  Page must have a level-one heading"
+        }
+      ]
+    }
+  ]
+}
+exit 1

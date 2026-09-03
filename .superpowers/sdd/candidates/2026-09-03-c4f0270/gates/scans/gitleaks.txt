@@ -1,0 +1,3 @@
+gitleaks exit 0
+gitleaks scanned 207 commits with no findings
+floor exit 0

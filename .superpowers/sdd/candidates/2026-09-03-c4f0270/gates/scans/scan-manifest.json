@@ -1,0 +1,52 @@
+{
+  "schema_version": "caos.scan-manifest.v1",
+  "commit": "c4f0270104ad659f7d54dd530b74ba4fd5bb6ccc",
+  "images": {
+    "app": "sha256:cae0ed6b5c55696c44495825552353a4fdd51ff1f63ee6521bf18d89e5bd14fa",
+    "worker": "sha256:61283796a3d6df4987514e1c5a80310a5073c1652b2796d346cc3f8650dfe7a6",
+    "source-tree": "c4f0270104ad659f7d54dd530b74ba4fd5bb6ccc"
+  },
+  "reports": {
+    "trivy-app": {
+      "file": "trivy-app.json",
+      "sha256": "f53a7582d6d4b11263027a8936df7b3c144f0fa4ecc3d25f5d298e12c1243679",
+      "bytes": 1002952
+    },
+    "sbom-app": {
+      "file": "sbom-app.cdx.json",
+      "sha256": "10f1befb77557db0a0f38961ea0a98ed8555cee8d198ae9fa2d893efdaf904dc",
+      "bytes": 331596
+    },
+    "trivy-worker": {
+      "file": "trivy-worker.json",
+      "sha256": "aba2a5dfbb9a4385f9c58bf5b843d4f51d7fc5114734ebc8a03dcc6e9ce9cfaa",
+      "bytes": 2194217
+    },
+    "sbom-worker": {
+      "file": "sbom-worker.cdx.json",
+      "sha256": "3679fcd8be8c76a197e6a14f0c3b48f97416369520bb34dc89164798bccbe2ab",
+      "bytes": 746437
+    },
+    "pip-audit": {
+      "file": "pip-audit.json",
+      "sha256": "87ac8de5c34d7dbf3dbbf0dae0dbd4f17e7dea71c1e67f7218db7a5d0948d9a6",
+      "bytes": 3354
+    },
+    "bandit": {
+      "file": "bandit.json",
+      "sha256": "05b9554bfaa6437400aeef27e1236de990d3834a67f019130fe1351d3a0e287a",
+      "bytes": 20539
+    },
+    "npm-audit": {
+      "file": "npm-audit.json",
+      "sha256": "19ec4d570300c38a61f51c476e18e48629dc9ea1dfcb66bfaeaf71a43bd381cc",
+      "bytes": 364
+    },
+    "gitleaks-log": {
+      "file": "gitleaks.log",
+      "sha256": "135e5e1582d97c1204737dcd64b4f4d461d4cd8b14c0ddb1ec4dbd9a986726cb",
+      "bytes": 147
+    }
+  },
+  "generated_at": "2026-09-03T20:00:25+00:00"
+}
