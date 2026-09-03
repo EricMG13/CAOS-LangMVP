@@ -148,14 +148,50 @@ in 20 — better, but n=13 cannot carry that claim, and this is WCAG-governed fo
 code where a partial fix is not worth the risk. `tsc`, `eslint` and the 123 unit
 tests were green on it; the change is recoverable from this session if wanted.
 
-**The real fix is to stop the late close, not to compensate for it.** `dismiss()`
-calls `onClose()` and then `dialogRef.current?.close()`; the effect below also
-closes on a later render when `open` flips false. In the failing runs no `close`
-event is observed at `dismiss()` time and one arrives ~25 ms later, so the
-element is being closed by the second path, after focus has already been placed.
-Make the close happen exactly once, synchronously, inside `dismiss()` — and have
-the effect close only a dialog that `dismiss()` did not — and the native restore
-lands while the dialog still owns focus, which is when it is correct.
+### That "stop the late close" plan was wrong, and so was its successor
+
+Both were tried and both are refuted. Recorded so the next person starts from
+what is left rather than from here.
+
+**"Close exactly once, synchronously" is not implementable — it already is.**
+Wrapping `HTMLDialogElement.prototype.close` shows one call per dismissal:
+
+```
+t=788  close-CALL   discard-dialog-title  wasOpen=True   <- dismiss(), once
+t=795  in           Open command palette                 <- dismiss()'s restore
+t=828  in           Revenue growth, FY2025, BASE         <- journey moves focus
+t=848  close-EVENT  discard-dialog-title                 <- event fires 60ms later
+t=855  in           Open command palette                 <- native restore wins
+```
+
+There is no second call site. `close()` **queues** the `close` event rather than
+firing it, and the platform's focus restoration rides that deferred dispatch. The
+"late close" was never a second code path; it is the browser.
+
+**Restoring on the `close` event instead does not work either.** The obvious
+consequence of the above is to stop restoring inside `dismiss()` and restore from
+a `close` listener, so the app runs after the platform. Implemented, built (with
+the bundle's mtime checked against the source — an earlier attempt silently
+measured a stale build), and run 40 times: **6 failures in 26 dumps, against a
+baseline of about 4 in 20.** No improvement.
+
+That failure is informative. Had the listener run after the platform's
+restoration, it would have won. It did not, so **the restoration lands after
+`close` handlers too, and no handler-based ordering can beat it.** Every
+remaining idea of the form "restore later" or "restore harder" is dead.
+
+**What that leaves.** The browser restores to whatever was focused before
+`showModal()`, and `DraftDiscardDialog` is a *single element reused for every
+prompt* (mounted once in `Workspace`). Its restore target is therefore whatever
+preceded its most recent `showModal()` — and when dispatch is deferred, a stale
+association from an earlier prompt is still live. In the failing runs the
+offending target is the command-palette button, which is what preceded the
+*earlier* prompt in the same journey, not the current one.
+
+So the direction worth trying next is to stop reusing the element: give the
+dialog a React `key` per prompt so each prompt gets a fresh `<dialog>` with no
+inherited restore target. Untested — it is a hypothesis with a mechanism behind
+it, not a fix.
 
 Remaining direction, still unverified:
 
