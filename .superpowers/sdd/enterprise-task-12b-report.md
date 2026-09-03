@@ -574,3 +574,27 @@ artifacts accumulate the samples a per-engine budget needs;
 `CAOS_ENFORCE_TIMING=1|0` overrides the default for any engine. The presence
 of navigation and paint timing is still asserted everywhere. Ledger notes
 WEB-002 and PERF-011 record the policy and the samples.
+
+The third CI run (`6641951`, the engine-aware budget) turned Firefox green and
+left WebKit red 118 s in, at `Saved v5` in Report Studio. Evidence: the
+retained failure screenshot shows "Saved v6", and the retained trace shows
+five `PUT …/deliverables/EARNINGS_UPDATE/draft` where the script expected
+four — the extra one 27.7 s in, during the "Keep editing" detour that
+precedes the discard: Report Studio autosaves 850 ms after the last edit,
+and on the slow runner the eight Playwright actions of that detour took
+longer than 850 ms, so the fence text was saved once before it was
+discarded. That is correct product behaviour; the harness's hard-coded
+version numbers (`Saved v5`, `Use shared v6`, `FROZEN · Draft v7`, `Saved
+v8`, …) assumed a runner fast enough that no autosave lands during a
+deliberation. Fix: every version the script asserts is now read from the
+fixture that assigns them (`reportVersion`, `latestFrozenVersion`), and each
+autosave wait keys on the fixture holding the expected content
+(`awaitReportSave(pathway, hasBlockText(text))`) before asserting `Saved
+v<fixture version>` in the UI; no version literal remains. The three
+engines were rerun locally on the change (results below).
+
+```text
+$ CAOS_URL=http://127.0.0.1:8766 node scripts/run-browsers.mjs        # fixture-derived versions, fresh host-control server
+→ chromium passed 134 548 ms (DCL 69 / FCP 172, budget enforced) · firefox passed 142 108 ms (148 / 208, recorded)
+  · webkit passed 140 700 ms (32 / 112, recorded); exit 0
+```
