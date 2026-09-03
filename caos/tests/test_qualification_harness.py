@@ -303,7 +303,8 @@ def test_a_refusal_cell_passes_only_with_its_declared_code(tmp_path):
 
 
 def test_every_mod_check_maps_to_the_harness_or_an_external_input():
-    rows = list(csv.DictReader((ROOT / "docs" / "QUALITY_QUALIFICATION.csv").open(encoding="utf-8")))
+    with (ROOT / "docs" / "QUALITY_QUALIFICATION.csv").open(encoding="utf-8") as handle:
+        rows = list(csv.DictReader(handle))
     assert [row["Check ID"] for row in rows] == [f"MOD-{index:03d}" for index in range(1, 26)]
     for row in rows:
         assert row["Harness mapping"].strip() and row["Status"] in {"PROVED HOST CONTROL", "PROVED (spec suite)", "BLOCKED EXTERNAL"}

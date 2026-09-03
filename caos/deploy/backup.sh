@@ -9,6 +9,24 @@
 # both. The manifest's SHA-256 is a cheap corruption pre-check, not the
 # authenticity control.
 #
+# Snapshot point (RESTORE-DRILL-2026-08-30 F3). The domain database lives in
+# PostgreSQL; the run checkpoints (WAL-mode SQLite) and every published export
+# live in the vault volume. Two captures of two stores describe one instant
+# only if nothing writes between them, so this script PAUSES the app and the
+# worker containers (SIGSTOP, `docker pause`) for the whole capture and
+# unpauses them on every exit path. While paused the application answers
+# nothing — a backup is a short maintenance window, sized by pg_dump plus the
+# tar of the vault — and a run that was mid-provider-call resumes exactly where
+# it stopped. `checkpoints.db-shm` is excluded from the tar: it is shared-memory
+# index state SQLite regenerates on open; the `.db` and `-wal` pair restore the
+# checkpoint store as of the pause.
+#
+# Vault discovery (RESTORE-DRILL-2026-08-30 F2). The vault volume is the one the
+# running app container mounts at /vault (`docker inspect`), or the volume named
+# in CAOS_VAULT_VOLUME when the app is down. Compose labels are never consulted:
+# a volume restored by hand carries none, and the old label lookup then failed
+# with no diagnostic at all. Every failure here names its cause on stderr.
+#
 # Operator requirements (NOT enforceable from this script — treat as policy):
 #   * CAOS_BACKUP_RECIPIENT is an age public key. The matching IDENTITY (private
 #     key) must be stored somewhere this host cannot read — a password manager,
@@ -47,31 +65,73 @@ fi
 dump_tmp=""
 vault_tmp=""
 manifest_tmp=""
+paused_containers=""
 cleanup() {
+    if [ -n "$paused_containers" ]; then
+        # shellcheck disable=SC2086 — a space-separated list of container ids.
+        docker unpause $paused_containers >/dev/null || echo "WARNING: could not unpause $paused_containers; run 'docker unpause' by hand" >&2
+    fi
     rm -f -- "$dump_tmp" "$vault_tmp" "$manifest_tmp"
     rmdir "$lock_dir" 2>/dev/null || true
 }
 trap cleanup EXIT
-dump_tmp=$(mktemp "$out/.caos.dump.age.XXXXXX")
 compose() {
     docker compose -f "$script_dir/docker-compose.yml" "$@"
 }
+
+# --- resolve the vault volume before anything is paused -----------------------
+app_container=$(compose ps -q app || true)
+if [ -n "${CAOS_VAULT_VOLUME:-}" ]; then
+    vault_volume="$CAOS_VAULT_VOLUME"
+    docker volume inspect "$vault_volume" >/dev/null 2>&1 || {
+        echo "CAOS_VAULT_VOLUME names a volume that does not exist: $vault_volume" >&2
+        exit 1
+    }
+elif [ -n "$app_container" ]; then
+    vault_volume=$(docker inspect --format '{{range .Mounts}}{{if eq .Destination "/vault"}}{{.Name}}{{end}}{{end}}' "$app_container")
+    if [ -z "$vault_volume" ]; then
+        echo "the app container $app_container mounts no volume at /vault; set CAOS_VAULT_VOLUME explicitly" >&2
+        exit 1
+    fi
+else
+    echo "the app service is not running and CAOS_VAULT_VOLUME is unset: cannot resolve the vault volume" >&2
+    exit 1
+fi
+
+# --- one snapshot point: pause every writer for the whole capture --------------
+writers=$(compose ps -q app worker || true)
+if [ -n "$writers" ]; then
+    # shellcheck disable=SC2086 — a space-separated list of container ids.
+    docker pause $writers >/dev/null
+    paused_containers="$writers"
+fi
+
+dump_tmp=$(mktemp "$out/.caos.dump.age.XXXXXX")
 # Piped straight into age: the plaintext dump is never a file on this disk.
 compose exec -T db pg_dump -U caos -d caos --format=custom | age -r "$recipient" -o "$dump_tmp"
-test -s "$dump_tmp"
-project_name=${COMPOSE_PROJECT_NAME:-deploy}
-vault_volume=$(docker volume ls -q --filter "label=com.docker.compose.project=$project_name" --filter "label=com.docker.compose.volume=vault-data" | head -n 1)
-test -n "$vault_volume"
+test -s "$dump_tmp" || { echo "pg_dump produced no bytes" >&2; exit 1; }
 vault_tmp=$(mktemp "$out/.vault.tgz.age.XXXXXX")
-docker run --rm -v "$vault_volume:/vault:ro" alpine:3.20@sha256:d9e853e87e55526f6b2917df91a2115c36dd7c696a35be12163d44e6e2a4b6bc tar -C /vault -czf - . | age -r "$recipient" -o "$vault_tmp"
-test -s "$vault_tmp"
+docker run --rm -v "$vault_volume:/vault:ro" alpine:3.20@sha256:d9e853e87e55526f6b2917df91a2115c36dd7c696a35be12163d44e6e2a4b6bc \
+    tar -C /vault --exclude='./checkpoints.db-shm' -czf - . | age -r "$recipient" -o "$vault_tmp"
+test -s "$vault_tmp" || { echo "the vault archive is empty" >&2; exit 1; }
+
+# The writers resume as soon as both halves are captured; the manifest and the
+# renames below touch only this destination.
+if [ -n "$paused_containers" ]; then
+    # shellcheck disable=SC2086
+    docker unpause $paused_containers >/dev/null
+    paused_containers=""
+fi
+
 manifest_tmp=$(mktemp "$out/.caos.backup.manifest.XXXXXX")
 {
     printf 'recipient %s\n' "$recipient"
+    printf 'vault_volume %s\n' "$vault_volume"
+    printf 'snapshot_point paused-writers\n'
     printf 'caos.dump.age %s\n' "$(sha256sum < "$dump_tmp" | cut -d ' ' -f 1)"
     printf 'vault.tgz.age %s\n' "$(sha256sum < "$vault_tmp" | cut -d ' ' -f 1)"
 } > "$manifest_tmp"
 mv -f -- "$dump_tmp" "$out/caos.dump.age"
 mv -f -- "$vault_tmp" "$out/vault.tgz.age"
 mv -f -- "$manifest_tmp" "$out/caos.backup.manifest"
-echo "encrypted backup written to $out_path (recipient $recipient)"
+echo "encrypted backup written to $out_path (recipient $recipient, vault volume $vault_volume)"

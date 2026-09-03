@@ -1648,6 +1648,12 @@ class ModelService:
             result.append(row)
         return result
 
+    def recover_builds(self) -> int:
+        """Worker startup recovery: requeue the builds a predecessor claimed and
+        never finished. A hard kill skips run_pending's FAILED fallback, so
+        without this a claimed row stayed BUILDING forever (SIM-008)."""
+        return self.builds.requeue_building_builds()
+
     def run_build_for_tests(self, build_id: str) -> dict[str, Any]:
         build = self.builds.get_build(build_id)
         if build is None:

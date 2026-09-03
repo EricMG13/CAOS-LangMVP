@@ -273,6 +273,14 @@ engine, the bundle, or the routes.
   `.github/workflows/enterprise-qualification.yml` runs the live matrix on
   dispatch. `docs/QUALITY_QUALIFICATION.csv` maps MOD-001–MOD-025 to the
   harness, the runtime or an external input.
+- PostgreSQL target (Task 12a): `caos/tests/test_postgres_races.py` and the
+  real-database tests in `test_single_instance.py` run only with
+  `CAOS_TEST_POSTGRES_URL` set to a role that may `CREATE DATABASE` (every test
+  makes and drops its own database); `CAOS_REQUIRE_POSTGRES=1` turns a missing
+  URL into a failure, which is how CI's `postgres` job runs them against the
+  digest-pinned container. Locally, point the URL at the QA container.
+  Failure simulations SIM-001–SIM-030 map to retained tests in
+  `docs/SIMULATION_LEDGER.csv`, pinned by `caos/tests/test_simulation_ledger.py`.
 - Lint: `ruff check --config ruff.toml caos/server caos/tests --exclude
   caos/server/caos/methodology/vendor`.
 - Dependencies: `caos/server/pyproject.toml` is the single source of truth.
@@ -309,10 +317,17 @@ engine, the bundle, or the routes.
   deterministic/scripted development proof does not qualify live analysis.
   Enterprise qualification across all six pathways remains open.
 - The encrypted Postgres/vault backup streams and restore checks were exercised
-  with real `age`, PostgreSQL, and Docker-volume data on 2026-08-30. The
-  `backup.sh` Compose wrapper, lock directory, manifest bookkeeping, scheduled
-  off-host transfer, rotation, and retention were not exercised and remain
-  deployment gates.
+  with real `age`, PostgreSQL, and Docker-volume data on 2026-08-30; the three
+  defects that drill found (`caos/deploy/RESTORE-DRILL-2026-08-30.md` F1–F3)
+  were repaired in Task 12a and have regression tests in
+  `caos/tests/test_deploy_topology.py`: the store creates its whole schema at
+  startup (so the drill's table check holds for a fresh deployment),
+  `backup.sh` resolves the vault volume from the app container's `/vault`
+  mount or `CAOS_VAULT_VOLUME` and never fails silently, and it pauses the
+  app and worker containers for the whole capture so the dump and the vault
+  archive share one snapshot point (`checkpoints.db-shm` excluded). The
+  scheduled off-host transfer, rotation, and retention were not exercised and
+  remain deployment gates.
 - The Dockerfile installs `libreoffice-calc` and its 167 apt dependencies
   unversioned. This is an **accepted** gap, not an oversight, and the reason is
   narrower than it looks: apt is not unauthenticated. The `InRelease` file is
@@ -334,10 +349,20 @@ engine, the bundle, or the routes.
   decision owner, not a documentation chore.
 - Exports have no claim at all — two workers would both render the same export.
   Only the failure fallback is CAS-bound. Harmless today (single worker,
-  content-addressed output), wrong under a second worker.
+  content-addressed output, and a second worker is refused at startup), wrong
+  under a second worker. Build claims are CAS-bound and, since Task 12a, a
+  `BUILDING` row a dead worker left behind is requeued at the next worker
+  start (`ModelService.recover_builds`), like `RENDERING` freeze jobs.
 - `RequestCeilings` counts in-process, so its ceilings are per app instance.
   That matches the single-instance deployment the SQLite checkpoints already
-  force; scaling out means moving them to a shared store first.
+  force; scaling out means moving them to a shared store first. The instance
+  ceiling is enforced, not assumed (Task 12a): `run.py` and `dev.py` take an
+  exclusive `flock` on `checkpoints.db.lock` beside the checkpoint database
+  (`caos/instance_lock.py`) before recovery runs or a socket is bound, so a
+  second app over the same data directory exits `INSTANCE_ALREADY_RUNNING`;
+  the PostgreSQL role advisory locks (`store.single_instance`) stay beside
+  it, Compose declares `deploy.replicas: 1` for `app` and `worker`, and
+  `caos/deploy/ENVIRONMENT_MANIFEST.md` records the ceiling.
 - The gzip exclusion for XLSX only covers the model-build download, the sole
   route setting that media type. The deliverable export serves md/pdf/xlsx
   alike as `application/octet-stream`, so its already-compressed formats are
@@ -346,13 +371,24 @@ engine, the bundle, or the routes.
 - Run checkpoints are SQLite on the data volume even under a Postgres domain
   store (`run.py` notes this); the postgres checkpoint saver is pinned in
   requirements but not wired in the engine. Single app instance only.
-- Source-set version allocation now locks the case row before it reads the
+- Source-set version allocation locks the case row before it reads the
   current version (`storage/store.py::_next_source_set`), so two concurrent
-  ingests into one case cannot both mint the same version. The lock is a no-op
-  on SQLite and **has not been exercised against a live PostgreSQL** — only the
-  emitted clause is pinned. Locking the set row instead would not work:
-  `ORDER BY version DESC LIMIT 1 FOR UPDATE` re-reads the same unchanged row
-  and still computes N+1.
+  ingests into one case cannot both mint the same version. Locking the set row
+  instead would not work: `ORDER BY version DESC LIMIT 1 FOR UPDATE` re-reads
+  the same unchanged row and still computes N+1. Since Task 12a this and every
+  other governed race is proven on two independent PostgreSQL connections in
+  `caos/tests/test_postgres_races.py` (CI job `postgres` against the pinned
+  container; locally `CAOS_TEST_POSTGRES_URL=postgresql+psycopg://…` against
+  the QA container). That target repaired six read-then-write races the
+  process locks could not order across connections — event `seq`, the budget
+  ledger, duplicate withdrawal, assumption-vs-withdrawal, and the model,
+  opinion, draft, freeze and publication heads (`store.lock_case`, a
+  transaction-scoped case advisory lock) — and found that the Task 10
+  deliverable DDL could not be created through psycopg at all. The
+  process-wide locks remain the SQLite mechanism only; SQLite thread races
+  and compiled `FOR UPDATE` checks are never PostgreSQL proof
+  (`SPEC_RECONCILIATION.md`, "Two-connection PostgreSQL races";
+  `docs/DECISIONS.md` §14.21).
 - The OpenRouter binding is development-only and meters by estimate, not by
   count. `engine/openrouter.py` is a second provider-port adapter selected by
   `build_provider` only in development when it is the sole configured key.

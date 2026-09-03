@@ -95,6 +95,12 @@ def main() -> None:
             recovered = deliverables.recover_freeze_jobs()
             if recovered:
                 log_event("worker.freeze_jobs_recovered", count=recovered)
+            # Same rule for builds: a claim the dead predecessor never finished
+            # is requeued, so a hard kill mid-calculation leaves one retryable
+            # job, never a row stuck BUILDING with no executor (SIM-008).
+            recovered_builds = service.recover_builds()
+            if recovered_builds:
+                log_event("worker.builds_recovered", count=recovered_builds)
             while True:
                 processed = run_pending(service, deliverables)
                 if once:

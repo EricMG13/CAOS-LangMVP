@@ -16,7 +16,7 @@ import sqlalchemy as sa
 from sqlalchemy.exc import IntegrityError
 
 from ..contracts import digest
-from .store import new_id, now_iso
+from .store import lock_case, new_id, now_iso
 
 deliverable_metadata = sa.MetaData()
 
@@ -193,7 +193,11 @@ class DeliverableStore:
             with self.engine.begin() as conn:
                 for column in ("opinion_id", "signed_by"):
                     conn.exec_driver_sql(f"ALTER TABLE deliverable_frozen ADD COLUMN IF NOT EXISTS {column} VARCHAR")
-                conn.exec_driver_sql(POSTGRES_APPEND_ONLY_FUNCTION_DDL)
+                # text(), not exec_driver_sql: the PL/pgSQL `RAISE … %` format
+                # marker is a psycopg placeholder when the driver sees it raw,
+                # and the whole store failed to construct on PostgreSQL
+                # (found by the two-connection races, Task 12a).
+                conn.execute(sa.text(POSTGRES_APPEND_ONLY_FUNCTION_DDL))
                 for table in _APPEND_ONLY_TABLES:
                     conn.exec_driver_sql(f"DROP TRIGGER IF EXISTS {table}_append_only ON {table}")
                     conn.exec_driver_sql(
@@ -266,6 +270,7 @@ class DeliverableStore:
         """Expected-head CAS: the caller names the opinion it believes is current
         (or None); anything else is OpinionHeadConflict carrying the real head."""
         with self._WRITE_LOCK, self.engine.begin() as conn:
+            lock_case(conn, record["case_id"])
             head_row = conn.execute(
                 sa.select(deliverable_opinions)
                 .where(deliverable_opinions.c.case_id == record["case_id"],
@@ -299,11 +304,17 @@ class DeliverableStore:
     def _job(self, row: dict[str, Any]) -> dict[str, Any]:
         return {key: row.get(key) for key in self._JOB_KEYS}
 
-    def request_freeze(self, frozen_record: dict[str, Any], actor: str, audit: Any) -> dict[str, Any]:
+    def request_freeze(self, frozen_record: dict[str, Any], actor: str, audit: Any,
+                       authorize: Any = None) -> dict[str, Any]:
         """One job per freeze identity. A QUEUED/RENDERING/PUBLISHED job is
-        returned as is; a FAILED job is requeued; racing requests converge."""
+        returned as is; a FAILED job is requeued; racing requests converge.
+        `authorize(conn)` runs inside the transaction: standing is rechecked at
+        commit time, not only at the route (SIM-020)."""
         thread_id = frozen_record["thread_id"]
         with self._WRITE_LOCK, self.engine.begin() as conn:
+            lock_case(conn, frozen_record["case_id"])
+            if authorize is not None:
+                authorize(conn)
             existing = conn.execute(
                 sa.select(deliverable_freeze_jobs).where(deliverable_freeze_jobs.c.thread_id == thread_id)
             ).mappings().first()
@@ -415,6 +426,7 @@ class DeliverableStore:
         job PUBLISHED. An existing record for the identity is returned unchanged
         (created=False) so the caller can judge conflict versus convergence."""
         with self._WRITE_LOCK, self.engine.begin() as conn:
+            lock_case(conn, record["case_id"])
             existing = conn.execute(
                 sa.select(deliverable_frozen).where(deliverable_frozen.c.deliverable_id == record["deliverable_id"])
             ).mappings().first()
@@ -558,6 +570,7 @@ class DeliverableStore:
     def append_revision(self, case_id: str, pathway: str, expected_version: int,
                         content: dict[str, Any], content_digest: str, actor: str, audit: Any) -> dict[str, Any]:
         with self._WRITE_LOCK, self.engine.begin() as conn:
+            lock_case(conn, case_id)
             return self._append_revision(
                 conn, case_id, pathway, expected_version, content, content_digest, actor, audit,
             )
@@ -674,11 +687,16 @@ class DeliverableStore:
             conn.execute(sa.update(deliverable_threads).where(deliverable_threads.c.thread_id == thread_id)
                          .values(status="TERMINATED", outcome=outcome))
 
-    def file_record(self, deliverable_id: str, actor: str, audit: Any) -> dict[str, Any] | None:
+    def file_record(self, deliverable_id: str, actor: str, audit: Any, authorize: Any = None) -> dict[str, Any] | None:
         """The one-shot filing CAS (§12.21): FROZEN -> FILED wins exactly once;
         the same transaction supersedes every sibling record of the pathway and
-        terminalizes their parked threads with the typed outcome (§10.5)."""
+        terminalizes their parked threads with the typed outcome (§10.5).
+        `authorize(conn)` rechecks the approver's standing inside this
+        transaction, so a revocation between the route and the commit refuses
+        the filing (SIM-020)."""
         with self._WRITE_LOCK, self.engine.begin() as conn:
+            if authorize is not None:
+                authorize(conn)
             changed = conn.execute(
                 sa.update(deliverable_frozen)
                 .where(deliverable_frozen.c.deliverable_id == deliverable_id,

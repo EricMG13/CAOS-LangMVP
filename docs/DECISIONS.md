@@ -770,3 +770,57 @@ Consolidation note: where §6 conflicts with §10/§11/§12 (output Σ vs Σ+max
     green. Nothing here qualifies a binding: the credentials, the analyst
     approvals and the external packs are external inputs recorded in
     `.superpowers/sdd/enterprise-task-11-report.md`.
+
+21. **Database truth, retained simulations, the single-instance lock and the
+    backup snapshot point (2026-09-03, Task 12a, ETR-B07, ETR-B10, G6).**
+    Serialisation of every governed race is a property of the database, proven
+    on two independent PostgreSQL connections, never of a process lock. The
+    read-then-write paths that a second connection could race are now
+    database-ordered: `RunStore._emit` locks the run row before it allocates
+    `seq`, and every run-table writer (`node_running`, `complete_node`,
+    `pause_run`, finalisation) takes the run row first so the lock order is
+    cycle-free; `_budget_locked` locks the ledger row (`FOR UPDATE`) so reserve,
+    reconcile and charge cannot lose an update or overwrite an in-flight digest
+    (invariant 8); `withdraw` is conditional on the flag it read; `save_assumption`
+    reads the cited sources `FOR SHARE`; model sign-off, opinion sign-off, draft
+    append, freeze request and frozen publication take a transaction-scoped
+    advisory lock on the case (`store.lock_case`) before reading their head, so
+    the loser re-reads and receives the typed conflict naming the winner. The
+    process-wide locks stay as the SQLite mechanism, where these are no-ops.
+    `caos/tests/test_postgres_races.py` is the only PostgreSQL proof; it runs
+    in CI against the digest-pinned container (`ci.yml` job `postgres`,
+    `CAOS_REQUIRE_POSTGRES=1`) and locally against the QA container; SQLite
+    thread races and compiled `FOR UPDATE` checks are mechanism tests and are
+    never called PostgreSQL evidence. Membership is rechecked at commit time
+    inside the freeze-request and filing transactions (`DomainStore.
+    require_standing`, `FOR SHARE` on the membership row, `CASE_STANDING_REVOKED`
+    → 403), because a revocation between the route's check and the commit
+    otherwise filed with stale authority (SIM-020). A database that cannot be
+    reached before a write is the typed 503 `STORE_UNAVAILABLE` (SIM-010). The
+    worker requeues `BUILDING` rows a dead predecessor left behind exactly as
+    it requeues `RENDERING` freeze jobs (SIM-008). `node_running` never marks a
+    node on a terminal run (SIM-003). SIM-001–SIM-030 each map to a retained
+    test in `docs/SIMULATION_LEDGER.csv` (pinned by
+    `caos/tests/test_simulation_ledger.py`) built on the existing kill-after-
+    module, commit-gap, mid-provider-call, worker-fallback, render-failure and
+    injection seams; the only new seams are the faulting host-control double,
+    checkpoint-file damage, `ENOSPC`, and the disconnect-after-ack race. The
+    single application instance is enforced by an exclusive operating-system
+    lock over the checkpoint location (`caos/instance_lock.py`, `flock` on
+    `checkpoints.db.lock`, taken by `run.py` and `dev.py` before recovery runs
+    or a socket is bound) in addition to the PostgreSQL role advisory locks; a
+    second instance fails typed (`INSTANCE_ALREADY_RUNNING`) and is proven by a
+    second process. Compose declares `deploy.replicas: 1` for `app` and
+    `worker` and `caos/deploy/ENVIRONMENT_MANIFEST.md` records the ceiling.
+    The whole schema is created at startup (`DomainStore.from_url` constructs
+    the model and deliverable stores), which is also what let the PostgreSQL
+    target find that the Task 10 deliverable DDL could not be created through
+    psycopg (`%` in `RAISE`): it is now executed through `sa.text`.
+    `backup.sh` resolves the vault volume from the app container's `/vault`
+    mount or `CAOS_VAULT_VOLUME`, never a Compose label, fails loudly, and
+    captures both halves at one snapshot point by pausing the app and worker
+    containers for the capture (`checkpoints.db-shm` excluded); the restore
+    drill asserts the full startup schema. Not decided here: a distributed
+    checkpointer, a shared fleet, a high-availability control plane, an export
+    claim, or removing the SQLite process locks. Evidence:
+    `.superpowers/sdd/enterprise-task-12a-report.md`.

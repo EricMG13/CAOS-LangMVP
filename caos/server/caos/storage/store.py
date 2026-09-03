@@ -257,6 +257,20 @@ def _json_round_trip(value: Any) -> Any:
     return json.loads(json.dumps(value, sort_keys=True))
 
 
+def lock_case(conn: sa.Connection, case_id: str) -> None:
+    """Serialise this transaction with every other head-moving writer of one
+    case: model sign-off, opinion sign-off, draft append, freeze request and
+    frozen publication all read a head and insert after it, and on two
+    connections both readers see the same head. A transaction-scoped PostgreSQL
+    advisory lock (released at commit or rollback, never held across calls)
+    makes the second reader wait for the first commit and re-read. The thread
+    locks in ModelStore and DeliverableStore stay as the SQLite mechanism,
+    where a single writer already serialises and this is a no-op. Proven by
+    caos/tests/test_postgres_races.py (Task 12a)."""
+    if conn.dialect.name == "postgresql":
+        conn.execute(sa.text("SELECT pg_advisory_xact_lock(hashtext(:key))"), {"key": case_id})
+
+
 def _backfill_audit_chain(conn: sa.Connection) -> None:
     """Chain every unchained row once, in `seq` order, continuing each chain
     from its recorded head. Runs with the append-only triggers dropped."""
@@ -353,6 +367,17 @@ class DomainStore:
         try:
             metadata.create_all(engine)
             _ensure_audit_schema(engine)
+            # The whole schema at startup, not on first use: a deployment that
+            # had never queued a build or saved a draft used to lack the model
+            # and deliverable tables, so its (good) backups failed the restore
+            # drill's table check (RESTORE-DRILL-2026-08-30 F1), and a DDL
+            # defect in those stores surfaced as a 500 on the first request
+            # instead of a refusal to boot. Run tables arrive with the Engine.
+            from .deliverables import DeliverableStore
+            from .models import ModelStore
+
+            ModelStore(engine)
+            DeliverableStore(engine)
         except Exception:
             engine.dispose()
             raise
@@ -573,6 +598,20 @@ class DomainStore:
                 )
             ).scalar()
         return role is not None and (roles is None or role in roles)
+
+    def require_standing(self, conn: sa.Connection, case_id: str, actor: str, roles: set[str]) -> None:
+        """Commit-time authorization inside the caller's transaction (SIM-020):
+        the membership row is read under FOR SHARE, so a concurrent revocation
+        waits for this commit or is already visible, and stale authority
+        established at the route never crosses a governed commit. Raises the
+        typed refusal the route maps to 403."""
+        role = conn.execute(
+            sa.select(case_members.c.role)
+            .where(case_members.c.case_id == case_id, case_members.c.subject == actor)
+            .with_for_update(read=True)
+        ).scalar()
+        if role is None or role not in roles:
+            raise ValueError("CASE_STANDING_REVOKED: the actor's case standing changed before the write committed")
 
     def add_member(self, case_id: str, actor: str, member: str, role: str, actor_role: str | None = None) -> bool:
         with self.engine.begin() as conn:
@@ -807,7 +846,16 @@ class DomainStore:
             if row is None or row["case_id"] != case_id or row["withdrawn"]:
                 return None
             withdrawn_at = now_iso()
-            conn.execute(sa.update(sources).where(sources.c.id == source_id).values(withdrawn=True, withdrawn_at=withdrawn_at))
+            # Conditional on the flag it read: a duplicate withdrawal on a second
+            # connection re-evaluates against the committed row and matches
+            # nothing, so one withdrawal mints one set version and one audit
+            # event; the loser is told the source is no longer active.
+            if not conn.execute(
+                sa.update(sources)
+                .where(sources.c.id == source_id, sources.c.withdrawn.is_(False))
+                .values(withdrawn=True, withdrawn_at=withdrawn_at)
+            ).rowcount:
+                return None
             if self._current_set_locked(conn, case_id):
                 self._next_source_set(conn, case_id, actor, add=[], remove={source_id})
             citing = conn.execute(sa.select(assumptions).where(assumptions.c.case_id == case_id)).mappings().all()
@@ -1174,11 +1222,15 @@ class DomainStore:
 
     def save_assumption(self, case_id: str, data: dict[str, Any], evidence_ids: list[str], actor: str) -> dict[str, Any]:
         with self.engine.begin() as conn:
+            # FOR SHARE on the cited rows: a withdrawal on another connection
+            # waits for this insert to commit and then stales it, or commits
+            # first and this re-read sees the flag — an assumption never ends
+            # READY citing a withdrawn source (SPEC_RECONCILIATION D3).
             active = set(conn.execute(
                 sa.select(sources.c.id).where(
                     sources.c.id.in_(evidence_ids or []), sources.c.withdrawn.is_(False),
                     sources.c.case_id == case_id,
-                )
+                ).with_for_update(read=True)
             ).scalars().all()) if evidence_ids else set()
             missing = [evidence_id for evidence_id in (evidence_ids or []) if evidence_id not in active]
             if missing:

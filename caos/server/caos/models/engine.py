@@ -15,10 +15,12 @@ import json
 import math
 import os
 import re
+import shutil
 import stat
 import sys
 import tempfile
 import threading
+import weakref
 from copy import deepcopy
 from dataclasses import dataclass
 from decimal import Decimal
@@ -347,8 +349,11 @@ class CpModelBundle:
             relative.encode("utf-8") + b"\0" + sources[relative]
             for relative in self._RUNTIME_FILES
         )).hexdigest()
-        self._runtime_tree = tempfile.TemporaryDirectory(prefix=f"caos-cp-model-{content_digest[:12]}-")
-        runtime_root = Path(self._runtime_tree.name)
+        # mkdtemp + an explicit finalizer, not TemporaryDirectory: the latter's
+        # implicit cleanup at garbage collection is a ResourceWarning, and the
+        # bundle is built once per service, so every discarded service warned.
+        runtime_root = Path(tempfile.mkdtemp(prefix=f"caos-cp-model-{content_digest[:12]}-"))
+        self._runtime_cleanup = weakref.finalize(self, shutil.rmtree, str(runtime_root), ignore_errors=True)
         for relative, source in sources.items():
             destination = runtime_root / relative
             destination.parent.mkdir(parents=True, exist_ok=True)

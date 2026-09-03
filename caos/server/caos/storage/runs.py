@@ -780,9 +780,14 @@ class RunStore:
     # -- events (always inside a caller transaction) ----------------------
 
     def _emit(self, conn: sa.Connection, run_id: str, event: str, **data: Any) -> None:
+        # The run row is locked before `seq` is allocated: two connections
+        # emitting for one run otherwise both read max(seq) and collide on the
+        # (run_id, seq) key. Every run-table writer takes the run row first
+        # (runs, then nodes/artifacts/budget, then events), so the order is
+        # cycle-free. Proven by test_postgres_races.py; a no-op on SQLite.
         try:
             identity = _provider_identity(conn.execute(
-                sa.select(runs.c.provider_identity).where(runs.c.id == run_id)
+                sa.select(runs.c.provider_identity).where(runs.c.id == run_id).with_for_update()
             ).scalar())
         except StoreConflict:
             # An invalid identity must not roll back the terminal transition
@@ -983,7 +988,9 @@ class RunStore:
         A re-pause supersedes any stale unconsumed ticket (no stranded ticket
         population) and emits run.paused only on a real status transition."""
         with self.engine.begin() as conn:
-            previous = conn.execute(sa.select(runs.c.status).where(runs.c.id == run_id)).scalar()
+            previous = conn.execute(
+                sa.select(runs.c.status).where(runs.c.id == run_id).with_for_update()
+            ).scalar()
             if previous in TERMINAL or previous is None:
                 raise StoreConflict("RESUME_NOT_APPLIED", "run is terminal")
             conn.execute(sa.update(runs).where(runs.c.id == run_id).values(status="paused", error={"code": code}))
@@ -1049,6 +1056,14 @@ class RunStore:
 
     def node_running(self, run_id: str, module_id: str) -> None:
         with self.engine.begin() as conn:
+            status = conn.execute(
+                sa.select(runs.c.status).where(runs.c.id == run_id).with_for_update()
+            ).scalar()
+            if status in TERMINAL:
+                # A sibling in the same superstep may reach here after the run
+                # was finalized under it; a terminal run never shows a node
+                # `running` (SIM-003: the post-restart user-visible state).
+                return
             changed = conn.execute(
                 sa.update(run_nodes)
                 .where(run_nodes.c.run_id == run_id, run_nodes.c.module_id == module_id,
@@ -1130,7 +1145,7 @@ class RunStore:
             authority = conn.execute(
                 sa.select(
                     runs.c.case_id, runs.c.provider_identity, runs.c.plan, runs.c.plan_digest,
-                ).where(runs.c.id == run_id)
+                ).where(runs.c.id == run_id).with_for_update()
             ).mappings().one()
             identity = _provider_identity(authority["provider_identity"])
             plan = authority.get("plan") or {}
@@ -1372,7 +1387,13 @@ class RunStore:
         return dict(row) if row else None
 
     def _budget_locked(self, conn: sa.Connection, run_id: str) -> dict[str, Any]:
-        row = conn.execute(sa.select(run_budgets).where(run_budgets.c.run_id == run_id)).mappings().first()
+        # Locked, as the name always promised: reserve, reconcile, charge and
+        # attempt recording are read-modify-write on one ledger row, and two
+        # connections without the lock both pass the ceiling check and the
+        # second overwrites the first's in-flight digest (invariant 8 lost).
+        row = conn.execute(
+            sa.select(run_budgets).where(run_budgets.c.run_id == run_id).with_for_update()
+        ).mappings().first()
         if row is None:
             raise StoreConflict("AGENT_BUDGET_EXCEEDED", "budget ledger missing")
         return dict(row)
