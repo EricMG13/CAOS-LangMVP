@@ -338,6 +338,42 @@ cap.** A single observed server leg on main already took 31 m 28 s doing *less*
 than nightly does. This is the one finding here not yet observable in a log, so
 it should be checked against tomorrow's run rather than assumed.
 
+**Status 2026-09-03 06:40 UTC: still untested, and the reason is its own
+finding.** There was no nightly run for 2026-09-03 at all — the workflow's run
+count was unchanged at 7, the newest still 2026-09-02. Checking why turned up
+something nobody had recorded:
+
+### The nightly's 06:00 schedule is nominal only
+
+`nightly.yml` declares `cron: "0 6 * * *"`. Not one run has ever started within
+four hours of that:
+
+| run | fired (UTC) | vs the 06:00 slot |
+|---|---|---|
+| 1 | 08-28 17:57 | +12.0 h |
+| 2 | 08-29 12:03 | +6.1 h |
+| 3 | 08-30 10:59 | +5.0 h |
+| 4 | 08-31 12:20 | +6.3 h |
+| 5 | 09-01 10:54 | +4.9 h |
+| 7 | 09-02 10:19 | +4.3 h |
+
+Six for six, never on time, never less than 4.3 hours late. GitHub schedules
+scheduled workflows on a best-effort queue and delays or drops them under load,
+so this is the platform behaving as documented rather than a repo defect — but
+two consequences are worth stating plainly:
+
+- **"It ran overnight" is not true.** The full-corpus regression, the deployment
+  checks and the full-history secret scan land mid-morning, not before the
+  working day. Anyone treating a green nightly as a morning gate is reading a
+  result that may not exist yet.
+- **A dropped schedule is invisible.** Today's simply did not appear. Nothing
+  reports a nightly that never ran, so the safety net can be absent without
+  anyone noticing — the same class of problem as finding C, where a failure
+  wore the costume of a routine cancellation.
+
+The 30-minute prediction therefore stands unmeasured, not confirmed and not
+retracted, until a nightly actually runs.
+
 ## Recommendations, in the order I would do them
 
 1. ~~**Cap the unguarded jobs.**~~ **Done.** Every job in all three workflows
