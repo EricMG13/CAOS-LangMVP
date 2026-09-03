@@ -268,7 +268,15 @@ engine, the bundle, or the routes.
   `test_perimeter_ledger.py`) maps IAM/SEC/WEB/PERF to their mechanism.
   `qa/capacity.py limits` runs the ceilings over HTTP against a host-control
   server; `profile`, `baseline` and `compare` are candidate-only harnesses
-  and never a capacity or availability claim.
+  and never a capacity or availability claim. The profile drives subjects at
+  the declared 300/min, so the application's typed 429s are expected traffic:
+  every driver, holder and sampler thread backs off and retries through
+  `admitted()` and records a failure under `driver_error` instead of dying
+  (`caos/tests/test_capacity_harness.py`; defects D-013–D-015 from the first
+  candidate's soak). Candidate evidence is committed under
+  `.superpowers/sdd/candidates/<id>/` and is excluded from the quality-ledger
+  file scan (`docs/quality_ledger_coverage.py`) because it is evidence about
+  the product, not the product.
 - Real-issuer corpus (`caos/tests/test_corpus_pathways.py`, marker
   `corpus_run`): one 30-document Carnival Corporation leveraged-credit case,
   acquired from the issuer's investor-relations site and pinned by SHA-256 in

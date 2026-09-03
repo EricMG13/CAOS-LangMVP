@@ -1,5 +1,10 @@
 # Candidate 2026-09-03-c4f0270 — evidence index
 
+> **SUPERSEDED** on 2026-09-03T23:20Z by the next candidate: the decision owner chose to repair the capacity
+> harness (`qa/capacity.py`) now, which is a code change and therefore a new candidate. Soak attempt 3 was
+> stopped at 2 h 18 m (200 samples, retained under `soak/attempt-3-superseded/`); its stack and volumes were
+> removed. Nothing here is combined with the next candidate's evidence.
+
 Frozen by ER-G9 on 2026-09-03. Identity: `MANIFEST.json` (sha256 in
 `MANIFEST.sha256`). Narrative and quoted results:
 `.superpowers/sdd/enterprise-task-13-report.md`. Nothing in this directory

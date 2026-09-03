@@ -171,12 +171,37 @@ def start_run(http: httpx.Client, who: dict[str, str], case_id: str, pathway: st
     return http.post(f"/api/cases/{case_id}/runs", json={"pathway": pathway, "depth": depth}, headers=who)
 
 
+def admitted(call, deadline: float, watch: Stopwatch | None = None, kind: str = "retry") -> httpx.Response:
+    """Repeat `call` until the subject's request bucket admits it. A 429 is the
+    application refusing exactly as declared (300 requests per subject per
+    minute; the bucket refills at declared/60 per second), so the harness backs
+    off and asks again instead of dying — a thread that dies on the first 429
+    thins the workload silently, which is what candidate 2026-09-03-c4f0270's
+    soak attempts showed. Transport errors (a socket the server closed under a
+    hard restart, a read timeout) are retried the same way and recorded on the
+    watch. Raises TimeoutError past `deadline`."""
+    delay = 1.0
+    while True:
+        try:
+            response = call()
+        except httpx.HTTPError as exc:
+            if watch is not None:
+                watch.record(kind, time.perf_counter(), type(exc).__name__)
+            response = None
+        if response is not None and response.status_code != 429:
+            return response
+        if time.monotonic() >= deadline:
+            raise TimeoutError(kind)
+        time.sleep(delay)
+        delay = min(delay * 2, 5.0)
+
+
 def wait_terminal(http: httpx.Client, who: dict[str, str], run_id: str, timeout: float = 600.0) -> dict:
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
-        response = http.get(f"/api/runs/{run_id}", headers=who)
+        response = admitted(lambda: http.get(f"/api/runs/{run_id}", headers=who), deadline)
         run = response.json()
-        if "status" not in run:
+        if not isinstance(run, dict) or "status" not in run:
             raise RuntimeError(f"run {run_id} unreadable for this subject: {response.status_code} {response.text[:120]}")
         if run["status"] in {"succeeded", "failed", "paused"}:
             return run
@@ -425,6 +450,48 @@ def docker_stats(project: str) -> dict:
     return sample
 
 
+PATHWAYS = ["FULL_CREDIT", "EARNINGS_UPDATE", "COVENANT_REFINANCING", "RELATIVE_VALUE", "DISTRESSED_RESTRUCTURING", "FULL_CREDIT"]
+
+
+def seed_document(case_index: int, document: int) -> bytes:
+    """One distinct document per (case, index): the application refuses a
+    duplicate source with 409, so a seed that repeats bytes seeds far fewer
+    documents than it claims (21 of 100 on the first candidate)."""
+    return text_document(f"Profile{case_index} Holdings document {document}", 12 + document % 20)
+
+
+def foreign_cases(listing: object, owned: set[str]) -> set[str] | None:
+    """Case ids a subject can see that it did not seed, or None when the
+    listing was not a listing (a refused request carries a `detail` object,
+    which is a transient to skip, never a leakage finding or a crash)."""
+    if not isinstance(listing, list):
+        return None
+    return {case["id"] for case in listing if isinstance(case, dict) and "id" in case} - owned
+
+
+def drive_once(http: httpx.Client, who: dict[str, str], case_id: str, pathway: str, depth: str, watch: Stopwatch,
+               *, start_timeout: float = 120.0, run_timeout: float = 600.0) -> None:
+    """One job cycle: start a run, wait for its terminal state, accept a
+    success. Every failure is recorded under `driver_error` with its class and
+    the cycle ends; the driver thread itself never dies, so the soak's job
+    slots stay occupied for its whole duration."""
+    started = time.perf_counter()
+    try:
+        # `timed` already records each attempt's status or error class, so
+        # `admitted` gets no watch here (it would count every failure twice).
+        response = admitted(lambda: timed(watch, "start_run", lambda: start_run(http, who, case_id, pathway, depth)),
+                            time.monotonic() + start_timeout, kind="start_run")
+        if response.status_code != 201:
+            return
+        run = wait_terminal(http, who, response.json()["id"], run_timeout)
+        watch.record(f"run:{run['status']}", time.perf_counter(), (run.get("error") or {}).get("code", "ok"))
+        if run["status"] == "succeeded":
+            admitted(lambda: timed(watch, "accept", lambda: http.post(f"/api/runs/{run['id']}/accept", headers=who)),
+                     time.monotonic() + start_timeout, kind="accept")
+    except (TimeoutError, RuntimeError, ValueError, httpx.HTTPError) as exc:
+        watch.record("driver_error", started, type(exc).__name__)
+
+
 def profile(args: argparse.Namespace) -> int:
     http = client(args.url)
     watch = Stopwatch()
@@ -445,7 +512,7 @@ def profile(args: argparse.Namespace) -> int:
         case = create_case(http, who[subject], f"Profile case {index}")
         for document in range(args.documents):
             size = DECLARED["source_bytes"] if args.large_every and document % args.large_every == 0 else None
-            content = padded_pdf(size) if size else text_document(f"Profile{index} Holdings", 12 + document % 20)
+            content = padded_pdf(size) if size else seed_document(index, document)
             name = f"doc-{document:03d}.{'pdf' if size else 'txt'}"
             response = timed(watch, "upload", lambda: upload(http, who[subject], case["id"], name, content, "application/pdf" if size else "text/plain"))
             if response.status_code != 201:
@@ -458,13 +525,18 @@ def profile(args: argparse.Namespace) -> int:
 
     def leakage_check() -> None:
         for subject in subjects:
-            listed = {case["id"] for case in http.get("/api/cases", headers=who[subject]).json()}
-            foreign = listed - set(seeded[subject])
-            if foreign:
+            try:
+                listing = http.get("/api/cases", headers=who[subject]).json()
+            except (httpx.HTTPError, ValueError) as exc:
+                watch.record("leakage_check", time.perf_counter(), type(exc).__name__)
+                continue
+            foreign = foreign_cases(listing, set(seeded[subject]))
+            if foreign is None:
+                watch.record("leakage_check", time.perf_counter(), "refused")
+            elif foreign:
                 leakage.append(f"{subject} sees {len(foreign)} foreign case(s)")
 
     def job_driver(slot: int) -> None:
-        pathways = ["FULL_CREDIT", "EARNINGS_UPDATE", "COVENANT_REFINANCING", "RELATIVE_VALUE", "DISTRESSED_RESTRUCTURING", "FULL_CREDIT"]
         cycle = 0
         while not stop.is_set():
             subject = subjects[(slot + cycle) % len(subjects)]
@@ -473,41 +545,38 @@ def profile(args: argparse.Namespace) -> int:
                 cycle += 1
                 continue
             case_id = seeded[subject][cycle % len(seeded[subject])]
-            pathway = pathways[(slot + cycle) % len(pathways)]
-            depth = "full" if cycle % 2 else "screen"
-            response = timed(watch, "start_run", lambda: start_run(http, who[subject], case_id, pathway, depth))
-            if response.status_code == 201:
-                run = wait_terminal(http, who[subject], response.json()["id"])
-                watch.record(f"run:{run['status']}", time.perf_counter(), (run.get("error") or {}).get("code", "ok"))
-                if run["status"] == "succeeded":
-                    timed(watch, "accept", lambda: http.post(f"/api/runs/{run['id']}/accept", headers=who[subject]))
+            drive_once(http, who[subject], case_id, PATHWAYS[(slot + cycle) % len(PATHWAYS)], "full" if cycle % 2 else "screen", watch)
             cycle += 1
 
     def stream_holder(subject: str) -> None:
+        # One held stream per 30 s window, whether the tail stays open that long
+        # or the run's terminal delivery closes it at once: a holder that reopened
+        # immediately on close spent the subject's whole request bucket.
         while not stop.is_set():
+            window = time.monotonic() + 30
             cases = seeded[subject]
-            if not cases:
-                time.sleep(1)
-                continue
-            case = http.get(f"/api/cases/{cases[0]}", headers=who[subject]).json()
-            run_id = case.get("current_execution_id")
-            if not run_id:
-                time.sleep(2)
-                continue
-            holder = client(args.url, timeout=None)
-            try:
-                started = time.perf_counter()
-                response = holder.send(holder.build_request("GET", f"/api/runs/{run_id}/events", headers=who[subject]), stream=True)
-                watch.record("stream_open", started, response.status_code)
-                deadline = time.monotonic() + 30
-                for _line in response.iter_lines():
-                    if stop.is_set() or time.monotonic() > deadline:
-                        break
-                response.close()
-            except httpx.HTTPError as exc:
-                watch.record("stream_open", time.perf_counter(), type(exc).__name__)
-            finally:
-                holder.close()
+            run_id = None
+            if cases:
+                try:
+                    case = http.get(f"/api/cases/{cases[0]}", headers=who[subject]).json()
+                    run_id = case.get("current_execution_id") if isinstance(case, dict) else None
+                except (httpx.HTTPError, ValueError) as exc:
+                    watch.record("stream_open", time.perf_counter(), type(exc).__name__)
+            if run_id:
+                holder = client(args.url, timeout=None)
+                try:
+                    started = time.perf_counter()
+                    response = holder.send(holder.build_request("GET", f"/api/runs/{run_id}/events", headers=who[subject]), stream=True)
+                    watch.record("stream_open", started, response.status_code)
+                    for _line in response.iter_lines():
+                        if stop.is_set() or time.monotonic() > window:
+                            break
+                    response.close()
+                except httpx.HTTPError as exc:
+                    watch.record("stream_open", time.perf_counter(), type(exc).__name__)
+                finally:
+                    holder.close()
+            stop.wait(max(0.0, window - time.monotonic()))
 
     def reader(subject: str) -> None:
         interval = 60.0 / args.rpm
@@ -522,13 +591,13 @@ def profile(args: argparse.Namespace) -> int:
                 kind, call = "list_sources", lambda: http.get(f"/api/cases/{case_id}/sources", headers=who[subject])
             elif case_id and tick % 3 == 2:
                 kind, call = "case_detail", lambda: http.get(f"/api/cases/{case_id}", headers=who[subject])
-            if case_id and tick % 50 == 25:
-                for _ in range(args.previews):
-                    timed(watch, "preview", lambda: http.post(f"/api/cases/{case_id}/models/previews", json=preview_body, headers=who[subject]))
             try:
+                if case_id and tick % 50 == 25:
+                    for _ in range(args.previews):
+                        timed(watch, "preview", lambda: http.post(f"/api/cases/{case_id}/models/previews", json=preview_body, headers=who[subject]))
                 timed(watch, kind, call)
             except httpx.HTTPError:
-                pass
+                pass  # recorded by `timed` under its class; the reader keeps its pace
             tick += 1
             time.sleep(interval)
 
@@ -542,9 +611,9 @@ def profile(args: argparse.Namespace) -> int:
             if args.compose_project:
                 try:
                     sample["resources"] = docker_stats(args.compose_project)
-                except (OSError, ValueError) as exc:
+                except (OSError, ValueError, KeyError) as exc:
                     sample["resources"] = {"error": type(exc).__name__}
-            leakage_check()
+            leakage_check()  # never raises: a refused or failed listing is recorded on the watch
             samples.append(sample)
             (out_dir / "samples.jsonl").open("a").write(json.dumps(sample) + "\n")
             if next_restart and time.monotonic() >= next_restart and args.restart_command:

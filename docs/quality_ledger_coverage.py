@@ -27,9 +27,13 @@ ROOT = Path(__file__).resolve().parent.parent
 LEDGER = ROOT / "docs" / "QUALITY_LEDGER.csv"
 API = ROOT / "caos" / "server" / "caos" / "api" / "__init__.py"
 
-# Checked-in but not the product: agent skills, review notes, design history.
+# Checked-in but not the product: agent skills, review notes, design history,
+# and the task reports, loop logs and retained candidate evidence under
+# .superpowers/ (Task 13 commits a candidate's gate outputs there; they are
+# evidence about the product, never part of it).
 EXCLUDED_PREFIXES = (".agents/", ".claude/", ".github/skills/", ".github/hooks/",
-                     "notes/", "DESIGN-IS-2026-08-27/", ".agent-reviews/", ".impeccable/")
+                     "notes/", "DESIGN-IS-2026-08-27/", ".agent-reviews/", ".impeccable/",
+                     ".superpowers/")
 EXCLUDED_FILES = {".gitattributes", ".gitignore", ".fallowrc.json", ".gitleaks.toml", "LICENSE",
                   "caos/tests/corpus/.gitignore"}
 
