@@ -11,6 +11,7 @@
     "test:identity-a11y": "npm run build && node scripts/identity-a11y.mjs",
     "test:production-inventory": "node scripts/production-inventory.mjs",
     "test:workbench": "node scripts/workbench-smoke.mjs",
+    "test:browsers": "node scripts/run-browsers.mjs",
     "test:unit": "node --test 'src/**/*.test.ts'"
   },
   "dependencies": {

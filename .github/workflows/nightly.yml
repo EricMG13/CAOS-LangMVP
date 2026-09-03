@@ -72,9 +72,9 @@ jobs:
         run: npx tsc --noEmit
       - name: Build and stage static frontend
         run: bash caos/scripts/build_frontend.sh
-      - name: Install Playwright Chromium
+      - name: Install Playwright browsers
         working-directory: caos/frontend
-        run: npx playwright install --with-deps chromium
+        run: npx playwright install --with-deps chromium firefox webkit
       - name: Start combined app
         run: |
           # Same binding as ci.yml's browser job: the keyless gates need the
@@ -87,17 +87,19 @@ jobs:
           done
           cat server.log
           exit 1
-      - name: Workbench journey and accessibility
+      - name: Workbench journey in every engine, then accessibility
         working-directory: caos/frontend
         run: |
-          npm run test:workbench
+          npm run test:browsers
           npm run a11y
-      - name: Upload server log on failure
-        if: failure()
+      - name: Retain the browser reports, traces and screenshots
+        if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: nightly-browser-server-log
-          path: server.log
+          name: nightly-browser-${{ github.sha }}
+          path: |
+            caos/frontend/test-results
+            server.log
           if-no-files-found: ignore
 
   operational:
@@ -131,7 +133,10 @@ jobs:
           python caos/deploy/verify_image_resources.py
           python "Modular OS/tools/check_module_consistency.py"
       - name: Full-history secret scan
-        run: >-
-          docker run --rm -v "$PWD:/repo"
-          ghcr.io/gitleaks/gitleaks:v8.18.4
-          detect --source=/repo --config=/repo/.gitleaks.toml --redact --no-banner
+        run: |
+          mkdir -p "$RUNNER_TEMP/scans"
+          docker run --rm -v "$PWD:/repo" -v "$RUNNER_TEMP/scans:/out" \
+            ghcr.io/gitleaks/gitleaks:v8.18.4@sha256:75bdb2b2f4db213cde0b8295f13a88d6b333091bbfbf3012a4e083d00d31caba \
+            detect --source=/repo --config=/repo/.gitleaks.toml --redact --no-banner --verbose \
+            --report-format json --report-path /out/gitleaks.json 2> "$RUNNER_TEMP/scans/gitleaks.log"
+          python caos/scripts/scan_floors.py gitleaks "$RUNNER_TEMP/scans/gitleaks.json" --log "$RUNNER_TEMP/scans/gitleaks.log"

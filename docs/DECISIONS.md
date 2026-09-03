@@ -824,3 +824,45 @@ Consolidation note: where §6 conflicts with §10/§11/§12 (output Σ vs Σ+max
     checkpointer, a shared fleet, a high-availability control plane, an export
     claim, or removing the SQLite process locks. Evidence:
     `.superpowers/sdd/enterprise-task-12a-report.md`.
+22. **Perimeter: recorded review, digest-pinned scanners with floors, the
+    authorization matrix, three engines, and the capacity harness (2026-09-03,
+    Task 12b, ETR-B06, G1, G5, G9).** The AI pull-request review is replaced,
+    not activated: `security-review.yml` runs `caos/scripts/recorded_review.py`
+    with `contents: read`, no secret and no network, a fixed rule table over
+    the added lines of the diff whose record is retained red or green and
+    whose non-vacuity is a test (`test_recorded_review.py`); no workflow may
+    hold a write token, reference a secret outside a dispatch-only protected
+    job, interpolate event text into a shell line, use an action without a
+    commit pin, pull an image without a digest, or install Python packages
+    without hashes (`test_workflow_security.py`). Every scanner proves its
+    scope before it counts (`caos/scripts/scan_floors.py`: bandit lines,
+    dependencies audited, commits scanned, packages inventoried, SBOM
+    components) and its report is bound to the commit and the built image ids;
+    the CycloneDX SBOM per image is retained beside the Trivy inventory.
+    Recorded exceptions to digest pinning: apt packages (CLAUDE.md) and the
+    Playwright browser builds (pinned by package-lock build number). The route
+    security audit discovers routes from OpenAPI and refuses to run on drift;
+    it drives nine actors through every route (non-members receive the
+    byte-identical unknown-id response, read-only standing never writes, a
+    global role never overrides membership, approver-only routes refuse the
+    analyst), compares cross-case identifiers in bodies and sub-paths against
+    unknown ones, refuses mass assignment on every JSON body, and exercises the
+    commit-time standing recheck through the freeze route. The browser journey
+    is one Playwright script parameterised over Chromium, Firefox and WebKit
+    with traces and screenshots retained on failure (no second framework); axe
+    covers empty, populated, review, filed, loading, error and refusal states,
+    each asserted on screen before the scan. Below/at/above for every
+    admission and size ceiling is proven in-process
+    (`spec/test_limits_spec.py`) and driven over HTTP by `qa/capacity.py
+    limits`; `profile`, the soak and `baseline`/`compare` exist as checked-in
+    candidate harnesses and are run only as candidate evidence, never as a
+    capacity or availability claim. `docs/PERIMETER_LEDGER.csv`, pinned by
+    `test_perimeter_ledger.py`, maps IAM-001–020, SEC-001–030, WEB-001–015 and
+    PERF-001–015 to their mechanism; the provider data-use policy (SEC-023),
+    provider settings (SEC-024), the egress allowlist (SEC-025), the
+    authorized penetration test (SEC-028) and the live halves of session
+    expiry (IAM-016, WEB-013) are BLOCKED EXTERNAL. Not decided here: removing
+    the preview ceiling's HTTP unobservability (a slow preview is what would
+    make it observable), a media type per deliverable export format, or any
+    production capacity figure. Evidence:
+    `.superpowers/sdd/enterprise-task-12b-report.md`.

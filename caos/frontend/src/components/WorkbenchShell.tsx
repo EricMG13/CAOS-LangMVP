@@ -300,7 +300,7 @@ export default function WorkbenchShell({
               <option value="">{casesLoading && !cases.length ? "Loading cases…" : "Select case"}</option>
               {cases.map((item) => <option key={item.id} value={item.id}>{item.issuer} — {item.name}</option>)}
             </select>
-            <button ref={triggerRef} className="button small" type="button" aria-label="Open command palette" onClick={openPalette}>Command <kbd aria-hidden="true">⌘K</kbd></button>
+            <button id="command-palette-trigger" ref={triggerRef} className="button small" type="button" aria-label="Open command palette" onClick={openPalette}>Command <kbd aria-hidden="true">⌘K</kbd></button>
           </div>
         </header>
         <div role="region" className="authority-strip" aria-label="Visible authority" tabIndex={0}>
@@ -328,6 +328,7 @@ export default function WorkbenchShell({
     <dialog
       ref={dialogRef}
       aria-labelledby="palette-title"
+      data-opener="command-palette-trigger"
       onClose={() => { setPaletteOpen(false); setQuery(""); triggerRef.current?.focus(); }}
     >
       <div className="dialog-body">

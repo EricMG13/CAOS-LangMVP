@@ -246,6 +246,85 @@ try {
     for (const violation of reportResult.violations) violations.push({ viewport: `ready-report-${viewport.name}`, route: "/report-studio/", id: violation.id, impact: violation.impact, nodes: violation.nodes.map((node) => ({ target: node.target, html: node.html, summary: node.failureSummary })) });
   }
   await reportContext.close();
+
+  // --- WEB-007 material states beyond empty and populated: review (an immutable
+  // FROZEN record pending approval), filed (FILED with its detached receipt),
+  // loading (a read held open), error (a read that failed), refusal (a pack
+  // the intake refused). Each state is asserted present before axe runs, so a
+  // scan of the wrong screen cannot pass for the state it claims.
+  const stateContext = await browser.newContext({ viewport: { width: 1440, height: 1000 }, extraHTTPHeaders: identityHeaders });
+  const statePage = await stateContext.newPage();
+  const stateScans = [];
+  const scanState = async (state, route) => {
+    const result = await new AxeBuilder({ page: statePage }).analyze();
+    for (const violation of result.violations) violations.push({ viewport: `state-${state}`, route, id: violation.id, impact: violation.impact, nodes: violation.nodes.map((node) => ({ target: node.target, html: node.html, summary: node.failureSummary })) });
+    stateScans.push(state);
+  };
+  const frozenPayload = (digestChar) => ({
+    schema_version: "caos.frozen-deliverable.v1", case_id: reportCaseId, pathway: "FULL_CREDIT",
+    draft: { id: reportDraft.id, version: reportDraft.version, digest: reportDraft.digest },
+    template: { title: reportWorkspace.template.title, template_id: reportWorkspace.template.template_id, template_version: reportWorkspace.template.template_version },
+    content: reportDraft.content, publication: null, preview_digest: digestChar.repeat(64),
+  });
+  const frozenRecord = { id: "frozen_a11y_review", case_id: reportCaseId, pathway: "FULL_CREDIT", draft_version: reportDraft.version, status: "FROZEN", frozen_by: "analyst.qa@local.invalid", frozen_at: "2026-08-26T10:45:00Z", approved_by: null, approved_at: null, superseded_by_id: null, change_request: null, digest: reportDraft.digest, preview_digest: "a".repeat(64), input_fingerprint: "e".repeat(64), payload: frozenPayload("a"), exports: {}, opinion_id: "opinion_a11y", signed_by: "analyst.qa@local.invalid" };
+  const filedRecord = { ...frozenRecord, id: "frozen_a11y_filed", draft_version: reportDraft.version - 1, status: "FILED", approved_by: "approver.qa@local.invalid", approved_at: "2026-08-26T12:00:00Z", preview_digest: "b".repeat(64), payload: frozenPayload("b"), exports: { md: { sha256: "1".repeat(64), size: 1024, filename: "memo.md" }, pdf: { sha256: "2".repeat(64), size: 4096, filename: "memo.pdf" }, xlsx: { sha256: "3".repeat(64), size: 8192, filename: "memo.xlsx" } } };
+  const receipt = { schema_version: "caos.filing-receipt.v1", receipt_id: "rcpt_frozen_a11y_filed", deliverable_id: filedRecord.id, case_id: reportCaseId, pathway: "FULL_CREDIT", draft_version: filedRecord.draft_version, draft_digest: filedRecord.digest, preview_digest: filedRecord.preview_digest, input_fingerprint: filedRecord.input_fingerprint, approval_hash: `sha256:${"b".repeat(64)}`, content_digest: "b".repeat(64), exports: { md: "1".repeat(64), pdf: "2".repeat(64), xlsx: "3".repeat(64) }, opinion_id: "opinion_a11y", signed_by: filedRecord.signed_by, frozen_by: filedRecord.frozen_by, frozen_at: filedRecord.frozen_at, approved_by: filedRecord.approved_by, approved_at: filedRecord.approved_at, receipt_digest: "r".repeat(64) };
+  const reviewWorkspace = { ...reportWorkspace, frozen_history: [filedRecord, frozenRecord], opinion: { head: { opinion_id: "opinion_a11y", draft_digest: reportDraft.digest, signed_by: "analyst.qa@local.invalid" }, current: true, reasons: [] } };
+  const json = (body, status = 200) => (route) => route.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) });
+  await statePage.route((url) => url.pathname === "/api/cases", json([reportCase]));
+  await statePage.route((url) => url.pathname === `/api/cases/${reportCaseId}`, json(reportCase));
+  await statePage.route((url) => url.pathname === `/api/cases/${reportCaseId}/sources`, json(reportSources));
+  await statePage.route((url) => url.pathname === `/api/cases/${reportCaseId}/deliverables/FULL_CREDIT/draft`, json(reviewWorkspace));
+  await statePage.route((url) => url.pathname === `/api/cases/${reportCaseId}/deliverables/by-id/${filedRecord.id}/receipt`, json(receipt));
+  await statePage.route((url) => url.pathname === `/api/cases/${reportCaseId}/models/assumption-registry`, json({ version: "cp-model-assumptions.v1", digest: "9".repeat(64), definitions: [] }));
+  const snapshotRoute = (url) => url.pathname === `/api/cases/${reportCaseId}/snapshot`;
+  await statePage.route(snapshotRoute, json({ accepted: null, latest_accepted: null, switch_required: false, diff: null }));
+
+  await statePage.goto(`${baseUrl}/report-studio/?case=${reportCaseId}&fixture=state-review`, { waitUntil: "networkidle" });
+  await statePage.getByRole("button", { name: /FROZEN · Draft v2/ }).click();
+  await statePage.getByText(/Immutable FROZEN review/).waitFor();
+  await statePage.getByText("Pending approval · the frozen bytes never name an approver", { exact: true }).waitFor();
+  await scanState("review", "/report-studio/");
+  await statePage.getByRole("button", { name: "Return to shared Draft" }).click();
+  await statePage.getByRole("button", { name: /FILED · Draft v1/ }).click();
+  await statePage.getByText(/Immutable FILED review/).waitFor();
+  await statePage.locator("[data-filing-receipt]").waitFor();
+  assert.match(await statePage.locator("[data-filing-receipt]").textContent(), /rcpt_frozen_a11y_filed/, "filed state did not render the detached receipt");
+  await scanState("filed", "/report-studio/");
+
+  // Loading: the credit authority read is held open; the skeleton is the state.
+  let releaseSnapshot;
+  const snapshotHeld = new Promise((resolve) => { releaseSnapshot = resolve; });
+  await statePage.unroute(snapshotRoute);
+  await statePage.route(snapshotRoute, async (route) => { await snapshotHeld; await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ accepted: null, latest_accepted: null, switch_required: false, diff: null }) }); });
+  await statePage.goto(`${baseUrl}/command-center/?case=${reportCaseId}&fixture=state-loading`, { waitUntil: "domcontentloaded" });
+  await statePage.getByRole("status", { name: "Loading" }).first().waitFor();
+  assert.ok(await statePage.getByRole("status", { name: "Loading" }).count() >= 1, "loading state was not on screen when scanned");
+  await scanState("loading", "/command-center/");
+  releaseSnapshot();
+  await statePage.getByRole("status", { name: "Loading" }).waitFor({ state: "detached" });
+
+  // Error: the same read fails typed; the alert with its Retry is the state.
+  await statePage.unroute(snapshotRoute);
+  await statePage.route(snapshotRoute, json({ detail: { code: "STORE_UNAVAILABLE" } }, 503));
+  await statePage.goto(`${baseUrl}/command-center/?case=${reportCaseId}&fixture=state-error`, { waitUntil: "networkidle" });
+  const failedRead = statePage.getByRole("alert").filter({ hasText: "Unable to load this view." });
+  await failedRead.first().waitFor();
+  await failedRead.first().getByRole("button", { name: "Retry" }).waitFor();
+  await scanState("error", "/command-center/");
+
+  // Refusal: the intake refuses a pack; the alert with its findings is the state.
+  await statePage.route((url) => url.pathname === "/api/intake", json({ detail: { code: "INTAKE_ADMISSION_REFUSED", message: "1 of 1 documents failed admission; the pack was not admitted.", next_action: "Remove or replace the refused document and drop the pack again.", findings: [{ filename: "scan.pdf", detail: "PDF could not be parsed", status: 422 }] } }, 422));
+  await statePage.goto(`${baseUrl}/cases/?case=${reportCaseId}&fixture=state-refusal`, { waitUntil: "networkidle" });
+  const intakePanel = statePage.getByRole("region", { name: "Analyze documents" });
+  await intakePanel.locator("#intake-files").setInputFiles([{ name: "scan.pdf", mimeType: "application/pdf", buffer: Buffer.from("%PDF-1.4\nnot a pdf object stream") }]);
+  await intakePanel.getByRole("button", { name: /^Analyze 1 document$/ }).click();
+  const refusal = statePage.getByRole("alert").filter({ hasText: "Documents not admitted" });
+  await refusal.waitFor();
+  await refusal.getByText("scan.pdf", { exact: true }).waitFor();
+  await scanState("refusal", "/cases/");
+  assert.deepEqual(stateScans, ["review", "filed", "loading", "error", "refusal"], "every material state was scanned");
+  await stateContext.close();
 } finally {
   await browser.close();
 }
@@ -254,5 +333,5 @@ if (violations.length) {
   console.error(JSON.stringify({ violations }, null, 2));
   process.exitCode = 1;
 } else {
-  console.log(JSON.stringify({ routes: routes.length, viewports: viewports.length, combinations: routes.length * viewports.length + 16, pendingPlanFixture: true, readyModelFixture: true, readyReportFixture: true, modelBuilderAxeChecks: 12, modelBuilderKeyboardTabChecks: 3, reportStudioAxeChecks: 3, reportStudioKeyboardTabChecks: 3, violations: 0 }));
+  console.log(JSON.stringify({ routes: routes.length, viewports: viewports.length, combinations: routes.length * viewports.length + 21, pendingPlanFixture: true, readyModelFixture: true, readyReportFixture: true, states: ["empty", "populated", "review", "filed", "loading", "error", "refusal"], modelBuilderAxeChecks: 12, modelBuilderKeyboardTabChecks: 3, reportStudioAxeChecks: 3, reportStudioKeyboardTabChecks: 3, violations: 0 }));
 }

@@ -1,22 +1,17 @@
-# AI security review of PR diffs — anthropics/claude-code-security-review.
+# Recorded, read-only review of every pull-request diff (ETR-B06, SEC-004,
+# SEC-005). This replaced the AI pull-request review, which handed the diff —
+# attacker-controlled text — to an agent holding an API key and a write token.
 #
-# ACTIVATION (one-time, required):
-#   1. Add repo secret CLAUDE_API_KEY (Settings → Secrets and variables → Actions),
-#      using an Anthropic API key enabled for Claude Code usage.
-#   2. Settings → Actions → General → "Require approval for all external contributors"
-#      — the action is NOT hardened against prompt injection; only run on trusted diffs.
-#   3. RECOMMENDED, not enforceable from this file: put CLAUDE_API_KEY behind a
-#      protected Environment with required reviewers (Settings → Environments),
-#      then add `environment: security-review` to the job below. The same-repo
-#      condition on the review step stops fork PRs from reaching the secret, but
-#      nothing here stops a compromised contributor or a branch admitted through
-#      a misconfigured approval policy — the diff being reviewed is attacker-
-#      controlled text handed to an agent holding an API key and write access.
-# Until the secret exists, the review step self-skips (no failing checks on PRs).
-#
-# Pinned to a commit SHA (no upstream tags exist) so a silent main change can't alter
-# what runs in CI. Bump deliberately; ensure the pulled Claude Code is >= 2.1.128
-# (mitigates the /proc secret-exposure CVE).
+# What runs here holds no secret and no write permission, never sends the diff
+# anywhere, and cannot be instructed by it: caos/scripts/recorded_review.py
+# matches every added line against a fixed rule table (unpinned actions,
+# fork-privileged triggers, write tokens, event text in run blocks, AI agents,
+# curl|sh, credential literals, vendored-bundle edits without a decision,
+# trusted client role headers, raw HTML in the frontend, …) and writes a JSON
+# record that is retained whether the verdict is green or red. A BLOCK rule
+# fails the check; a review that examined zero files exits 2, so a green
+# check that looked at nothing cannot happen. caos/tests/test_recorded_review.py
+# proves the rules fire on planted diffs and that this file stays read-only.
 name: Security Review
 
 on:
@@ -24,26 +19,34 @@ on:
 
 permissions:
   contents: read
-  pull-requests: write   # post findings as PR comments
 
 jobs:
-  security-review:
+  recorded-review:
+    name: Recorded diff review — read-only
     runs-on: ubuntu-latest
-    env:
-      CLAUDE_API_KEY: ${{ secrets.CLAUDE_API_KEY }}
+    timeout-minutes: 10
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
-          fetch-depth: 2
-
-      - name: Claude security review
-        # Same-repo branches only. GitHub already withholds secrets from fork
-        # PRs; stating it here makes the trust boundary a condition rather than
-        # a comment, and fails closed if that default ever changes.
-        if: ${{ env.CLAUDE_API_KEY != '' && github.event.pull_request.head.repo.full_name == github.repository }}
-        uses: anthropics/claude-code-security-review@0c6a49f1fa56a1d472575da86a94dbc1edb78eda
+          fetch-depth: 0
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          comment-pr: true
-          claude-api-key: ${{ env.CLAUDE_API_KEY }}
-          claude-model: claude-sonnet-5   # cost control vs the default Opus tier; adjust if rejected
+          python-version: "3.12"
+      - name: Record the review
+        env:
+          # Commit identities only, bound through env: no event text reaches a
+          # shell line, and the script reads the diff as data.
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          git diff --unified=0 "$BASE_SHA" "$HEAD_SHA" > "$RUNNER_TEMP/pr.diff"
+          python caos/scripts/recorded_review.py --diff "$RUNNER_TEMP/pr.diff" \
+            --base "$BASE_SHA" --head "$HEAD_SHA" --out "$RUNNER_TEMP/recorded-review.json"
+      - name: Retain the record
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: recorded-review-${{ github.event.pull_request.head.sha }}
+          path: ${{ runner.temp }}/recorded-review.json
+          if-no-files-found: error
+          retention-days: 90

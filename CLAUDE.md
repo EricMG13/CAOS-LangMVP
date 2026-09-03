@@ -246,7 +246,29 @@ engine, the bundle, or the routes.
   `SPEC_RECONCILIATION.md` addendum).
 - Frontend: `npm run lint`, `npx tsc --noEmit`, `npm run test:unit`,
   `npm run build`; browser checks against the combined app on `:8000`:
-  `npm run a11y` and `npm run test:workbench` (both green).
+  `npm run a11y` and `npm run test:workbench` (both green). The workbench
+  journey is one Playwright script over three engines: `CAOS_BROWSER=chromium
+  |firefox|webkit npm run test:workbench`, or `npm run test:browsers` for all
+  three in sequence (`npx playwright install firefox webkit` once); every run
+  writes `caos/frontend/test-results/<browser>/workbench-report.json` and keeps
+  a trace and a full-page screenshot only on failure (`CAOS_TRACE=0` disables
+  tracing). The a11y sweep scans empty, populated, review, filed, loading,
+  error and refusal states, each asserted on screen before axe runs.
+- Perimeter gates (Task 12b, DECISIONS §14.22): `run_sec_audit.py` discovers
+  routes from OpenAPI and drives nine actors through every route (outsider,
+  global-admin outsider, removed member, stored reader, global admin stored
+  as reader, downgraded writer, analyst, approver, administrator), cross-case
+  ids in bodies and sub-paths, mass assignment and the commit-time standing
+  recheck; `caos/tests/test_workflow_security.py` pins every workflow
+  read-only, commit-pinned, digest-pinned and hashed; `caos/scripts/
+  recorded_review.py` is the pull-request check (`security-review.yml`) and
+  `caos/scripts/scan_floors.py` refuses a scanner that scanned nothing;
+  `caos/tests/spec/test_limits_spec.py` proves below/at/above for every
+  admission and size ceiling; `docs/PERIMETER_LEDGER.csv` (pinned by
+  `test_perimeter_ledger.py`) maps IAM/SEC/WEB/PERF to their mechanism.
+  `qa/capacity.py limits` runs the ceilings over HTTP against a host-control
+  server; `profile`, `baseline` and `compare` are candidate-only harnesses
+  and never a capacity or availability claim.
 - Real-issuer corpus (`caos/tests/test_corpus_pathways.py`, marker
   `corpus_run`): one 30-document Carnival Corporation leveraged-credit case,
   acquired from the issuer's investor-relations site and pinned by SHA-256 in
@@ -299,6 +321,9 @@ engine, the bundle, or the routes.
 
 ## Known gaps (honest ledger)
 
+- The AI pull-request review is gone (ETR-B06): `security-review.yml` runs
+  the recorded read-only diff review instead, and no workflow holds a secret
+  outside the dispatch-only qualification job or a write token anywhere.
 - Admin Studio remains an explicit unavailable capability (`/admin/audit`,
   `/admin/bundle`). Worksheet reads, one-way sensitivity, tornado, revision
   rebase preview, build/revision export and download, and the Deep Research
@@ -482,6 +507,32 @@ engine, the bundle, or the routes.
   has no cached value and reads as blank; a formula in an optional numeric
   column imports silently (C08 records this as observed behaviour, not a
   refusal). Refusing formula cells outright is a product decision left open.
+- The model-preview ceiling (two in flight per subject) is proven in-process
+  (`test_limits_spec.py`); over HTTP a preview against a case with no READY
+  build refuses in microseconds, so `qa/capacity.py limits` records the
+  observed statuses and points at the in-process proof rather than claiming
+  an HTTP observation. The 32 MiB request ceiling is Caddy's (`max_size`); the
+  app enforces the 25 MiB source ceiling and refuses a source cap above the
+  request cap at startup, and the harness probes the request ceiling only when
+  given `--edge-url`.
+- Digest pinning has two recorded exceptions beyond apt (below): the Playwright
+  browser builds are pinned by the package-lock's playwright version and build
+  number and downloaded without a digest check by `npx playwright install`,
+  and pip-audit/bandit install from `caos/server/requirements-security.txt`
+  (hashed) while apt supplies pango and the CJK fonts. Both are listed in
+  `caos/tests/test_workflow_security.py::ACCEPTED_UNPINNED`.
+- Dialog openers are passed explicitly, never inferred from
+  `document.activeElement`: WebKit does not focus a button or link on click,
+  so an inferred opener is `<body>` there and cancelling the dialog drops focus
+  to the landmark. `AcceptDialog` and the palette-initiated discard were fixed
+  in Task 12b; `closeDrawer` in `WorkbenchShell` still infers and is open. A
+  focus repair that runs on a timer must first check where the browser's own
+  close restoration left focus and whether the user has moved since
+  (`DraftDiscardDialog.dismiss`) — the 24 ms focus steal that fix removed was
+  the "flaky" CI focus failure the Task 10 report left open. Under WebKit the
+  smoke presses `Alt+Tab` to reach links, drops the CSP line for the
+  automation-inserted `<style>body {}</style>`, and does not assert the
+  route-intercepted download (Chromium and Firefox prove it).
 - Blocks live in one JSON column on the source row, so `read_evidence` parses
   every block of a source on each call. Measured at the ceiling: a 10 MB source
   costs 17 ms per read, so a run's ~80 reads cost about 1.4 s. Fine at current

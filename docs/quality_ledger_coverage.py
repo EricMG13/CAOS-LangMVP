@@ -74,6 +74,8 @@ FILE_MAP = {
     r"^caos/frontend/(next\.config|eslint\.config|tsconfig|package)": "F-OPS-04, F-OPS-09",
     r"^caos/scripts/build_frontend\.sh": "F-OPS-04",
     r"^caos/scripts/regenerate_deploy_v_integrity\.py": "F-RUN-11, F-RUN-15",
+    r"^caos/scripts/recorded_review\.py": "F-OPS-10",
+    r"^caos/scripts/scan_floors\.py": "F-OPS-09, F-OPS-11",
     r"^caos/deploy/(backup|restore_drill)\.sh": "F-OPS-05",
     r"^caos/deploy/verify_image_resources\.py": "F-OPS-06",
     r"^caos/deploy/Dockerfile": "F-OPS-06, F-OPS-11",
@@ -93,6 +95,7 @@ FILE_MAP = {
     # were untracked when it was written and tracked the moment it was committed.
     r"^docs/(QUALITY_[A-Z]+\.csv|quality_ledger_coverage\.py)$": "the ledger itself",
     r"^docs/SIMULATION_LEDGER\.csv$": "F-QUAL-04",
+    r"^docs/PERIMETER_LEDGER\.csv$": "F-QUAL-05",
     r"^Modular OS/tools/": "F-OPS-07 (module consistency check)",
     r"^Modular OS/": "F-RUN-15 (methodology corpus the vendored bundle is built from)",
 }

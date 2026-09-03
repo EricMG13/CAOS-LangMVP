@@ -1,7 +1,21 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import { readFileSync } from "node:fs";
-import { chromium, request } from "playwright";
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import path from "node:path";
+import { chromium, firefox, request, webkit } from "playwright";
+
+// WEB-002: one Playwright script drives every supported engine. CAOS_BROWSER
+// selects it; every context is traced and, on failure, the trace and a
+// screenshot of every open page land under test-results/<browser>/ beside a
+// structured report. On success the traces are discarded (they are large) and
+// only the report remains.
+const engines = { chromium, firefox, webkit };
+const browserName = process.env.CAOS_BROWSER || "chromium";
+if (!engines[browserName]) throw new Error(`CAOS_BROWSER must be one of ${Object.keys(engines).join(", ")}, got ${browserName}`);
+const resultsDir = path.join(process.env.CAOS_RESULTS_DIR || "test-results", browserName);
+rmSync(resultsDir, { recursive: true, force: true });
+mkdirSync(resultsDir, { recursive: true });
+const startedAt = Date.now();
 
 const baseURL = process.env.CAOS_URL || "http://127.0.0.1:8000";
 const fixtureSuffix = randomUUID().slice(0, 8);
@@ -146,7 +160,22 @@ const pendingResearchRun = {
   research: { phase: "awaiting_approval", proposed_plan_hash: researchPlanHash, proposed_plan: proposedResearchPlan },
 };
 
-const browser = await chromium.launch({ headless: true });
+const browser = await engines[browserName].launch({ headless: true });
+const openContexts = new Set();
+let traceIndex = 0;
+const tracing = process.env.CAOS_TRACE !== "0";
+const rawNewContext = browser.newContext.bind(browser);
+browser.newContext = async (options) => {
+  const context = await rawNewContext(options);
+  if (tracing) await context.tracing.start({ screenshots: true, snapshots: true });
+  openContexts.add(context);
+  const rawClose = context.close.bind(context);
+  context.close = async (...args) => {
+    if (openContexts.delete(context) && tracing) await context.tracing.stop({ path: path.join(resultsDir, `trace-${++traceIndex}.zip`) });
+    return rawClose(...args);
+  };
+  return context;
+};
 const errors = [];
 const externalGoogleFontRequests = [];
 const watchExternalGoogleFonts = (context) => {
@@ -160,6 +189,18 @@ try {
   const context = watchExternalGoogleFonts(await browser.newContext({ viewport: { width: 1440, height: 1000 }, extraHTTPHeaders: identityHeaders }));
   const page = await context.newPage();
   await page.addInitScript(() => {
+    // A CSP console line names only the document; the violation event carries
+    // the directive, the blocked URI and a sample of the offending text.
+    window.__caosCspViolations = [];
+    document.addEventListener("securitypolicyviolation", (event) => {
+      window.__caosCspViolations.push({ directive: event.effectiveDirective, blocked: event.blockedURI, file: event.sourceFile, line: event.lineNumber, column: event.columnNumber, sample: (event.sample || "").slice(0, 200) });
+    });
+    // The export ships no inline <style>; if one appears, record who inserted it.
+    new MutationObserver((records) => {
+      for (const record of records) for (const node of record.addedNodes) {
+        if (node.nodeName === "STYLE") window.__caosCspViolations.push({ inserted: "style", attrs: [...node.attributes].map((a) => `${a.name}=${a.value.slice(0, 40)}`).join(" "), text: (node.textContent || "").slice(0, 120), parent: record.target.nodeName, stack: new Error().stack.split("\n").slice(1, 5).join(" | ") });
+      }
+    }).observe(document, { childList: true, subtree: true });
     window.__caosUrlWrites = [];
     for (const method of ["pushState", "replaceState"]) {
       const original = history[method].bind(history);
@@ -192,8 +233,7 @@ try {
       expectedNotFoundURL = "";
       return;
     }
-    if (!expectedAuthorityFailureSeen
-      && message.location().url === expectedAuthorityFailureURL
+    if (message.location().url === expectedAuthorityFailureURL
       && message.text() === "Failed to load resource: the server responded with a status of 503 (Service Unavailable)") {
       expectedAuthorityFailureSeen = true;
       return;
@@ -216,9 +256,30 @@ try {
       expectedReportConflicts -= 1;
       return;
     }
-    errors.push(message.text());
+    const entry = `${message.text()} (${message.location().url}:${message.location().lineNumber})`;
+    errors.push(entry);
+    if (message.text().startsWith("Refused to apply")) {
+      void page.evaluate(() => window.__caosCspViolations || []).then((details) => {
+        // WebKit under Playwright inserts <style>body {}</style> into <head> with no
+        // script on the stack (an automation-side style recalc), and the policy
+        // refuses it. That is the CSP working on the harness, not the product:
+        // drop the line only when every recorded insertion is exactly that.
+        const inserted = details.filter((item) => item.inserted === "style");
+        const automationOnly = browserName === "webkit" && inserted.length > 0 && inserted.every((item) => item.text.trim() === "body {}" && !item.stack);
+        const position = errors.indexOf(entry);
+        if (position === -1) return;
+        if (automationOnly) errors.splice(position, 1);
+        else errors[position] += ` csp=${JSON.stringify(details)}`;
+      }).catch(() => {});
+    }
   });
   page.on("pageerror", (error) => errors.push(error.message));
+  // Firefox logs no console line for an HTTP error, so the controlled 503 is
+  // observed on the response itself; the console filter above still swallows
+  // Chromium's and WebKit's "Failed to load resource" line for it.
+  page.on("response", (response) => {
+    if (response.url() === expectedAuthorityFailureURL && response.status() === 503) expectedAuthorityFailureSeen = true;
+  });
   page.on("request", (requestValue) => {
     const url = new URL(requestValue.url());
     const pathname = url.pathname;
@@ -851,8 +912,18 @@ try {
   assert.equal(await page.evaluate(() => document.activeElement?.id), "accept-dialog-title", "accept dialog did not focus its heading");
   await page.keyboard.press("Escape");
   await acceptDialog.waitFor({ state: "hidden" });
-  await assert.doesNotReject(() => acceptTrigger.evaluate((element) => {
-    if (document.activeElement !== element) throw new Error("focus did not return to the accept trigger");
+  // Focus returns to the trigger on the frame after the close event (the
+  // workspace's own restore); Chromium and Firefox also restore it natively on
+  // close, WebKit does not, so the check waits for the frame rather than
+  // reading focus the instant the dialog is hidden.
+  await acceptTrigger.evaluate((element) => new Promise((resolve, reject) => {
+    const deadline = performance.now() + 2000;
+    const check = () => {
+      if (document.activeElement === element) return resolve();
+      if (performance.now() > deadline) return reject(new Error(`focus did not return to the accept trigger (on ${document.activeElement?.tagName}[${document.activeElement?.getAttribute?.("aria-label") || document.activeElement?.id || ""}])`));
+      requestAnimationFrame(check);
+    };
+    check();
   }));
   await acceptTrigger.click();
   await acceptDialog.getByRole("button", { name: "Cancel" }).click();
@@ -903,7 +974,10 @@ try {
     document.body.focus();
     document.body.removeAttribute("tabindex");
   });
-  await page.keyboard.press("Tab");
+  // WebKit follows the macOS convention: Tab skips links unless Option is held
+  // (Safari's "Press Tab to highlight each item" setting). Option+Tab is the
+  // same tab order with links included, so the skip link is still the first stop.
+  await page.keyboard.press(browserName === "webkit" ? "Alt+Tab" : "Tab");
   await assert.doesNotReject(() => page.getByRole("link", { name: "Skip to content" }).evaluate((element) => {
     if (document.activeElement !== element) throw new Error("the skip link is not the first tab stop");
   }));
@@ -1963,12 +2037,22 @@ try {
     await link.waitFor();
     assert.match(await link.getAttribute("href"), new RegExp(`/deliverables/by-id/frozen_report_2/export/${format.toLowerCase()}$`));
     assert.equal(await link.getAttribute("download"), "", `${format} export lost its native download hint`);
+    // Chromium and Firefox prove the server-driven disposition: with the native
+    // hint removed, the intercepted attachment response alone must download and
+    // name the file. WebKit under Playwright cannot observe either half: without
+    // the attribute an intercepted attachment response produces no download
+    // event, and with it the download bypasses route interception and fetches
+    // from the network (probed: the real server's 404 body arrived as "md.json").
+    // The links' governed hrefs and native hints are asserted above for every
+    // engine; the download behaviour itself is Chromium and Firefox evidence.
+    if (browserName === "webkit") continue;
     await link.evaluate((element) => element.removeAttribute("download"));
     const [download] = await Promise.all([page.waitForEvent("download"), link.click()]);
+    assert.match(download.url(), new RegExp(`/deliverables/by-id/frozen_report_2/export/${format.toLowerCase()}$`), `${format} export downloaded from ${download.url()}`);
     assert.equal(download.suggestedFilename(), `frozen_report_2.${format.toLowerCase()}`);
     assert.equal(await download.failure(), null, `${format} export download failed`);
   }
-  assert.equal(governedDownloadCount, 3, "filed export clicks bypassed the governed download responses");
+  assert.equal(governedDownloadCount, browserName === "webkit" ? 0 : 3, "filed export clicks bypassed the governed download responses");
 
   reportRole = "READER";
   await page.goto(`${baseURL}/report-studio/?case=${caseRecord.id}`, { waitUntil: "networkidle" });
@@ -2154,7 +2238,40 @@ try {
     "a failed identity lookup did not settle on the read-only floor");
   await reader.close();
   assert.deepEqual(externalGoogleFontRequests, [], "workbench requested an external Google font");
+  report({ status: "passed" });
+} catch (error) {
+  // Evidence before teardown: a screenshot of every open page, then every
+  // still-open context's trace, then the report naming the failure.
+  const screenshots = [];
+  for (const context of openContexts) {
+    for (const [index, openPage] of context.pages().entries()) {
+      const file = path.join(resultsDir, `failure-${screenshots.length + 1}-page${index + 1}.png`);
+      try { await openPage.screenshot({ path: file, fullPage: true }); screenshots.push(file); } catch { /* page already gone */ }
+    }
+    if (tracing) { try { await context.tracing.stop({ path: path.join(resultsDir, `trace-${++traceIndex}.zip`) }); } catch { /* context already gone */ } }
+    openContexts.delete(context);
+  }
+  report({ status: "failed", error: String(error && error.stack || error), screenshots });
+  throw error;
 } finally {
   await browser.close();
   await api.dispose();
+}
+
+function report(outcome) {
+  const payload = {
+    schema_version: "caos.workbench-report.v1",
+    browser: browserName,
+    browser_version: browser.version(),
+    base_url: baseURL,
+    started_at: new Date(startedAt).toISOString(),
+    duration_ms: Date.now() - startedAt,
+    console_errors: errors,
+    ...outcome,
+  };
+  if (outcome.status === "passed") {
+    for (let index = 1; index <= traceIndex; index += 1) rmSync(path.join(resultsDir, `trace-${index}.zip`), { force: true });
+  }
+  writeFileSync(path.join(resultsDir, "workbench-report.json"), `${JSON.stringify(payload, null, 2)}\n`);
+  console.log(JSON.stringify({ browser: browserName, browser_version: browser.version(), status: outcome.status, duration_ms: payload.duration_ms, results: resultsDir }));
 }
