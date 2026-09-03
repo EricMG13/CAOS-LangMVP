@@ -323,5 +323,9 @@ two pre-existing duplicate keys (outside the lint scope).
   workflow name: `${{ runner.temp }}` is not available in job-level `env`.
   The external-pack location is now exported from the staging step's shell
   (`$GITHUB_ENV`), and `retention-days` is 90 (the repository ceiling; the
-  evidence directory is the durable copy). Verified after the push by
-  `gh workflow list` showing "Enterprise qualification".
+  evidence directory is the durable copy). Observed after the push of
+  `d5d2f71`: the invalid-file signature is gone — no jobless failed run of the
+  workflow for that commit (the push of `a284169` had produced one) — while
+  `gh workflow list` still shows the file path as the name, which GitHub takes
+  from the default branch's copy; the proper name appears once the file is on
+  `main`.
