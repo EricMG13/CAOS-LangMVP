@@ -1,10 +1,19 @@
 # CI investigation — 2026-09-02
 
 Asked to find the cause of the repository's CI issues. There is not one cause.
-There are **four independent failure modes**: one already fixed (in two commits,
+There are **five independent failure modes**: one already fixed (in two commits,
 for two manifestations of a single root cause), one open and tracked, one that
 had never been recorded because it disguises itself as a routine cancellation,
-and one that is a process pattern rather than a defect.
+one that is a process pattern rather than a defect, and one — found last, while
+checking a prediction this document had made — where the nightly runs hours late
+and is then killed mid-suite, so most of what it is supposed to check has not
+been running at all.
+
+Two of the five hide the same way. A `timeout-minutes` kill and a superseded
+push both report as `cancelled`, so findings C and E each spent weeks looking
+like routine housekeeping in the run list. That is the single most useful thing
+here: **the failures that cost the most were the ones that did not look like
+failures.**
 
 Evidence is workflow-run logs and a local reproduction; every claim below names
 the run or job it came from. Where a reading turned out to be wrong under a
