@@ -232,6 +232,15 @@ AUDIT_ACTION_DETAILS = {
     "intake.admitted": {"case_id": "case", "intake_id": "intake", "source_count": 3},
     "intake.run_started": {"case_id": "case", "intake_id": "intake", "run_id": "run", "pathway": "FULL_CREDIT"},
     "intake.refused": {"case_id": None, "code": "INTAKE_ADMISSION_REFUSED"},
+    "deliverable.opinion.signed": {"case_id": "case", "pathway": "FULL_CREDIT", "opinion_id": "opinion",
+                                   "revision_id": "revision", "version": 3, "sha256": "a" * 64},
+    "deliverable.freeze_queued": {"case_id": "case", "pathway": "FULL_CREDIT", "deliverable_id": "deliverable"},
+    "deliverable.freeze_failed": {"case_id": "case", "pathway": "FULL_CREDIT", "deliverable_id": "deliverable",
+                                  "code": "DELIVERABLE_RENDER_FAILED"},
+    "deliverable.frozen": {"case_id": "case", "deliverable_id": "deliverable", "preview_digest": "b" * 64},
+    "deliverable.filed": {"case_id": "case", "deliverable_id": "deliverable", "sha256": "c" * 64},
+    "deliverable.exported": {"case_id": "case", "deliverable_id": "deliverable", "format": "pdf"},
+    "audit.package_exported": {"case_id": "case", "sha256": "d" * 64},
 }
 
 FULL_RUNTIME = {
@@ -726,6 +735,7 @@ OPENAPI_EXEMPT = {
     ("get", "/api/cases/{case_id}/model-revisions/{revision_id}/download"),
     ("get", "/api/cases/{case_id}/deliverables/by-id/{deliverable_id}/export/{format_name}"),
     ("get", "/api/cases/{case_id}/reports/export/{format_name}"),
+    ("get", "/api/cases/{case_id}/audit-package"),
 }
 
 

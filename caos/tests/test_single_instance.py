@@ -670,7 +670,8 @@ def test_worker_entrypoint_holds_the_worker_lock_while_polling(monkeypatch, tmp_
         lambda cls, **_kwargs: SimpleNamespace(aclose=close_engine),
     ))
     monkeypatch.setattr(worker, "ModelService", lambda **_kwargs: object())
-    monkeypatch.setattr(worker, "run_pending", lambda _service: tracker.held == ["worker"] or pytest.fail("worker lock not held"))
+    monkeypatch.setattr(worker, "DeliverableService", lambda **_kwargs: SimpleNamespace(recover_freeze_jobs=lambda: 0))
+    monkeypatch.setattr(worker, "run_pending", lambda *_services: tracker.held == ["worker"] or pytest.fail("worker lock not held"))
     monkeypatch.setattr(sys, "argv", ["worker.py", "--once"])
 
     worker.main()
@@ -745,9 +746,10 @@ def test_worker_entrypoint_closes_owned_resources_in_reverse_order(monkeypatch, 
     monkeypatch.setattr(worker.DomainStore, "from_url", classmethod(lambda cls, _url: store))
     monkeypatch.setattr(worker.Engine, "create", classmethod(lambda cls, **_kwargs: Engine()))
     monkeypatch.setattr(worker, "ModelService", lambda **_kwargs: object())
+    monkeypatch.setattr(worker, "DeliverableService", lambda **_kwargs: SimpleNamespace(recover_freeze_jobs=lambda: 0))
     monkeypatch.setattr(sys, "argv", ["worker.py", "--once"])
 
-    def run_once(_service) -> int:
+    def run_once(*_services) -> int:
         events.append("run")
         if raises:
             raise RuntimeError("worker failed")
@@ -899,7 +901,8 @@ def test_worker_entrypoint_preserves_poll_failure_through_cleanup_failures(monke
     monkeypatch.setattr(worker.DomainStore, "from_url", classmethod(lambda cls, _url: store))
     monkeypatch.setattr(worker.Engine, "create", classmethod(lambda cls, **_kwargs: Engine()))
     monkeypatch.setattr(worker, "ModelService", lambda **_kwargs: object())
-    monkeypatch.setattr(worker, "run_pending", lambda _service: (_ for _ in ()).throw(RuntimeError("poll failed")))
+    monkeypatch.setattr(worker, "DeliverableService", lambda **_kwargs: SimpleNamespace(recover_freeze_jobs=lambda: 0))
+    monkeypatch.setattr(worker, "run_pending", lambda *_services: (_ for _ in ()).throw(RuntimeError("poll failed")))
     monkeypatch.setattr(sys, "argv", ["worker.py", "--once"])
 
     with pytest.raises(RuntimeError, match="poll failed"):

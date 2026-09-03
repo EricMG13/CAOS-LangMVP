@@ -561,7 +561,7 @@ async def test_accepted_research_flows_through_draft_freeze_file_and_reconstruct
     from caos.deliverables.service import DeliverableService
     from caos.models.service import ModelService
 
-    from test_deliverables_spec import draft_request, file_request, freeze_request
+    from test_deliverables_spec import draft_request, file_request, freeze_now
 
     engine, store, case, source = research.engine, research.store, research.case, research.source
     vault = tmp_path / "deliverable-vault"
@@ -586,7 +586,7 @@ async def test_accepted_research_flows_through_draft_freeze_file_and_reconstruct
     assert template["model_requirement"] == "OPTIONAL"
     revision = service.save_draft(case["id"], "DEEP_RESEARCH", draft_request(template, source), actor="analyst")
     assert revision["content"]["model_identity"] is None
-    frozen = service.freeze(case["id"], freeze_request(revision), actor="analyst")
+    frozen = freeze_now(service, case["id"], revision)
     assert frozen["payload"]["authority"]["accepted_snapshot_id"] == snapshot["id"]
     assert frozen["payload"]["model"] is None
     assert store.add_member(case["id"], "admin", "approver-user", "APPROVER", actor_role="ADMIN")

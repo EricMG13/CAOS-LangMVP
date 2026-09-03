@@ -182,7 +182,50 @@ audit_events = sa.Table(
     sa.Column("actor", sa.String, nullable=False),
     sa.Column("at", sa.String, nullable=False),
     sa.Column("data", sa.JSON, nullable=False),
+    # Integrity chain (Task 10, DECISIONS §14.19): per-case chains keyed by
+    # case id (or `__global__`), contiguous `chain_seq`, each row linked to its
+    # predecessor's digest. Nullable only so a legacy table can be migrated;
+    # `_ensure_audit_schema` backfills every row before the triggers go on.
+    sa.Column("chain_key", sa.String),
+    sa.Column("chain_seq", sa.Integer),
+    sa.Column("prev_digest", sa.String),
+    sa.Column("digest", sa.String),
+    sa.Index("uq_audit_chain_seq", "chain_key", "chain_seq", unique=True),
 )
+
+# One row per chain plus the `__lock__` row every audit insert locks first, so
+# chain heads are read under the same serialisation that assigns `chain_seq`.
+audit_chain_heads = sa.Table(
+    "audit_chain_heads", metadata,
+    sa.Column("chain_key", sa.String, primary_key=True),
+    sa.Column("chain_seq", sa.Integer, nullable=False),
+    sa.Column("digest", sa.String, nullable=False),
+)
+_AUDIT_LOCK_KEY = "__lock__"
+_AUDIT_CHAIN_COLUMNS = ("chain_key", "chain_seq", "prev_digest", "digest")
+SQLITE_AUDIT_UPDATE_DDL = (
+    "CREATE TRIGGER audit_events_append_only BEFORE UPDATE ON audit_events BEGIN "
+    "SELECT RAISE(ABORT, 'APPEND_ONLY: audit events are immutable'); END"
+)
+SQLITE_AUDIT_DELETE_DDL = (
+    "CREATE TRIGGER audit_events_no_delete BEFORE DELETE ON audit_events BEGIN "
+    "SELECT RAISE(ABORT, 'APPEND_ONLY: audit events cannot be deleted'); END"
+)
+POSTGRES_AUDIT_FUNCTION_DDL = """
+CREATE OR REPLACE FUNCTION caos_audit_event_immutable() RETURNS trigger AS $$
+BEGIN
+    IF TG_OP = 'DELETE' THEN
+        RAISE EXCEPTION 'APPEND_ONLY: audit events cannot be deleted';
+    END IF;
+    RAISE EXCEPTION 'APPEND_ONLY: audit events are immutable';
+END;
+$$ LANGUAGE plpgsql
+""".strip()
+POSTGRES_AUDIT_TRIGGER_DDL = """
+CREATE TRIGGER audit_events_append_only
+BEFORE UPDATE OR DELETE ON audit_events
+FOR EACH ROW EXECUTE FUNCTION caos_audit_event_immutable()
+""".strip()
 
 PUBLIC_SOURCE_HIDDEN = {"vault_path", "withdrawn_at"}
 _INSTANCE_LOCK_NAMESPACE = int.from_bytes(b"CAOS", "big")
@@ -201,6 +244,99 @@ def _terminate_process(role: str) -> None:
         os._exit(1)
 
 
+def _chain_key_for(details: dict[str, Any]) -> str:
+    from ..audit.chain import GLOBAL_CHAIN
+
+    case_id = details.get("case_id")
+    return case_id if isinstance(case_id, str) and case_id else GLOBAL_CHAIN
+
+
+def _json_round_trip(value: Any) -> Any:
+    """The digest is taken over what the column will read back: sorted keys,
+    tuples as lists, no Python-only scalars."""
+    return json.loads(json.dumps(value, sort_keys=True))
+
+
+def _backfill_audit_chain(conn: sa.Connection) -> None:
+    """Chain every unchained row once, in `seq` order, continuing each chain
+    from its recorded head. Runs with the append-only triggers dropped."""
+    from ..audit.chain import GENESIS, event_digest
+
+    heads = {
+        row["chain_key"]: dict(row)
+        for row in conn.execute(sa.select(audit_chain_heads)).mappings().all()
+    }
+    pending = conn.execute(
+        sa.select(audit_events).where(audit_events.c.chain_key.is_(None)).order_by(audit_events.c.seq)
+    ).mappings().all()
+    for stored in pending:
+        row = dict(stored)
+        data = row["data"] if isinstance(row["data"], dict) else json.loads(row["data"])
+        chain_key = _chain_key_for(data)
+        head = heads.get(chain_key)
+        chained = {
+            "chain_key": chain_key,
+            "chain_seq": (head["chain_seq"] if head else 0) + 1,
+            "id": row["id"], "action": row["action"], "actor": row["actor"], "at": row["at"],
+            "data": _json_round_trip(data),
+            "prev_digest": head["digest"] if head else GENESIS,
+        }
+        chained["digest"] = event_digest(chained)
+        conn.execute(sa.update(audit_events).where(audit_events.c.seq == row["seq"]).values(
+            chain_key=chain_key, chain_seq=chained["chain_seq"],
+            prev_digest=chained["prev_digest"], digest=chained["digest"],
+        ))
+        heads[chain_key] = {"chain_key": chain_key, "chain_seq": chained["chain_seq"], "digest": chained["digest"]}
+        if head is None:
+            conn.execute(audit_chain_heads.insert().values(**heads[chain_key]))
+        else:
+            conn.execute(sa.update(audit_chain_heads).where(audit_chain_heads.c.chain_key == chain_key)
+                         .values(chain_seq=chained["chain_seq"], digest=chained["digest"]))
+    if _AUDIT_LOCK_KEY not in heads:
+        conn.execute(audit_chain_heads.insert().values(chain_key=_AUDIT_LOCK_KEY, chain_seq=0, digest=GENESIS))
+
+
+def _ensure_audit_schema(engine: sa.Engine) -> None:
+    """Migrate a pre-chain `audit_events` table in place, then arm the
+    append-only triggers. Idempotent; every real store passes through here."""
+    dialect = engine.dialect.name
+    if dialect == "postgresql":
+        with engine.begin() as conn:
+            conn.exec_driver_sql("DROP TRIGGER IF EXISTS audit_events_append_only ON audit_events")
+            for column, kind in (("chain_key", "VARCHAR"), ("chain_seq", "INTEGER"),
+                                 ("prev_digest", "VARCHAR"), ("digest", "VARCHAR")):
+                conn.exec_driver_sql(f"ALTER TABLE audit_events ADD COLUMN IF NOT EXISTS {column} {kind}")
+            conn.exec_driver_sql(
+                "CREATE UNIQUE INDEX IF NOT EXISTS uq_audit_chain_seq ON audit_events (chain_key, chain_seq)"
+            )
+            _backfill_audit_chain(conn)
+            conn.exec_driver_sql(POSTGRES_AUDIT_FUNCTION_DDL)
+            conn.exec_driver_sql(POSTGRES_AUDIT_TRIGGER_DDL)
+        return
+    if dialect != "sqlite":
+        raise RuntimeError(f"unsupported domain-store dialect: {dialect}")
+    with engine.connect() as conn:
+        conn.exec_driver_sql("BEGIN IMMEDIATE")
+        try:
+            conn.exec_driver_sql("DROP TRIGGER IF EXISTS audit_events_append_only")
+            conn.exec_driver_sql("DROP TRIGGER IF EXISTS audit_events_no_delete")
+            columns = {row[1] for row in conn.exec_driver_sql('PRAGMA table_info("audit_events")')}
+            for column, kind in (("chain_key", "VARCHAR"), ("chain_seq", "INTEGER"),
+                                 ("prev_digest", "VARCHAR"), ("digest", "VARCHAR")):
+                if column not in columns:
+                    conn.exec_driver_sql(f"ALTER TABLE audit_events ADD COLUMN {column} {kind}")
+            conn.exec_driver_sql(
+                "CREATE UNIQUE INDEX IF NOT EXISTS uq_audit_chain_seq ON audit_events (chain_key, chain_seq)"
+            )
+            _backfill_audit_chain(conn)
+            conn.exec_driver_sql(SQLITE_AUDIT_UPDATE_DDL)
+            conn.exec_driver_sql(SQLITE_AUDIT_DELETE_DDL)
+            conn.commit()
+        except BaseException:
+            conn.rollback()
+            raise
+
+
 def _public_source(row: dict[str, Any]) -> dict[str, Any]:
     return {key: value for key, value in row.items() if key not in PUBLIC_SOURCE_HIDDEN}
 
@@ -216,6 +352,7 @@ class DomainStore:
         engine = sa.create_engine(url, json_serializer=lambda value: json.dumps(value, sort_keys=True))
         try:
             metadata.create_all(engine)
+            _ensure_audit_schema(engine)
         except Exception:
             engine.dispose()
             raise
@@ -291,9 +428,48 @@ class DomainStore:
     # -- audit ------------------------------------------------------------
 
     def _audit(self, conn: sa.Connection, action: str, actor: str, **details: Any) -> None:
-        conn.execute(audit_events.insert().values(
-            id=new_id("aud"), action=action, actor=actor, at=now_iso(), data=details,
-        ))
+        """Append one chained audit row inside the caller's transaction.
+
+        The `__lock__` head row is locked first — `SELECT … FOR UPDATE` on
+        PostgreSQL, a no-op `UPDATE` on SQLite that takes the writer lock — so
+        the chain head is read after every concurrent writer has committed and
+        `chain_seq` is assigned without gaps or forks. `uq_audit_chain_seq` is
+        the database's own second opinion.
+        """
+        from ..audit.chain import GENESIS, event_digest
+
+        lock = audit_chain_heads.c.chain_key == _AUDIT_LOCK_KEY
+        if conn.dialect.name == "postgresql":
+            conn.execute(sa.select(audit_chain_heads).where(lock).with_for_update())
+        else:
+            conn.execute(sa.update(audit_chain_heads).where(lock).values(chain_seq=0))
+        data = _json_round_trip(details)
+        chain_key = _chain_key_for(data)
+        head = conn.execute(
+            sa.select(audit_chain_heads).where(audit_chain_heads.c.chain_key == chain_key)
+        ).mappings().first()
+        row = {
+            "chain_key": chain_key,
+            "chain_seq": (head["chain_seq"] if head else 0) + 1,
+            "id": new_id("aud"), "action": action, "actor": actor, "at": now_iso(),
+            "data": data,
+            "prev_digest": head["digest"] if head else GENESIS,
+        }
+        row["digest"] = event_digest(row)
+        conn.execute(audit_events.insert().values(**row))
+        if head is None:
+            conn.execute(audit_chain_heads.insert().values(
+                chain_key=chain_key, chain_seq=row["chain_seq"], digest=row["digest"],
+            ))
+        else:
+            moved = conn.execute(
+                sa.update(audit_chain_heads)
+                .where(audit_chain_heads.c.chain_key == chain_key,
+                       audit_chain_heads.c.chain_seq == head["chain_seq"])
+                .values(chain_seq=row["chain_seq"], digest=row["digest"])
+            ).rowcount
+            if moved != 1:  # pragma: no cover — the lock makes this unreachable
+                raise IntegrityError("audit chain head moved under the lock", None, None)
 
     def audit_event(self, action: str, actor: str, **details: Any) -> None:
         with self.engine.begin() as conn:
@@ -305,6 +481,57 @@ class DomainStore:
                 sa.select(audit_events).order_by(audit_events.c.seq.desc()).limit(limit)
             ).mappings().all()
         return [{"id": r["id"], "action": r["action"], "actor": r["actor"], "at": r["at"], **r["data"]} for r in rows]
+
+    def audit_chain(self, chain_key: str | None = None) -> list[dict[str, Any]]:
+        """Chained rows ascending by (chain_key, chain_seq); one chain when keyed."""
+        query = sa.select(audit_events).order_by(audit_events.c.chain_key, audit_events.c.chain_seq)
+        if chain_key is not None:
+            query = query.where(audit_events.c.chain_key == chain_key)
+        with self.engine.connect() as conn:
+            rows = conn.execute(query).mappings().all()
+        return [
+            {"chain_key": r["chain_key"], "chain_seq": r["chain_seq"], "id": r["id"], "action": r["action"],
+             "actor": r["actor"], "at": r["at"], "data": r["data"], "prev_digest": r["prev_digest"],
+             "digest": r["digest"]}
+            for r in rows
+        ]
+
+    def audit_chain_head(self, chain_key: str) -> dict[str, Any] | None:
+        with self.engine.connect() as conn:
+            row = conn.execute(
+                sa.select(audit_chain_heads).where(audit_chain_heads.c.chain_key == chain_key)
+            ).mappings().first()
+        return dict(row) if row else None
+
+    def verify_audit_chain(self, chain_key: str | None = None) -> dict[str, list[dict[str, Any]]]:
+        """Findings per chain key; an empty mapping means every chain is intact."""
+        from ..audit.chain import verify_chain
+
+        rows = self.audit_chain(chain_key)
+        chains: dict[str, list[dict[str, Any]]] = {}
+        for row in rows:
+            chains.setdefault(row["chain_key"], []).append(row)
+        keys = [chain_key] if chain_key is not None else sorted(
+            set(chains) | {head["chain_key"] for head in self._audit_heads() if head["chain_key"] != _AUDIT_LOCK_KEY}
+        )
+        findings = {
+            key: verify_chain(chains.get(key, []), self.audit_chain_head(key))
+            for key in keys
+        }
+        return {key: value for key, value in findings.items() if value}
+
+    def _audit_heads(self) -> list[dict[str, Any]]:
+        with self.engine.connect() as conn:
+            return [dict(row) for row in conn.execute(sa.select(audit_chain_heads)).mappings().all()]
+
+    def disarm_audit_triggers_for_tests(self) -> None:
+        """Simulate a privileged tamperer dropping the append-only triggers."""
+        with self.engine.begin() as conn:
+            if conn.dialect.name == "postgresql":
+                conn.exec_driver_sql("DROP TRIGGER IF EXISTS audit_events_append_only ON audit_events")
+            else:
+                conn.exec_driver_sql("DROP TRIGGER IF EXISTS audit_events_append_only")
+                conn.exec_driver_sql("DROP TRIGGER IF EXISTS audit_events_no_delete")
 
     # -- cases ------------------------------------------------------------
 

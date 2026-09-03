@@ -14,10 +14,11 @@ import DeliverableDocument, {
 } from "./DeliverableDocument";
 import { draftTextSections, overlayAnalystText, type DocumentSection } from "./documentTypes";
 import { parseReportRecovery, reportRecoveryKey, type RecoveryModelSelection, type ReportRecovery } from "./reportRecovery";
-import { freezeChecklist } from "./reportStudioState";
+import { canFileFrozen, freezeChecklist, freezeJobIsPending } from "./reportStudioState";
 
 const apiBase = process.env.NEXT_PUBLIC_API_URL || "";
 const AUTOSAVE_DELAY_MS = 850;
+const FREEZE_POLL_MS = 1000;
 const SAVE_RETRY_DELAY_MS = 5000;
 const pathwayOptions = [
   ["FULL_CREDIT", "Full Credit"],
@@ -40,8 +41,15 @@ type ModelEligibility = {
 };
 type DraftRevision = { id: string; draft_id: string; case_id: string; pathway: Pathway; version: number; author: string; created_at: string; template_id: string; template_version: string; digest: string; content: { template_id: string; template_version: string; document_schema_version?: string | null; document_sections?: DocumentSection[] | null; model_selection: ModelSelection | null; model_identity?: Record<string, unknown> | null; blocks: DeliverableBlock[]; generated_blocks: Record<string, unknown> } };
 type ExportMetadata = { format: "md" | "pdf" | "xlsx"; sha256: string; size: number };
-type FrozenDeliverable = { id: string; case_id: string; pathway: Pathway; draft_version: number; status: "FROZEN" | "FILED" | "SUPERSEDED" | "CHANGES_REQUESTED"; frozen_by: string; frozen_at: string; approved_by: string | null; approved_at: string | null; superseded_by_id: string | null; change_request: { comment?: string; requested_by?: string; requested_at?: string } | null; digest: string; preview_digest: string; input_fingerprint: string; payload: FrozenPayload; exports: Partial<Record<"md" | "pdf" | "xlsx", ExportMetadata>> };
-type WorkspaceResponse = { template: DeliverableTemplate; current: DraftRevision | null; history: DraftRevision[]; frozen_history: FrozenDeliverable[]; model_eligibility: ModelEligibility };
+type FrozenDeliverable = { id: string; case_id: string; pathway: Pathway; draft_version: number; status: "FROZEN" | "FILED" | "SUPERSEDED" | "CHANGES_REQUESTED"; frozen_by: string; frozen_at: string; approved_by: string | null; approved_at: string | null; superseded_by_id: string | null; change_request: { comment?: string; requested_by?: string; requested_at?: string } | null; digest: string; preview_digest: string; input_fingerprint: string; payload: FrozenPayload; exports: Partial<Record<"md" | "pdf" | "xlsx", ExportMetadata>>; opinion_id?: string | null; signed_by?: string | null };
+// Task 10: the analyst opinion is an append-only, digest-bound record on the exact revision.
+type OpinionRecord = { opinion_id: string; case_id: string; pathway: Pathway; draft_id: string; revision_id: string; draft_version: number; draft_digest: string; binding: Record<string, unknown>; opinion: string; limitations: string; material_overrides: string; rationale: string; supersedes_opinion_id: string | null; signed_by: string; signed_at: string; opinion_digest: string };
+type OpinionState = { head: OpinionRecord | null; current: boolean; reasons: string[] };
+// A freeze is a worker job; the frozen record appears in frozen_history once the job is PUBLISHED.
+type FreezeJob = { job_id: string; case_id: string; pathway: Pathway; status: "QUEUED" | "RENDERING" | "PUBLISHED" | "FAILED"; draft_version: number; draft_digest: string; deliverable_id: string | null; error: { code: string } | null; requested_by: string; requested_at: string; completed_at: string | null };
+type FilingReceipt = { schema_version: string; receipt_id: string; deliverable_id: string; case_id: string; pathway: Pathway; draft_version: number; draft_digest: string; preview_digest: string; input_fingerprint: string; approval_hash: string; content_digest: string | null; exports: Record<string, string>; opinion_id: string | null; signed_by: string | null; frozen_by: string; frozen_at: string; approved_by: string; approved_at: string; receipt_digest: string };
+type OpinionForm = { opinion: string; limitations: string; material_overrides: string; rationale: string };
+type WorkspaceResponse = { template: DeliverableTemplate; current: DraftRevision | null; history: DraftRevision[]; frozen_history: FrozenDeliverable[]; model_eligibility: ModelEligibility; opinion: OpinionState; pending_freezes: FreezeJob[] };
 type SaveState = { kind: "IDLE" | "INCOMPLETE" | "DIRTY" | "SAVING" | "SAVED" | "CONFLICT" | "ERROR"; detail?: string; version?: number };
 type RegistryResponse = {
   version: string;
@@ -156,7 +164,9 @@ function clearBrowserRecovery(caseId: string, pathway: Pathway) {
   catch { return false; }
 }
 
-export default function ReportStudio({ caseId, role, selectedCase, onDraftStateChange, requestDraftDiscard }: { caseId: string; role: string; selectedCase: CaseRecord | null; onDraftStateChange: (dirty: boolean) => void; requestDraftDiscard: (detail: string, confirm: () => void, cancel?: () => void, trigger?: HTMLElement | null) => boolean }) {
+const EMPTY_OPINION: OpinionForm = { opinion: "", limitations: "", material_overrides: "", rationale: "" };
+
+export default function ReportStudio({ caseId, role, subject = "", selectedCase, onDraftStateChange, requestDraftDiscard }: { caseId: string; role: string; subject?: string; selectedCase: CaseRecord | null; onDraftStateChange: (dirty: boolean) => void; requestDraftDiscard: (detail: string, confirm: () => void, cancel?: () => void, trigger?: HTMLElement | null) => boolean }) {
   const [pathway, setPathway] = useState<Pathway>("FULL_CREDIT");
   const [workspace, setWorkspace] = useState<WorkspaceResponse | null>(null);
   const [blocks, setBlocks] = useState<DeliverableBlock[]>([]);
@@ -178,6 +188,9 @@ export default function ReportStudio({ caseId, role, selectedCase, onDraftStateC
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [changeComment, setChangeComment] = useState("");
+  const [opinionForm, setOpinionForm] = useState<OpinionForm>(EMPTY_OPINION);
+  const [receipt, setReceipt] = useState<FilingReceipt | null>(null);
+  const [memberForm, setMemberForm] = useState({ subject: "", role: "APPROVER" });
   const [registry, setRegistry] = useState<RegistryResponse | null>(null);
   const [scenarioForm, setScenarioForm] = useState({ assumptionId: "", case: "BASE", periodId: "", value: "" });
   const loadGeneration = useRef(0);
@@ -189,6 +202,7 @@ export default function ReportStudio({ caseId, role, selectedCase, onDraftStateC
   const saveChain = useRef<Promise<void>>(Promise.resolve());
   const editorFocus = useRef<HTMLTextAreaElement | null>(null);
   const currentScope = useRef("");
+  const freezePollTimer = useRef<number | null>(null);
   const lifecycleGeneration = useRef(0);
   const lifecycleInFlight = useRef(false);
   const canWrite = role !== "READER";
@@ -228,7 +242,7 @@ export default function ReportStudio({ caseId, role, selectedCase, onDraftStateC
     const generation = ++loadGeneration.current;
     const scope = `${caseId}\u0000${pathway}`;
     currentScope.current = scope;
-    setLoading(true); setLoadError(""); setError(""); setMessage(""); setSelectedFrozen(null); setConflict(null);
+    setLoading(true); setLoadError(""); setError(""); setMessage(""); setSelectedFrozen(null); setReceipt(null); setConflict(null);
     try {
       const [next, sourceResult] = await Promise.all([
         reportRequest<WorkspaceResponse>(`/api/cases/${caseId}/deliverables/${pathway}/draft`, {}, signal),
@@ -278,9 +292,10 @@ export default function ReportStudio({ caseId, role, selectedCase, onDraftStateC
     loadGeneration.current += 1; draftGeneration.current = 0; saveGeneration.current = 0; savedVersion.current = 0; unsavedDraft.current = false; saveChain.current = Promise.resolve();
     lifecycleGeneration.current += 1; lifecycleInFlight.current = false; currentScope.current = `${caseId}\u0000${pathway}`;
     if (saveTimer.current !== null) window.clearTimeout(saveTimer.current);
+    if (freezePollTimer.current !== null) window.clearTimeout(freezePollTimer.current);
     const controller = new AbortController();
     const timer = window.setTimeout(() => void load(controller.signal), 0);
-    return () => { controller.abort(); window.clearTimeout(timer); loadGeneration.current += 1; lifecycleGeneration.current += 1; lifecycleInFlight.current = false; if (saveTimer.current !== null) window.clearTimeout(saveTimer.current); };
+    return () => { controller.abort(); window.clearTimeout(timer); loadGeneration.current += 1; lifecycleGeneration.current += 1; lifecycleInFlight.current = false; if (saveTimer.current !== null) window.clearTimeout(saveTimer.current); if (freezePollTimer.current !== null) window.clearTimeout(freezePollTimer.current); };
   }, [caseId, load, pathway]);
 
   const enqueueSave = useCallback((snapshot: DeliverableBlock[], selection: ModelSelection | null, generation: number, scope: string) => {
@@ -434,17 +449,94 @@ export default function ReportStudio({ caseId, role, selectedCase, onDraftStateC
     finally { finishLifecycle(token); }
   };
 
+  const signOpinion = async () => {
+    const current = workspace?.current;
+    if (!current || !canWrite || unsavedDraft.current || saveState.kind !== "SAVED" || current.version !== savedVersion.current) return;
+    if (!opinionForm.opinion.trim() || !opinionForm.limitations.trim() || !opinionForm.material_overrides.trim() || !opinionForm.rationale.trim()) return;
+    const token = beginLifecycle("sign");
+    if (!token) return;
+    try {
+      // Expected-head CAS: the sign-off names the opinion it believes is current.
+      const signed = await reportRequest<OpinionRecord>(`/api/cases/${caseId}/deliverables/${pathway}/opinion`, { method: "POST", body: JSON.stringify({ draft_id: current.draft_id, draft_version: current.version, draft_digest: current.digest, expected_head_opinion_id: workspace.opinion?.head?.opinion_id ?? null, ...opinionForm }) });
+      if (!lifecycleIsCurrent(token)) return;
+      setWorkspace((value) => value ? { ...value, opinion: { head: signed, current: true, reasons: [] } } : value);
+      setOpinionForm(EMPTY_OPINION);
+      setMessage(`Opinion signed on saved Draft v${current.version}.`);
+    } catch (caught) { if (lifecycleIsCurrent(token)) setError(firstErrorMessage(caught, "Unable to sign the opinion")); }
+    finally { finishLifecycle(token); }
+  };
+
+  const trackFreezeJob = useCallback((job: FreezeJob, token: LifecycleToken) => {
+    // The worker owns the render: poll the job until it is PUBLISHED or FAILED,
+    // then refetch the workspace so the frozen record comes from the server.
+    const poll = async () => {
+      if (!lifecycleIsCurrent(token)) return;
+      try {
+        const tracked = await reportRequest<FreezeJob>(`/api/cases/${caseId}/deliverables/freeze-jobs/${job.job_id}`);
+        if (!lifecycleIsCurrent(token)) return;
+        if (freezeJobIsPending(tracked.status)) {
+          // Still rendering: keep the lifecycle held and ask again.
+          setWorkspace((value) => value ? { ...value, pending_freezes: (value.pending_freezes ?? []).map((item) => item.job_id === tracked.job_id ? tracked : item) } : value);
+          freezePollTimer.current = window.setTimeout(() => void poll(), FREEZE_POLL_MS);
+          return;
+        }
+        const next = await reportRequest<WorkspaceResponse>(`/api/cases/${caseId}/deliverables/${pathway}/draft`);
+        if (!lifecycleIsCurrent(token)) return;
+        setWorkspace(next);
+        if (tracked.status === "PUBLISHED") {
+          const frozen = next.frozen_history.find((item) => item.id === tracked.deliverable_id) || null;
+          setSelectedFrozen(frozen);
+          setMessage(`Frozen exact Draft v${tracked.draft_version}: every export was published and verified by the worker.`);
+        } else setError(`Freeze failed: ${tracked.error?.code || "DELIVERABLE_RENDER_FAILED"}. The draft is unchanged; retry after the cause is fixed.`);
+      } catch (caught) { if (lifecycleIsCurrent(token)) setError(firstErrorMessage(caught, "Unable to track the freeze")); }
+      if (lifecycleIsCurrent(token)) finishLifecycle(token);
+    };
+    freezePollTimer.current = window.setTimeout(() => void poll(), FREEZE_POLL_MS);
+  }, [caseId, finishLifecycle, lifecycleIsCurrent, pathway]);
+
   const freeze = async () => {
     const current = workspace?.current;
-    if (!current || unsavedDraft.current || saveState.kind !== "SAVED" || current.version !== savedVersion.current || !modelSelectionIsCurrent(modelSelection, workspace.model_eligibility)) return;
+    if (!current || unsavedDraft.current || saveState.kind !== "SAVED" || current.version !== savedVersion.current || !modelSelectionIsCurrent(modelSelection, workspace.model_eligibility) || !workspace.opinion?.current) return;
     const token = beginLifecycle("freeze");
     if (!token) return;
     try {
-      const frozen = await reportRequest<FrozenDeliverable>(`/api/cases/${caseId}/deliverables/${pathway}/freeze`, { method: "POST", body: JSON.stringify({ draft_id: current.draft_id, draft_version: current.version, draft_digest: current.digest }) });
+      const job = await reportRequest<FreezeJob>(`/api/cases/${caseId}/deliverables/${pathway}/freeze`, { method: "POST", body: JSON.stringify({ draft_id: current.draft_id, draft_version: current.version, draft_digest: current.digest }) });
       if (!lifecycleIsCurrent(token)) return;
-      setWorkspace((value) => value ? { ...value, frozen_history: [...value.frozen_history.filter((item) => item.id !== frozen.id), frozen] } : value);
-      setSelectedFrozen(frozen); setMessage(`Frozen exact Draft v${current.version}.`);
-    } catch (caught) { if (lifecycleIsCurrent(token)) setError(firstErrorMessage(caught, "Unable to freeze Deliverable")); }
+      setWorkspace((value) => value ? { ...value, pending_freezes: [...(value.pending_freezes ?? []).filter((item) => item.job_id !== job.job_id), job] } : value);
+      setMessage(`Freeze of Draft v${current.version} queued: the worker is publishing every export.`);
+      if (freezeJobIsPending(job.status)) { trackFreezeJob(job, token); return; }
+      const next = await reportRequest<WorkspaceResponse>(`/api/cases/${caseId}/deliverables/${pathway}/draft`);
+      if (!lifecycleIsCurrent(token)) return;
+      setWorkspace(next); setSelectedFrozen(next.frozen_history.find((item) => item.id === job.deliverable_id) || null);
+      finishLifecycle(token);
+    } catch (caught) { if (lifecycleIsCurrent(token)) { setError(firstErrorMessage(caught, "Unable to freeze Deliverable")); finishLifecycle(token); } }
+  };
+
+  const loadReceipt = useCallback(async (frozen: FrozenDeliverable) => {
+    setReceipt(null);
+    if (!frozen.approved_by) return;
+    try { setReceipt(await reportRequest<FilingReceipt>(`/api/cases/${caseId}/deliverables/by-id/${frozen.id}/receipt`)); }
+    catch (caught) {
+      // A record filed before detached receipts existed has none; that is a fact, not a failure.
+      if (!(caught instanceof ReportRequestError && caught.status === 404)) setError(firstErrorMessage(caught, "Unable to load the filing receipt"));
+    }
+  }, [caseId]);
+
+  const selectFrozen = (frozen: FrozenDeliverable | null) => {
+    setSelectedFrozen(frozen);
+    if (frozen) void loadReceipt(frozen); else setReceipt(null);
+  };
+
+  const addMember = async () => {
+    if (!canApprove || !memberForm.subject.trim()) return;
+    const token = beginLifecycle("member");
+    if (!token) return;
+    try {
+      await request(`/api/cases/${caseId}/members`, { method: "POST", body: JSON.stringify({ subject: memberForm.subject.trim(), role: memberForm.role }) });
+      if (!lifecycleIsCurrent(token)) return;
+      setMessage(`${memberForm.subject.trim()} provisioned as case ${memberForm.role}.`);
+      setMemberForm({ subject: "", role: "APPROVER" });
+    } catch (caught) { if (lifecycleIsCurrent(token)) setError(firstErrorMessage(caught, "Unable to provision the member")); }
     finally { finishLifecycle(token); }
   };
 
@@ -455,7 +547,8 @@ export default function ReportStudio({ caseId, role, selectedCase, onDraftStateC
     try {
       const filed = await reportRequest<FrozenDeliverable>(`/api/cases/${caseId}/deliverables/by-id/${selectedFrozen.id}/approve`, { method: "POST", body: JSON.stringify({ preview_digest: selectedFrozen.preview_digest, input_fingerprint: selectedFrozen.input_fingerprint }) });
       if (!lifecycleIsCurrent(token)) return;
-      setSelectedFrozen(filed); setWorkspace((current) => current ? { ...current, frozen_history: current.frozen_history.map((item) => item.id === filed.id ? filed : item.status === "FILED" ? { ...item, status: "SUPERSEDED", superseded_by_id: filed.id } : item) } : current); setMessage("Exact Frozen Deliverable filed.");
+      setSelectedFrozen(filed); setWorkspace((current) => current ? { ...current, frozen_history: current.frozen_history.map((item) => item.id === filed.id ? filed : item.status === "FILED" ? { ...item, status: "SUPERSEDED", superseded_by_id: filed.id } : item) } : current); setMessage("Exact Frozen Deliverable filed; the detached receipt records the approver.");
+      void loadReceipt(filed);
     } catch (caught) { if (lifecycleIsCurrent(token)) setError(firstErrorMessage(caught, "Unable to file Deliverable")); }
     finally { finishLifecycle(token); }
   };
@@ -467,7 +560,7 @@ export default function ReportStudio({ caseId, role, selectedCase, onDraftStateC
     try {
       const next = await reportRequest<{ frozen: FrozenDeliverable; draft: DraftRevision }>(`/api/cases/${caseId}/deliverables/by-id/${selectedFrozen.id}/request-changes`, { method: "POST", body: JSON.stringify({ preview_digest: selectedFrozen.preview_digest, input_fingerprint: selectedFrozen.input_fingerprint, comment: changeComment.trim() }) });
       if (!lifecycleIsCurrent(token)) return;
-      savedVersion.current = next.draft.version; unsavedDraft.current = false; setDraftIsUnsaved(false); setPersistedVersion(next.draft.version); setSelectedFrozen(null); setBlocks(next.draft.content.blocks); setModelSelection(next.draft.content.model_selection); setWorkspace((current) => current ? { ...current, current: next.draft, history: [...current.history, next.draft], frozen_history: current.frozen_history.map((item) => item.id === next.frozen.id ? next.frozen : item) } : current); setSaveState({ kind: "SAVED", version: next.draft.version }); setChangeComment(""); setMessage(`Changes requested; editable Draft v${next.draft.version} created.`); onDraftStateChange(false); window.setTimeout(() => { if (lifecycleIsCurrent(token)) editorFocus.current?.focus(); }, 0);
+      savedVersion.current = next.draft.version; unsavedDraft.current = false; setDraftIsUnsaved(false); setPersistedVersion(next.draft.version); setSelectedFrozen(null); setBlocks(next.draft.content.blocks); setModelSelection(next.draft.content.model_selection); setWorkspace((current) => current ? { ...current, current: next.draft, history: [...current.history, next.draft], frozen_history: current.frozen_history.map((item) => item.id === next.frozen.id ? next.frozen : item), opinion: current.opinion?.head ? { ...current.opinion, current: false, reasons: ["DRAFT_REVISION_CHANGED"] } : current.opinion } : current); setSaveState({ kind: "SAVED", version: next.draft.version }); setChangeComment(""); setMessage(`Changes requested; editable Draft v${next.draft.version} created.`); onDraftStateChange(false); window.setTimeout(() => { if (lifecycleIsCurrent(token)) editorFocus.current?.focus(); }, 0);
     } catch (caught) { if (lifecycleIsCurrent(token)) setError(firstErrorMessage(caught, "Unable to request changes")); }
     finally { finishLifecycle(token); }
   };
@@ -492,13 +585,23 @@ export default function ReportStudio({ caseId, role, selectedCase, onDraftStateC
   const modelStale = !modelSelectionIsCurrent(modelSelection, workspace.model_eligibility);
   const requiredModelMissing = workspace.template.model_requirement === "REQUIRED" && modelSelection === null;
   const exactSavedRevision = Boolean(workspace.current) && !draftIsUnsaved && saveState.kind === "SAVED" && workspace.current?.version === persistedVersion;
-  const [writeCheck, revisionCheck, selectionCheck, availabilityCheck] = freezeChecklist({
+  const opinionState: OpinionState = workspace.opinion ?? { head: null, current: false, reasons: ["OPINION_SIGNOFF_REQUIRED"] };
+  const pendingJobs: FreezeJob[] = workspace.pending_freezes ?? [];
+  const opinionCurrent = Boolean(opinionState.head) && opinionState.current && exactSavedRevision;
+  const [writeCheck, revisionCheck, selectionCheck, availabilityCheck, opinionCheck] = freezeChecklist({
     canWrite,
     exactSavedRevision,
     currentModelSelection: !modelStale,
     requiredModelAvailable: !requiredModelMissing,
+    currentOpinion: opinionCurrent,
   });
-  const freezeReady = [writeCheck, revisionCheck, selectionCheck, availabilityCheck].every((check) => check.ready);
+  const freezeReady = [writeCheck, revisionCheck, selectionCheck, availabilityCheck, opinionCheck].every((check) => check.ready);
+  const opinionFormComplete = Object.values(opinionForm).every((value) => value.trim());
+  const pendingFreeze = pendingJobs.find((job) => freezeJobIsPending(job.status)) || null;
+  const failedFreeze = pendingJobs.find((job) => job.status === "FAILED") || null;
+  const canFileSelected = selectedFrozen ? canFileFrozen(role, subject, { signed_by: selectedFrozen.signed_by, frozen_by: selectedFrozen.frozen_by }) : false;
+  // Provisioning mirrors the filing rule: current approver/admin role AND stored case APPROVER/ADMIN standing.
+  const canProvision = canApprove && ["APPROVER", "ADMIN"].includes(selectedCase?.members?.[subject] ?? "");
   const lifecycleBusy = pending !== "";
   const authoringLocked = lifecycleBusy;
   const selectedNarrative = selectedBlock?.kind === "NARRATIVE" ? selectedBlock : null;
@@ -510,14 +613,14 @@ export default function ReportStudio({ caseId, role, selectedCase, onDraftStateC
         <div className="field"><label htmlFor="report-pathway">Pathway template</label><select id="report-pathway" value={pathway} onChange={(event) => switchPathway(event.target.value as Pathway, event.currentTarget)}>{pathwayOptions.map(([id, label]) => <option key={id} value={id}>{label}</option>)}</select></div>
         <nav className="report-section-nav" aria-label="Deliverable sections">{blocks.map((block, index) => <button key={block.block_id} type="button" className={selectedBlockId === block.block_id ? "is-active" : ""} aria-current={selectedBlockId === block.block_id ? "true" : undefined} onClick={() => setSelectedBlockId(block.block_id)}><span>{(index + 1).toString().padStart(2, "0")}</span>{workspace.template.blocks.find((item) => item.block_id === block.block_id)?.title || (block.kind === "SCENARIO_EXHIBIT" ? block.title : humanizeCode(block.kind))}<small>{workspace.template.blocks.some((item) => item.block_id === block.block_id) ? "Required" : "Optional"}</small></button>)}</nav>
         <details className="report-optional"><summary>Optional composition</summary><div className="report-optional-actions">{workspace.template.optional_blocks.map((policy) => <button className="button small" type="button" key={policy.kind} onClick={() => addOptional(policy)} disabled={!canWrite || authoringLocked || policy.kind === "SCENARIO_EXHIBIT" || policy.model_dependent && !modelSelection || blocks.filter((block) => block.kind === policy.kind).length >= policy.max_items}>Add {humanizeCode(policy.kind).toLowerCase()}</button>)}</div></details>
-        <div className="report-history"><h3>Draft revisions</h3>{[...workspace.history].reverse().map((revision) => <div className="history-entry" key={revision.id}><strong>v{revision.version}</strong><span>{revision.author} · {formatDate(revision.created_at)}</span><button className="button small" type="button" onClick={() => void restoreRevision(revision)} disabled={!canWrite || lifecycleBusy || draftIsUnsaved || saveState.kind !== "SAVED"}>Restore as new revision</button></div>)}<h3>Frozen / Filed</h3>{[...workspace.frozen_history].reverse().map((item) => <button className="history-entry history-button" type="button" key={item.id} onClick={() => setSelectedFrozen(item)} disabled={lifecycleBusy}><strong>{humanizeCode(item.status)} · Draft v{item.draft_version}</strong><span>{item.frozen_by} · {formatDate(item.frozen_at)}</span></button>)}</div>
+        <div className="report-history"><h3>Draft revisions</h3>{[...workspace.history].reverse().map((revision) => <div className="history-entry" key={revision.id}><strong>v{revision.version}</strong><span>{revision.author} · {formatDate(revision.created_at)}</span><button className="button small" type="button" onClick={() => void restoreRevision(revision)} disabled={!canWrite || lifecycleBusy || draftIsUnsaved || saveState.kind !== "SAVED"}>Restore as new revision</button></div>)}<h3>Frozen / Filed</h3>{[...workspace.frozen_history].reverse().map((item) => <button className="history-entry history-button" type="button" key={item.id} onClick={() => selectFrozen(item)} disabled={lifecycleBusy}><strong>{humanizeCode(item.status)} · Draft v{item.draft_version}</strong><span>{item.frozen_by} · {formatDate(item.frozen_at)}{item.signed_by ? ` · signed by ${item.signed_by}` : ""}</span></button>)}</div>
       </div>
     </aside>
 
     <section className="panel report-compose" aria-labelledby="report-compose-title">
       <div className="panel-header"><h2 id="report-compose-title">Compose</h2><span className={`status ${saveState.kind === "SAVED" ? "success" : saveState.kind === "CONFLICT" || saveState.kind === "ERROR" ? "critical" : "warning"}`} aria-live="polite">{saveLabel(saveState)}</span></div>
       <div className="panel-body report-editor-scroll">
-        {selectedFrozen ? <div className="flow"><p className="status warning">Immutable {humanizeCode(selectedFrozen.status)} review · Draft v{selectedFrozen.draft_version}</p><button className="button small" type="button" onClick={() => setSelectedFrozen(null)} disabled={lifecycleBusy}>Return to shared Draft</button>{selectedFrozen.status === "FROZEN" && canApprove ? <div className="approval-panel"><button className="button primary" type="button" onClick={() => void fileFrozen()} disabled={lifecycleBusy}>{pending === "file" ? "Filing…" : "File exact Frozen version"}</button><div className="field"><label htmlFor="change-request-comment">Required comment to request changes</label><textarea id="change-request-comment" value={changeComment} maxLength={2000} onChange={(event) => setChangeComment(event.target.value)} disabled={lifecycleBusy} /></div><button className="button" type="button" onClick={() => void requestChanges()} disabled={!changeComment.trim() || lifecycleBusy}>{pending === "changes" ? "Creating new Draft…" : "Request changes"}</button></div> : null}{["FILED", "SUPERSEDED"].includes(selectedFrozen.status) ? <div className="proof-actions">{(["md", "pdf", "xlsx"] as const).map((format) => <a className="button small" key={format} download href={`${apiBase}/api/cases/${caseId}/deliverables/by-id/${selectedFrozen.id}/export/${format}`}>{format.toUpperCase()}</a>)}</div> : <p className="muted">Downloads unlock after filing.</p>}</div> : <>
+        {selectedFrozen ? <div className="flow"><p className="status warning">Immutable {humanizeCode(selectedFrozen.status)} review · Draft v{selectedFrozen.draft_version}</p><dl className="state-facts"><dt>Opinion signed by</dt><dd>{selectedFrozen.signed_by || "Unavailable"}</dd><dt>Frozen by</dt><dd>{selectedFrozen.frozen_by}</dd><dt>Approval state</dt><dd>{selectedFrozen.approved_by ? `Filed by ${selectedFrozen.approved_by} · ${formatDate(selectedFrozen.approved_at || "")}` : "Pending approval · the frozen bytes never name an approver"}</dd>{receipt ? <><dt>Filing receipt</dt><dd className="mono" data-filing-receipt>{receipt.receipt_id} · {receipt.receipt_digest}</dd></> : null}</dl><button className="button small" type="button" onClick={() => selectFrozen(null)} disabled={lifecycleBusy}>Return to shared Draft</button>{selectedFrozen.status === "FROZEN" && canApprove && !canFileSelected ? <p className="status idle" data-separation-of-duties>Separation of duties · the opinion signer and the freeze actor cannot file this output</p> : null}{selectedFrozen.status === "FROZEN" && canFileSelected ? <div className="approval-panel"><button className="button primary" type="button" onClick={() => void fileFrozen()} disabled={lifecycleBusy}>{pending === "file" ? "Filing…" : "File exact Frozen version"}</button><div className="field"><label htmlFor="change-request-comment">Required comment to request changes</label><textarea id="change-request-comment" value={changeComment} maxLength={2000} onChange={(event) => setChangeComment(event.target.value)} disabled={lifecycleBusy} /></div><button className="button" type="button" onClick={() => void requestChanges()} disabled={!changeComment.trim() || lifecycleBusy}>{pending === "changes" ? "Creating new Draft…" : "Request changes"}</button></div> : null}{["FILED", "SUPERSEDED"].includes(selectedFrozen.status) ? <div className="proof-actions">{(["md", "pdf", "xlsx"] as const).map((format) => <a className="button small" key={format} download href={`${apiBase}/api/cases/${caseId}/deliverables/by-id/${selectedFrozen.id}/export/${format}`}>{format.toUpperCase()}</a>)}</div> : <p className="muted">Downloads unlock after filing.</p>}</div> : <>
           {recovery ? <section className="report-recovery" aria-labelledby="report-recovery-title"><div><span className="flag">RECOVERY COPY</span><h3 id="report-recovery-title">Unsaved browser copy from {formatDate(new Date(recovery.savedAt).toISOString())}</h3><p>Not shared authority · based on server v{recovery.expectedVersion}. Restore explicitly or retry the server save.</p></div><div className="row-actions"><button className="button small" type="button" onClick={() => applyRecovery(false)} disabled={!canWrite || authoringLocked}>Restore copy</button><button className="button small primary" type="button" onClick={() => applyRecovery(true)} disabled={!canWrite || authoringLocked}>Retry save now</button><button className="button small" type="button" onClick={downloadRecovery}>Download JSON</button><button className="button small" type="button" onClick={discardRecovery} disabled={authoringLocked}>Discard copy</button></div></section> : null}
           {recoveryError ? <StateNote tone="warning" live="status">{recoveryError}</StateNote> : null}
           {selectedNarrative ? <div className="flow"><div className="field"><label htmlFor={`narrative-${selectedNarrative.block_id}`}>{workspace.template.blocks.find((item) => item.block_id === selectedNarrative.block_id)?.title || "Narrative"}</label><textarea ref={editorFocus} id={`narrative-${selectedNarrative.block_id}`} value={selectedNarrative.text} maxLength={20000} rows={8} onChange={(event) => updateNarrative(selectedNarrative.block_id, { text: event.target.value })} disabled={!canWrite || authoringLocked} /><span className="field-meta">{selectedNarrative.text.length.toLocaleString()} / 20,000</span></div><fieldset><legend>Claim authority</legend><label><input type="radio" name={`mode-${selectedNarrative.block_id}`} checked={selectedNarrative.content_mode === "EVIDENCE"} onChange={() => updateNarrative(selectedNarrative.block_id, { content_mode: "EVIDENCE" })} disabled={!canWrite || authoringLocked} />Evidence-bound</label><label><input type="radio" name={`mode-${selectedNarrative.block_id}`} checked={selectedNarrative.content_mode === "ANALYST_JUDGMENT"} onChange={() => updateNarrative(selectedNarrative.block_id, { content_mode: "ANALYST_JUDGMENT" })} disabled={!canWrite || authoringLocked} />Analyst judgment</label></fieldset>{selectedNarrative.content_mode === "EVIDENCE" && !selectedNarrative.citations.length ? <StateNote tone="critical" live="alert">Evidence-bound narrative requires at least one citation.</StateNote> : null}</div> : selectedBlock ? <div className="generated-block-card"><span className="meta-label">{humanizeCode(selectedBlock.kind)}</span><h3>Read-only structured block</h3><p>Calculated values and Scenario outputs are accepted only from the server response.</p>{!workspace.template.blocks.some((item) => item.block_id === selectedBlock.block_id) ? <button className="button small" type="button" onClick={() => removeOptional(selectedBlock.block_id)} disabled={!canWrite || authoringLocked}>Omit block</button> : null}</div> : null}
@@ -534,14 +637,25 @@ export default function ReportStudio({ caseId, role, selectedCase, onDraftStateC
               <dt>Exact saved revision</dt><dd><span className={`status ${revisionCheck.ready ? "success" : "warning"}`}>{revisionCheck.ready ? "Ready" : "Blocked"}</span>{!revisionCheck.ready ? <div className="muted">Wait for the shared Draft to finish saving at this exact version.</div> : null}</dd>
               <dt>Current model selection</dt><dd><span className={`status ${selectionCheck.ready ? "success" : "warning"}`}>{selectionCheck.ready ? "Ready" : "Blocked"}</span>{!selectionCheck.ready ? <div><Link href={withQuery("/model-builder", { case: caseId })}>Open Model Builder</Link> to resolve the stale model authority.</div> : null}</dd>
               <dt>Required model availability</dt><dd><span className={`status ${availabilityCheck.ready ? "success" : "warning"}`}>{availabilityCheck.ready ? "Ready" : "Blocked"}</span>{!availabilityCheck.ready ? <div>{workspace.model_eligibility.active_revision || workspace.model_eligibility.application_build ? <Link href={withQuery("/model-builder", { case: caseId })}>Open Model Builder</Link> : <Link href={withQuery("/run-console", { case: caseId })}>Open Run Console</Link>} to establish the required model prerequisite.</div> : null}</dd>
+              <dt>Current opinion sign-off</dt><dd><span className={`status ${opinionCheck.ready ? "success" : "warning"}`}>{opinionCheck.ready ? "Ready" : "Blocked"}</span>{opinionState.head ? <div className="opinion-record" data-opinion-head><p><strong>{opinionState.head.signed_by}</strong> · {formatDate(opinionState.head.signed_at)} · Draft v{opinionState.head.draft_version}</p><p>{opinionState.head.opinion}</p>{!opinionState.current ? <p className="muted">Stale: {opinionState.reasons.map(humanizeCode).join(", ")}. Sign again on the current revision.</p> : null}</div> : <div className="muted">No signed opinion yet. The analyst signs the opinion, limitations, material overrides and rationale on the exact saved revision.</div>}</dd>
             </dl>
-            <div className="report-actions report-freeze-actions">{canWrite ? <button className="button primary" data-primary-report-action type="button" onClick={() => void freeze()} disabled={!freezeReady || lifecycleBusy}>{pending === "freeze" ? "Freezing…" : `Freeze saved v${workspace.current?.version || "—"}`}</button> : <span className="status idle">Reader mode · Freeze is an analyst action</span>}<span>Freeze revalidates the saved revision and current authority on the server.</span></div>
+            {canWrite ? <form className="opinion-form" data-opinion-form onSubmit={(event) => { event.preventDefault(); void signOpinion(); }}>
+              <div className="field"><label htmlFor="opinion-text">Opinion</label><textarea id="opinion-text" value={opinionForm.opinion} maxLength={4000} onChange={(event) => setOpinionForm((current) => ({ ...current, opinion: event.target.value }))} disabled={authoringLocked} /></div>
+              <div className="field"><label htmlFor="opinion-limitations">Limitations</label><textarea id="opinion-limitations" value={opinionForm.limitations} maxLength={4000} onChange={(event) => setOpinionForm((current) => ({ ...current, limitations: event.target.value }))} disabled={authoringLocked} /></div>
+              <div className="field"><label htmlFor="opinion-overrides">Material overrides (write “None” explicitly)</label><textarea id="opinion-overrides" value={opinionForm.material_overrides} maxLength={4000} onChange={(event) => setOpinionForm((current) => ({ ...current, material_overrides: event.target.value }))} disabled={authoringLocked} /></div>
+              <div className="field"><label htmlFor="opinion-rationale">Rationale</label><textarea id="opinion-rationale" value={opinionForm.rationale} maxLength={8000} onChange={(event) => setOpinionForm((current) => ({ ...current, rationale: event.target.value }))} disabled={authoringLocked} /></div>
+              <div className="report-actions"><button className="button" type="submit" disabled={!exactSavedRevision || !opinionFormComplete || lifecycleBusy}>{pending === "sign" ? "Signing…" : `Sign opinion on saved v${workspace.current?.version || "—"}`}</button><span>The sign-off binds this exact revision, snapshot, source set and model identity; editing any of them requires signing again.</span></div>
+            </form> : null}
+            {pendingFreeze ? <p className="status warning freeze-job" role="status" aria-live="polite" data-freeze-job>Freeze of Draft v{pendingFreeze.draft_version} is {humanizeCode(pendingFreeze.status).toLowerCase()} · the worker publishes and verifies every export before the frozen record exists.</p> : null}
+            {failedFreeze && !pendingFreeze ? <StateNote tone="critical" live="status">Freeze of Draft v{failedFreeze.draft_version} failed: {failedFreeze.error?.code || "DELIVERABLE_RENDER_FAILED"}. Freeze again to requeue.</StateNote> : null}
+            {canProvision ? <form className="opinion-form" data-member-form onSubmit={(event) => { event.preventDefault(); void addMember(); }}><div className="field"><label htmlFor="member-subject">Provision a distinct approver (subject)</label><input id="member-subject" value={memberForm.subject} maxLength={200} onChange={(event) => setMemberForm((current) => ({ ...current, subject: event.target.value }))} disabled={lifecycleBusy} /></div><div className="field"><label htmlFor="member-role">Case standing</label><select id="member-role" value={memberForm.role} onChange={(event) => setMemberForm((current) => ({ ...current, role: event.target.value }))} disabled={lifecycleBusy}><option value="APPROVER">APPROVER</option><option value="ADMIN">ADMIN</option></select></div><div className="report-actions"><button className="button small" type="submit" disabled={!memberForm.subject.trim() || lifecycleBusy}>{pending === "member" ? "Provisioning…" : "Provision member"}</button></div></form> : null}
+            <div className="report-actions report-freeze-actions">{canWrite ? <button className="button primary" data-primary-report-action type="button" onClick={() => void freeze()} disabled={!freezeReady || lifecycleBusy || Boolean(pendingFreeze)}>{pending === "freeze" ? "Freezing…" : `Freeze saved v${workspace.current?.version || "—"}`}</button> : <span className="status idle">Reader mode · Freeze is an analyst action</span>}<span>Freeze revalidates the saved revision, the signed opinion and current authority on the server; the worker publishes every export before the frozen record exists.</span></div>
           </section>
         </>}
         {message ? <p className="status success" role="status" aria-live="polite">{message}</p> : null}{error ? <StateNote tone="critical" live="alert">{error}</StateNote> : null}
       </div>
     </section>
 
-    <section className="report-proof-stage" aria-label="Deliverable paper preview" tabIndex={0}><DeliverableDocument title={selectedFrozen?.payload.template.title || workspace.template.title} issuer={selectedCase ? `${selectedCase.issuer} — ${selectedCase.name}` : workspace.template.title} pathwayLabel={pathwayLabel} status={selectedFrozen?.status || (draftIsUnsaved ? "UNSAVED" : "DRAFT")} version={selectedFrozen?.draft_version || workspace.current?.version} digest={selectedFrozen?.digest || (draftIsUnsaved ? undefined : workspace.current?.digest)} sections={previewSections} /></section>
+    <section className="report-proof-stage" aria-label="Deliverable paper preview" tabIndex={0}><DeliverableDocument title={selectedFrozen?.payload.template.title || workspace.template.title} issuer={selectedCase ? `${selectedCase.issuer} — ${selectedCase.name}` : workspace.template.title} pathwayLabel={pathwayLabel} status={selectedFrozen?.status || (draftIsUnsaved ? "UNSAVED" : "DRAFT")} version={selectedFrozen?.draft_version || workspace.current?.version} digest={selectedFrozen?.digest || (draftIsUnsaved ? undefined : workspace.current?.digest)} sections={previewSections} publication={selectedFrozen?.payload.publication ?? null} /></section>
   </div>;
 }

@@ -483,6 +483,8 @@ class AuditEventResponse(WireModel):
     provider_identity_digest: str | None = None
     intake_id: str | None = None
     source_count: int | None = None
+    opinion_id: str | None = None
+    format: str | None = None
 
 
 # --- document-first intake (Task 8) -------------------------------------------------
@@ -677,12 +679,67 @@ class ModelEligibilityResponse(WireModel):
     default_model_selection: Any | None
 
 
+class OpinionBindingResponse(WireModel):
+    snapshot_id: str
+    source_set_id: str | None
+    source_set_version: int
+    model_identity_digest: str
+    methodology_build_id: str
+
+
+class OpinionResponse(WireModel):
+    """One analyst opinion sign-off (Task 10): append-only, digest-bound to the
+    exact draft revision and every authority it depends on."""
+
+    opinion_id: str
+    case_id: str
+    pathway: str
+    draft_id: str
+    revision_id: str
+    draft_version: int
+    draft_digest: str
+    binding: OpinionBindingResponse
+    opinion: str
+    limitations: str
+    material_overrides: str
+    rationale: str
+    supersedes_opinion_id: str | None
+    signed_by: str
+    signed_at: str
+    opinion_digest: str
+
+
+class OpinionStateResponse(WireModel):
+    head: OpinionResponse | None
+    current: bool
+    reasons: list[str]
+
+
+class FreezeJobResponse(WireModel):
+    """A freeze waiting for, running in, or finished by the worker. The frozen
+    record itself appears in `frozen_history` only once the job is PUBLISHED."""
+
+    job_id: str
+    case_id: str
+    pathway: str
+    status: str
+    draft_version: int
+    draft_digest: str
+    deliverable_id: str | None
+    error: dict[str, str] | None
+    requested_by: str
+    requested_at: str
+    completed_at: str | None
+
+
 class DeliverableWorkspaceResponse(WireModel):
     template: Any
     current: DeliverableRevisionResponse | None
     history: list[DeliverableRevisionResponse]
     frozen_history: list[Any]
     model_eligibility: ModelEligibilityResponse
+    opinion: OpinionStateResponse
+    pending_freezes: list[FreezeJobResponse]
 
 
 class FrozenDeliverableResponse(OpenWireModel):
@@ -693,6 +750,33 @@ class FrozenDeliverableResponse(OpenWireModel):
     draft_version: int
     preview_digest: str
     input_fingerprint: str
+    opinion_id: str | None = None
+    signed_by: str | None = None
+
+
+class FilingReceiptResponse(WireModel):
+    """The detached filing receipt: who approved the exact frozen bytes and
+    when, bound to every digest the approval consumed. Never inside the bytes."""
+
+    schema_version: str
+    receipt_id: str
+    deliverable_id: str
+    case_id: str
+    pathway: str
+    draft_version: int
+    draft_digest: str
+    preview_digest: str
+    input_fingerprint: str
+    approval_hash: str
+    content_digest: str | None
+    exports: dict[str, str]
+    opinion_id: str | None
+    signed_by: str | None
+    frozen_by: str
+    frozen_at: str
+    approved_by: str
+    approved_at: str
+    receipt_digest: str
 
 
 class DeliverableChangeRequestResponse(WireModel):

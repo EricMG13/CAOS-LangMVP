@@ -33,6 +33,7 @@ from ..contracts import (
     FileDeliverableRequest,
     FreezeDeliverableRequest,
     LoanUniverseImportRequest,
+    MemberRequest,
     ModelPreviewRequest,
     ModelRebasePreviewRequest,
     ModelScenarioRequest,
@@ -41,6 +42,7 @@ from ..contracts import (
     NoteRequest,
     OneWaySensitivityRequest,
     RequestDeliverableChangesRequest,
+    SignOpinionRequest,
     StartRunRequest,
     finite_or_none,
 )
@@ -1119,6 +1121,21 @@ def create_app(*, settings: Settings, store: DomainStore, engine: Any) -> FastAP
         visible_revision(case_id, revision_id, request)
         return model_download_response(case_id, revision_id)
 
+    # -- case membership (Task 10: approver provisioning) ----------------------
+
+    @app.post("/api/cases/{case_id}/members", status_code=201, response_model=wire.CaseDetailResponse)
+    def add_case_member(case_id: str, request: Request, body: MemberRequest = Body(...)) -> dict[str, Any]:
+        """One governed mutation provisions a distinct approver. The store owns
+        the rule: the actor must hold case ADMIN/APPROVER standing or the current
+        global ADMIN role; non-members never learn the case exists."""
+        # Stored case APPROVER/ADMIN standing plus a current global writer role,
+        # exactly like filing: a current global ADMIN never escalates a stored
+        # READER or ANALYST on this case (run_sec_audit pins the reader half).
+        who = require_case_approver(case_id, request)
+        if not store.add_member(case_id, who.subject, body.subject, body.role.value, actor_role=None):
+            raise HTTPException(status_code=403, detail="case approver or admin authority required")
+        return _wire_case(store.get_case(case_id))  # type: ignore[arg-type]
+
     # -- deliverables --------------------------------------------------------
 
     _deliverables: dict[str, Any] = {}
@@ -1168,6 +1185,8 @@ def create_app(*, settings: Settings, store: DomainStore, engine: Any) -> FastAP
             "input_fingerprint": record["input_fingerprint"],
             "payload": record["payload"],
             "exports": {fmt: {"format": fmt, **meta} for fmt, meta in (record["exports"] or {}).items()},
+            "opinion_id": record.get("opinion_id"),
+            "signed_by": record.get("signed_by"),
         }
 
     def _dl_workspace(service: Any, case_id: str, pathway: str) -> dict[str, Any]:
@@ -1178,6 +1197,8 @@ def create_app(*, settings: Settings, store: DomainStore, engine: Any) -> FastAP
             "history": [_wire_dl_revision(item, case_id, pathway) for item in service.revision_history(case_id, pathway)],
             "frozen_history": [_wire_dl_frozen(item) for item in workspace["frozen"]],
             "model_eligibility": service.model_eligibility(case_id),
+            "opinion": workspace["opinion"],
+            "pending_freezes": workspace["pending_freezes"],
         }
 
     def require_case_approver(case_id: str, request: Request) -> Any:
@@ -1197,7 +1218,7 @@ def create_app(*, settings: Settings, store: DomainStore, engine: Any) -> FastAP
 
     def deliverable_error(exc: ValueError) -> HTTPException:
         from ..deliverables.service import ResumeNotApplied
-        from ..storage.deliverables import DeliverableVersionConflict
+        from ..storage.deliverables import DeliverableVersionConflict, OpinionHeadConflict
 
         if isinstance(exc, ResumeNotApplied):
             return HTTPException(status_code=409, detail={
@@ -1207,8 +1228,17 @@ def create_app(*, settings: Settings, store: DomainStore, engine: Any) -> FastAP
             return HTTPException(status_code=409, detail={
                 "code": "DELIVERABLE_VERSION_CONFLICT", "current": exc.current,
             })
+        if isinstance(exc, OpinionHeadConflict):
+            return HTTPException(status_code=409, detail={"code": "OPINION_HEAD_CONFLICT", "current": exc.current})
         code = str(exc).split(":", 1)[0]
-        status = 404 if "NOT_FOUND" in code else 409 if ("STALE" in code or "CONFLICT" in code or "CHANGED" in code or "INTEGRITY" in code) else 422
+        if "NOT_FOUND" in code:
+            status = 404
+        elif "NOT_INDEPENDENT" in code:
+            status = 403
+        elif any(token in code for token in ("STALE", "CONFLICT", "CHANGED", "INTEGRITY", "SIGNOFF")):
+            status = 409
+        else:
+            status = 422
         return HTTPException(status_code=status, detail={"code": code})
 
     @app.get("/api/cases/{case_id}/deliverables/{pathway}/draft",
@@ -1250,16 +1280,49 @@ def create_app(*, settings: Settings, store: DomainStore, engine: Any) -> FastAP
             raise HTTPException(status_code=404, detail="revision not found")
         return _wire_dl_revision(revision, case_id, revision["pathway"])
 
-    @app.post("/api/cases/{case_id}/deliverables/{pathway}/freeze", status_code=201,
-              response_model=wire.FrozenDeliverableResponse)
-    def freeze_deliverable(case_id: str, pathway: str, request: Request,
-                           body: FreezeDeliverableRequest = Body(...)) -> dict[str, Any]:
+    @app.post("/api/cases/{case_id}/deliverables/{pathway}/opinion", status_code=201,
+              response_model=wire.OpinionResponse)
+    def sign_deliverable_opinion(case_id: str, pathway: str, request: Request,
+                                 body: SignOpinionRequest = Body(...)) -> dict[str, Any]:
         who = identity(request)
         require_case(store, case_id, who, write=True)
         try:
-            return _wire_dl_frozen(deliverables().freeze(case_id, body, actor=who.subject))
+            return deliverables().sign_opinion(case_id, pathway, body, actor=who.subject)
         except ValueError as exc:
             raise deliverable_error(exc) from exc
+
+    @app.post("/api/cases/{case_id}/deliverables/{pathway}/freeze", status_code=202,
+              response_model=wire.FreezeJobResponse)
+    def freeze_deliverable(case_id: str, pathway: str, request: Request,
+                           body: FreezeDeliverableRequest = Body(...)) -> dict[str, Any]:
+        """Validates and queues the freeze; the worker publishes every export
+        and writes the frozen record, which then appears in `frozen_history`."""
+        who = identity(request)
+        require_case(store, case_id, who, write=True)
+        try:
+            return deliverables().freeze(case_id, body, actor=who.subject)
+        except ValueError as exc:
+            raise deliverable_error(exc) from exc
+
+    @app.get("/api/cases/{case_id}/deliverables/freeze-jobs/{job_id}", response_model=wire.FreezeJobResponse)
+    def get_freeze_job(case_id: str, job_id: str, request: Request) -> dict[str, Any]:
+        require_case(store, case_id, identity(request))
+        job = deliverables().freeze_job(case_id, job_id)
+        if job is None:
+            raise HTTPException(status_code=404, detail="freeze job not found")
+        return job
+
+    @app.get("/api/cases/{case_id}/deliverables/by-id/{deliverable_id}/receipt",
+             response_model=wire.FilingReceiptResponse)
+    def get_filing_receipt(case_id: str, deliverable_id: str, request: Request) -> dict[str, Any]:
+        require_case(store, case_id, identity(request))
+        try:
+            receipt = deliverables().filing_receipt(case_id, deliverable_id)
+        except ValueError as exc:
+            raise deliverable_error(exc) from exc
+        if receipt is None:
+            raise HTTPException(status_code=404, detail="filing receipt not found")
+        return receipt
 
     @app.post("/api/cases/{case_id}/deliverables/by-id/{deliverable_id}/approve",
               response_model=wire.FrozenDeliverableResponse)
@@ -1291,19 +1354,47 @@ def create_app(*, settings: Settings, store: DomainStore, engine: Any) -> FastAP
     def export_deliverable(case_id: str, deliverable_id: str, format_name: str, request: Request):
         from fastapi.responses import Response as _Response
 
-        require_case(store, case_id, identity(request))
+        who = identity(request)
+        require_case(store, case_id, who)
         service = deliverables()
         record = service.frozen_record(case_id, deliverable_id)
         if record is None:
             raise HTTPException(status_code=404, detail="deliverable not found")
-        if record["status"] != "FILED":
+        if record["status"] not in {"FILED", "SUPERSEDED"} or record["filed_by"] is None:
             raise HTTPException(status_code=409, detail={"code": "DELIVERABLE_NOT_FILED"})
         try:
             content, sha256 = service.export(deliverable_id, format_name)
         except ValueError as exc:
             raise deliverable_error(exc) from exc
+        # AUD-009: a served download is audited; a refused one above is only logged.
+        service.record_export_download(case_id, deliverable_id, format_name, actor=who.subject)
         return _Response(content=content, media_type="application/octet-stream",
                          headers={"cache-control": "no-store", "x-caos-sha256": sha256})
+
+    # -- audit package (Task 10): case-scoped, offline-verifiable ------------
+
+    @app.get("/api/cases/{case_id}/audit-package")
+    def export_audit_package(case_id: str, request: Request):
+        """The case's audit package as a zip (binary, OpenAPI-exempt like the
+        other downloads). Everything inside is host-owned metadata, digests and
+        the exact filed bytes; nothing is a secret, a prompt or source text."""
+        from fastapi.responses import Response as _Response
+
+        from ..audit.package import build_case_package, package_digest
+        from ..storage.store import now_iso
+
+        who = identity(request)
+        require_case(store, case_id, who)
+        content = build_case_package(
+            store=store, vault_dir=settings.storage_dir, case_id=case_id,
+            methodology_build_id=engine.bundle.build_id if engine is not None else None,
+            generated_by=who.subject, generated_at=now_iso(),
+        )
+        sha256 = package_digest(content)
+        store.audit_event("audit.package_exported", who.subject, case_id=case_id, sha256=sha256)
+        return _Response(content=content, media_type="application/zip",
+                         headers={"cache-control": "no-store", "x-caos-sha256": sha256,
+                                  "content-disposition": f'attachment; filename="audit-package-{case_id}.zip"'})
 
     # -- OpenAPI: named component schemas for the whole declared contract ----
 

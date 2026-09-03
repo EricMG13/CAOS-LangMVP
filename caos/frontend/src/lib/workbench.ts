@@ -65,6 +65,10 @@ export type CaseRecord = {
   issuer: string;
   sector: string;
   source_count?: number;
+  // Stored case standing per subject (ANALYST | APPROVER | ADMIN | READER):
+  // Report Studio reads it to decide whether the viewer may provision an
+  // approver (Task 10); the server enforces the same rule.
+  members?: Record<string, string>;
   accepted_snapshot_id?: string | null;
   pathway_fit?: { fit: string; message: string };
   current_execution_id?: string | null;

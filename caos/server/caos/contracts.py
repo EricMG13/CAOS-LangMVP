@@ -634,6 +634,21 @@ class FileDeliverableRequest(StrictModel):
     input_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
 
 
+class SignOpinionRequest(StrictModel):
+    """Analyst opinion sign-off (Task 10, DECISIONS §14.19): binds the exact
+    draft revision; every statement is required and explicit ("None" is written,
+    never left blank); the head CAS is the caller's expected current opinion."""
+
+    draft_id: str = Field(min_length=1, max_length=120)
+    draft_version: int = Field(ge=1)
+    draft_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    expected_head_opinion_id: str | None = Field(default=None, max_length=120)
+    opinion: NonBlankBoundaryText = Field(min_length=1, max_length=4000)
+    limitations: NonBlankBoundaryText = Field(min_length=1, max_length=4000)
+    material_overrides: NonBlankBoundaryText = Field(min_length=1, max_length=4000)
+    rationale: NonBlankBoundaryText = Field(min_length=1, max_length=8000)
+
+
 class RequestDeliverableChangesRequest(FileDeliverableRequest):
     comment: BoundaryText = Field(min_length=1, max_length=2000)
 

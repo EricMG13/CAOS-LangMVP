@@ -139,6 +139,48 @@ def freeze_request(revision):
     return FreezeDeliverableRequest(draft_id=revision["draft_id"], draft_version=revision["version"], draft_digest=revision["digest"])
 
 
+# Task 10: freeze needs a current analyst opinion on the exact revision, and the
+# frozen record is written by the worker pass after every export is published.
+OPINION = {
+    "opinion": "Hold: the credit remains adequately covered through the forecast horizon.",
+    "limitations": "Covenant definitions were not disclosed in the supplied pack.",
+    "material_overrides": "None",
+    "rationale": "Leverage and liquidity conclusions rest on the cited annual and interim filings.",
+}
+
+
+def sign_request(revision, *, expected_head_opinion_id=None, **fields):
+    from caos.contracts import SignOpinionRequest
+
+    body = {
+        "draft_id": revision["draft_id"], "draft_version": revision["version"], "draft_digest": revision["digest"],
+        "expected_head_opinion_id": expected_head_opinion_id, **OPINION,
+    }
+    body.update(fields)
+    return SignOpinionRequest.model_validate(body)
+
+
+def sign_min(service, case_id, revision, *, actor="analyst", **fields):
+    head = service.head_opinion(case_id, revision["pathway"])
+    return service.sign_opinion(
+        case_id, revision["pathway"],
+        sign_request(revision, expected_head_opinion_id=head["opinion_id"] if head else None, **fields),
+        actor=actor,
+    )
+
+
+def freeze_now(service, case_id, revision, *, actor="analyst", sign=True):
+    """Sign (unless told not to), request the freeze, drain one worker pass and
+    return the frozen record the worker published."""
+    if sign:
+        sign_min(service, case_id, revision)
+    job = service.freeze(case_id, freeze_request(revision), actor=actor)
+    service.run_pending_freezes()
+    record = service.frozen_record_for_job(case_id, job["job_id"])
+    assert record is not None, service.freeze_job(case_id, job["job_id"])
+    return record
+
+
 def file_request(frozen, **overrides):
     from caos.contracts import FileDeliverableRequest
 
@@ -216,7 +258,7 @@ def save_min_draft(service, store, pathway="FULL_CREDIT", **kwargs):
 
 def freeze_min(service, store, pathway="FULL_CREDIT"):
     case, source, template, revision = save_min_draft(service, store, pathway)
-    frozen = service.freeze(case["id"], freeze_request(revision), actor="analyst")
+    frozen = freeze_now(service, case["id"], revision)
     return case, source, revision, frozen
 
 
@@ -451,7 +493,7 @@ def test_annual_model_generated_table_uses_only_selected_server_outputs(service,
         ["BASE", "FY2027", "517.4", "1.7"],
         ["DOWNSIDE", "FY2027", "423.9", "3.2"],
     ]
-    frozen = service.freeze(case["id"], freeze_request(revision), actor="analyst")
+    frozen = freeze_now(service, case["id"], revision)
     assert frozen["payload"]["content"]["document_sections"] == revision["content"]["document_sections"]
 
 
@@ -537,7 +579,7 @@ async def test_no_model_relative_value_freeze_pins_accepted_run_methodology(
         case["id"], "RELATIVE_VALUE", draft_request(template, source), actor="analyst",
     )
 
-    frozen = service.freeze(case["id"], freeze_request(revision), actor="analyst")
+    frozen = freeze_now(service, case["id"], revision)
 
     assert frozen["payload"]["model"] is None
     assert frozen["payload"]["authority"]["build_id"] == "unbuilt"
@@ -565,7 +607,7 @@ def test_freeze_recomposes_and_rejects_document_authority_drift(service, store):
     service.supersede_accepted_authority_for_tests(case["id"])
 
     with pytest.raises(Exception, match="DELIVERABLE_COMPOSITION_MISMATCH"):
-        service.freeze(case["id"], freeze_request(revision), actor="analyst")
+        freeze_now(service, case["id"], revision)
 
     assert len(service.workspace(case["id"], "FULL_CREDIT")["frozen"]) == 1
 
@@ -679,13 +721,23 @@ def test_freeze_round_trips_on_nothing_but_what_the_draft_wire_serves(client, se
     saved = client.put(url, json=draft_request(template, source).model_dump(mode="json"),
                        headers=ANALYST_H).json()["current"]
 
-    frozen = client.post(
+    signed = client.post(
+        f"/api/cases/{case['id']}/deliverables/FULL_CREDIT/opinion",
+        json={"draft_id": saved["draft_id"], "draft_version": saved["version"], "draft_digest": saved["digest"],
+              "expected_head_opinion_id": None, **OPINION},
+        headers=ANALYST_H,
+    )
+    assert signed.status_code == 201, signed.text
+    queued = client.post(
         f"/api/cases/{case['id']}/deliverables/FULL_CREDIT/freeze",
         json={"draft_id": saved["draft_id"], "draft_version": saved["version"], "draft_digest": saved["digest"]},
         headers=ANALYST_H,
     )
-    assert frozen.status_code == 201, frozen.text
-    assert frozen.json()["draft_version"] == saved["version"]
+    assert queued.status_code == 202, queued.text
+    assert queued.json()["draft_version"] == saved["version"] and queued.json()["status"] == "QUEUED"
+    svc.run_pending_freezes()
+    frozen = client.get(url, headers=ANALYST_H).json()["frozen_history"]
+    assert len(frozen) == 1 and frozen[0]["draft_version"] == saved["version"] and frozen[0]["status"] == "FROZEN"
 
 
 def test_strict_schema_rejects_client_supplied_generated_values(client, settings, store):
@@ -1046,7 +1098,7 @@ def test_live_model_builder_authority_feeds_eligibility_selection_scenario_and_f
     assert content["generated_blocks"][f"blk-{metric_slot}"]["status"] == "READY"
     assert content["generated_blocks"][scenario_slot]["outputs"] == calculated["scenario"]["outputs"]
 
-    frozen = service.freeze(case["id"], freeze_request(revision), actor="analyst")
+    frozen = freeze_now(service, case["id"], revision)
     assert frozen["payload"]["model"]["outputs"] == signed["outputs"], "live revision outputs embedded verbatim"
     assert frozen["payload"]["authority"]["build_id"] == build["id"]
     assert frozen["payload"]["methodology"]["build_id"] == build[
@@ -1101,7 +1153,7 @@ def test_filing_rejects_a_frozen_fallback_after_an_analyst_revision_becomes_acti
         draft_request(template, source, model_selection=fallback),
         actor="analyst",
     )
-    frozen = service.freeze(case["id"], freeze_request(draft), actor="analyst")
+    frozen = freeze_now(service, case["id"], draft)
 
     registry = models.assumption_registry(case["id"], build["id"])
     preview_request = ModelPreviewRequest.model_validate({
@@ -1261,7 +1313,7 @@ async def test_live_incremental_pathway_publishes_against_a_validated_prior_full
         expected_model_authority
     )
 
-    frozen = service.freeze(case["id"], freeze_request(revision), actor="analyst")
+    frozen = freeze_now(service, case["id"], revision)
     assert frozen["payload"]["authority"]["accepted_snapshot_id"] == (
         incremental_snapshot["id"]
     )
@@ -1312,7 +1364,7 @@ def test_downgraded_global_reader_loses_filing_authority_despite_case_standing(c
     human gate must close even though the case row still says APPROVER."""
     svc, case, source, template = http_seed(settings, store)
     revision = svc.save_draft(case["id"], "FULL_CREDIT", draft_request(template, source), actor="analyst")
-    frozen = svc.freeze(case["id"], freeze_request(revision), actor="analyst")
+    frozen = freeze_now(svc, case["id"], revision)
     store.add_member(case["id"], "analyst", "approver-user", "APPROVER", actor_role="ADMIN")
     downgraded = {"x-caos-role": "READER", "x-forwarded-user": "approver-user"}
     body = {"preview_digest": frozen["preview_digest"], "input_fingerprint": frozen["input_fingerprint"]}
@@ -1341,53 +1393,74 @@ def test_canonical_document_is_the_only_cross_format_export_source(service, stor
         "DOWNSIDE": {"FY2027": {"total_leverage": 5.1}},
     })
     template = service.templates()["FULL_CREDIT"]
+    blocks = required_blocks(template, source, narrative_text=long_narrative)
+    for block in blocks:
+        if block["kind"] == "NARRATIVE":  # the narrative states a figure: cite it (Task 10 judgment rule)
+            block["citations"] = [{"source_id": source["id"], "block_ids": ["b00001"], "claim": "Pinned evidence line supports the opinion."}]
     revision = service.save_draft(
         case["id"], "FULL_CREDIT",
-        draft_request(
-            template,
-            blocks=required_blocks(template, source, narrative_text=long_narrative),
-            model_selection=revision_selection(model),
-        ),
+        draft_request(template, blocks=blocks, model_selection=revision_selection(model)),
         actor="analyst",
     )
-    frozen = service.freeze(case["id"], freeze_request(revision), actor="analyst")
+    frozen = freeze_now(service, case["id"], revision)
     payload = copy.deepcopy(frozen["payload"])
     expected_titles = [section["title"] for section in payload["content"]["document_sections"]]
-    assert payload["renderer"]["version"] == "caos.deliverable-renderer.v2"
+    assert payload["renderer"]["version"] == "caos.deliverable-renderer.v3"
 
-    # Canonical sections are sufficient: no renderer may fall back to the old
-    # generated/block projections once the versioned document exists.
+    # The publication document is sufficient: no renderer may fall back to the
+    # old generated/block projections once the frozen payload carries it.
     payload["content"].pop("blocks")
     payload["content"].pop("generated_blocks")
-    model_section = next(section for section in payload["content"]["document_sections"] if section["section_id"] == "base_downside_model")
+    payload["content"].pop("document_sections")
+    model_section = next(
+        section
+        for page in payload["publication"]["pages"]
+        for section in page["sections"]
+        if section["section_id"] == "base_downside_model"
+    )
     model_section["items"][1][0]["rows"].append(["BASE / FY2028 / total_leverage", "1e309"])
     from caos.publishing.renderers import render_frozen_export
 
+    def subsequence(needles, haystack):
+        position = 0
+        for needle in needles:
+            try:
+                position = haystack.index(needle, position) + 1
+            except ValueError:
+                return False
+        return True
+
     markdown = render_frozen_export(payload, "md").decode("utf-8")
-    markdown_titles = [line[3:] for line in markdown.splitlines() if line.startswith("## ")]
-    assert markdown_titles == expected_titles
+    markdown_titles = [line[4:].split(" · ")[0] for line in markdown.splitlines() if line.startswith("### ")]
+    assert subsequence(expected_titles, markdown_titles), markdown_titles
+    assert markdown_titles[:2] == ["Analyst Opinion", "Opinion Sign-Off"], "the opinion leads the decision page"
+    assert "Source Document Register" in markdown_titles and "Limitations and Open QA" in markdown_titles
 
     from pypdf import PdfReader
 
     pdf = render_frozen_export(payload, "pdf")
     assert pdf == render_frozen_export(payload, "pdf"), "Unicode PDF bytes are deterministic"
     pdf_text = "\n".join(page.extract_text() or "" for page in PdfReader(io.BytesIO(pdf)).pages)
-    pdf_titles = [line[3:] for line in pdf_text.splitlines() if line.startswith("## ")]
-    assert pdf_titles == expected_titles
+    pdf_upper = pdf_text.upper()
+    assert subsequence([title.upper() for title in expected_titles], pdf_upper.split("\n")) or all(
+        title.upper() in pdf_upper for title in expected_titles
+    )
+    assert "ANALYST OPINION" in pdf_upper and "SOURCE DOCUMENT REGISTER" in pdf_upper
 
     from openpyxl import load_workbook
 
     workbook = load_workbook(io.BytesIO(render_frozen_export(payload, "xlsx")))
-    reviewed = workbook["Reviewed Deliverable"]
-    xlsx_titles = [row[2].value for row in reviewed.iter_rows() if row[0].value == "SECTION"]
-    assert xlsx_titles == expected_titles
+    report = workbook["Report"]
+    xlsx_titles = list(dict.fromkeys(row[1] for row in report.iter_rows(min_row=2, values_only=True)))
+    assert subsequence(expected_titles, xlsx_titles), xlsx_titles
+    cells = [cell.value for sheet in workbook.worksheets for row in sheet.iter_rows() for cell in row]
     assert "FY2027" in markdown and "FY2027" in pdf_text
     assert governed_tail in markdown and governed_tail in pdf_text
     assert unicode_marker in markdown and unicode_marker in pdf_text
-    assert any(cell.value == "BASE / FY2027 / total_leverage" for row in reviewed.iter_rows() for cell in row)
-    assert any(cell.value == 3.8 for row in reviewed.iter_rows() for cell in row)
-    assert any(cell.value == "1e309" for row in reviewed.iter_rows() for cell in row)
-    assert any(unicode_marker in str(cell.value) for row in reviewed.iter_rows() for cell in row)
+    assert "BASE / FY2027 / total_leverage" in cells
+    assert 3.8 in cells, "model-owned numbers are typed cells"
+    assert "1e309" in cells, "a non-finite spelling stays text, never a number"
+    assert any(unicode_marker in str(value) for value in cells)
     evidence = list(workbook["Evidence Register"].iter_rows(values_only=True))
     assert evidence[:2] == [
         ("Source", "Blocks", "Claim"),
@@ -1413,7 +1486,7 @@ def test_each_pathway_frozen_payload_renders_substantive_md_pdf_xlsx(service, st
     from openpyxl import load_workbook
 
     book = load_workbook(io.BytesIO(xlsx))
-    assert {"Cover", "Reviewed Deliverable", "Evidence Register", "Revision Record"} <= set(book.sheetnames)
+    assert {"Cover & Control", "Report", "Evidence Register", "Source Document Register", "Revision Record"} <= set(book.sheetnames)
 
 
 def test_freeze_embeds_selected_revision_outputs_assumptions_and_build_payload_verbatim(service, store):
@@ -1425,7 +1498,7 @@ def test_freeze_embeds_selected_revision_outputs_assumptions_and_build_payload_v
         draft_request(template, source, model_selection=revision_selection(model), extra_blocks=[optional_block(template, "GENERATED_METRIC")]),
         actor="analyst",
     )
-    frozen = service.freeze(case["id"], freeze_request(revision), actor="analyst")
+    frozen = freeze_now(service, case["id"], revision)
     pinned = frozen["payload"]["model"]
     assert pinned["outputs"] == model["outputs"], "signed revision outputs embedded verbatim"
     assert pinned["effective_assumptions"] == model["assumptions"], "effective assumptions embedded verbatim"
@@ -1436,10 +1509,13 @@ def test_freeze_embeds_selected_revision_outputs_assumptions_and_build_payload_v
 
 def test_freeze_is_idempotent_under_race_with_one_record_one_thread_one_audit_event(service, store):
     case, source, template, revision = save_min_draft(service, store)
+    sign_min(service, case["id"], revision)
     with ThreadPoolExecutor(max_workers=2) as pool:
         raced = list(pool.map(lambda _: service.freeze(case["id"], freeze_request(revision), actor="analyst"), range(2)))
+    assert len({job["job_id"] for job in raced}) == 1, "racing freeze requests converge on one job"
+    service.run_pending_freezes()
     retried = service.freeze(case["id"], freeze_request(revision), actor="analyst")
-    everyone = raced + [retried]
+    everyone = [service.frozen_record_for_job(case["id"], job["job_id"]) for job in [*raced, retried]]
     assert len({r["deliverable_id"] for r in everyone}) == 1, "one content-addressed frozen record"
     assert len({r["thread_id"] for r in everyone}) == 1, "racing freezes converge on one thread (§10.7)"
     frozen_events = [e for e in service.audit_events_for_tests(case["id"]) if e["action"] == "deliverable.frozen"]
@@ -1450,28 +1526,36 @@ def test_divergent_render_for_same_freeze_identity_is_freeze_conflict(tmp_path, 
     vault = tmp_path / "shared-vault"
     service = make_service(store, vault)
     case, source, template, revision = save_min_draft(service, store)
-    service.freeze(case["id"], freeze_request(revision), actor="analyst")
+    frozen = freeze_now(service, case["id"], revision)
     divergent = make_service(store, vault, renderer_for_tests=lambda payload, fmt: b"DIFFERENT RENDER BYTES")
+    job = divergent.freeze(case["id"], freeze_request(revision), actor="analyst")
+    assert job["status"] == "PUBLISHED" and job["deliverable_id"] == frozen["deliverable_id"], "the identity is already published"
     with pytest.raises(Exception, match="DELIVERABLE_FREEZE_CONFLICT"):
-        divergent.freeze(case["id"], freeze_request(revision), actor="analyst")
+        divergent.rerender_freeze_job_for_tests(job["job_id"])
+    assert service.frozen_record(case["id"], frozen["deliverable_id"])["exports"] == frozen["exports"]
 
 
 def test_freeze_retry_recovers_after_files_publish_but_before_record_commit(
     service, store, monkeypatch
 ):
     case, _source, _template, revision = save_min_draft(service, store)
-    original_insert = service.records.insert_frozen
+    sign_min(service, case["id"], revision)
+    original_publish = service.records.publish_frozen
 
     def fail_before_record(*args, **kwargs):
         raise RuntimeError("injected record commit failure")
 
-    monkeypatch.setattr(service.records, "insert_frozen", fail_before_record)
-    with pytest.raises(RuntimeError, match="injected record commit failure"):
-        service.freeze(case["id"], freeze_request(revision), actor="analyst")
+    monkeypatch.setattr(service.records, "publish_frozen", fail_before_record)
+    job = service.freeze(case["id"], freeze_request(revision), actor="analyst")
+    assert service.run_pending_freezes() == 1
+    assert service.freeze_job(case["id"], job["job_id"])["status"] == "FAILED", "a dead commit fails the job it took"
     assert service.workspace(case["id"], "FULL_CREDIT")["frozen"] == []
 
-    monkeypatch.setattr(service.records, "insert_frozen", original_insert)
-    frozen = service.freeze(case["id"], freeze_request(revision), actor="analyst")
+    monkeypatch.setattr(service.records, "publish_frozen", original_publish)
+    retried = service.freeze(case["id"], freeze_request(revision), actor="analyst")
+    assert retried["job_id"] == job["job_id"] and retried["status"] == "QUEUED", "the retry requeues the same identity"
+    service.run_pending_freezes()
+    frozen = service.frozen_record_for_job(case["id"], job["job_id"])
     assert set(frozen["exports"]) == {"md", "pdf", "xlsx"}
     assert all(service.export(frozen["deliverable_id"], format_name)[0]
                for format_name in frozen["exports"])
@@ -1568,7 +1652,7 @@ def test_gate_approval_hash_is_canonical_sha256_form(service, store):
 def test_http_approval_payload_rejects_caller_owned_authority_fields(client, settings, store):
     svc, case, source, template = http_seed(settings, store)
     revision = svc.save_draft(case["id"], "FULL_CREDIT", draft_request(template, source), actor="analyst")
-    frozen = svc.freeze(case["id"], freeze_request(revision), actor="analyst")
+    frozen = freeze_now(svc, case["id"], revision)
     store.add_member(case["id"], "analyst", "approver-user", "APPROVER", actor_role="ADMIN")
     url = f"/api/cases/{case['id']}/deliverables/by-id/{frozen['deliverable_id']}/approve"
     base = {"preview_digest": frozen["preview_digest"], "input_fingerprint": frozen["input_fingerprint"]}
@@ -1605,7 +1689,7 @@ async def test_gate_revalidates_accepted_artifact_graph_after_freeze(settings, s
     revision = service.save_draft(
         case["id"], "RELATIVE_VALUE", draft_request(template, source), actor="analyst",
     )
-    frozen = service.freeze(case["id"], freeze_request(revision), actor="analyst")
+    frozen = freeze_now(service, case["id"], revision)
     add_approver(store, case)
     engine.forge_node_artifact_for_tests(run["id"], module_id="CP-0", digest="0" * 64)
 
@@ -1642,7 +1726,7 @@ def test_freeze_refuses_stored_revision_content_tampered_without_its_indexed_dig
         )
 
     with pytest.raises(ValueError, match="DELIVERABLE_REVISION_INTEGRITY_FAILED"):
-        service.freeze(case["id"], freeze_request(revision), actor="analyst")
+        freeze_now(service, case["id"], revision)
 
     assert service.records.frozen_for_pathway(case["id"], "FULL_CREDIT") == []
 
@@ -1725,7 +1809,7 @@ def test_authority_move_during_approval_cannot_cross_the_filing_cas(
 def test_stale_or_duplicate_resume_returns_resume_not_applied_never_success(client, settings, store):
     svc, case, source, template = http_seed(settings, store)
     revision = svc.save_draft(case["id"], "FULL_CREDIT", draft_request(template, source), actor="analyst")
-    frozen = svc.freeze(case["id"], freeze_request(revision), actor="analyst")
+    frozen = freeze_now(svc, case["id"], revision)
     store.add_member(case["id"], "analyst", "approver-user", "APPROVER", actor_role="ADMIN")
     url = f"/api/cases/{case['id']}/deliverables/by-id/{frozen['deliverable_id']}/approve"
     body = {"preview_digest": frozen["preview_digest"], "input_fingerprint": frozen["input_fingerprint"]}
@@ -1750,7 +1834,7 @@ def test_later_filing_supersedes_prior_with_pointer_and_terminalizes_its_thread(
         draft_request(template, blocks=required_blocks(template, source, narrative_text="Updated opinion."), expected_version=r1["version"]),
         actor="analyst",
     )
-    frozen_b = service.freeze(case["id"], freeze_request(r2), actor="analyst")
+    frozen_b = freeze_now(service, case["id"], r2)
     service.approve_filing(case["id"], frozen_b["deliverable_id"], file_request(frozen_b), actor="approver-user")
 
     prior = service.frozen_record(case["id"], frozen_a["deliverable_id"])
@@ -1764,7 +1848,7 @@ def test_later_filing_supersedes_prior_with_pointer_and_terminalizes_its_thread(
         draft_request(template, blocks=required_blocks(template, source, narrative_text="Final opinion."), expected_version=r2["version"]),
         actor="analyst",
     )
-    frozen_c = service.freeze(case["id"], freeze_request(r3), actor="analyst")
+    frozen_c = freeze_now(service, case["id"], r3)
     service.approve_filing(case["id"], frozen_c["deliverable_id"], file_request(frozen_c), actor="approver-user")
     prior_filed = service.frozen_record(case["id"], frozen_b["deliverable_id"])
     assert prior_filed["status"] == "SUPERSEDED", "a FILED record is likewise superseded by the next filing"
@@ -1774,7 +1858,7 @@ def test_later_filing_supersedes_prior_with_pointer_and_terminalizes_its_thread(
 def test_http_request_changes_requires_approver_and_nonblank_comment_and_appends_commented_draft(client, settings, store):
     svc, case, source, template = http_seed(settings, store)
     revision = svc.save_draft(case["id"], "FULL_CREDIT", draft_request(template, source), actor="analyst")
-    frozen = svc.freeze(case["id"], freeze_request(revision), actor="analyst")
+    frozen = freeze_now(svc, case["id"], revision)
     store.add_member(case["id"], "analyst", "approver-user", "APPROVER", actor_role="ADMIN")
     url = f"/api/cases/{case['id']}/deliverables/by-id/{frozen['deliverable_id']}/request-changes"
     base = {"preview_digest": frozen["preview_digest"], "input_fingerprint": frozen["input_fingerprint"]}
@@ -1864,7 +1948,7 @@ def test_change_request_revision_conflict_rolls_back_frozen_and_thread_transitio
 def test_http_filing_gate_denies_outsiders_404_readers_403_analysts_403_for_every_global_role(client, settings, store):
     svc, case, source, template = http_seed(settings, store)
     revision = svc.save_draft(case["id"], "FULL_CREDIT", draft_request(template, source), actor="analyst")
-    frozen = svc.freeze(case["id"], freeze_request(revision), actor="analyst")
+    frozen = freeze_now(svc, case["id"], revision)
     store.add_member(case["id"], "analyst", "stored-reader", "READER", actor_role="ADMIN")
     store.add_member(case["id"], "analyst", "stored-analyst", "ANALYST", actor_role="ADMIN")
     url = f"/api/cases/{case['id']}/deliverables/by-id/{frozen['deliverable_id']}/approve"
@@ -1887,7 +1971,7 @@ def test_case_approver_standing_suffices_across_all_global_writer_roles(client, 
         for global_role in ("ANALYST", "APPROVER", "ADMIN"):
             svc, case, source, template = http_seed(settings, store)
             revision = svc.save_draft(case["id"], "FULL_CREDIT", draft_request(template, source), actor="analyst")
-            frozen = svc.freeze(case["id"], freeze_request(revision), actor="analyst")
+            frozen = freeze_now(svc, case["id"], revision)
             subject = f"{case_role.lower()}-{global_role.lower()}"
             store.add_member(case["id"], "analyst", subject, case_role, actor_role="ADMIN")
             url = f"/api/cases/{case['id']}/deliverables/by-id/{frozen['deliverable_id']}/approve"
@@ -1903,7 +1987,7 @@ def test_case_approver_standing_suffices_across_all_global_writer_roles(client, 
 def test_filed_exports_are_byte_exact_sha_verified_and_never_rerendered(client, settings, store):
     svc, case, source, template = http_seed(settings, store)
     revision = svc.save_draft(case["id"], "FULL_CREDIT", draft_request(template, source), actor="analyst")
-    frozen = svc.freeze(case["id"], freeze_request(revision), actor="analyst")
+    frozen = freeze_now(svc, case["id"], revision)
     store.add_member(case["id"], "analyst", "approver-user", "APPROVER", actor_role="ADMIN")
     export_url = f"/api/cases/{case['id']}/deliverables/by-id/{frozen['deliverable_id']}/export/md"
     assert client.get(export_url, headers=ANALYST_H).status_code == 409, "pre-filing downloads are refused"
@@ -1961,7 +2045,7 @@ def test_filing_refuses_export_metadata_substituted_from_another_reviewed_draft(
     first_revision = service.save_draft(
         case["id"], "FULL_CREDIT", draft_request(template, source), actor="analyst"
     )
-    first = service.freeze(case["id"], freeze_request(first_revision), actor="analyst")
+    first = freeze_now(service, case["id"], first_revision)
     second_revision = service.save_draft(
         case["id"],
         "FULL_CREDIT",
@@ -1972,7 +2056,7 @@ def test_filing_refuses_export_metadata_substituted_from_another_reviewed_draft(
         ),
         actor="analyst",
     )
-    second = service.freeze(case["id"], freeze_request(second_revision), actor="analyst")
+    second = freeze_now(service, case["id"], second_revision)
     assert service.export(first["deliverable_id"], "md")[0] != service.export(second["deliverable_id"], "md")[0]
 
     with service.records.engine.begin() as connection:
@@ -2021,7 +2105,7 @@ def test_xlsx_export_neutralizes_formula_text_and_preserves_typed_model_values(s
         draft_request(template, blocks=blocks + [optional_block(template, "GENERATED_METRIC")], model_selection=revision_selection(model)),
         actor="analyst",
     )
-    frozen = service.freeze(case["id"], freeze_request(revision), actor="analyst")
+    frozen = freeze_now(service, case["id"], revision)
     data, _ = service.export(frozen["deliverable_id"], "xlsx")
     from openpyxl import load_workbook
 
@@ -2127,4 +2211,4 @@ def test_frozen_pdf_is_structurally_complete_under_optimized_python():
     completed = subprocess.run([sys.executable, "-O", "-c", script], capture_output=True, text=True)
     assert completed.returncode == 0, completed.stderr
     result = json.loads(completed.stdout)
-    assert result["pages"] == 1 and "Pinned narrative body." in result["text"]
+    assert result["pages"] >= 1 and "Pinned narrative body." in result["text"]

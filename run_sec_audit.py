@@ -82,6 +82,12 @@ BODY_PROBES = {
     ("POST", "/api/cases/{case_id}/deliverables/{pathway}/freeze"): {
         "draft_id": "foreign-draft", "draft_version": 1, "draft_digest": ZERO_DIGEST,
     },
+    ("POST", "/api/cases/{case_id}/deliverables/{pathway}/opinion"): {
+        "draft_id": "foreign-draft", "draft_version": 1, "draft_digest": ZERO_DIGEST,
+        "expected_head_opinion_id": None, "opinion": "audit", "limitations": "audit",
+        "material_overrides": "audit", "rationale": "audit",
+    },
+    ("POST", "/api/cases/{case_id}/members"): {"subject": "audit-member", "role": "APPROVER"},
     ("POST", "/api/cases/{case_id}/deliverables/by-id/{deliverable_id}/approve"): {
         "preview_digest": ZERO_DIGEST, "input_fingerprint": ZERO_DIGEST,
     },

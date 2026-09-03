@@ -69,11 +69,20 @@ def _draft(service, store, case, source):
 
 
 def _freeze(service, case, revision):
-    from caos.contracts import FreezeDeliverableRequest
+    from caos.contracts import FreezeDeliverableRequest, SignOpinionRequest
 
-    return service.freeze(case["id"], FreezeDeliverableRequest(
+    if service.head_opinion(case["id"], "FULL_CREDIT") is None:
+        service.sign_opinion(case["id"], "FULL_CREDIT", SignOpinionRequest(
+            draft_id=revision["draft_id"], draft_version=revision["version"], draft_digest=revision["digest"],
+            opinion="Hold.", limitations="None.", material_overrides="None.", rationale="Cited evidence supports the view.",
+        ), actor="analyst")
+    job = service.freeze(case["id"], FreezeDeliverableRequest(
         draft_id=revision["draft_id"], draft_version=revision["version"], draft_digest=revision["digest"],
     ), actor="analyst")
+    service.run_pending_freezes()
+    record = service.frozen_record_for_job(case["id"], job["job_id"])
+    assert record is not None, service.freeze_job(case["id"], job["job_id"])
+    return record
 
 
 def test_freeze_refuses_a_citation_whose_source_was_withdrawn_after_save(tmp_path):

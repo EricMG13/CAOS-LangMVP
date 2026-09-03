@@ -1,0 +1,36 @@
+{
+ "pages": 3,
+ "headings": [
+  "Analyst Opinion",
+  "Opinion Sign-Off",
+  "Credit Snapshot",
+  "Accepted Analysis",
+  "Analyst Snapshot",
+  "Recommendation",
+  "Thesis and Variant View",
+  "Business and Industry",
+  "Capital Structure",
+  "Base and Downside Model",
+  "Analyst Model View",
+  "Calculated Base and Downside Outputs",
+  "Liquidity and Covenants",
+  "Risks, Catalysts, and Falsifiers",
+  "Monitoring",
+  "Generated Metrics · 01",
+  "Model Appendix",
+  "Evidence Register",
+  "Control Status",
+  "Source Document Register",
+  "Registered Evidence Inventory",
+  "Limitations and Open QA",
+  "Content Origin"
+ ],
+ "first_lines": [
+  "PENDING APPROVAL",
+  "Issuer — Investment Committee Credit Memo",
+  "CAOS / FULL CREDIT / DECISION / PENDING APPROVAL / AS OF Unavailable / <id>... / DRAFT v1",
+  "────────────────────────────────────────────────────────────────────────────────────────────────────",
+  "Opinion owner analyst / signed <timestamp> / model ANALYST_REVISION · build",
+  "<id> · revision <id> · runtime cp_model_v3_python 3 / methodology"
+ ]
+}

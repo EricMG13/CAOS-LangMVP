@@ -209,6 +209,8 @@ try {
     current: reportDraft,
     history: [reportDraft],
     frozen_history: [],
+    opinion: { head: null, current: false, reasons: ["OPINION_SIGNOFF_REQUIRED"] },
+    pending_freezes: [],
     model_eligibility: {
       active_revision: { revision_id: reportRevisionId, build_id: reportBuildId, revision_number: 2, signed_by: "analyst", signed_at: "2026-08-26T09:00:00Z" },
       application_build: { build_id: reportBuildId, accepted_snapshot_id: "snapshot_a11y_report", input_fingerprint: "7".repeat(64), payload_digest: "8".repeat(64), status: "READY" },
