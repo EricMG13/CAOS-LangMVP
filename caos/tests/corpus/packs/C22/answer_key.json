@@ -1,0 +1,39 @@
+{
+  "schema_version": "caos.answer-key.v1",
+  "pack_id": "C22",
+  "version": "1.0.0",
+  "authored_by": "Claude Fable 5.1 (ER-G6 implementer)",
+  "status": "draft-unsigned",
+  "intake": {
+    "status": "started",
+    "route": [
+      "DEEP_RESEARCH",
+      "full"
+    ],
+    "dispositions": {},
+    "refusal_code": null
+  },
+  "expected_facts": [],
+  "conflicts": [],
+  "forbidden_conclusions": [],
+  "cells": {
+    "DEEP_RESEARCH/full": {
+      "outcome": "succeeded",
+      "proves_pathway": true,
+      "refusal_code": null,
+      "model_effect": "DEEP_RESEARCH_REVALIDATION",
+      "readiness": "READY_TO_BUILD",
+      "max_latency_seconds": 900,
+      "prerequisite": "FULL_CREDIT/full",
+      "host_control": {
+        "model_fixtures": true,
+        "calculators": "fixtures",
+        "source_gate": "pass",
+        "gaps": []
+      },
+      "after_run": null
+    }
+  },
+  "research_brief": null,
+  "authoring_note": "The brief, expected synthesis and forbidden conclusions are analyst inputs (BLOCKED EXTERNAL)."
+}

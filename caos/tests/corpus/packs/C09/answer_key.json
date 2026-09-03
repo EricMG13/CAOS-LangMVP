@@ -1,0 +1,94 @@
+{
+  "schema_version": "caos.answer-key.v1",
+  "pack_id": "C09",
+  "version": "1.0.0",
+  "authored_by": "Claude Fable 5.1 (ER-G6 implementer)",
+  "status": "draft-host-control",
+  "intake": {
+    "status": "started",
+    "route": [
+      "FULL_CREDIT",
+      "full"
+    ],
+    "refusal_code": null,
+    "dispositions": {
+      "northstar-10k-fy2024.txt": "used",
+      "northstar-10q-q3-2025.txt": "used",
+      "northstar-q3-2025-earnings.txt": "used",
+      "northstar-fy2025-guidance.txt": "used",
+      "northstar-credit-agreement.txt": "used",
+      "northstar-amendment-2.txt": "used",
+      "northstar-10k-fy2024-copy.txt": "duplicate",
+      "northstar-amendment-3-waiver.txt": "used",
+      "northstar-holiday-menu.txt": "used"
+    }
+  },
+  "expected_facts": [
+    {
+      "id": "F1",
+      "statement": "Amendment 2 leverage covenant reset",
+      "value": "5.50",
+      "unit": "x",
+      "period": "FY2025",
+      "source": "northstar-amendment-2.txt",
+      "match": [
+        "5.50 to 1.00"
+      ],
+      "required": true,
+      "cells": null
+    },
+    {
+      "id": "F2",
+      "statement": "Waiver of the interest coverage test",
+      "value": "waived",
+      "unit": "term",
+      "period": "FY2025-Q3",
+      "source": "northstar-amendment-3-waiver.txt",
+      "match": [
+        "Waiver of the Interest Coverage Ratio"
+      ],
+      "required": true,
+      "cells": null
+    }
+  ],
+  "conflicts": [],
+  "forbidden_conclusions": [
+    {
+      "id": "X1",
+      "description": "The menu is not evidence",
+      "match": [
+        "Lemon tart",
+        "galley menu"
+      ]
+    }
+  ],
+  "cells": {
+    "FULL_CREDIT/full": {
+      "outcome": "succeeded",
+      "proves_pathway": false,
+      "refusal_code": null,
+      "model_effect": "FULL_MODEL",
+      "readiness": "READY_TO_BUILD",
+      "max_latency_seconds": 900,
+      "prerequisite": null,
+      "host_control": {
+        "model_fixtures": true,
+        "calculators": "fixtures",
+        "source_gate": "pass",
+        "gaps": []
+      },
+      "after_run": [
+        {
+          "step": "withdraw",
+          "filename": "northstar-amendment-3-waiver.txt"
+        },
+        {
+          "step": "start_run_excludes",
+          "filename": "northstar-amendment-3-waiver.txt",
+          "pathway": "FULL_CREDIT",
+          "depth": "full"
+        }
+      ]
+    }
+  }
+}

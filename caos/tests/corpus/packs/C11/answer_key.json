@@ -1,0 +1,90 @@
+{
+  "schema_version": "caos.answer-key.v1",
+  "pack_id": "C11",
+  "version": "1.0.0",
+  "authored_by": "Claude Fable 5.1 (ER-G6 implementer)",
+  "status": "draft-host-control",
+  "intake": {
+    "status": "started",
+    "route": [
+      "COVENANT_REFINANCING",
+      "full"
+    ],
+    "dispositions": {
+      "northstar-credit-agreement-no-definitions.txt": "used",
+      "northstar-amendment-2.txt": "used"
+    },
+    "refusal_code": null
+  },
+  "expected_facts": [
+    {
+      "id": "F1",
+      "statement": "Maximum leverage covenant",
+      "value": "5.00",
+      "unit": "x",
+      "period": null,
+      "source": "northstar-credit-agreement-no-definitions.txt",
+      "match": [
+        "5.00 to 1.00"
+      ],
+      "required": true,
+      "cells": null
+    },
+    {
+      "id": "F2",
+      "statement": "Minimum interest coverage covenant",
+      "value": "2.50",
+      "unit": "x",
+      "period": null,
+      "source": "northstar-credit-agreement-no-definitions.txt",
+      "match": [
+        "2.50 to 1.00"
+      ],
+      "required": true,
+      "cells": null
+    }
+  ],
+  "conflicts": [
+    {
+      "id": "K1",
+      "description": "Exact covenant capacity cannot be calculated from the supplied inputs",
+      "match": [
+        "METHODOLOGY_CALCULATION_INCOMPLETE"
+      ],
+      "cells": null
+    }
+  ],
+  "forbidden_conclusions": [
+    {
+      "id": "X1",
+      "description": "No exact headroom figure may be asserted",
+      "match": [
+        "headroom of",
+        "turns of headroom"
+      ]
+    }
+  ],
+  "cells": {
+    "COVENANT_REFINANCING/full": {
+      "outcome": "succeeded",
+      "proves_pathway": false,
+      "refusal_code": null,
+      "model_effect": null,
+      "readiness": null,
+      "max_latency_seconds": 900,
+      "prerequisite": null,
+      "host_control": {
+        "model_fixtures": false,
+        "calculators": {
+          "covenant_headroom": {
+            "tests": []
+          }
+        },
+        "source_gate": "pass",
+        "gaps": [],
+        "note": "covenant_headroom is called with the only inputs the pack supports (no test can be evaluated without financials); the host returns METHODOLOGY_CALCULATION_INCOMPLETE and records it as a limitation on the artifact."
+      },
+      "after_run": null
+    }
+  }
+}

@@ -1,0 +1,88 @@
+{
+  "schema_version": "caos.answer-key.v1",
+  "pack_id": "C05",
+  "version": "1.0.0",
+  "authored_by": "Claude Fable 5.1 (ER-G6 implementer)",
+  "status": "draft-host-control",
+  "intake": {
+    "status": "started",
+    "route": [
+      "FULL_CREDIT",
+      "full"
+    ],
+    "refusal_code": null,
+    "dispositions": {
+      "northstar-10k-fy2024-eur.txt": "used",
+      "northstar-10q-q3-2025.txt": "used",
+      "northstar-credit-agreement.txt": "used"
+    }
+  },
+  "expected_facts": [
+    {
+      "id": "F1",
+      "statement": "FY2024 revenue in euro",
+      "value": "1,050",
+      "unit": "EUR millions",
+      "period": "FY2024",
+      "source": "northstar-10k-fy2024-eur.txt",
+      "match": [
+        "Revenue EUR 1,050 million"
+      ],
+      "required": true,
+      "cells": null
+    },
+    {
+      "id": "F2",
+      "statement": "EUR/USD closing rate",
+      "value": "1.08",
+      "unit": "rate",
+      "period": "FY2024",
+      "source": "northstar-10k-fy2024-eur.txt",
+      "match": [
+        "1.08"
+      ],
+      "required": true,
+      "cells": null
+    }
+  ],
+  "conflicts": [
+    {
+      "id": "K1",
+      "description": "No GBP/USD rate is disclosed for the sterling facility",
+      "match": [
+        "GBP"
+      ],
+      "cells": null
+    }
+  ],
+  "forbidden_conclusions": [
+    {
+      "id": "X1",
+      "description": "No converted sterling figure may be asserted",
+      "match": [
+        "GBP 200 million converted",
+        "sterling converted at"
+      ]
+    }
+  ],
+  "cells": {
+    "FULL_CREDIT/full": {
+      "outcome": "succeeded",
+      "proves_pathway": false,
+      "refusal_code": null,
+      "model_effect": null,
+      "readiness": null,
+      "max_latency_seconds": 900,
+      "prerequisite": null,
+      "host_control": {
+        "model_fixtures": false,
+        "calculators": "fixtures",
+        "source_gate": "pass",
+        "gaps": [
+          "GBP 200 million facility: no GBP/USD rate is disclosed; not converted"
+        ]
+      },
+      "after_run": null
+    }
+  }
+}

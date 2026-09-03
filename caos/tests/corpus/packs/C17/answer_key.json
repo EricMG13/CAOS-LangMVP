@@ -1,0 +1,158 @@
+{
+  "schema_version": "caos.answer-key.v1",
+  "pack_id": "C17",
+  "version": "1.0.0",
+  "authored_by": "Claude Fable 5.1 (ER-G6 implementer)",
+  "status": "draft-host-control",
+  "intake": {
+    "status": "refused",
+    "route": null,
+    "dispositions": {},
+    "refusal_code": "INTAKE_ISSUER_AMBIGUOUS",
+    "note": "The document-first intake refuses the whole 30-document pack: the annual-report PDFs' text layer splits the cover name as 'CARNIV AL CORPORATION & PLC' and the half-year report's cover reads 'RELEASE OF CARNIVAL CORPORATION & PLC', so the host sees three issuers (INTAKE_ISSUER_AMBIGUOUS). The harness scores that refusal and admits the pack through the advanced create-case and source routes. Follow-up recorded in enterprise-task-11-report.md."
+  },
+  "expected_facts": [
+    {
+      "id": "F1",
+      "statement": "FY2025 total revenues",
+      "value": "26,622",
+      "unit": "USD millions",
+      "period": "FY2025",
+      "source": "CCL_2025_form_10K.pdf",
+      "match": [
+        "26,622"
+      ],
+      "required": true,
+      "cells": null
+    },
+    {
+      "id": "F2",
+      "statement": "FY2024 total revenues",
+      "value": "25,021",
+      "unit": "USD millions",
+      "period": "FY2024",
+      "source": "CCL_2025_form_10K.pdf",
+      "match": [
+        "25,021"
+      ],
+      "required": true,
+      "cells": null
+    },
+    {
+      "id": "F3",
+      "statement": "FY2025 net income",
+      "value": "2,760",
+      "unit": "USD millions",
+      "period": "FY2025",
+      "source": "CCL_2025_form_10K.pdf",
+      "match": [
+        "2,760"
+      ],
+      "required": true,
+      "cells": null
+    },
+    {
+      "id": "F4",
+      "statement": "Total debt at November 30, 2025",
+      "value": "27,383",
+      "unit": "USD millions",
+      "period": "FY2025",
+      "source": "CCL_2025_form_10K.pdf",
+      "match": [
+        "27,383"
+      ],
+      "required": true,
+      "cells": null
+    },
+    {
+      "id": "F5",
+      "statement": "Cash and cash equivalents at November 30, 2025",
+      "value": "1,928",
+      "unit": "USD millions",
+      "period": "FY2025",
+      "source": "CCL_2025_form_10K.pdf",
+      "match": [
+        "1,928"
+      ],
+      "required": true,
+      "cells": null
+    },
+    {
+      "id": "F6",
+      "statement": "Scheduled principal payments due in 2026",
+      "value": "2,615",
+      "unit": "USD millions",
+      "period": "FY2026",
+      "source": "CCL_2025_form_10K.pdf",
+      "match": [
+        "2,615"
+      ],
+      "required": true,
+      "cells": null
+    },
+    {
+      "id": "F7",
+      "statement": "FY2025 interest expense net of capitalized interest",
+      "value": "1,349",
+      "unit": "USD millions",
+      "period": "FY2025",
+      "source": "CCL_2025_form_10K.pdf",
+      "match": [
+        "1,349"
+      ],
+      "required": true,
+      "cells": null
+    }
+  ],
+  "conflicts": [],
+  "forbidden_conclusions": [
+    {
+      "id": "X1",
+      "description": "No covenant breach or event of default is evidenced in the pack",
+      "match": [
+        "covenant breach",
+        "event of default has occurred",
+        "in default"
+      ]
+    },
+    {
+      "id": "X2",
+      "description": "No going-concern doubt is evidenced",
+      "match": [
+        "going concern doubt",
+        "substantial doubt about"
+      ]
+    },
+    {
+      "id": "X3",
+      "description": "Refinancing risk is not zero; the pack shows a maturity wall",
+      "match": [
+        "no refinancing risk"
+      ]
+    }
+  ],
+  "cells": {
+    "FULL_CREDIT/full": {
+      "outcome": "succeeded",
+      "proves_pathway": true,
+      "refusal_code": null,
+      "model_effect": "FULL_MODEL",
+      "readiness": "READY_TO_BUILD",
+      "max_latency_seconds": 900,
+      "prerequisite": null,
+      "host_control": {
+        "model_fixtures": true,
+        "calculators": "fixtures",
+        "source_gate": "pass",
+        "gaps": []
+      },
+      "after_run": null
+    }
+  },
+  "benchmark_conclusion": {
+    "status": "BLOCKED EXTERNAL",
+    "owner": "independent credit analyst",
+    "artifact": "a signed benchmark conclusion (view, key drivers, downside trigger) for FY2025",
+    "location": "caos/tests/corpus/packs/C17/answer_key.json::benchmark_conclusion"
+  }
+}

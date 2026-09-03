@@ -1,0 +1,100 @@
+{
+  "schema_version": "caos.answer-key.v1",
+  "pack_id": "C14",
+  "version": "1.0.0",
+  "authored_by": "Claude Fable 5.1 (ER-G6 implementer)",
+  "status": "draft-host-control",
+  "intake": {
+    "status": "started",
+    "route": [
+      "FULL_CREDIT",
+      "full"
+    ],
+    "refusal_code": null,
+    "dispositions": {
+      "sgc-10k-fy2024.txt": "used",
+      "sgc-10q-q3-2025.txt": "used",
+      "sgc-bidi-note.txt": "used",
+      "sgc-control-note.txt": "used"
+    }
+  },
+  "expected_facts": [
+    {
+      "id": "F1",
+      "statement": "FY2024 revenue",
+      "value": "2,310",
+      "unit": "USD millions",
+      "period": "FY2024",
+      "source": "sgc-10k-fy2024.txt",
+      "match": [
+        "Revenue 2,310"
+      ],
+      "required": true,
+      "cells": null
+    },
+    {
+      "id": "F2",
+      "statement": "Issuer name (NFC)",
+      "value": "Société Générale Croisières",
+      "unit": "name",
+      "period": null,
+      "source": "sgc-10k-fy2024.txt",
+      "match": [
+        "Société Générale Croisières"
+      ],
+      "required": true,
+      "cells": null
+    },
+    {
+      "id": "F3",
+      "statement": "Issuer name (NFD source)",
+      "value": "Société Générale Croisières",
+      "unit": "name",
+      "period": null,
+      "source": "sgc-10q-q3-2025.txt",
+      "match": [
+        "Société Générale Croisières"
+      ],
+      "required": true,
+      "cells": null
+    }
+  ],
+  "conflicts": [],
+  "forbidden_conclusions": [
+    {
+      "id": "X1",
+      "description": "No bidirectional override may reach an artifact",
+      "match": [
+        "‮",
+        "‭",
+        "⁦"
+      ]
+    },
+    {
+      "id": "X2",
+      "description": "No control character may reach an artifact",
+      "match": [
+        "\u0000",
+        "\u001f"
+      ]
+    }
+  ],
+  "cells": {
+    "FULL_CREDIT/full": {
+      "outcome": "succeeded",
+      "proves_pathway": false,
+      "refusal_code": null,
+      "model_effect": null,
+      "readiness": null,
+      "max_latency_seconds": 900,
+      "prerequisite": null,
+      "host_control": {
+        "model_fixtures": false,
+        "calculators": "fixtures",
+        "source_gate": "pass",
+        "gaps": []
+      },
+      "after_run": null
+    }
+  }
+}

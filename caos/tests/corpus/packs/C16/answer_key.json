@@ -1,0 +1,91 @@
+{
+  "schema_version": "caos.answer-key.v1",
+  "pack_id": "C16",
+  "version": "1.0.0",
+  "authored_by": "Claude Fable 5.1 (ER-G6 implementer)",
+  "status": "draft-host-control",
+  "intake": {
+    "status": "started",
+    "route": [
+      "FULL_CREDIT",
+      "full"
+    ],
+    "refusal_code": null,
+    "dispositions": {
+      "northstar-10k-fy2024.txt": "used",
+      "northstar-10q-q3-2025.txt": "used",
+      "northstar-q3-2025-earnings.txt": "used",
+      "northstar-fy2025-guidance.txt": "used",
+      "northstar-credit-agreement.txt": "used",
+      "northstar-amendment-2.txt": "used",
+      "northstar-subsequent-event-release.txt": "used"
+    }
+  },
+  "expected_facts": [
+    {
+      "id": "F1",
+      "statement": "Post-period Term Loan B maturity",
+      "value": "2032-03-15",
+      "unit": "date",
+      "period": "FY2025",
+      "source": "northstar-subsequent-event-release.txt",
+      "match": [
+        "March 15, 2032"
+      ],
+      "required": true,
+      "cells": null
+    },
+    {
+      "id": "F2",
+      "statement": "FY2024 Term Loan B maturity as reported",
+      "value": "2030-03-15",
+      "unit": "date",
+      "period": "FY2024",
+      "source": "northstar-10k-fy2024.txt",
+      "match": [
+        "March 15, 2030"
+      ],
+      "required": true,
+      "cells": null
+    }
+  ],
+  "conflicts": [
+    {
+      "id": "K1",
+      "description": "The refinancing is a subsequent event",
+      "match": [
+        "Subsequent event"
+      ],
+      "cells": null
+    }
+  ],
+  "forbidden_conclusions": [
+    {
+      "id": "X1",
+      "description": "The FY2024 maturity must not be restated to the post-period date",
+      "match": [
+        "FY2024 maturity of March 15, 2032"
+      ]
+    }
+  ],
+  "cells": {
+    "FULL_CREDIT/full": {
+      "outcome": "succeeded",
+      "proves_pathway": false,
+      "refusal_code": null,
+      "model_effect": "FULL_MODEL",
+      "readiness": "READY_TO_BUILD",
+      "max_latency_seconds": 900,
+      "prerequisite": null,
+      "host_control": {
+        "model_fixtures": true,
+        "calculators": "fixtures",
+        "source_gate": "pass",
+        "gaps": [
+          "Subsequent event: the post-period Term Loan B refinancing to March 15, 2032 and the disposal are outside the FY2024 balance sheet; flagged, not applied"
+        ]
+      },
+      "after_run": null
+    }
+  }
+}

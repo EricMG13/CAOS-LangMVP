@@ -540,3 +540,32 @@ async def test_unavailable_routes_refuse_without_pinning_30_document_case(client
             json={"pathway": pathway, "depth": depth.value, "research_brief": RESEARCH_BRIEF},
         )
         assert response.status_code == 422, response.text
+
+
+@requires_corpus
+@pytest.mark.skipif(not CORPUS_FULL, reason="the harness cell over the whole pack is nightly (CORPUS_FULL=1) evidence")
+def test_qualification_harness_scores_the_carnival_pack_under_host_control(tmp_path: Path):
+    """Task 11: one qualification cell (C01, Full Credit, full) runs end to end
+    through the harness under the answer-keyed host control — intake refusal
+    observed and scored, the pack admitted, the run driven, accepted and built,
+    every dimension scored, the result bound to identity, corpus, build, date,
+    expiry and reviewer. Orchestration proof only: the result reads
+    host_control and can never read QUALIFIED."""
+    out = tmp_path / "evidence"
+    completed = subprocess.run(
+        [sys.executable, str(CORPUS / "qualify.py"), "cell", "--binding", "host_control", "--pack", "C01",
+         "--pathway", "FULL_CREDIT", "--depth", "full", "--reviewer", "suite", "--out", str(out)],
+        cwd=CORPUS.parents[2],
+        env={**os.environ, "ANTHROPIC_API_KEY": "", "OPENROUTER_API_KEY": "", "CAOS_PROVIDER": ""},
+        capture_output=True, text=True, check=False,
+    )
+    summary = json.loads(completed.stdout[completed.stdout.index("{"):])
+    assert completed.returncode == 0, summary
+    retained = json.loads(next(out.rglob("rep-*.json")).read_text())
+    dimensions = retained["scores"]["dimensions"]
+    assert retained["verdict"] == "pass" and retained["binding"]["qualification_status"] == "host_control"
+    assert dimensions["document_use"]["detail"]["problems"] == []
+    assert dimensions["facts"]["detail"]["required_failed"] == []
+    assert dimensions["model_effect"]["detail"]["build_status"] == "READY"
+    assert dimensions["citations"]["pass"] and dimensions["unsupported_claims"]["pass"]
+    assert retained["corpus"]["approval"]["scope"] == "host_control"

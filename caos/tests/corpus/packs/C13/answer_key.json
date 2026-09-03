@@ -1,0 +1,58 @@
+{
+  "schema_version": "caos.answer-key.v1",
+  "pack_id": "C13",
+  "version": "1.0.0",
+  "authored_by": "Claude Fable 5.1 (ER-G6 implementer)",
+  "status": "draft-host-control",
+  "intake": null,
+  "expected_facts": [],
+  "conflicts": [],
+  "forbidden_conclusions": [],
+  "cells": {
+    "FULL_CREDIT/full": {
+      "outcome": "ingest",
+      "proves_pathway": false,
+      "refusal_code": null,
+      "model_effect": null,
+      "readiness": null,
+      "max_latency_seconds": 900,
+      "prerequisite": null,
+      "host_control": null,
+      "after_run": null
+    }
+  },
+  "ingest_steps": [
+    {
+      "filename": "northstar-10k-fy2024.txt",
+      "via": "sources",
+      "expect": {
+        "status": 201,
+        "blocks_at_least": 1
+      }
+    },
+    {
+      "filename": "northstar-wide-line.txt",
+      "via": "sources",
+      "expect": {
+        "status": 201,
+        "blocks_at_least": 2
+      }
+    },
+    {
+      "filename": "northstar-oversize.txt",
+      "via": "sources",
+      "expect": {
+        "status": 413,
+        "detail_contains": "source exceeds upload limit"
+      }
+    },
+    {
+      "filename": "northstar-empty.txt",
+      "via": "sources",
+      "expect": {
+        "status": 422,
+        "detail_contains": "source is empty"
+      }
+    }
+  ]
+}

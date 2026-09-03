@@ -1,0 +1,97 @@
+{
+  "schema_version": "caos.answer-key.v1",
+  "pack_id": "C08",
+  "version": "1.0.0",
+  "authored_by": "Claude Fable 5.1 (ER-G6 implementer)",
+  "status": "draft-host-control",
+  "intake": null,
+  "expected_facts": [],
+  "conflicts": [],
+  "forbidden_conclusions": [],
+  "cells": {
+    "RELATIVE_VALUE/full": {
+      "outcome": "ingest",
+      "proves_pathway": false,
+      "refusal_code": null,
+      "model_effect": null,
+      "readiness": null,
+      "max_latency_seconds": 900,
+      "prerequisite": null,
+      "host_control": null,
+      "after_run": null
+    }
+  },
+  "ingest_steps": [
+    {
+      "filename": "marks-valid.xlsx",
+      "via": "loan_universe",
+      "expect": {
+        "status": 201
+      }
+    },
+    {
+      "filename": "marks-hidden-sheet.xlsx",
+      "via": "loan_universe",
+      "expect": {
+        "status": 201
+      }
+    },
+    {
+      "filename": "marks-blank-optional.xlsx",
+      "via": "loan_universe",
+      "expect": {
+        "status": 201
+      }
+    },
+    {
+      "filename": "marks-formula.xlsx",
+      "via": "loan_universe",
+      "expect": {
+        "status": 201
+      },
+      "note": "The importer opens the workbook data_only: a formula cell has no cached value and reads as a blank optional Margin, so the workbook imports; formulas never execute and never reach a figure."
+    },
+    {
+      "filename": "marks-external-link.xlsx",
+      "via": "loan_universe",
+      "expect": {
+        "status": 422,
+        "code": "RV_WORKBOOK_INVALID",
+        "findings": [
+          "RV_PACKAGE_EXTERNAL_LINK"
+        ]
+      }
+    },
+    {
+      "filename": "marks-macro.xlsx",
+      "via": "loan_universe",
+      "expect": {
+        "status": 422,
+        "code": "RV_WORKBOOK_INVALID",
+        "findings": [
+          "RV_PACKAGE_MACRO"
+        ]
+      }
+    },
+    {
+      "filename": "marks-empty.xlsx",
+      "via": "loan_universe",
+      "expect": {
+        "status": 422,
+        "code": "RV_WORKBOOK_INVALID",
+        "findings": [
+          "RV_ROWS_MISSING"
+        ]
+      }
+    },
+    {
+      "filename": "marks-wide.xlsx",
+      "via": "loan_universe",
+      "expect": {
+        "status": 422,
+        "detail_contains": "source exceeds safe extraction limits"
+      },
+      "note": "Refused at the source boundary (MAX_XLSX_EXTRACT_COLUMNS) before the loan-universe importer sees it."
+    }
+  ]
+}

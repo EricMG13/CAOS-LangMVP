@@ -1,0 +1,69 @@
+{
+  "schema_version": "caos.answer-key.v1",
+  "pack_id": "C02",
+  "version": "1.0.0",
+  "authored_by": "Claude Fable 5.1 (ER-G6 implementer)",
+  "status": "draft-host-control",
+  "intake": {
+    "status": "started",
+    "route": [
+      "EARNINGS_UPDATE",
+      "full"
+    ],
+    "refusal_code": null,
+    "dispositions": {
+      "northstar-fy2025-guidance.txt": "used",
+      "northstar-investor-note.txt": "used"
+    }
+  },
+  "expected_facts": [],
+  "conflicts": [],
+  "forbidden_conclusions": [
+    {
+      "id": "X1",
+      "description": "No committee-ready view is supportable",
+      "match": [
+        "committee-ready",
+        "recommend"
+      ]
+    }
+  ],
+  "cells": {
+    "FULL_CREDIT/full": {
+      "outcome": "refused",
+      "proves_pathway": false,
+      "refusal_code": "SOURCE_EVIDENCE_INSUFFICIENT",
+      "model_effect": null,
+      "readiness": null,
+      "max_latency_seconds": 900,
+      "prerequisite": null,
+      "host_control": {
+        "model_fixtures": false,
+        "calculators": "fixtures",
+        "source_gate": "fail",
+        "gaps": [
+          "No audited or interim financial statements were supplied; the source gate fails."
+        ]
+      },
+      "after_run": null
+    },
+    "EARNINGS_UPDATE/full": {
+      "outcome": "refused",
+      "proves_pathway": false,
+      "refusal_code": "SOURCE_EVIDENCE_INSUFFICIENT",
+      "model_effect": null,
+      "readiness": null,
+      "max_latency_seconds": 900,
+      "prerequisite": null,
+      "host_control": {
+        "model_fixtures": false,
+        "calculators": "fixtures",
+        "source_gate": "fail",
+        "gaps": [
+          "No audited or interim financial statements were supplied; the source gate fails."
+        ]
+      },
+      "after_run": null
+    }
+  }
+}

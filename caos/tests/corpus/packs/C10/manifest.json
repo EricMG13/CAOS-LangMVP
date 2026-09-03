@@ -1,0 +1,102 @@
+{
+  "schema_version": "caos.corpus-pack.v1",
+  "pack_id": "C10",
+  "version": "1.0.0",
+  "title": "Relative-value workbook with duplicates, identifier aliases, conflicting rows and dates",
+  "purpose": "C10: duplicate instruments, identifier aliases, date conflicts and blank optional cells through the loan-universe import.",
+  "kind": "negative",
+  "stage": "ingest",
+  "issuer": "Northstar Cruise Holdings Inc",
+  "licence_class": "synthetic",
+  "provenance": "caos/tests/corpus/synthetic.py",
+  "bytes": {
+    "source": "synthetic",
+    "location": "caos/tests/corpus/synthetic.py",
+    "owner": null,
+    "artifact": null
+  },
+  "documents": [
+    {
+      "filename": "marks-valid.xlsx",
+      "sha256": "a66cbf28c3b4cc33f466cce7d68a68daeac7b010eb76e7e8bf8b202d7f7c930d",
+      "media_type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      "document_type": "market_marks",
+      "period": null,
+      "supersession": "current",
+      "provenance": "caos/tests/corpus/synthetic.py::c10_rv_workbooks",
+      "disposition": "used",
+      "analytical_role": "relevant",
+      "reason": "valid workbook"
+    },
+    {
+      "filename": "marks-duplicate-conflict.xlsx",
+      "sha256": "214e8960e2e78227eb32652534d729870a380b888332cccd39340745b5b35856",
+      "media_type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      "document_type": "other",
+      "period": null,
+      "supersession": "current",
+      "provenance": "caos/tests/corpus/synthetic.py::c10_rv_workbooks",
+      "disposition": "used",
+      "analytical_role": "invalid",
+      "reason": "same instrument twice with different marks"
+    },
+    {
+      "filename": "marks-alias-conflict.xlsx",
+      "sha256": "18f6ca7946ede5e65c0580a83e22a0489ea1af1156636f8edcabb0e25f1e7b0a",
+      "media_type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      "document_type": "other",
+      "period": null,
+      "supersession": "current",
+      "provenance": "caos/tests/corpus/synthetic.py::c10_rv_workbooks",
+      "disposition": "used",
+      "analytical_role": "invalid",
+      "reason": "one FIGI under two Bloomberg identifiers"
+    },
+    {
+      "filename": "marks-date-conflict.xlsx",
+      "sha256": "59b9d54d32b7a86475f6f3722cba8b5803036b5807c2d8b5fb37b7d8ba765499",
+      "media_type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      "document_type": "other",
+      "period": null,
+      "supersession": "current",
+      "provenance": "caos/tests/corpus/synthetic.py::c10_rv_workbooks",
+      "disposition": "used",
+      "analytical_role": "invalid",
+      "reason": "two sheets dated differently"
+    },
+    {
+      "filename": "marks-blank-optional.xlsx",
+      "sha256": "d59bd7f04f5f0d624f33d3052b30e336f76e3d55d6ced915fa839e710bf7308d",
+      "media_type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      "document_type": "market_marks",
+      "period": null,
+      "supersession": "current",
+      "provenance": "caos/tests/corpus/synthetic.py::c10_rv_workbooks",
+      "disposition": "used",
+      "analytical_role": "relevant",
+      "reason": "blank optional cells import"
+    }
+  ],
+  "documents_from": null,
+  "applies_to": [
+    {
+      "pathway": "RELATIVE_VALUE",
+      "depth": "full",
+      "outcome": "ingest",
+      "proves_pathway": false
+    }
+  ],
+  "answer_key": {
+    "file": "answer_key.json",
+    "version": "1.0.0",
+    "sha256": "b6b58ff0040d8c371cdcd8c70fd88529b8d9c8ba53026a99dd293a3e2e975020",
+    "approvals": [
+      {
+        "scope": "host_control",
+        "reviewer": "Claude Fable 5.1 (ER-G6 implementer)",
+        "approved_at": "2026-09-03",
+        "note": "host-control attestation of the draft key: orchestration proof only, never analysis"
+      }
+    ]
+  }
+}
