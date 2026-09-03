@@ -526,3 +526,7 @@ is what the evidence supports, nothing more.
   is unchanged; the deliverable smoke and the a11y fixture mock the
   deliverable routes, so a live freeze journey through a running worker is
   not part of the browser gates.
+
+## Pull request
+
+Draft PR to `main`: https://github.com/EricMG13/CAOS-LangMVP/pull/51 (commit `e770a65`, branch `claude/enterprise-report-signing-filing-e14fb4`, base `eea2b29` = current `origin/main`; no rebase was needed).
