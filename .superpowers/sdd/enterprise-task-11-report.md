@@ -164,6 +164,10 @@ $ caos/server/.venv314/bin/python docs/quality_ledger_coverage.py
 routes checked: 54   product files: 283   features: 131
 the ledger documents every route and every product file
 
+$ gh workflow list --all                                    # after the push of 650db54
+.github/workflows/enterprise-qualification.yml  active  349112668   (registered; dispatch with
+   `gh workflow run enterprise-qualification.yml --ref <branch> -f reviewer=<name>`; not dispatched here —
+   the protected environment and its secrets do not exist yet, so a run would be red by design)
 $ python -c "yaml.safe_load(.github/workflows/enterprise-qualification.yml)"
 jobs: [live-matrix]; dispatch inputs: [packs, repetitions, reviewer]; 11 steps; continue-on-error: none;
 uses: actions/cache/restore@55cc8345…, actions/cache/save@55cc8345…, actions/checkout@3d3c42e5…,
