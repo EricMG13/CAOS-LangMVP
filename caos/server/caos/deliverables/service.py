@@ -957,7 +957,7 @@ class DeliverableService:
             },
             "evidence": self._frozen_evidence(case_id, revision["content"]["blocks"]),
             "methodology": {"build_id": methodology_build_id},
-            "renderer": {"version": "caos.deliverable-renderer.v2"},
+            "renderer": {"version": "caos.deliverable-renderer.v3"},
             "input_fingerprint": input_fingerprint,
         }
         thread_id = filing_thread_id(

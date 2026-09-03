@@ -484,3 +484,46 @@ def test_filed_download_is_audited_and_tampering_is_detected_on_download(client,
     assert tampered.status_code == 409 and tampered.json()["detail"]["code"] == "DELIVERABLE_EXPORT_INTEGRITY_FAILED"
     assert len([e for e in svc.audit_events_for_tests(case["id"]) if e["action"] == "deliverable.exported"]) == 1, \
         "a refused download leaves no audit residue"
+
+
+# --- The font pin (CI follow-up, 2026-09-03) -------------------------------------
+# Two CI hosts paginated the same frozen payload differently because pango-view
+# resolved "sans" and "monospace" through each host's fontconfig (Verdana and
+# Andale Mono on a developer Mac, DejaVu on Ubuntu, Noto CJK's Latin in the
+# image). The renderer now ships its own DejaVu bundle, verified on the bytes at
+# use, through a hermetic fontconfig; these two tests pin that seam directly and
+# the cross-format goldens pin its page counts.
+
+_LATIN_PAYLOAD = {
+    "pathway": "FULL_CREDIT",
+    "content": {"blocks": [{"block_id": "b", "slot_id": "s", "kind": "NARRATIVE", "text": "Pinned narrative body. Leverage is manageable."}]},
+    "template": {"block_titles": {}}, "draft": {"version": 1, "digest": "d"}, "preview_digest": "p",
+    "input_fingerprint": "f", "methodology": {"build_id": "b"},
+}
+
+
+def test_pdf_glyphs_come_from_the_vendored_font_bundle_alone():
+    import io
+
+    from pypdf import PdfReader
+
+    from caos.publishing import renderers
+
+    for filename, expected in renderers.FONT_BUNDLE.items():
+        assert hashlib.sha256((renderers.FONT_DIR / filename).read_bytes()).hexdigest() == expected, filename
+    reader = PdfReader(io.BytesIO(renderers.render_frozen_pdf(_LATIN_PAYLOAD)))
+    embedded = {
+        str(font.get("/BaseFont")).split("+")[-1]
+        for page in reader.pages for font in page["/Resources"]["/Font"].values()
+    }
+    assert embedded <= {"DejaVuSans", "DejaVuSans-Bold", "DejaVuSansMono", "DejaVuSansMono-Bold"}, embedded
+    text = "".join(page.extract_text() or "" for page in reader.pages)
+    assert "Pinned narrative body. Leverage is manageable." in text, "kerned pairs extract without a rounding gap"
+
+
+def test_a_font_bundle_that_fails_verification_refuses_to_render(monkeypatch):
+    from caos.publishing import renderers
+
+    monkeypatch.setitem(renderers.FONT_BUNDLE, "DejaVuSans.ttf", "0" * 64)
+    with pytest.raises(ValueError, match="PDF_FONT_BUNDLE_INVALID"):
+        renderers.render_frozen_pdf(_LATIN_PAYLOAD)

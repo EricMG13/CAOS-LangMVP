@@ -132,7 +132,7 @@ _Complete calculated output projection for review._
 - **Model identity:** ANALYST_REVISION · build <id> · revision <id> · runtime cp_model_v3_python 3
 - **Methodology build:** <methodology-build>
 - **Machine assistance:** Provider identity unavailable for the accepted analysis
-- **Renderer:** caos.deliverable-renderer.v2
+- **Renderer:** caos.deliverable-renderer.v3
 - **Approver identity:** Recorded in the detached filing receipt and the audit chain, never in these bytes
 
 ### Source Document Register · Locked · artifact · <id>
@@ -163,4 +163,4 @@ _Every supplied document in the pinned source set with its host disposition; cit
 - Content digest: <sha256>
 - Input fingerprint: <sha256>
 - Methodology build: <methodology-build>
-- Renderer: caos.deliverable-renderer.v2
+- Renderer: caos.deliverable-renderer.v3

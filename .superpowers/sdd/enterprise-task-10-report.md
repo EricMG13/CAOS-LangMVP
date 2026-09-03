@@ -518,6 +518,15 @@ is what the evidence supports, nothing more.
   when `test_worker.py` runs before it in one invocation (18
   `AGENT_EXECUTION_DISABLED` failures; green alone and in collection order):
   not attributed, not fixed here.
+- **CI browser job**: `workbench-smoke.mjs:1251` (focus return after a
+  cancelled browser-history traversal in the model editor) times out in CI
+  on this branch, twice, while passing locally and on `main`'s CI. The step
+  is not touched by this branch; the instrumented failure message on the next
+  run is the next input. Not attributed yet.
+- **Scripts beyond DejaVu's coverage** (CJK, Arabic, Indic) are shaped by the
+  host's fallback fonts; pagination is pinned by absolute line heights but
+  glyph shapes follow the host (`fonts-noto-cjk` in the image). Vendoring a
+  CJK face is the upgrade path if those scripts become routine.
 - **Export media types** remain `application/octet-stream` (wire-visible;
   unchanged by the task's own constraint).
 - **PDF cost**: 90–150 KB per page and 2–10 s per freeze in the worker; a
@@ -526,6 +535,95 @@ is what the evidence supports, nothing more.
   is unchanged; the deliverable smoke and the a11y fixture mock the
   deliverable routes, so a live freeze journey through a running worker is
   not part of the browser gates.
+
+## CI follow-up (2026-09-03): the font pin and the paragraph split
+
+The first CI run of the draft PR (run 33704148181) failed three server tests
+on both interpreters and the browser job.
+
+**What failed and why.**
+`test_publication_goldens_spec[dense]` and `[multilingual]` reported 8 and 4
+PDF pages against goldens of 7 and 3, and
+`test_frozen_pdf_is_structurally_complete_under_optimized_python` could not
+find `Pinned narrative body.` because the PDF extracted as `body .`. The
+renderer asked pango-view for `sans` and `monospace` and each host answered
+differently: Verdana and Andale Mono on the developer Mac (where the goldens
+were generated), DejaVu on Ubuntu, and Noto CJK's Latin glyphs in the image,
+which installs no DejaVu at all. One frozen payload therefore had three
+renderings, and the goldens pinned the Mac's. Regenerating them in CI would
+have been exactly the silent drift the test forbids; the fix is a font pin.
+
+**The pin.** `caos/server/caos/publishing/fonts/` now vendors DejaVu Sans and
+DejaVu Sans Mono (regular and bold, release 2.37, 2.1 MB, Bitstream Vera
+licence in `fonts/LICENSE`). `renderers.FONT_BUNDLE` holds their SHA-256
+digests; `_font_environment` verifies the bytes before a render and refuses
+with `PDF_FONT_BUNDLE_INVALID`, writes a hermetic `fonts.conf` into the render
+workspace (the bundle directory first, the host's fontconfig after it for
+scripts the bundle lacks, Debian's DejaVu package rejected by path), and sets
+`PANGOCAIRO_BACKEND=fontconfig` because Homebrew pango on macOS otherwise
+answers font requests through CoreText and ignores fontconfig entirely — the
+first hermetic experiment rendered Helvetica until that variable was set.
+Every pango-view call now runs `--hinting=none --hint-metrics=off
+--subpixel-positions`: unhinted design advances are identical on every host,
+and subpixel positioning is what turned `body .` back into `body.` (the
+kerned pair `y.` was being rounded into a gap that pypdf read as a space;
+kerning off would also have fixed it, at the cost of the kerning). Every span
+carries an absolute `line_height` (1.2 × size, in Pango units), so a
+fallback face — Noto CJK in the image, Hiragino on the Mac — never moves a
+page break; multilingual paginates identically on both. Masthead metadata is
+wrapped at spaces before pango sees it (`_meta_lines`), because pango's
+word-char wrapping split a build id at its hyphen and the raw hex leaked past
+the golden's identifier normalisation. The renderer version is
+`caos.deliverable-renderer.v3`. `pyproject.toml` declares the bundle as
+package data.
+
+**The paragraph split, found by the inspection.** Rasterising every page of
+the regenerated long-text state showed the narrative overprinting the footer
+and running off the page, followed by blank and heading-only pages. The Task
+10 renderer handed each paragraph to pango as one line, so the paginator —
+which divides an overflowing block by its lines — had nothing to divide, and
+its split step also took the first carried block (the heading) instead of the
+one that overflowed. The committed 33-page golden was that broken render;
+the whole-narrative assertion passed because pypdf extracts glyphs drawn
+below the page edge. Both are fixed: `_prose_lines` pre-wraps paragraphs and
+bullets at 94 columns (main's renderer did the same; the rewrite dropped
+it), and the split step keeps the keep-with-next chain, bisects the
+overflowing block to the largest prefix that measures in, and breaks out when
+a block is indivisible. The long-text golden test now bounds every page to
+between 400 and 8,000 extracted characters, which an overprinted, blank or
+heading-only page cannot satisfy.
+
+**The browser job.** `workbench-smoke.mjs:1251` timed out waiting for focus
+to return to the dirty model editor after a cancelled browser-history
+traversal — on both the original run and a re-run, while the same smoke
+passes locally against a fresh `caos-gates` server and passed in CI on
+`main`. The step is unchanged by this branch and precedes the Report Studio
+journey. The failing wait now reports the active element, any open dialog,
+the URL and the history state instead of a bare timeout, so the next CI run
+says which restoration path ran; the cause is open below.
+
+**Tests added.** `test_pdf_glyphs_come_from_the_vendored_font_bundle_alone`
+(every embedded font is one of the four vendored faces and the kerned
+sentence extracts exactly) and
+`test_a_font_bundle_that_fails_verification_refuses_to_render`, both in
+`test_publication_spec.py`; the long-text per-page bound in the goldens spec.
+
+**Inspection and results.** Every page of every regenerated state was
+rasterised and inspected (see the table below for the counts); every XLSX
+sheet was listed and its only change is the renderer version on the cover.
+
+| Gate | Command | Result |
+| --- | --- | --- |
+| cross-format goldens, regenerated | `CAOS_REGENERATE_GOLDENS=1 caos/server/.venv314/bin/python -m pytest caos/tests/spec/test_publication_goldens_spec.py -q -p no:cacheprovider` | `7 passed in 56.09s`; PDF pages normal 3, dense 8, long_text 39, multilingual 4, held 3, filed 3 (dense and multilingual now equal what CI rendered; long_text was 33 broken pages); every page rasterised with `sips` and read (60 pages); every XLSX sheet listed, the only cell change is `Renderer caos.deliverable-renderer.v3` on the cover |
+| font-pin tests | `… -m pytest caos/tests/spec/test_publication_spec.py -k font_bundle -q` | `2 passed in 0.42s` |
+| full suite | `caos/server/.venv314/bin/python -m pytest caos/tests -q -p no:cacheprovider -W always` | `1098 passed, 2 skipped, 217 warnings in 1343.64s (0:22:23)` (two more tests than the final Task 10 run; `-W always` surfaces the ResourceWarnings CI also lists) |
+| lint | `… -m ruff check --config ruff.toml caos/server caos/tests --exclude caos/server/caos/methodology/vendor` | `All checks passed!` |
+| security audit | `… run_sec_audit.py` | `{'audited_routes': 59, 'case_boundary_routes': 48, 'failures': 0}` |
+| quality ledger | `… docs/quality_ledger_coverage.py` | `routes checked: 54   product files: 278   features: 128` / `the ledger documents every route and every product file` |
+| dependency pins (pyproject changed) | `… -m pytest caos/tests/test_dependency_pins.py -q` | `4 passed` |
+| frontend | `npm run lint` · `npx tsc --noEmit` · `npm run test:unit` · `npm run build` | `ESLint: No issues found`; `TypeScript: No errors found`; `tests 123 pass 123 fail 0`; build exit 0 |
+| workbench smoke, local | `CAOS_URL=http://127.0.0.1:8766 node scripts/workbench-smoke.mjs` against a fresh `caos-gates` host-control server, before and after the instrumented wait | exit 0 both times; `{"timing":{"domContentLoaded":64.1,"firstContentfulPaint":152},"caseRequests":1}` and `{…"domContentLoaded":67.5,"firstContentfulPaint":160…}` |
+| render cost | `--durations` on the golden dump | long_text 39.7 s, dense 3.7 s, multilingual 2.2 s, normal 1.6 s: the bisection measures about eight candidate pages per split, so a 39-page narrative costs about a second a page |
 
 ## Pull request
 

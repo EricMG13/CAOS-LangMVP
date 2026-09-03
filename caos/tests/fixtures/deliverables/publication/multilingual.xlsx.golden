@@ -152,7 +152,7 @@
   ],
   [
    "Renderer",
-   "caos.deliverable-renderer.v2"
+   "caos.deliverable-renderer.v3"
   ],
   [
    "Disclosure · content origin",
@@ -622,7 +622,7 @@
    "Locked",
    "dlv-<sha256>",
    "Renderer",
-   "caos.deliverable-renderer.v2"
+   "caos.deliverable-renderer.v3"
   ],
   [
    "Control",
@@ -736,7 +736,7 @@
   ],
   [
    "Renderer",
-   "caos.deliverable-renderer.v2"
+   "caos.deliverable-renderer.v3"
   ]
  ],
  "Source Document Register": [

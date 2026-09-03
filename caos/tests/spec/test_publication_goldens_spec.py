@@ -124,6 +124,21 @@ def _pdf_text(content: bytes) -> str:
     return "\n".join(page.extract_text() or "" for page in PdfReader(io.BytesIO(content)).pages)
 
 
+def _pdf_body_text(content: bytes) -> str:
+    """Page text without the per-page chrome: the rotated watermark, the
+    masthead title and metadata line, the rules and the footer."""
+    from pypdf import PdfReader
+
+    kept = []
+    for page in PdfReader(io.BytesIO(content)).pages:
+        for line in (page.extract_text() or "").splitlines():
+            stripped = line.strip()
+            if stripped == "PENDING APPROVAL" or stripped.startswith(("CAOS / ", "Issuer — ")) or set(stripped) <= {"─"}:
+                continue
+            kept.append(line)
+    return "\n".join(kept)
+
+
 def _pdf_pages(content: bytes) -> int:
     from pypdf import PdfReader
 
@@ -235,7 +250,21 @@ def test_every_format_carries_the_same_facts_and_matches_its_golden(service, sto
     if state == "long_text":
         body = next(block["text"] for block in payload["content"]["blocks"] if block["kind"] == "NARRATIVE")
         assert body in markdown and body in xlsx_text, "no fixed-line truncation of a long narrative"
-        assert re.sub(r"\s+", "", body) in re.sub(r"\s+", "", pdf_text), "the PDF carries the whole narrative"
+        # The narrative spans pages, so page chrome (watermark, masthead, rules,
+        # footer) interleaves the extracted text; compare the body against the
+        # pages with that chrome removed.
+        assert re.sub(r"\s+", "", body) in re.sub(r"\s+", "", _pdf_body_text(exports["pdf"])), "the PDF carries the whole narrative"
+        # Text extraction also reads glyphs drawn below the page edge, so the
+        # whole-narrative check above cannot see an overprinted page. Bound
+        # every page instead: the chrome alone is about 470 characters and a
+        # heading adds about 130, a letter page holds well under 8,000
+        # characters of 9.5pt prose, so no page is blank, heading-only or
+        # overprinted.
+        from pypdf import PdfReader
+
+        for number, page in enumerate(PdfReader(io.BytesIO(exports["pdf"])).pages, start=1):
+            page_text = page.extract_text() or ""
+            assert 1_000 < len(page_text) < 8_000, f"page {number} is blank, heading-only or overprinted ({len(page_text)} characters)"
     if state == "held":
         assert frozen["status"] == "CHANGES_REQUESTED"
     if state == "filed":

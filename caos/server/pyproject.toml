@@ -57,3 +57,6 @@ include = ["caos*"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+
+[tool.setuptools.package-data]
+caos = ["publishing/fonts/*"]

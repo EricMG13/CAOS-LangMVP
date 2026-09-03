@@ -1248,7 +1248,17 @@ try {
   await discardDraftDialog().waitFor({ state: "hidden" });
   assert.equal(page.url(), dirtyURL, "dismissed dirty-draft warning allowed browser history navigation");
   assert.equal(await firstAssumption.inputValue(), "0.06", "browser history restoration dropped the dirty local forecast value");
-  await page.waitForFunction(() => document.activeElement?.getAttribute("aria-label") === "Revenue growth, FY2025, BASE");
+  await page.waitForFunction(() => document.activeElement?.getAttribute("aria-label") === "Revenue growth, FY2025, BASE").catch(async (error) => {
+    // A bare timeout says nothing about which restoration path ran; report
+    // where focus actually is, whether a modal still holds it, and the
+    // history entry the workspace settled on.
+    const focus = await page.evaluate(() => {
+      const active = document.activeElement;
+      const dialog = document.querySelector('[role="dialog"]');
+      return { tag: active?.tagName, id: active?.id, label: active?.getAttribute("aria-label"), dialog: dialog?.getAttribute("aria-label") ?? null, href: location.href, state: window.history.state };
+    });
+    throw new Error(`focus did not return to the dirty editor after browser history cancelation: ${JSON.stringify(focus)}`, { cause: error });
+  });
   assert.equal(await firstAssumption.evaluate((element) => document.activeElement === element), true, "Escape did not return focus to the dirty editor after browser history cancelation");
   await page.waitForFunction(() => {
     const state = window.history.state;
@@ -1483,7 +1493,7 @@ try {
     ] });
     return {
       schema_version: "caos.deliverable.publication.v1",
-      masthead: { issuer: caseRecord.issuer, case_name: caseRecord.name, case_id: caseRecord.id, report_type: workspace.template.title, pathway, deliverable_id: frozenId, draft_version: workspace.current.version, draft_digest: workspace.current.digest, input_fingerprint: "e".repeat(64), as_of_date: "2026-08-26", run_id: "run_workbench", accepted_snapshot_id: accepted.id, source_set: `${accepted.source_set_id} v1`, model_identity: `ANALYST_REVISION · build ${modelBuildId}`, methodology_build_id: "deploy-v-workbench", machine_assistance: "Provider host_control · model host_control", approval_state: "PENDING APPROVAL", watermark: "PENDING APPROVAL", opinion_owner: opinion.signed_by, opinion_signed_at: opinion.signed_at, opinion_id: opinion.opinion_id, renderer_version: "caos.deliverable-renderer.v2" },
+      masthead: { issuer: caseRecord.issuer, case_name: caseRecord.name, case_id: caseRecord.id, report_type: workspace.template.title, pathway, deliverable_id: frozenId, draft_version: workspace.current.version, draft_digest: workspace.current.digest, input_fingerprint: "e".repeat(64), as_of_date: "2026-08-26", run_id: "run_workbench", accepted_snapshot_id: accepted.id, source_set: `${accepted.source_set_id} v1`, model_identity: `ANALYST_REVISION · build ${modelBuildId}`, methodology_build_id: "deploy-v-workbench", machine_assistance: "Provider host_control · model host_control", approval_state: "PENDING APPROVAL", watermark: "PENDING APPROVAL", opinion_owner: opinion.signed_by, opinion_signed_at: opinion.signed_at, opinion_id: opinion.opinion_id, renderer_version: "caos.deliverable-renderer.v3" },
       pages,
       disclosures: { approval_state: "PENDING APPROVAL", analyst_opinion_owner: opinion.signed_by },
     };
@@ -1619,7 +1629,7 @@ try {
           },
           content: workspace.current.content,
           evidence: [{ source_id: source.id, sha256: source.sha256, block_ids: [source.blocks[0].block_id], withdrawn: false }],
-          methodology: { build_id: "deploy-v-workbench" }, renderer: { version: "caos.deliverable-renderer.v2", contract_digest: "3".repeat(64) }, input_fingerprint: inputFingerprint, preview_digest: previewDigest,
+          methodology: { build_id: "deploy-v-workbench" }, renderer: { version: "caos.deliverable-renderer.v3", contract_digest: "3".repeat(64) }, input_fingerprint: inputFingerprint, preview_digest: previewDigest,
           opinion: { opinion_id: signedOpinion.opinion_id, opinion_digest: signedOpinion.opinion_digest, signed_by: signedOpinion.signed_by, signed_at: signedOpinion.signed_at, opinion: signedOpinion.opinion, limitations: signedOpinion.limitations, material_overrides: signedOpinion.material_overrides, rationale: signedOpinion.rationale, binding: {}, supersedes_opinion_id: signedOpinion.supersedes_opinion_id },
           publication: reportPublication(pathway, workspace, `frozen_report_${frozenSequence}`, signedOpinion),
         },
@@ -1884,7 +1894,7 @@ try {
   assert.equal(await frozenPaper.getByText("123,456.78", { exact: true }).count(), 0, "Frozen preview bypassed canonical document sections");
   const modelAuthorityLabel = frozenPaper.getByText("Locked · model", { exact: true }).first();
   assert.equal(await modelAuthorityLabel.getAttribute("title"), `Authority ${signedReportRevision.id}`);
-  assert.equal(firstFrozen.payload.renderer.version, "caos.deliverable-renderer.v2");
+  assert.equal(firstFrozen.payload.renderer.version, "caos.deliverable-renderer.v3");
   // The frozen paper is the publication document: opinion first, control sheet last, watermark on every page.
   await frozenPaper.getByRole("heading", { name: "Analyst Opinion" }).waitFor();
   await frozenPaper.getByRole("heading", { name: "Source Document Register" }).waitFor();

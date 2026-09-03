@@ -692,3 +692,28 @@ Consolidation note: where §6 conflicts with §10/§11/§12 (output Σ vs Σ+max
     deliverable — a follow-up, not a silent narrowing. The blind rubric review
     by two analysts and an external stakeholder is candidate-only work and
     remains BLOCKED EXTERNAL with its inputs prepared.
+
+    **Addendum (2026-09-03, CI follow-up — the font pin).** The first CI run
+    of this task paginated the PDF goldens differently from the developer Mac
+    (dense 8 pages against 7, multilingual 4 against 3) and extracted
+    "body ." with a stray space: pango-view resolved "sans" and "monospace"
+    through each host's fontconfig — Verdana and Andale Mono on the Mac,
+    DejaVu on Ubuntu, Noto CJK's Latin glyphs in the image, which installs no
+    DejaVu at all — so one frozen payload had three renderings. The fix is a
+    font pin, not a golden update. The renderer vendors DejaVu Sans and DejaVu
+    Sans Mono (regular and bold, release 2.37, Bitstream Vera licence) under
+    `caos/server/caos/publishing/fonts/`, verifies the four files against the
+    digests in `renderers.FONT_BUNDLE` before a render and refuses with
+    `PDF_FONT_BUNDLE_INVALID`, serves them through a hermetic fontconfig
+    (bundle first, the host's configuration after it for the scripts the
+    bundle lacks, Debian's own DejaVu rejected by path) with pango pinned to
+    the fontconfig backend, hinting off, unhinted metrics and subpixel glyph
+    positions, and gives every span an absolute line height so a fallback
+    face (Noto CJK in the image, whatever a developer host has) never moves a
+    page break. Masthead metadata is wrapped at spaces before pango sees it,
+    so a build id never splits at its hyphen. The renderer version is
+    `caos.deliverable-renderer.v3`. The goldens were regenerated under the pin
+    after every page and sheet was inspected, and their page counts now equal
+    what CI rendered. What stays host-dependent is glyph shape for scripts
+    beyond DejaVu's coverage; `fonts-noto-cjk` remains the image's declared
+    fallback.

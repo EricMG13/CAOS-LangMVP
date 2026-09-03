@@ -142,7 +142,12 @@ Standing rules that back them:
   `caos/server/caos/audit/verify_package.py` verifies it with the standard
   library alone, re-rendering the Markdown export from the frozen payload.
   `caos/publishing/markdown.py` is copied verbatim into the verifier and a
-  test pins the copy; change them together.
+  test pins the copy; change them together. PDF text is shaped from the
+  vendored DejaVu bundle (`caos/server/caos/publishing/fonts/`, digests in
+  `renderers.FONT_BUNDLE`, hermetic fontconfig, hinting off) and never from
+  the host's "sans"; the cross-format goldens pin page counts under that
+  bundle, so a renderer change is reviewed by regenerating them
+  (`CAOS_REGENERATE_GOLDENS=1`) after inspecting every page and sheet.
 - `observability.py` — structured JSON logs on stdout (stdlib only). Seven log
   points and no debug channel: run/node transitions (all of them via
   `RunStore._emit`), typed refusals, provider call start/finish, budget
@@ -408,6 +413,13 @@ engine, the bundle, or the routes.
   costs two to ten seconds of worker time; the deliverable spec files take
   about seven minutes for that reason. A single multi-page pango render or a
   shared font subset is the upgrade path.
+- PDF text in scripts the vendored DejaVu bundle does not cover (CJK, Arabic,
+  Indic, …) is shaped by the host's fallback fonts — `fonts-noto-cjk` in the
+  image, whatever a developer Mac has. Every span carries an absolute line
+  height, so pagination does not move with the fallback face, but glyph
+  shapes and advances in those scripts follow the host. Vendoring a CJK face
+  (16 MB and up per weight) is the upgrade path if those scripts become
+  routine.
 - Blocks live in one JSON column on the source row, so `read_evidence` parses
   every block of a source on each call. Measured at the ceiling: a 10 MB source
   costs 17 ms per read, so a run's ~80 reads cost about 1.4 s. Fine at current

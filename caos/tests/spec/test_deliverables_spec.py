@@ -1405,7 +1405,7 @@ def test_canonical_document_is_the_only_cross_format_export_source(service, stor
     frozen = freeze_now(service, case["id"], revision)
     payload = copy.deepcopy(frozen["payload"])
     expected_titles = [section["title"] for section in payload["content"]["document_sections"]]
-    assert payload["renderer"]["version"] == "caos.deliverable-renderer.v2"
+    assert payload["renderer"]["version"] == "caos.deliverable-renderer.v3"
 
     # The publication document is sufficient: no renderer may fall back to the
     # old generated/block projections once the frozen payload carries it.

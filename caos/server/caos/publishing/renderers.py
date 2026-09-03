@@ -8,9 +8,14 @@ and the browser, which draws `payload["publication"]` directly — carry the
 same facts, numbers, units, citations, origin labels, limitations, model
 identity and opinion by construction.
 
-PDF: pango-view shapes every page from Pango markup (system fonts, so any
-script the image's fonts cover renders; `fonts-noto-cjk` ships in the image),
-pages are paginated by measuring candidate pages, tables repeat their header
+PDF: pango-view shapes every page from Pango markup. Fonts are the vendored
+DejaVu bundle under `fonts/` — verified on the bytes at use, served through a
+hermetic fontconfig with hinting off and pango pinned to the fontconfig
+backend — so Latin, Greek and Cyrillic layout is byte-stable across a
+developer Mac, CI and the image. Scripts DejaVu lacks fall back to the host's
+fonts (`fonts-noto-cjk` ships in the image) on absolute per-span line heights,
+so a fallback face never moves a page break. Pages are paginated by measuring
+candidate pages, tables repeat their header
 row across a page split, and a rotated transparent `PENDING APPROVAL`
 watermark is merged under each page with pypdf. XLSX: openpyxl, typed numeric
 cells for model-owned values, formula prefixes neutralised, no formulas, frozen
@@ -20,6 +25,7 @@ Renders are content-addressed, so nothing here reads the clock.
 
 from __future__ import annotations
 
+import hashlib
 import html
 import io
 import math
@@ -58,23 +64,78 @@ BODY_HEIGHT = PAGE_HEIGHT - 2 * MARGIN - FOOTER_HEIGHT
 MONO_COLUMNS = 100  # 8pt monospace on a 504pt line
 _FEATURES = 'font_features="liga=0, clig=0, dlig=0"'
 _INK, _META, _RULE = "#16161e", "#5c5c66", "#9c998e"
+# The font pin (DejaVu 2.37, Bitstream Vera licence in fonts/LICENSE). The
+# bytes are the pin: a host copy of the same family name never substitutes.
+FONT_DIR = Path(__file__).resolve().parent / "fonts"
+FONT_BUNDLE = {
+    "DejaVuSans.ttf": "7da195a74c55bef988d0d48f9508bd5d849425c1770dba5d7bfc6ce9ed848954",
+    "DejaVuSans-Bold.ttf": "e6476c1b80502924294eed40894c5b18e06c181444ca953e5334262df9c27724",
+    "DejaVuSansMono.ttf": "b4a6c3e4faab8773f4ff761d56451646409f29abedd68f05d38c2df667d3c582",
+    "DejaVuSansMono-Bold.ttf": "bce60f1b4421acd9ea51ba6623d7024ecbe6817a953e3654df62a5e6bdf8f769",
+}
+SANS, MONO = "DejaVu Sans", "DejaVu Sans Mono"
+LINE_HEIGHT = 1.2  # absolute line height per span, as a factor of its size
+_HOST_FONT_CONFIGS = ("/etc/fonts/fonts.conf", "/opt/homebrew/etc/fonts/fonts.conf", "/usr/local/etc/fonts/fonts.conf")
+
+
+def _font_environment(workspace: Path) -> dict[str, str]:
+    """Process environment for pango-view: a hermetic fontconfig that lists the
+    verified bundle first and the host's own configuration after it, for the
+    scripts the bundle lacks. Debian's DejaVu package is rejected by path so the
+    vendored bytes answer even where the host ships the same family;
+    PANGOCAIRO_BACKEND pins pango to fontconfig where the host default is
+    CoreText (macOS), so one file answers every font request everywhere."""
+    config = workspace / "fonts.conf"
+    if not config.exists():
+        for filename, expected in FONT_BUNDLE.items():
+            path = FONT_DIR / filename
+            if not path.is_file() or hashlib.sha256(path.read_bytes()).hexdigest() != expected:
+                raise ValueError("PDF_FONT_BUNDLE_INVALID")
+        includes = "".join(f'<include ignore_missing="yes">{_esc(host)}</include>' for host in _HOST_FONT_CONFIGS)
+        config.write_text(
+            '<?xml version="1.0"?><!DOCTYPE fontconfig SYSTEM "fonts.dtd"><fontconfig>'
+            f"<dir>{_esc(FONT_DIR)}</dir><cachedir>{_esc(workspace / 'fontconfig-cache')}</cachedir>{includes}"
+            "<selectfont><rejectfont><glob>/usr/share/fonts/truetype/dejavu/*</glob></rejectfont></selectfont>"
+            "</fontconfig>",
+            encoding="utf-8",
+        )
+    return {**os.environ, "SOURCE_DATE_EPOCH": "0", "FONTCONFIG_FILE": str(config), "PANGOCAIRO_BACKEND": "fontconfig"}
+
+
+def _pango(executable: str, workspace: Path, name: str, text: str, *options: str) -> Path:
+    """One pango-view call under the pinned font environment: hinting off,
+    metrics unhinted and glyphs positioned at subpixel precision, so advances
+    are the design values on every host and a kerned pair ("y.") is not
+    rounded into a gap that text extraction reads as a space."""
+    source, rendered = workspace / f"{name}.txt", workspace / f"{name}.pdf"
+    source.write_text(text, encoding="utf-8")
+    command = [executable, "--no-display", "--pixels", "--hinting=none", "--hint-metrics=off", "--subpixel-positions",
+               *options, f"--output={rendered}", str(source)]
+    try:
+        subprocess.run(command, check=True, capture_output=True, timeout=60, env=_font_environment(workspace))
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise ValueError("PDF_UNICODE_RENDERER_FAILED") from exc
+    return rendered
 
 
 def _esc(text: str) -> str:
     return html.escape(str(text), quote=False)
 
 
-def _span(text: str, *, size: float, weight: str = "normal", family: str = "sans", color: str = _INK) -> str:
+def _span(text: str, *, size: float, weight: str = "normal", family: str = SANS, color: str = _INK) -> str:
     # No letter-spacing anywhere: Pango tracking is emitted as per-glyph
     # positioning and text extraction then reads "A N A L Y S T", which breaks
     # search, copy and the cross-format parity check.
+    # `line_height` as an integer above 1024 is absolute Pango units: the line
+    # is exactly LINE_HEIGHT × size tall whichever face shaped it, so a fallback
+    # font for a script DejaVu lacks never changes where a page breaks.
     attributes = [f'font_family="{family}"', f'size="{int(size * 1024)}"', f'weight="{weight}"',
-                  f'foreground="{color}"', _FEATURES]
+                  f'foreground="{color}"', f'line_height="{int(size * LINE_HEIGHT * 1024)}"', _FEATURES]
     return f"<span {' '.join(attributes)}>{_esc(text)}</span>"
 
 
 def _rule(strong: bool = False) -> str:
-    return _span("─" * MONO_COLUMNS, size=7, family="monospace", color=_INK if strong else _RULE)
+    return _span("─" * MONO_COLUMNS, size=7, family=MONO, color=_INK if strong else _RULE)
 
 
 class _Block:
@@ -122,7 +183,7 @@ def _record_rows(rows: list[list[str]]) -> list[_Block]:
     label_width = min(max(len(str(column)) for column in header) + 1, 24)
     value_width = MONO_COLUMNS - label_width - 2
     header_lines = [
-        _span("Columns: " + " · ".join(str(column) for column in header), size=8, family="monospace", weight="bold"),
+        _span("Columns: " + " · ".join(str(column) for column in header), size=8, family=MONO, weight="bold"),
         _rule(),
     ]
     blocks = [_Block(header_lines, keep_with_next=True)]
@@ -131,8 +192,8 @@ def _record_rows(rows: list[list[str]]) -> list[_Block]:
         for index, column in enumerate(header):
             value = str(row[index]) if index < len(row) else ""
             wrapped = _wrap_cell(value, value_width)
-            lines.append(_span(str(column).ljust(label_width), size=8, family="monospace", color=_META) + "  " + _span(wrapped[0], size=8, family="monospace"))
-            lines.extend(_span(" " * label_width, size=8, family="monospace") + "  " + _span(part, size=8, family="monospace") for part in wrapped[1:])
+            lines.append(_span(str(column).ljust(label_width), size=8, family=MONO, color=_META) + "  " + _span(wrapped[0], size=8, family=MONO))
+            lines.extend(_span(" " * label_width, size=8, family=MONO) + "  " + _span(part, size=8, family=MONO) for part in wrapped[1:])
         lines.append(_span("·", size=6, color=_RULE))
         blocks.append(_Block(lines, repeat_header=header_lines))
     return blocks
@@ -168,7 +229,7 @@ def _mono_table(rows: list[list[str]], *, model_owned: bool) -> list[_Block]:
         ]
 
     def markup(parts: list[str], *, bold: bool) -> str:
-        return _span("  ".join(parts), size=8, family="monospace", weight="bold" if bold else "normal")
+        return _span("  ".join(parts), size=8, family=MONO, weight="bold" if bold else "normal")
 
     header_lines = [markup(parts, bold=True) for parts in cell_lines(rows[0])] + [_rule()]
     blocks = [_Block(header_lines, keep_with_next=True)]
@@ -177,10 +238,22 @@ def _mono_table(rows: list[list[str]], *, model_owned: bool) -> list[_Block]:
     return blocks
 
 
+PROSE_COLUMNS = 94  # DejaVu Sans 9.5pt prose on a 504pt line; pango wraps the rare wider line itself
+
+
+def _prose_lines(text: str, *, indent: str = "") -> list[str]:
+    """A paragraph as one span per visual line. A paragraph handed to pango as
+    a single line cannot be divided at a page break — the paginator halves
+    blocks by their lines — so a long narrative overprinted the footer and ran
+    off the page. Pre-wrapped lines paginate exactly."""
+    parts = textwrap.wrap(text, width=PROSE_COLUMNS, break_on_hyphens=False, subsequent_indent=indent) if text.strip() else []
+    return [_span(part, size=9.5) for part in parts] or [_span(" ", size=9.5)]
+
+
 def _section_blocks(section: dict[str, Any], depth: int) -> list[_Block]:
     heading = [
         _span(section["title"], size=10.5 - depth, weight="bold")
-        + "  " + _span(_origin_label(section), size=7, family="monospace", color=_META),
+        + "  " + _span(_origin_label(section), size=7, family=MONO, color=_META),
         _rule(strong=depth == 0),
     ]
     blocks = [_Block(heading, keep_with_next=True)]
@@ -207,18 +280,18 @@ def _section_blocks(section: dict[str, Any], depth: int) -> list[_Block]:
         for label, value in rows:
             wrapped = textwrap.wrap(str(value), width=MONO_COLUMNS - width - 2, break_long_words=True, break_on_hyphens=False) or [""]
             lines = [
-                _span(str(label).ljust(width), size=8, family="monospace", color=_META) + "  " + _span(wrapped[0], size=8, family="monospace")
+                _span(str(label).ljust(width), size=8, family=MONO, color=_META) + "  " + _span(wrapped[0], size=8, family=MONO)
             ] + [
-                _span(" " * width, size=8, family="monospace") + "  " + _span(part, size=8, family="monospace")
+                _span(" " * width, size=8, family=MONO) + "  " + _span(part, size=8, family=MONO)
                 for part in wrapped[1:]
             ]
             blocks.append(_Block(lines))
     elif kind == "list":
         for row in rows:
-            blocks.append(_Block([_span(f"• {row[0]}", size=9.5)]))
+            blocks.append(_Block(_prose_lines(f"• {row[0]}", indent="  ")))
     else:
         for paragraph in str(section["body"]).split("\n"):
-            blocks.append(_Block([_span(paragraph if paragraph.strip() else " ", size=9.5)]))
+            blocks.append(_Block(_prose_lines(paragraph)))
     if section.get("note"):
         blocks.append(_Block([_span(section["note"], size=7.5, color=_META)]))
     blocks.append(_Block([_span(" ", size=6)]))
@@ -239,37 +312,36 @@ def _pango_view() -> str:
 
 def _shape(executable: str, workspace: Path, name: str, markup: str, *, height: int | None,
            extra: tuple[str, ...] = ()) -> Path:
-    source = workspace / f"{name}.txt"
-    rendered = workspace / f"{name}.pdf"
-    source.write_text(markup, encoding="utf-8")
-    command = [
-        executable, "--no-display", "--markup", "--pixels", "--font=sans 9.5", f"--margin={MARGIN}",
+    return _pango(
+        executable, workspace, name, markup, "--markup", f"--font={SANS} 9.5", f"--margin={MARGIN}",
         f"--width={BODY_WIDTH}", "--wrap=word-char", "--background=transparent", f"--foreground={_INK}",
-        *extra, f"--output={rendered}", str(source),
-    ]
-    if height is not None:
-        command.insert(-2, f"--height={height}")
-    try:
-        subprocess.run(command, check=True, capture_output=True, timeout=60,
-                       env={**os.environ, "SOURCE_DATE_EPOCH": "0"})
-    except (OSError, subprocess.SubprocessError) as exc:
-        raise ValueError("PDF_UNICODE_RENDERER_FAILED") from exc
-    return rendered
+        *extra, *([f"--height={height}"] if height is not None else []),
+    )
+
+
+def _meta_lines(text: str, size: float) -> list[str]:
+    """Masthead metadata wrapped here, at spaces only: pango's word-char
+    wrapping may break a build id at its hyphen, and an identifier split
+    across two lines is neither searchable nor recognisable. DejaVu Sans Mono
+    advances 0.602 em; 0.61 leaves the margin that keeps the line inside."""
+    columns = int(BODY_WIDTH / (0.61 * size))
+    return [_span(part, size=size, family=MONO, color=_META)
+            for part in textwrap.wrap(text, width=columns, break_on_hyphens=False) or [" "]]
 
 
 def _page_markup(masthead: dict[str, Any], page_name: str, blocks: list[_Block], page_number: int, page_count: int,
                  *, first: bool) -> str:
     lines = [
         _span(f"{masthead.get('issuer', '')} — {masthead.get('report_type', '')}", size=18 if first else 11, weight="bold"),
-        _span(_masthead_line(masthead, page_name), size=7, family="monospace", color=_META),
+        *_meta_lines(_masthead_line(masthead, page_name), size=7),
         _rule(strong=True),
     ]
     if first:
-        lines.append(_span(
+        lines.extend(_meta_lines(
             f"Opinion owner {masthead.get('opinion_owner', '')} / signed {masthead.get('opinion_signed_at', '')} / "
             f"model {masthead.get('model_identity', '')} / methodology {masthead.get('methodology_build_id', '')}",
-            size=7.5, family="monospace", color=_META))
-        lines.append(_span(f"Machine assistance: {masthead.get('machine_assistance', '')}", size=7.5, family="monospace", color=_META))
+            size=7.5))
+        lines.extend(_meta_lines(f"Machine assistance: {masthead.get('machine_assistance', '')}", size=7.5))
     lines.append(_span(" ", size=6))
     for block in blocks:
         lines.extend(block.lines)
@@ -280,7 +352,7 @@ def _footer_markup(masthead: dict[str, Any], page_number: int, page_count: int) 
     footer_left = f"CAOS / {_short_id(masthead.get('deliverable_id', ''))} / {masthead.get('approval_state', PENDING_APPROVAL)} / content digest in Revision Record"
     footer_right = f"PAGE {page_number} OF {page_count}"
     gap = max(1, MONO_COLUMNS - len(footer_left) - len(footer_right))
-    return _rule(strong=True) + "\n" + _span(footer_left + " " * gap + footer_right, size=7, family="monospace", color=_META)
+    return _rule(strong=True) + "\n" + _span(footer_left + " " * gap + footer_right, size=7, family=MONO, color=_META)
 
 
 def _measure(executable: str, workspace: Path, markup: str) -> float:
@@ -294,17 +366,8 @@ def _measure(executable: str, workspace: Path, markup: str) -> float:
 def _footer_page(executable: str, workspace: Path, markup: str):
     from pypdf import PdfReader
 
-    source = workspace / "footer.txt"
-    rendered = workspace / "footer.pdf"
-    source.write_text(markup, encoding="utf-8")
-    try:
-        subprocess.run(
-            [executable, "--no-display", "--markup", "--pixels", "--margin=0", f"--width={BODY_WIDTH}",
-             "--background=transparent", f"--foreground={_INK}", f"--output={rendered}", str(source)],
-            check=True, capture_output=True, timeout=60, env={**os.environ, "SOURCE_DATE_EPOCH": "0"},
-        )
-    except (OSError, subprocess.SubprocessError) as exc:
-        raise ValueError("PDF_UNICODE_RENDERER_FAILED") from exc
+    rendered = _pango(executable, workspace, "footer", markup, "--markup", "--margin=0", f"--width={BODY_WIDTH}",
+                      "--background=transparent", f"--foreground={_INK}")
     return PdfReader(rendered).pages[0]
 
 
@@ -321,7 +384,7 @@ def _estimate(lines: list[str]) -> float:
         sizes = [int(match) / 1024 for match in _SIZE_ATTRIBUTE.findall(line)]
         size = max(sizes) if sizes else 9.5
         characters = len(_TAG.sub("", line))
-        per_line = 100 if "monospace" in line else max(40, int(95 * 9.5 / size))
+        per_line = 100 if MONO in line else max(40, int(95 * 9.5 / size))
         total += max(1, -(-characters // per_line)) * size * 1.45
     return total
 
@@ -340,7 +403,7 @@ def _paginate(executable: str, workspace: Path, masthead: dict[str, Any], pages:
     stream: list[tuple[str, _Block]] = []
     for page in pages:
         band = _Block([
-            _span(page["name"].upper(), size=8, weight="bold", family="monospace", color=_META),
+            _span(page["name"].upper(), size=8, weight="bold", family=MONO, color=_META),
             _span(" ", size=4),
         ], keep_with_next=True)
         stream.append((page["name"], band))
@@ -365,6 +428,19 @@ def _paginate(executable: str, workspace: Path, masthead: dict[str, Any], pages:
         def blocks_of(items: list[tuple[str, _Block]]) -> list[_Block]:
             return [block for _name, block in items]
 
+        def fit_prefix(placed: list[tuple[str, _Block]], name: str, block: _Block, *, floor: int) -> int:
+            """Largest number of `block`'s leading lines that still measure in
+            after `placed` (bisection; `floor` lines are accepted unmeasured)."""
+            low, high = floor, max(floor, len(block.lines) - 1)
+            while low < high:
+                middle = (low + high + 1) // 2
+                candidate = blocks_of([*placed, (name, _Block(block.lines[:middle]))])
+                if _measure(executable, workspace, _page_markup(masthead, page_name, candidate, 99, 99, first=first)) <= BODY_HEIGHT:
+                    low = middle
+                else:
+                    high = middle - 1
+            return low
+
         while True:
             markup = _page_markup(masthead, page_name, blocks_of(current), 99, 99, first=first)
             if _measure(executable, workspace, markup) <= BODY_HEIGHT or (len(current) == 1 and len(current[0][1].lines) == 1):
@@ -373,11 +449,20 @@ def _paginate(executable: str, workspace: Path, masthead: dict[str, Any], pages:
             while current and current[-1][1].keep_with_next:
                 carried.insert(0, current.pop())
             if not current:
-                name, oversized = carried.pop(0)
-                half = max(1, len(oversized.lines) // 2)
-                current.append((name, _Block(oversized.lines[:half])))
-                carried.insert(0, (name, _Block(oversized.lines[half:], keep_with_next=oversized.keep_with_next,
-                                                repeat_header=oversized.repeat_header)))
+                # Everything carried is a keep-with-next chain ending in the
+                # block that overflowed. The chain stays; the overflowing block
+                # is split at the largest prefix that measures in (bisection),
+                # so a long table or paragraph fills the page instead of
+                # leaving it heading-only, blank, or overprinted.
+                name, oversized = carried.pop()
+                current.extend(carried)
+                carried = []
+                low = fit_prefix(current, name, oversized, floor=1)
+                current.append((name, _Block(oversized.lines[:low])))
+                if not oversized.lines[low:]:
+                    break  # indivisible: one line taller than the body; accept it rather than loop
+                carried.append((name, _Block(oversized.lines[low:], keep_with_next=oversized.keep_with_next,
+                                             repeat_header=oversized.repeat_header)))
             if carried and carried[0][1].repeat_header:
                 carried.insert(0, (carried[0][0], _Block(list(carried[0][1].repeat_header), keep_with_next=True)))
             pending = carried + pending
@@ -405,6 +490,17 @@ def _paginate(executable: str, workspace: Path, masthead: dict[str, Any], pages:
                     break
                 batch = batch[: len(batch) // 2]
             if not batch:
+                # Nothing more fits whole. Split the next block into the room
+                # that is left — at least two lines, so a heading is never left
+                # alone at a page foot and a paragraph never opens with a
+                # single orphaned line on the page after it.
+                name, block = pending[0]
+                if len(block.lines) >= 4:
+                    low = fit_prefix(current, name, block, floor=0)
+                    if 2 <= low <= len(block.lines) - 2:
+                        current.append((name, _Block(block.lines[:low])))
+                        pending[0] = (name, _Block(block.lines[low:], keep_with_next=block.keep_with_next,
+                                                   repeat_header=block.repeat_header))
                 break
         carried = []
         while len(current) > 1 and current[-1][1].keep_with_next and pending:
@@ -422,18 +518,9 @@ def _paginate(executable: str, workspace: Path, masthead: dict[str, Any], pages:
 def _watermark_page(executable: str, workspace: Path, text: str):
     from pypdf import PdfReader
 
-    markup = f'<span font_family="sans" size="{46 * 1024}" weight="bold" foreground="#be5410" alpha="14%" {_FEATURES}>{_esc(text)}</span>'
-    source = workspace / "watermark.txt"
-    rendered = workspace / "watermark.pdf"
-    source.write_text(markup, encoding="utf-8")
-    try:
-        subprocess.run(
-            [executable, "--no-display", "--markup", "--pixels", "--margin=0", "--rotate=-32",
-             "--background=transparent", f"--output={rendered}", str(source)],
-            check=True, capture_output=True, timeout=60, env={**os.environ, "SOURCE_DATE_EPOCH": "0"},
-        )
-    except (OSError, subprocess.SubprocessError) as exc:
-        raise ValueError("PDF_UNICODE_RENDERER_FAILED") from exc
+    markup = f'<span font_family="{SANS}" size="{46 * 1024}" weight="bold" foreground="#be5410" alpha="14%" {_FEATURES}>{_esc(text)}</span>'
+    rendered = _pango(executable, workspace, "watermark", markup, "--markup", "--margin=0", "--rotate=-32",
+                      "--background=transparent")
     return PdfReader(rendered).pages[0]
 
 
@@ -442,17 +529,8 @@ def _white_page(executable: str, workspace: Path):
     black (thumbnailers, some print pipelines) must still show paper."""
     from pypdf import PdfReader
 
-    source = workspace / "paper.txt"
-    rendered = workspace / "paper.pdf"
-    source.write_text(" ", encoding="utf-8")
-    try:
-        subprocess.run(
-            [executable, "--no-display", "--pixels", "--margin=0", f"--width={PAGE_WIDTH}", f"--height={PAGE_HEIGHT}",
-             "--background=#ffffff", f"--output={rendered}", str(source)],
-            check=True, capture_output=True, timeout=60, env={**os.environ, "SOURCE_DATE_EPOCH": "0"},
-        )
-    except (OSError, subprocess.SubprocessError) as exc:
-        raise ValueError("PDF_UNICODE_RENDERER_FAILED") from exc
+    rendered = _pango(executable, workspace, "paper", " ", "--margin=0", f"--width={PAGE_WIDTH}",
+                      f"--height={PAGE_HEIGHT}", "--background=#ffffff")
     return PdfReader(rendered).pages[0]
 
 
