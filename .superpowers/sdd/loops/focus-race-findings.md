@@ -172,13 +172,24 @@ firing it, and the platform's focus restoration rides that deferred dispatch. Th
 consequence of the above is to stop restoring inside `dismiss()` and restore from
 a `close` listener, so the app runs after the platform. Implemented, built (with
 the bundle's mtime checked against the source — an earlier attempt silently
-measured a stale build), and run 40 times: **6 failures in 26 dumps, against a
-baseline of about 4 in 20.** No improvement.
+measured a stale build), and run 40 times.
 
-That failure is informative. Had the listener run after the platform's
-restoration, it would have won. It did not, so **the restoration lands after
-`close` handlers too, and no handler-based ordering can beat it.** Every
-remaining idea of the form "restore later" or "restore harder" is dead.
+**That measurement is not trustworthy, and the honest statement is weaker than
+"refuted".** The probe script was deleted during a revert while the batch was
+still running, so 25 of the 40 iterations produced no dump, and a reading taken
+mid-batch (6 failures in 26) does not reconcile with the final one (4 in 15) —
+the mid-read was almost certainly globbing leftovers from the previous batch.
+Both partial readings sit at or above the ~20% baseline, so there is no sign of
+improvement, but neither is a clean n. What can be said: **this approach was not
+demonstrated to help**, on a contaminated sample. It was reverted.
+
+The inference drawn from it needs the same caution. If the listener really did
+run before the platform's restoration, then the restoration lands after `close`
+handlers and no handler-based ordering can beat it — which would kill every
+remaining "restore later" idea. That follows only if the failures were real, and
+on this sample that is likely but not established. Treat it as the leading
+reading, and re-measure on a clean batch before relying on it to rule the whole
+family out.
 
 **What that leaves.** The browser restores to whatever was focused before
 `showModal()`, and `DraftDiscardDialog` is a *single element reused for every
