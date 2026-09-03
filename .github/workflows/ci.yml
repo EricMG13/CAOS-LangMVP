@@ -43,6 +43,13 @@ jobs:
         python-version: ["3.12", "3.14"]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # test_recorded_review.py::test_the_script_reviews_this_repository_head_
+          # without_a_block diffs HEAD~1..HEAD, so this job's checkout needs one
+          # parent commit — the default single-commit clone doesn't carry one.
+          # security-review.yml already uses fetch-depth: 0 for the same script's
+          # real PR-review invocation; this job only needs the one extra commit.
+          fetch-depth: 2
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: ${{ matrix.python-version }}
@@ -103,7 +110,15 @@ jobs:
   browser:
     name: Browser — workbench journey and accessibility
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        # WEB-002: the six documents-only journeys in every supported engine.
+        # One framework (Playwright) drives all three; the smoke reads
+        # CAOS_BROWSER and writes a structured report plus a trace and a
+        # screenshot on failure under caos/frontend/test-results/<browser>/.
+        browser: [chromium, firefox, webkit]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -120,9 +135,9 @@ jobs:
         run: bash caos/scripts/build_frontend.sh
       - name: Install server dependencies
         run: pip install --require-hashes -r caos/server/requirements-dev.txt
-      - name: Install Playwright Chromium
+      - name: Install Playwright ${{ matrix.browser }}
         working-directory: caos/frontend
-        run: npx playwright install --with-deps chromium
+        run: npx playwright install --with-deps ${{ matrix.browser }}
       - name: Start combined app
         run: |
           # Every route is provider-backed; the keyless browser gates bind the
@@ -138,16 +153,24 @@ jobs:
           exit 1
       - name: Workbench journey
         working-directory: caos/frontend
+        env:
+          CAOS_BROWSER: ${{ matrix.browser }}
         run: npm run test:workbench
       - name: Accessibility sweep
+        # WEB-007: axe over every destination and state (empty, loading,
+        # populated, error, refusal, review, filed); axe-core runs in one
+        # engine, the journey above is what differs per engine.
+        if: matrix.browser == 'chromium'
         working-directory: caos/frontend
         run: npm run a11y
-      - name: Upload server log on failure
-        if: failure()
+      - name: Retain the browser report, traces and screenshots
+        if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: browser-server-log
-          path: server.log
+          name: browser-${{ matrix.browser }}-${{ github.sha }}
+          path: |
+            caos/frontend/test-results
+            server.log
           if-no-files-found: ignore
 
   deploy-assets:
@@ -254,7 +277,7 @@ jobs:
         run: |
           docker rm -f caos-ci-app caos-ci-db >/dev/null 2>&1 || true
           docker network rm caos-ci-net >/dev/null 2>&1 || true
-      - name: Trivy scan — fixable HIGH/CRITICAL gate
+      - name: Trivy scan and SBOM — fixable HIGH/CRITICAL gate bound to the image digests
         run: |
           # Fetched from the release TAG, never `main`, and verified before it
           # runs: a curl|sh from a mutable branch executes whatever that branch
@@ -266,10 +289,33 @@ jobs:
             https://raw.githubusercontent.com/aquasecurity/trivy/v0.72.0/contrib/install.sh
           echo "$expected  $installer" | sha256sum -c -
           sh "$installer" -b "$RUNNER_TEMP/trivy-bin" v0.72.0
-          "$RUNNER_TEMP/trivy-bin/trivy" image --scanners vuln \
-            --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 caos-app:ci
-          "$RUNNER_TEMP/trivy-bin/trivy" image --scanners vuln \
-            --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 caos-worker:ci
+          trivy="$RUNNER_TEMP/trivy-bin/trivy"
+          out="$RUNNER_TEMP/scans"; mkdir -p "$out"
+          # SEC-001/SEC-002: the vulnerability inventory and a CycloneDX SBOM per
+          # image, each checked against a coverage floor and against the id of
+          # the image just built (a scan of the wrong or an empty image fails),
+          # then bound together with the commit in scan-manifest.json.
+          binding=""
+          for target in app worker; do
+            image_id=$(docker image inspect --format '{{.Id}}' "caos-$target:ci")
+            "$trivy" image --scanners vuln --list-all-pkgs --format json \
+              --output "$out/trivy-$target.json" "caos-$target:ci"
+            python caos/scripts/scan_floors.py trivy "$out/trivy-$target.json" --image-id "$image_id"
+            "$trivy" image --format cyclonedx --output "$out/sbom-$target.cdx.json" "caos-$target:ci"
+            python caos/scripts/scan_floors.py sbom "$out/sbom-$target.cdx.json" --image "caos-$target:ci"
+            "$trivy" image --scanners vuln --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 "caos-$target:ci"
+            binding="$binding --image $target=$image_id --report trivy-$target=$out/trivy-$target.json --report sbom-$target=$out/sbom-$target.cdx.json"
+          done
+          # shellcheck disable=SC2086
+          python caos/scripts/scan_floors.py manifest "$out/scan-manifest.json" --commit "$GITHUB_SHA" $binding
+      - name: Retain the image scans and SBOMs
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: image-scans-${{ github.sha }}
+          path: ${{ runner.temp }}/scans
+          if-no-files-found: error
+          retention-days: 90
 
   postgres:
     name: PostgreSQL — two-connection races and instance locks
@@ -322,9 +368,17 @@ jobs:
           node-version: 24
           cache: npm
           cache-dependency-path: caos/frontend/package-lock.json
-      - run: pip install pip-audit==2.10.1 bandit==1.7.10
+      - name: Install the scanners from the hashed lock
+        # SEC-003: the scanners are installed like the application — every
+        # wheel hash-pinned — so a compromised re-release of pip-audit or
+        # bandit cannot enter the gate that judges the rest.
+        run: pip install --require-hashes -r caos/server/requirements-security.txt
       - name: Dependency CVEs
-        run: pip-audit -r caos/server/requirements.txt
+        run: |
+          out="$RUNNER_TEMP/scans"; mkdir -p "$out"
+          pip-audit --require-hashes -r caos/server/requirements.txt --progress-spinner off \
+            --format json --output "$out/pip-audit.json"
+          python caos/scripts/scan_floors.py pip-audit "$out/pip-audit.json"
       - name: Python SAST
         run: |
           # bandit SKIPS any file it cannot parse and still exits 0, so a gate
@@ -332,31 +386,41 @@ jobs:
           # 1.7.10 reaches for the ast.Constant.s alias a newer interpreter no
           # longer provides — under Python 3.14 it skips all 35 server files and
           # passes. The setup-python pin above is therefore load-bearing, so
-          # assert the outcome instead of trusting it.
+          # scan_floors.py asserts the outcome instead of trusting it.
           bandit -r caos/server/caos \
             -x caos/server/caos/methodology/vendor \
             --severity-level high --confidence-level medium \
-            -f json -o "$RUNNER_TEMP/bandit.json"
-          python - "$RUNNER_TEMP/bandit.json" <<'PY'
-          import json, sys
-          report = json.load(open(sys.argv[1]))
-          errors = report.get("errors", [])
-          loc = report["metrics"]["_totals"]["loc"]
-          if errors:
-              sys.exit(f"bandit could not parse {len(errors)} file(s) and still exited 0: "
-                       f"{[e.get('filename') for e in errors][:5]}")
-          # Second, weaker signal, and a different failure: bandit can parse every
-          # file it is GIVEN and still cover nothing if -x or the path is wrong.
-          # The server is ~9.6k lines; half that means the gate lost its target.
-          if loc < 5000:
-              sys.exit(f"bandit scanned only {loc} lines - the gate is not covering the server")
-          print(f"bandit scanned {loc} lines with no parse errors")
-          PY
+            -f json -o "$RUNNER_TEMP/scans/bandit.json"
+          python caos/scripts/scan_floors.py bandit "$RUNNER_TEMP/scans/bandit.json"
       - name: Frontend dependency advisories
         working-directory: caos/frontend
-        run: npm audit --audit-level=high
+        run: |
+          npm audit --audit-level=high
+          npm audit --json > "$RUNNER_TEMP/scans/npm-audit.json" || true
+          python ../scripts/scan_floors.py npm-audit "$RUNNER_TEMP/scans/npm-audit.json"
       - name: Secret scan
+        # Digest-pinned image (SEC-003). gitleaks exits 0 with "no leaks found"
+        # even when git itself failed underneath it, so the floor check reads
+        # its log for the commits it actually scanned (SEC-002).
+        run: |
+          docker run --rm -v "$PWD:/repo" -v "$RUNNER_TEMP/scans:/out" \
+            ghcr.io/gitleaks/gitleaks:v8.18.4@sha256:75bdb2b2f4db213cde0b8295f13a88d6b333091bbfbf3012a4e083d00d31caba \
+            detect --source=/repo --config=/repo/.gitleaks.toml --redact --no-banner --verbose \
+            --report-format json --report-path /out/gitleaks.json 2> "$RUNNER_TEMP/scans/gitleaks.log"
+          python caos/scripts/scan_floors.py gitleaks "$RUNNER_TEMP/scans/gitleaks.json" --log "$RUNNER_TEMP/scans/gitleaks.log"
+      - name: Bind the scan results to the commit
         run: >-
-          docker run --rm -v "$PWD:/repo"
-          ghcr.io/gitleaks/gitleaks:v8.18.4
-          detect --source=/repo --config=/repo/.gitleaks.toml --redact --no-banner
+          python caos/scripts/scan_floors.py manifest "$RUNNER_TEMP/scans/scan-manifest.json" --commit "$GITHUB_SHA"
+          --image source-tree=$GITHUB_SHA
+          --report pip-audit="$RUNNER_TEMP/scans/pip-audit.json"
+          --report bandit="$RUNNER_TEMP/scans/bandit.json"
+          --report npm-audit="$RUNNER_TEMP/scans/npm-audit.json"
+          --report gitleaks-log="$RUNNER_TEMP/scans/gitleaks.log"
+      - name: Retain the scan results
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: security-scans-${{ github.sha }}
+          path: ${{ runner.temp }}/scans
+          if-no-files-found: error
+          retention-days: 90

@@ -38,6 +38,13 @@ paths = [
   # (hex-ish suffixes) so the test proves a real leak would be caught — that's
   # the point of the file, not an accident. Never real credentials (SECRETS.md).
   '''caos/tests/server/test_secret_log_hygiene\.py''',
+  # recorded_review.py's own test proves it does NOT false-positive on prose
+  # that merely *mentions* a secret-shaped pattern (a report noting "AKIA...
+  # is a fixture", a code comment naming it). The fixture string is
+  # deliberately AWS-key-shaped for that check — gitleaks' own, unrelated
+  # scanner then flags it too. Same rationale as the line above: the point of
+  # the file, not an accident. Never a real credential.
+  '''caos/tests/test_recorded_review\.py''',
   # Phase 2 signed-preview tests use an explicit synthetic session secret long
   # enough to exercise the production token contract. It is fixture data only.
   '''caos/tests/server/test_market_xlsx_commit\.py''',

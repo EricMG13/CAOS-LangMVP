@@ -40,7 +40,9 @@ test("browser proof watches every context for Google font requests through final
   const watchedContexts = smoke.match(/watchExternalGoogleFonts\(await browser\.newContext\(/g)?.length || 0;
   assert.equal(watchedContexts, contexts);
   assert.equal(smoke.match(/assert\.deepEqual\(externalGoogleFontRequests, \[\]/g)?.length, 1);
-  assert.match(smoke, /await reader\.close\(\);\s*assert\.deepEqual\(externalGoogleFontRequests, \[\], "workbench requested an external Google font"\);\s*} finally/);
+  // The font assertion is the last check of the journey; only the structured
+  // report (WEB-002) may follow it before the failure handler and the cleanup.
+  assert.match(smoke, /await reader\.close\(\);\s*assert\.deepEqual\(externalGoogleFontRequests, \[\], "workbench requested an external Google font"\);\s*report\(\{ status: "passed" \}\);\s*} catch \(error\) \{[\s\S]*?} finally/);
 });
 
 test("approved workspace labels preserve the existing routes", () => {

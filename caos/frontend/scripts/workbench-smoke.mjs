@@ -1,7 +1,21 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import { readFileSync } from "node:fs";
-import { chromium, request } from "playwright";
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import path from "node:path";
+import { chromium, firefox, request, webkit } from "playwright";
+
+// WEB-002: one Playwright script drives every supported engine. CAOS_BROWSER
+// selects it; every context is traced and, on failure, the trace and a
+// screenshot of every open page land under test-results/<browser>/ beside a
+// structured report. On success the traces are discarded (they are large) and
+// only the report remains.
+const engines = { chromium, firefox, webkit };
+const browserName = process.env.CAOS_BROWSER || "chromium";
+if (!engines[browserName]) throw new Error(`CAOS_BROWSER must be one of ${Object.keys(engines).join(", ")}, got ${browserName}`);
+const resultsDir = path.join(process.env.CAOS_RESULTS_DIR || "test-results", browserName);
+rmSync(resultsDir, { recursive: true, force: true });
+mkdirSync(resultsDir, { recursive: true });
+const startedAt = Date.now();
 
 const baseURL = process.env.CAOS_URL || "http://127.0.0.1:8000";
 const fixtureSuffix = randomUUID().slice(0, 8);
@@ -17,6 +31,15 @@ const maxDomContentLoadedMs = Number(process.env.CAOS_MAX_DCL_MS || 250);
 const maxFirstContentfulPaintMs = Number(process.env.CAOS_MAX_FCP_MS || 400);
 assert.ok(Number.isFinite(maxDomContentLoadedMs) && maxDomContentLoadedMs > 0, "CAOS_MAX_DCL_MS must be a positive finite number");
 assert.ok(Number.isFinite(maxFirstContentfulPaintMs) && maxFirstContentfulPaintMs > 0, "CAOS_MAX_FCP_MS must be a positive finite number");
+// Those budgets are a Chromium regression tripwire: every sample behind them is
+// Chromium on a shared runner. Firefox and WebKit have no calibration yet — on
+// the runner where Chromium read DCL 76 / FCP 284 ms, Firefox read DCL 303 ms and
+// WebKit FCP 1077 ms against the same bytes, which is engine start-up cost, not a
+// product regression. Those engines record the timing in the report (retained as
+// a CI artifact, so a budget can be calibrated from samples) and do not enforce
+// it. CAOS_ENFORCE_TIMING=1|0 overrides the default for any engine.
+const enforceTimingBudget = process.env.CAOS_ENFORCE_TIMING ? process.env.CAOS_ENFORCE_TIMING === "1" : browserName === "chromium";
+let pageTiming = null;
 const identityHeaders = process.env.CAOS_EDGE_SECRET ? {
   "x-edge-authorization": process.env.CAOS_EDGE_SECRET,
   "x-forwarded-user": process.env.CAOS_TEST_USER || "analyst.qa@local.invalid",
@@ -146,7 +169,22 @@ const pendingResearchRun = {
   research: { phase: "awaiting_approval", proposed_plan_hash: researchPlanHash, proposed_plan: proposedResearchPlan },
 };
 
-const browser = await chromium.launch({ headless: true });
+const browser = await engines[browserName].launch({ headless: true });
+const openContexts = new Set();
+let traceIndex = 0;
+const tracing = process.env.CAOS_TRACE !== "0";
+const rawNewContext = browser.newContext.bind(browser);
+browser.newContext = async (options) => {
+  const context = await rawNewContext(options);
+  if (tracing) await context.tracing.start({ screenshots: true, snapshots: true });
+  openContexts.add(context);
+  const rawClose = context.close.bind(context);
+  context.close = async (...args) => {
+    if (openContexts.delete(context) && tracing) await context.tracing.stop({ path: path.join(resultsDir, `trace-${++traceIndex}.zip`) });
+    return rawClose(...args);
+  };
+  return context;
+};
 const errors = [];
 const externalGoogleFontRequests = [];
 const watchExternalGoogleFonts = (context) => {
@@ -160,6 +198,18 @@ try {
   const context = watchExternalGoogleFonts(await browser.newContext({ viewport: { width: 1440, height: 1000 }, extraHTTPHeaders: identityHeaders }));
   const page = await context.newPage();
   await page.addInitScript(() => {
+    // A CSP console line names only the document; the violation event carries
+    // the directive, the blocked URI and a sample of the offending text.
+    window.__caosCspViolations = [];
+    document.addEventListener("securitypolicyviolation", (event) => {
+      window.__caosCspViolations.push({ directive: event.effectiveDirective, blocked: event.blockedURI, file: event.sourceFile, line: event.lineNumber, column: event.columnNumber, sample: (event.sample || "").slice(0, 200) });
+    });
+    // The export ships no inline <style>; if one appears, record who inserted it.
+    new MutationObserver((records) => {
+      for (const record of records) for (const node of record.addedNodes) {
+        if (node.nodeName === "STYLE") window.__caosCspViolations.push({ inserted: "style", attrs: [...node.attributes].map((a) => `${a.name}=${a.value.slice(0, 40)}`).join(" "), text: (node.textContent || "").slice(0, 120), parent: record.target.nodeName, stack: new Error().stack.split("\n").slice(1, 5).join(" | ") });
+      }
+    }).observe(document, { childList: true, subtree: true });
     window.__caosUrlWrites = [];
     for (const method of ["pushState", "replaceState"]) {
       const original = history[method].bind(history);
@@ -192,8 +242,7 @@ try {
       expectedNotFoundURL = "";
       return;
     }
-    if (!expectedAuthorityFailureSeen
-      && message.location().url === expectedAuthorityFailureURL
+    if (message.location().url === expectedAuthorityFailureURL
       && message.text() === "Failed to load resource: the server responded with a status of 503 (Service Unavailable)") {
       expectedAuthorityFailureSeen = true;
       return;
@@ -216,9 +265,30 @@ try {
       expectedReportConflicts -= 1;
       return;
     }
-    errors.push(message.text());
+    const entry = `${message.text()} (${message.location().url}:${message.location().lineNumber})`;
+    errors.push(entry);
+    if (message.text().startsWith("Refused to apply")) {
+      void page.evaluate(() => window.__caosCspViolations || []).then((details) => {
+        // WebKit under Playwright inserts <style>body {}</style> into <head> with no
+        // script on the stack (an automation-side style recalc), and the policy
+        // refuses it. That is the CSP working on the harness, not the product:
+        // drop the line only when every recorded insertion is exactly that.
+        const inserted = details.filter((item) => item.inserted === "style");
+        const automationOnly = browserName === "webkit" && inserted.length > 0 && inserted.every((item) => item.text.trim() === "body {}" && !item.stack);
+        const position = errors.indexOf(entry);
+        if (position === -1) return;
+        if (automationOnly) errors.splice(position, 1);
+        else errors[position] += ` csp=${JSON.stringify(details)}`;
+      }).catch(() => {});
+    }
   });
   page.on("pageerror", (error) => errors.push(error.message));
+  // Firefox logs no console line for an HTTP error, so the controlled 503 is
+  // observed on the response itself; the console filter above still swallows
+  // Chromium's and WebKit's "Failed to load resource" line for it.
+  page.on("response", (response) => {
+    if (response.url() === expectedAuthorityFailureURL && response.status() === 503) expectedAuthorityFailureSeen = true;
+  });
   page.on("request", (requestValue) => {
     const url = new URL(requestValue.url());
     const pathname = url.pathname;
@@ -263,9 +333,13 @@ try {
       firstContentfulPaint: paint?.startTime ?? null,
     };
   });
-  assert.ok(timing.domContentLoaded !== null && timing.domContentLoaded <= maxDomContentLoadedMs, `DCL ${timing.domContentLoaded}ms exceeds ${maxDomContentLoadedMs}ms`);
-  assert.ok(timing.firstContentfulPaint !== null && timing.firstContentfulPaint <= maxFirstContentfulPaintMs, `FCP ${timing.firstContentfulPaint}ms exceeds ${maxFirstContentfulPaintMs}ms`);
-  console.log(JSON.stringify({ timing, caseRequests }));
+  pageTiming = { ...timing, budget: { domContentLoaded: maxDomContentLoadedMs, firstContentfulPaint: maxFirstContentfulPaintMs, enforced: enforceTimingBudget } };
+  assert.ok(timing.domContentLoaded !== null && timing.firstContentfulPaint !== null, "the first page reported no navigation or paint timing");
+  if (enforceTimingBudget) {
+    assert.ok(timing.domContentLoaded <= maxDomContentLoadedMs, `DCL ${timing.domContentLoaded}ms exceeds ${maxDomContentLoadedMs}ms`);
+    assert.ok(timing.firstContentfulPaint <= maxFirstContentfulPaintMs, `FCP ${timing.firstContentfulPaint}ms exceeds ${maxFirstContentfulPaintMs}ms`);
+  }
+  console.log(JSON.stringify({ browser: browserName, timing, budgetEnforced: enforceTimingBudget, caseRequests }));
   await page.getByRole("link", { name: "Sources & evidence" }).click();
   await page.waitForURL((url) => url.pathname.replace(/\/$/, "") === "/sources" && url.searchParams.get("case") === caseRecord.id);
   await page.unroute(heldAuthorityDetail, holdAuthorityDetail);
@@ -851,8 +925,18 @@ try {
   assert.equal(await page.evaluate(() => document.activeElement?.id), "accept-dialog-title", "accept dialog did not focus its heading");
   await page.keyboard.press("Escape");
   await acceptDialog.waitFor({ state: "hidden" });
-  await assert.doesNotReject(() => acceptTrigger.evaluate((element) => {
-    if (document.activeElement !== element) throw new Error("focus did not return to the accept trigger");
+  // Focus returns to the trigger on the frame after the close event (the
+  // workspace's own restore); Chromium and Firefox also restore it natively on
+  // close, WebKit does not, so the check waits for the frame rather than
+  // reading focus the instant the dialog is hidden.
+  await acceptTrigger.evaluate((element) => new Promise((resolve, reject) => {
+    const deadline = performance.now() + 2000;
+    const check = () => {
+      if (document.activeElement === element) return resolve();
+      if (performance.now() > deadline) return reject(new Error(`focus did not return to the accept trigger (on ${document.activeElement?.tagName}[${document.activeElement?.getAttribute?.("aria-label") || document.activeElement?.id || ""}])`));
+      requestAnimationFrame(check);
+    };
+    check();
   }));
   await acceptTrigger.click();
   await acceptDialog.getByRole("button", { name: "Cancel" }).click();
@@ -903,7 +987,10 @@ try {
     document.body.focus();
     document.body.removeAttribute("tabindex");
   });
-  await page.keyboard.press("Tab");
+  // WebKit follows the macOS convention: Tab skips links unless Option is held
+  // (Safari's "Press Tab to highlight each item" setting). Option+Tab is the
+  // same tab order with links included, so the skip link is still the first stop.
+  await page.keyboard.press(browserName === "webkit" ? "Alt+Tab" : "Tab");
   await assert.doesNotReject(() => page.getByRole("link", { name: "Skip to content" }).evaluate((element) => {
     if (document.activeElement !== element) throw new Error("the skip link is not the first tab stop");
   }));
@@ -1691,8 +1778,26 @@ try {
   ]);
   await page.getByRole("combobox", { name: "Pathway template" }).selectOption(recoveryPathway);
   await page.getByText(/Unsaved browser copy from/).waitFor();
+  // Report Studio autosaves 850 ms after the last edit. On a slow runner that
+  // timer can also fire while a discard dialog is being deliberated — correct
+  // behaviour, but it adds a revision a hard-coded version number would not
+  // expect (WebKit on a shared runner read "Saved v6" where this script once
+  // said v5). Every version below is therefore read from the fixture, which
+  // assigns them, after the save carrying the expected content has landed.
+  const reportVersion = (pathway) => reportWorkspaces.get(pathway).current.version;
+  const hasBlockText = (text) => (current) => current.content.blocks.some((block) => block.text === text);
+  const awaitReportSave = async (pathway, matches, label) => {
+    const workspace = reportWorkspaces.get(pathway);
+    const deadline = Date.now() + 5000;
+    while (!matches(workspace.current)) {
+      assert.ok(Date.now() < deadline, `no autosave for ${label || pathway} matched (fixture at v${workspace.current.version})`);
+      await page.waitForTimeout(50);
+    }
+    await page.getByText(`Saved v${workspace.current.version}`, { exact: true }).waitFor({ timeout: 5000 });
+    return workspace.current.version;
+  };
   await page.getByRole("button", { name: "Retry save now" }).click();
-  await page.getByText("Saved v2", { exact: true }).waitFor({ timeout: 5000 });
+  await awaitReportSave(recoveryPathway, hasBlockText("Recovered from stale server v0."), "recovery");
   assert.equal(reportLastSave.expected_version, 0, "recovery save discarded its original compare-and-swap base");
   assert.equal(reportLastSave.blocks[0].text, "Recovered from stale server v0.", "recovery save did not use the browser copy");
 
@@ -1709,9 +1814,9 @@ try {
 
   await page.getByRole("combobox", { name: "Pathway template" }).selectOption("EARNINGS_UPDATE");
   const earningsHistoryEditor = page.getByRole("textbox", { name: "Credit Snapshot" });
-  for (const [value, version] of [["History cycle one", 2], ["History cycle two", 3], ["History cycle three", 4]]) {
+  for (const value of ["History cycle one", "History cycle two", "History cycle three"]) {
     await earningsHistoryEditor.fill(value);
-    await page.getByText(`Saved v${version}`, { exact: true }).waitFor({ timeout: 5000 });
+    await awaitReportSave("EARNINGS_UPDATE", hasBlockText(value), value);
   }
   await page.waitForFunction(() => !window.history.state?.caosModelDraftGuard && !window.history.state?.caosReportDraftGuard);
 
@@ -1746,13 +1851,13 @@ try {
   assert.equal(await dirtyHistoryEditor.inputValue(), "Dirty history fence value", "dismissed Report Studio Back dropped local content");
   await page.waitForFunction(() => document.activeElement?.id?.startsWith("narrative-") === true);
   assert.equal(await dirtyHistoryEditor.evaluate((element) => document.activeElement === element), true, "canceling Report Studio browser history did not return focus to the editor");
-  await page.getByText("Saved v5", { exact: true }).waitFor({ timeout: 5000 });
+  await awaitReportSave("EARNINGS_UPDATE", hasBlockText("Dirty history fence value"), "history fence");
 
   await page.getByRole("combobox", { name: "Pathway template" }).selectOption("FULL_CREDIT");
   const thesisEditor = page.getByRole("textbox", { name: "Credit Snapshot" });
   await thesisEditor.fill("First update");
   await thesisEditor.fill("Latest serialized update");
-  await page.getByText(/Saved v2/).waitFor({ timeout: 5000 });
+  await awaitReportSave("FULL_CREDIT", hasBlockText("Latest serialized update"), "serialized update");
   assert.equal(reportLastSave.blocks[0].text, "Latest serialized update", "older autosave generation claimed the latest draft");
 
   heldReportLifecycle = "restore";
@@ -1806,7 +1911,7 @@ try {
   await page.getByLabel("Shock value").fill("0.07");
   await page.getByRole("button", { name: "Calculate and insert exact exhibit" }).click();
   await page.getByText("Server-calculated Scenario Exhibit inserted into the Draft.").waitFor();
-  await page.getByText(/Saved v5/).waitFor({ timeout: 5000 });
+  await awaitReportSave("FULL_CREDIT", (current) => current.content.blocks.some((block) => block.kind === "SCENARIO_EXHIBIT"), "scenario exhibit");
   await page.getByText("BASE / FY2027 / total_leverage", { exact: true }).waitFor();
   await page.getByText("DOWNSIDE / FY2027 / total_leverage", { exact: true }).waitFor();
 
@@ -1815,7 +1920,7 @@ try {
   await page.getByText("Conflict", { exact: true }).waitFor({ timeout: 5000 });
   await page.getByText(/Your local content remains unchanged/).waitFor();
   assert.equal(await thesisEditor.inputValue(), "Local conflict value");
-  await page.getByRole("button", { name: /Use shared v6/ }).click();
+  await page.getByRole("button", { name: new RegExp(`Use shared v${reportVersion("FULL_CREDIT")}`) }).click();
   assert.notEqual(await thesisEditor.inputValue(), "Local conflict value");
 
   holdReportSave = true;
@@ -1833,7 +1938,7 @@ try {
   await discardDraftDialog().getByRole("button", { name: "Keep editing" }).click();
   await page.waitForFunction(() => document.activeElement?.id === "case-select");
   assert.equal(await reportCaseSelect.evaluate((element) => document.activeElement === element), true, "canceling Report Studio case discard did not return focus to the selector");
-  await page.getByText(/Saved v7/).waitFor({ timeout: 5000 });
+  await awaitReportSave("FULL_CREDIT", hasBlockText("Unsaved case fence"), "case fence");
 
   // Task 10: the analyst signs the opinion on the exact saved revision before freeze.
   const freezeButton = page.getByRole("button", { name: /Freeze saved v7/ });
@@ -1873,7 +1978,8 @@ try {
   assert.equal(await reportTitle("Investment Committee Credit Memo").count(), 0, "late Full Credit Freeze replaced the Earnings paper");
   assert.equal(await page.getByRole("combobox", { name: "Pathway template" }).inputValue(), "EARNINGS_UPDATE", "late Full Credit Freeze changed the selected pathway");
   await page.getByRole("combobox", { name: "Pathway template" }).selectOption("FULL_CREDIT");
-  await page.getByRole("button", { name: /FROZEN · Draft v7/ }).first().click();
+  const latestFrozenVersion = () => reportWorkspaces.get("FULL_CREDIT").frozen_history.at(-1).draft_version;
+  await page.getByRole("button", { name: new RegExp(`FROZEN · Draft v${latestFrozenVersion()}`) }).first().click();
   await page.getByText(/Immutable FROZEN review/).waitFor();
   const firstFrozen = reportWorkspaces.get("FULL_CREDIT").frozen_history.at(-1);
   assert.equal(firstFrozen.signed_by, "analyst", "the frozen record does not bind the opinion signer");
@@ -1905,13 +2011,13 @@ try {
   reportRole = "APPROVER";
   reportSubject = "analyst";
   await page.goto(`${baseURL}/report-studio/?case=${caseRecord.id}`, { waitUntil: "networkidle" });
-  await page.getByRole("button", { name: /FROZEN · Draft v7/ }).first().click();
+  await page.getByRole("button", { name: new RegExp(`FROZEN · Draft v${latestFrozenVersion()}`) }).first().click();
   await page.locator("[data-separation-of-duties]").waitFor();
   assert.equal(await page.getByRole("button", { name: "File exact Frozen version" }).count(), 0, "the opinion signer was offered File");
 
   reportSubject = "approver";
   await page.goto(`${baseURL}/report-studio/?case=${caseRecord.id}`, { waitUntil: "networkidle" });
-  await page.getByRole("button", { name: /FROZEN · Draft v7/ }).first().click();
+  await page.getByRole("button", { name: new RegExp(`FROZEN · Draft v${latestFrozenVersion()}`) }).first().click();
   await page.getByLabel("Required comment to request changes").fill("Clarify the downside bridge.");
   heldReportLifecycle = "changes";
   await page.getByRole("button", { name: "Request changes" }).click();
@@ -1920,10 +2026,10 @@ try {
   await reportTitle("Earnings Update").waitFor();
   await releaseReportLifecycle("changes");
   await new Promise((resolve) => setTimeout(resolve, 100));
-  assert.equal(await page.getByText(/editable Draft v8 created/).count(), 0, "late Full Credit change request adopted status in Earnings Update");
+  assert.equal(await page.getByText(new RegExp(`editable Draft v${reportVersion("FULL_CREDIT")} created`)).count(), 0, "late Full Credit change request adopted status in Earnings Update");
   assert.equal(await page.getByRole("combobox", { name: "Pathway template" }).inputValue(), "EARNINGS_UPDATE", "late change request changed the selected pathway");
   await page.getByRole("combobox", { name: "Pathway template" }).selectOption("FULL_CREDIT");
-  await page.getByText("Saved v8", { exact: true }).waitFor();
+  await page.getByText(`Saved v${reportVersion("FULL_CREDIT")}`, { exact: true }).waitFor();
   assert.equal(reportWorkspaces.get("FULL_CREDIT").frozen_history[0].status, "CHANGES_REQUESTED");
 
   // The new revision stales the v7 sign-off; the approver-subject signs v8 here as the
@@ -1935,7 +2041,7 @@ try {
   await page.getByText(/Immutable FROZEN review/).waitFor();
   reportSubject = "committee-approver";
   await page.goto(`${baseURL}/report-studio/?case=${caseRecord.id}`, { waitUntil: "networkidle" });
-  await page.getByRole("button", { name: /FROZEN · Draft v8/ }).first().click();
+  await page.getByRole("button", { name: new RegExp(`FROZEN · Draft v${latestFrozenVersion()}`) }).first().click();
   await page.getByText(/Immutable FROZEN review/).waitFor();
   heldReportLifecycle = "file";
   await page.getByRole("button", { name: "File exact Frozen version" }).click();
@@ -1947,7 +2053,7 @@ try {
   assert.equal(await page.getByText("Exact Frozen Deliverable filed.").count(), 0, "late Full Credit filing adopted status in Earnings Update");
   assert.equal(await page.getByRole("combobox", { name: "Pathway template" }).inputValue(), "EARNINGS_UPDATE", "late filing changed the selected pathway");
   await page.getByRole("combobox", { name: "Pathway template" }).selectOption("FULL_CREDIT");
-  await page.getByRole("button", { name: /FILED · Draft v8/ }).first().click();
+  await page.getByRole("button", { name: new RegExp(`FILED · Draft v${latestFrozenVersion()}`) }).first().click();
   await page.getByText(/Immutable FILED review/).waitFor();
   await page.locator("[data-filing-receipt]").waitFor();
   assert.match(await page.locator("[data-filing-receipt]").textContent(), /rcpt_frozen_report_2/, "the detached filing receipt is not shown for the filed record");
@@ -1963,12 +2069,22 @@ try {
     await link.waitFor();
     assert.match(await link.getAttribute("href"), new RegExp(`/deliverables/by-id/frozen_report_2/export/${format.toLowerCase()}$`));
     assert.equal(await link.getAttribute("download"), "", `${format} export lost its native download hint`);
+    // Chromium and Firefox prove the server-driven disposition: with the native
+    // hint removed, the intercepted attachment response alone must download and
+    // name the file. WebKit under Playwright cannot observe either half: without
+    // the attribute an intercepted attachment response produces no download
+    // event, and with it the download bypasses route interception and fetches
+    // from the network (probed: the real server's 404 body arrived as "md.json").
+    // The links' governed hrefs and native hints are asserted above for every
+    // engine; the download behaviour itself is Chromium and Firefox evidence.
+    if (browserName === "webkit") continue;
     await link.evaluate((element) => element.removeAttribute("download"));
     const [download] = await Promise.all([page.waitForEvent("download"), link.click()]);
+    assert.match(download.url(), new RegExp(`/deliverables/by-id/frozen_report_2/export/${format.toLowerCase()}$`), `${format} export downloaded from ${download.url()}`);
     assert.equal(download.suggestedFilename(), `frozen_report_2.${format.toLowerCase()}`);
     assert.equal(await download.failure(), null, `${format} export download failed`);
   }
-  assert.equal(governedDownloadCount, 3, "filed export clicks bypassed the governed download responses");
+  assert.equal(governedDownloadCount, browserName === "webkit" ? 0 : 3, "filed export clicks bypassed the governed download responses");
 
   reportRole = "READER";
   await page.goto(`${baseURL}/report-studio/?case=${caseRecord.id}`, { waitUntil: "networkidle" });
@@ -2154,7 +2270,41 @@ try {
     "a failed identity lookup did not settle on the read-only floor");
   await reader.close();
   assert.deepEqual(externalGoogleFontRequests, [], "workbench requested an external Google font");
+  report({ status: "passed" });
+} catch (error) {
+  // Evidence before teardown: a screenshot of every open page, then every
+  // still-open context's trace, then the report naming the failure.
+  const screenshots = [];
+  for (const context of openContexts) {
+    for (const [index, openPage] of context.pages().entries()) {
+      const file = path.join(resultsDir, `failure-${screenshots.length + 1}-page${index + 1}.png`);
+      try { await openPage.screenshot({ path: file, fullPage: true }); screenshots.push(file); } catch { /* page already gone */ }
+    }
+    if (tracing) { try { await context.tracing.stop({ path: path.join(resultsDir, `trace-${++traceIndex}.zip`) }); } catch { /* context already gone */ } }
+    openContexts.delete(context);
+  }
+  report({ status: "failed", error: String(error && error.stack || error), screenshots });
+  throw error;
 } finally {
   await browser.close();
   await api.dispose();
+}
+
+function report(outcome) {
+  const payload = {
+    schema_version: "caos.workbench-report.v1",
+    browser: browserName,
+    browser_version: browser.version(),
+    base_url: baseURL,
+    started_at: new Date(startedAt).toISOString(),
+    duration_ms: Date.now() - startedAt,
+    timing: pageTiming,
+    console_errors: errors,
+    ...outcome,
+  };
+  if (outcome.status === "passed") {
+    for (let index = 1; index <= traceIndex; index += 1) rmSync(path.join(resultsDir, `trace-${index}.zip`), { force: true });
+  }
+  writeFileSync(path.join(resultsDir, "workbench-report.json"), `${JSON.stringify(payload, null, 2)}\n`);
+  console.log(JSON.stringify({ browser: browserName, browser_version: browser.version(), status: outcome.status, duration_ms: payload.duration_ms, results: resultsDir }));
 }

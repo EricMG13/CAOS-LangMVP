@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
-import { FormEvent, ReactNode, useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
+import { FormEvent, MouseEvent as ReactMouseEvent, ReactNode, useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import EvidenceChip from "./EvidenceChip";
 import ModelBuilder from "./model/ModelBuilder";
 import ReportStudio from "./report/ReportStudio";
@@ -470,13 +470,20 @@ export default function Workspace({ destination, children }: { destination?: Des
       if (!modelDraftDirtyRef.current && !reportDraftDirtyRef.current) return;
       event.preventDefault();
       event.stopImmediatePropagation();
-      target.closest<HTMLDialogElement>("dialog[open]")?.close();
+      // The trigger is passed explicitly: WebKit does not focus a link on click,
+      // so inferring it from document.activeElement would return focus to whatever
+      // the analyst touched before the link. A link inside a modal (the command
+      // palette) closes that modal first, and focus then belongs to the control
+      // that opened it (`data-opener`), not to an option in a closed dialog.
+      const dialog = target.closest<HTMLDialogElement>("dialog[open]");
+      dialog?.close();
+      const opener = dialog?.dataset.opener ? document.getElementById(dialog.dataset.opener) : null;
       requestDraftDiscard(draftDiscardDetail("and leave this page"), () => {
         pendingDraftLinkRef.current = window.location.href;
         replayingDraftLinkRef.current = true;
         target.click();
         replayingDraftLinkRef.current = false;
-      });
+      }, undefined, opener ?? target);
     };
     const startConfirmedHistoryTraversal = () => {
       const state = (window.history.state || {}) as DraftHistoryState;
@@ -873,11 +880,16 @@ export default function Workspace({ destination, children }: { destination?: Des
 
   // The acceptance ceremony is two steps: `acceptRun` opens the digest-bound
   // dialog, `confirmAccept` performs the governed POST it reviewed.
-  const acceptRun = () => {
+  // The opener is taken from the click, not from document.activeElement: WebKit
+  // does not focus a button on click, so the dialog would otherwise record
+  // <body> as its trigger and cancelling it would drop focus to the landmark.
+  const [acceptOpener, setAcceptOpener] = useState<HTMLElement | null>(null);
+  const acceptRun = (event: ReactMouseEvent<HTMLButtonElement>) => {
     if (!runId || !run || run.id !== runId || run.case_id !== caseId) {
       setRunError("Only a run bound to the selected case can be accepted.");
       return;
     }
+    setAcceptOpener(event.currentTarget);
     setAcceptPrompt(true);
   };
 
@@ -1033,7 +1045,7 @@ export default function Workspace({ destination, children }: { destination?: Des
       {notice ? <MutationReceipt>{notice}</MutationReceipt> : null}
       <div key={`${active}:${caseId}`}>{routeIsKnown ? <>{renderDestination()}{children}</> : children}</div>
     </WorkbenchShell>
-    <AcceptDialog open={acceptPrompt} run={run} replaces={authority?.latest_accepted ?? null} pending={pendingAction === "accept-run"} onConfirm={confirmAccept} onClose={() => setAcceptPrompt(false)} />
+    <AcceptDialog open={acceptPrompt} trigger={acceptOpener} run={run} replaces={authority?.latest_accepted ?? null} pending={pendingAction === "accept-run"} onConfirm={confirmAccept} onClose={() => setAcceptPrompt(false)} />
     <DraftDiscardDialog open={discardPrompt !== null} detail={discardPrompt?.detail || ""} trigger={discardPrompt?.trigger || null} onConfirm={() => finishDraftDiscard(true)} onClose={() => finishDraftDiscard(false)} />
   </>;
 }
@@ -1292,7 +1304,7 @@ function RunProgressAnnouncer({ run }: { run: RunRecord | null }) {
 // case's latest accepted authority and what it replaces. Open/close follows the WorkbenchShell
 // drawer pattern — capture the trigger before showModal(), rAF-focus the heading,
 // restore focus on close. The primary button keeps the DAG trigger's accessible name.
-function AcceptDialog({ open, run, replaces, pending, onConfirm, onClose }: { open: boolean; run: RunRecord | null; replaces: Snapshot | null; pending: boolean; onConfirm: () => void; onClose: () => void }) {
+function AcceptDialog({ open, trigger, run, replaces, pending, onConfirm, onClose }: { open: boolean; trigger: HTMLElement | null; run: RunRecord | null; replaces: Snapshot | null; pending: boolean; onConfirm: () => void; onClose: () => void }) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const headingRef = useRef<HTMLHeadingElement>(null);
   const triggerRef = useRef<HTMLElement | null>(null);
@@ -1313,12 +1325,12 @@ function AcceptDialog({ open, run, replaces, pending, onConfirm, onClose }: { op
       return;
     }
     if (!dialog.open) {
-      triggerRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+      triggerRef.current = trigger || (document.activeElement instanceof HTMLElement ? document.activeElement : null);
       dialog.showModal();
     }
     const frame = window.requestAnimationFrame(() => headingRef.current?.focus());
     return () => window.cancelAnimationFrame(frame);
-  }, [open]);
+  }, [open, trigger]);
   const close = () => {
     onClose();
     const trigger = triggerRef.current;
@@ -1357,7 +1369,17 @@ function DraftDiscardDialog({ open, detail, trigger, onConfirm, onClose }: { ope
     const trigger = triggerRef.current;
     onClose();
     dialogRef.current?.close();
+    // Where the browser's own close restoration left focus, read synchronously.
+    // The repair below runs on a timer, so by the time it runs the user may have
+    // moved on; it must return focus to the trigger (which the browser may have
+    // missed — re-rendered, or a different control held focus when the dialog
+    // opened) without stealing it from a control the user focused since.
+    // Observed: the timer fired 24 ms after a dismissal and pulled focus off the
+    // editor the analyst had just focused (WCAG 3.2.1).
+    const settled = document.activeElement;
     const restore = (attempt = 0) => {
+      const current = document.activeElement;
+      if (current !== settled && current instanceof HTMLElement && current !== document.body && !dialogRef.current?.contains(current)) return;
       const focus = (candidate: HTMLElement | null | undefined) => {
         if (!candidate?.isConnected) return false;
         candidate.focus();
@@ -1422,7 +1444,7 @@ function ModuleIdentity({ moduleId }: { moduleId: string }) {
 // Shared by Run Console and the inline panels on Cases and Deep-Dive. `approvalSlot`
 // is how Run Console injects the full ResearchPlanView; inline surfaces route to it
 // instead, since plan approval is a Run Console responsibility.
-function RunStatus({ writeAccess, caseId, run, runLoading, runError, acceptRun, acceptedSnapshotId, visibleSnapshotId, switchRequired, pendingAction, approvalSlot, resumeSlot }: { writeAccess: WriteAccess; caseId: string; run: RunRecord | null; runLoading: boolean; runError: string; acceptRun: () => void; acceptedSnapshotId: string; visibleSnapshotId: string; switchRequired: boolean; pendingAction: string; approvalSlot: ReactNode; resumeSlot: ReactNode }) {
+function RunStatus({ writeAccess, caseId, run, runLoading, runError, acceptRun, acceptedSnapshotId, visibleSnapshotId, switchRequired, pendingAction, approvalSlot, resumeSlot }: { writeAccess: WriteAccess; caseId: string; run: RunRecord | null; runLoading: boolean; runError: string; acceptRun: (event: ReactMouseEvent<HTMLButtonElement>) => void; acceptedSnapshotId: string; visibleSnapshotId: string; switchRequired: boolean; pendingAction: string; approvalSlot: ReactNode; resumeSlot: ReactNode }) {
   if (!run) return <LoadState loading={runLoading} error={runError} empty="No current execution. Drop documents on Cases to start analysis, or compile a route here." />;
   const complete = run.nodes.filter((node) => node.status === "succeeded").length;
   const current = (run.status === "queued" || run.status === "running")
@@ -1478,7 +1500,7 @@ function RunStatus({ writeAccess, caseId, run, runLoading, runError, acceptRun, 
   </div>;
 }
 
-function RunConsole({ writeAccess, caseId, selectedCase, run, runLoading, runError, startRun, acceptRun, acceptedSnapshotId, visibleSnapshotId, switchRequired, approveResearchPlan, approvalUnavailable, pendingAction, resumeSlot }: { writeAccess: WriteAccess; caseId: string; selectedCase: CaseRecord | null; run: RunRecord | null; runLoading: boolean; runError: string; startRun: (event: FormEvent<HTMLFormElement>) => void; acceptRun: () => void; acceptedSnapshotId: string; visibleSnapshotId: string; switchRequired: boolean; approveResearchPlan: (planHash: string) => void; approvalUnavailable: boolean; pendingAction: string; resumeSlot: ReactNode }) {
+function RunConsole({ writeAccess, caseId, selectedCase, run, runLoading, runError, startRun, acceptRun, acceptedSnapshotId, visibleSnapshotId, switchRequired, approveResearchPlan, approvalUnavailable, pendingAction, resumeSlot }: { writeAccess: WriteAccess; caseId: string; selectedCase: CaseRecord | null; run: RunRecord | null; runLoading: boolean; runError: string; startRun: (event: FormEvent<HTMLFormElement>) => void; acceptRun: (event: ReactMouseEvent<HTMLButtonElement>) => void; acceptedSnapshotId: string; visibleSnapshotId: string; switchRequired: boolean; approveResearchPlan: (planHash: string) => void; approvalUnavailable: boolean; pendingAction: string; resumeSlot: ReactNode }) {
   const [pathway, setPathway] = useState("EARNINGS_UPDATE");
   const [depth, setDepth] = useState("screen");
   const deepResearchAvailable = selectedCase?.deep_research_available === true;
