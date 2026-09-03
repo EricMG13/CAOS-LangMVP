@@ -1,7 +1,12 @@
-# SINGLE-INSTANCE ONLY: never scale `app` or `worker` above 1. Each service
-# holds a PostgreSQL advisory lock and refuses a duplicate replica: checkpoints
-# stay SQLite (the Postgres saver is unwired), request ceilings are in-process,
-# and exports have no claim.
+# SINGLE-INSTANCE ONLY: never scale `app` or `worker` above 1. This file
+# declares one replica for both, and the environment manifest
+# (caos/deploy/ENVIRONMENT_MANIFEST.md) records the ceiling. The application
+# enforces it as well: the app holds an exclusive OS lock over the checkpoint
+# location and a PostgreSQL advisory lock for its role, the worker holds the
+# worker-role advisory lock, and a duplicate of either fails startup typed
+# before it serves or polls. Checkpoints stay SQLite on the vault volume (the
+# Postgres saver is unwired), request ceilings are in-process, and exports have
+# no claim. caos/tests/test_deploy_topology.py pins this topology.
 services:
   db:
     image: postgres:17-alpine@sha256:18cfe3ef5e6815560c98237d6216d1e5119702fb0f3894c8785dd58b8bbe5d73
@@ -39,6 +44,8 @@ services:
       dockerfile: caos/deploy/Dockerfile
       target: app
     restart: unless-stopped
+    deploy:
+      replicas: 1
     depends_on:
       db: { condition: service_healthy }
       clamav: { condition: service_healthy }
@@ -79,6 +86,8 @@ services:
       dockerfile: caos/deploy/Dockerfile
       target: worker
     restart: unless-stopped
+    deploy:
+      replicas: 1
     command: ["python", "worker.py"]
     depends_on:
       db: { condition: service_healthy }

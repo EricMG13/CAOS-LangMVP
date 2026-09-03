@@ -222,6 +222,8 @@ def test_lock_loss_termination_cannot_be_blocked_by_logging(monkeypatch):
 def postgres_url():
     url = os.getenv("CAOS_TEST_POSTGRES_URL")
     if not url:
+        if os.getenv("CAOS_REQUIRE_POSTGRES"):
+            pytest.fail("CAOS_REQUIRE_POSTGRES is set but CAOS_TEST_POSTGRES_URL is not")
         pytest.skip("set CAOS_TEST_POSTGRES_URL to run PostgreSQL advisory-lock integration tests")
     return url
 
@@ -605,7 +607,7 @@ def test_production_entrypoint_cannot_boot_development_defaults(monkeypatch, tmp
 def test_app_entrypoint_holds_the_app_lock_while_serving(monkeypatch, tmp_path):
     tracker = _LockTracker()
     settings = _settings(tmp_path)
-    engine = SimpleNamespace(store=tracker, provider=None)
+    engine = SimpleNamespace(store=tracker, provider=None, checkpoint_path=tmp_path / "checkpoints.db")
 
     async def close_engine():
         pass
@@ -637,6 +639,7 @@ def test_app_entrypoint_closes_unserved_resources_when_lock_acquisition_fails(mo
     class Engine:
         def __init__(self) -> None:
             self.store = Store()
+            self.checkpoint_path = tmp_path / "checkpoints.db"
             self.provider = Provider()
 
         async def aclose(self) -> None:
@@ -669,7 +672,7 @@ def test_worker_entrypoint_holds_the_worker_lock_while_polling(monkeypatch, tmp_
     monkeypatch.setattr(worker.Engine, "create", classmethod(
         lambda cls, **_kwargs: SimpleNamespace(aclose=close_engine),
     ))
-    monkeypatch.setattr(worker, "ModelService", lambda **_kwargs: object())
+    monkeypatch.setattr(worker, "ModelService", lambda **_kwargs: SimpleNamespace(recover_builds=lambda: 0))
     monkeypatch.setattr(worker, "DeliverableService", lambda **_kwargs: SimpleNamespace(recover_freeze_jobs=lambda: 0))
     monkeypatch.setattr(worker, "run_pending", lambda *_services: tracker.held == ["worker"] or pytest.fail("worker lock not held"))
     monkeypatch.setattr(sys, "argv", ["worker.py", "--once"])
@@ -695,6 +698,7 @@ def test_app_entrypoint_closes_owned_resources_in_reverse_order(monkeypatch, tmp
     class Engine:
         def __init__(self) -> None:
             self.store = Store()
+            self.checkpoint_path = tmp_path / "checkpoints.db"
             self.provider = Provider()
 
         async def recover(self) -> None:
@@ -745,7 +749,7 @@ def test_worker_entrypoint_closes_owned_resources_in_reverse_order(monkeypatch, 
     monkeypatch.setattr(worker, "configure_logging", lambda _settings: None)
     monkeypatch.setattr(worker.DomainStore, "from_url", classmethod(lambda cls, _url: store))
     monkeypatch.setattr(worker.Engine, "create", classmethod(lambda cls, **_kwargs: Engine()))
-    monkeypatch.setattr(worker, "ModelService", lambda **_kwargs: object())
+    monkeypatch.setattr(worker, "ModelService", lambda **_kwargs: SimpleNamespace(recover_builds=lambda: 0))
     monkeypatch.setattr(worker, "DeliverableService", lambda **_kwargs: SimpleNamespace(recover_freeze_jobs=lambda: 0))
     monkeypatch.setattr(sys, "argv", ["worker.py", "--once"])
 
@@ -780,6 +784,7 @@ def test_app_entrypoint_closes_store_when_provider_shutdown_fails(monkeypatch, t
     class Engine:
         def __init__(self) -> None:
             self.store = Store()
+            self.checkpoint_path = tmp_path / "checkpoints.db"
             self.provider = Provider()
 
         async def recover(self) -> None:
@@ -817,6 +822,7 @@ def test_app_entrypoint_preserves_service_failure_through_all_cleanup_failures(m
     class Engine:
         def __init__(self) -> None:
             self.store = Store()
+            self.checkpoint_path = tmp_path / "checkpoints.db"
             self.provider = Provider()
 
         async def recover(self) -> None:
@@ -859,6 +865,7 @@ def test_app_entrypoint_preserves_engine_shutdown_failure(monkeypatch, tmp_path)
     class Engine:
         def __init__(self) -> None:
             self.store = Store()
+            self.checkpoint_path = tmp_path / "checkpoints.db"
             self.provider = Provider()
 
         async def recover(self) -> None:
@@ -900,7 +907,7 @@ def test_worker_entrypoint_preserves_poll_failure_through_cleanup_failures(monke
     monkeypatch.setattr(worker, "configure_logging", lambda _settings: None)
     monkeypatch.setattr(worker.DomainStore, "from_url", classmethod(lambda cls, _url: store))
     monkeypatch.setattr(worker.Engine, "create", classmethod(lambda cls, **_kwargs: Engine()))
-    monkeypatch.setattr(worker, "ModelService", lambda **_kwargs: object())
+    monkeypatch.setattr(worker, "ModelService", lambda **_kwargs: SimpleNamespace(recover_builds=lambda: 0))
     monkeypatch.setattr(worker, "DeliverableService", lambda **_kwargs: SimpleNamespace(recover_freeze_jobs=lambda: 0))
     monkeypatch.setattr(worker, "run_pending", lambda *_services: (_ for _ in ()).throw(RuntimeError("poll failed")))
     monkeypatch.setattr(sys, "argv", ["worker.py", "--once"])
@@ -984,3 +991,168 @@ def test_worker_construction_failure_closes_its_owned_store(monkeypatch, tmp_pat
         worker.main()
 
     assert events == ["store.close"]
+
+
+# --- the exclusive lock over the durable checkpoint location (Phase 5 item 10) ------
+
+
+def test_checkpoint_lock_refuses_a_second_holder_and_releases_on_exit(tmp_path):
+    from caos.instance_lock import InstanceAlreadyRunning, checkpoint_lock, lock_path_for
+
+    checkpoint = tmp_path / "checkpoints.db"
+    with checkpoint_lock(checkpoint) as lock_path:
+        assert lock_path == lock_path_for(checkpoint) and lock_path.read_text().strip() == str(os.getpid())
+        with pytest.raises(InstanceAlreadyRunning, match="INSTANCE_ALREADY_RUNNING"):
+            with checkpoint_lock(checkpoint):
+                pass
+    with checkpoint_lock(checkpoint):
+        pass
+
+
+def _hold_checkpoint_lock_in_another_process(checkpoint: Path):
+    """A second process that takes the lock and reports, then holds it until stdin closes."""
+    import subprocess
+
+    code = (
+        "import sys; from pathlib import Path; from caos.instance_lock import checkpoint_lock\n"
+        f"with checkpoint_lock(Path({str(checkpoint)!r})):\n"
+        "    print('held', flush=True); sys.stdin.readline()\n"
+    )
+    process = subprocess.Popen(
+        [sys.executable, "-c", code], stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True,
+        cwd=str(Path(__file__).resolve().parents[1] / "server"),
+    )
+    assert process.stdout.readline().strip() == "held", "the second process must own the lock first"
+    return process
+
+
+def test_app_entrypoint_refuses_startup_while_another_process_holds_the_checkpoint_location(monkeypatch, tmp_path):
+    """The proof by a second process: with the lock held elsewhere, `run.main`
+    fails typed before recovery or a socket, serves nothing, and closes what it
+    built. The advisory lock is never even attempted."""
+    from caos.instance_lock import InstanceAlreadyRunning
+
+    events = []
+
+    class Store(_LockTracker):
+        @contextmanager
+        def single_instance(self, role: str):
+            events.append(f"advisory:{role}")
+            yield
+
+        def close(self) -> None:
+            events.append("store.close")
+
+    class Engine:
+        def __init__(self) -> None:
+            self.store = Store()
+            self.provider = None
+            self.checkpoint_path = tmp_path / "checkpoints.db"
+
+        async def aclose(self) -> None:
+            events.append("engine.close")
+
+    holder = _hold_checkpoint_lock_in_another_process(tmp_path / "checkpoints.db")
+    try:
+        settings = _settings(tmp_path)
+        engine = Engine()
+        monkeypatch.setattr(run.Settings, "from_env", classmethod(lambda cls: settings))
+        monkeypatch.setattr(run, "build", lambda _settings, _data: (object(), engine))
+        monkeypatch.setattr(run, "serve", lambda *_args, **_kwargs: pytest.fail("served while another instance holds the checkpoint location"))
+        with pytest.raises(InstanceAlreadyRunning, match="INSTANCE_ALREADY_RUNNING"):
+            run.main()
+        assert events == ["engine.close", "store.close"], "nothing served, no advisory lock taken, resources closed"
+    finally:
+        holder.stdin.close()
+        holder.wait(timeout=10)
+        holder.stdout.close()
+
+    # The holder is gone: the same entrypoint now takes both locks and serves.
+    events.clear()
+    monkeypatch.setattr(run, "serve", lambda *_args, **_kwargs: events.append("served"))
+    run.main()
+    assert events[:2] == ["advisory:app", "served"]
+
+
+def _free_port() -> int:
+    import socket
+
+    with socket.socket() as sock:
+        sock.bind(("127.0.0.1", 0))
+        return sock.getsockname()[1]
+
+
+def _wait_for_health(port: int, process, seconds: float = 60.0) -> None:
+    import time
+    import urllib.error
+    import urllib.request
+
+    deadline = time.monotonic() + seconds
+    while time.monotonic() < deadline:
+        if process.poll() is not None:
+            raise AssertionError(f"dev server exited early: {process.stderr.read()}")
+        try:
+            with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/health", timeout=1) as response:
+                if response.status == 200:
+                    return
+        except (urllib.error.URLError, ConnectionError, OSError):
+            time.sleep(0.25)
+    raise AssertionError("dev server never served /api/health")
+
+
+def test_a_second_dev_server_on_the_same_data_directory_fails_startup_and_never_serves(tmp_path):
+    """End to end, two real processes: the second `dev.py` over the same data
+    directory exits non-zero naming INSTANCE_ALREADY_RUNNING, its port never
+    answers, and the first keeps serving. Once the first exits, a third boots."""
+    import signal
+    import socket
+    import subprocess
+
+    server_dir = Path(__file__).resolve().parents[1] / "server"
+    env = {
+        **os.environ, "ENVIRONMENT": "development", "CAOS_DATA_DIR": str(tmp_path / "data"),
+        "ANTHROPIC_API_KEY": "", "OPENROUTER_API_KEY": "", "GEMINI_API_KEY": "", "CAOS_PROVIDER": "",
+        "AGENT_EXECUTION_ENABLED": "false",
+    }
+
+    def start(port: int):
+        return subprocess.Popen(
+            [sys.executable, "dev.py"], cwd=str(server_dir), env={**env, "PORT": str(port)},
+            stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True,
+        )
+
+    first_port, second_port = _free_port(), _free_port()
+    first = start(first_port)
+    try:
+        _wait_for_health(first_port, first)
+        second = start(second_port)
+        try:
+            stderr = second.communicate(timeout=90)[1]
+        except subprocess.TimeoutExpired:
+            second.kill()
+            raise AssertionError("the second instance did not exit")
+        assert second.returncode != 0
+        assert "INSTANCE_ALREADY_RUNNING" in stderr, stderr[-2000:]
+        with pytest.raises(OSError):
+            socket.create_connection(("127.0.0.1", second_port), timeout=1).close()
+        _wait_for_health(first_port, first, seconds=5)
+    finally:
+        first.send_signal(signal.SIGTERM)
+        try:
+            first.wait(timeout=30)
+        except subprocess.TimeoutExpired:
+            first.kill()
+            first.wait(timeout=10)
+        first.stderr.close()
+    third_port = _free_port()
+    third = start(third_port)
+    try:
+        _wait_for_health(third_port, third)
+    finally:
+        third.send_signal(signal.SIGTERM)
+        try:
+            third.wait(timeout=30)
+        except subprocess.TimeoutExpired:
+            third.kill()
+            third.wait(timeout=10)
+        third.stderr.close()

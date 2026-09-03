@@ -15,6 +15,7 @@ from typing import Any, AsyncIterator
 from fastapi import Body, FastAPI, HTTPException, Request, Response
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+from sqlalchemy.exc import OperationalError
 from starlette.datastructures import MutableHeaders
 from starlette.middleware.gzip import DEFAULT_EXCLUDED_CONTENT_TYPES, GZipMiddleware
 
@@ -324,6 +325,14 @@ def create_app(*, settings: Settings, store: DomainStore, engine: Any) -> FastAP
             for error in exc.errors()
         ]
         return JSONResponse(status_code=422, content={"detail": detail})
+
+    @app.exception_handler(OperationalError)
+    async def store_unavailable(request: Request, exc: OperationalError) -> JSONResponse:
+        # SIM-010: a database that cannot be reached before a write is a typed
+        # 503 the caller can act on, never a bare 500. Every governed write is
+        # one transaction, so nothing partial was committed; the driver's
+        # message (host names, statement text) never reaches the wire.
+        return JSONResponse(status_code=503, content={"detail": {"code": "STORE_UNAVAILABLE"}})
 
     def identity(request: Request):
         return identity_from_request(request, settings)
@@ -1233,7 +1242,7 @@ def create_app(*, settings: Settings, store: DomainStore, engine: Any) -> FastAP
         code = str(exc).split(":", 1)[0]
         if "NOT_FOUND" in code:
             status = 404
-        elif "NOT_INDEPENDENT" in code:
+        elif "NOT_INDEPENDENT" in code or "REVOKED" in code:
             status = 403
         elif any(token in code for token in ("STALE", "CONFLICT", "CHANGED", "INTEGRITY", "SIGNOFF")):
             status = 409

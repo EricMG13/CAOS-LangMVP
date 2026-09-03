@@ -67,9 +67,12 @@ commit_and_checkpoint (atomic+retryable via reuse-first CAS); snapshot_acceptanc
 → runs::acceptance_is_idempotent…together; run_public_shape_includes_ordered_nodes_and_events →
 runs::event_log + http_contracts run family; loan_universe_versions_supersede_reject_withdraw +
 postgres_loan_import_and_withdrawal_serialize → loan_universe (4 tests, both orders + injected interleaving);
-postgres_assumption_creation_and_withdrawal_serialize → p2:store sequential halves + DEFERRED (D3) for the
-two-connection staging; postgres_two_connection_uniqueness_and_claim_races → p2 dedup unique index
-(ingest half), thesis half EXCLUDED (E1), two-connection staging DEFERRED (D3);
+postgres_assumption_creation_and_withdrawal_serialize → p2:store sequential halves + the two-connection
+PostgreSQL proof `test_postgres_races.py::test_assumption_creation_and_withdrawal_serialize` (D3 closed
+2026-09-03); postgres_two_connection_uniqueness_and_claim_races → p2 dedup unique index (ingest half),
+thesis half EXCLUDED (E1), two-connection PostgreSQL proof `test_postgres_races.py::
+test_duplicate_upload_race_admits_one_active_source_and_one_set_version` + `::test_model_build_claim_race_
+has_one_executor` (D3 closed 2026-09-03);
 publication_versions_conflict_without_partial_append → EXCLUDED (E1).
 
 Model rows (13): all → model_builder per its ROW MAPPING block (result validation matrix, bounded
@@ -152,9 +155,60 @@ vault digest recheck, case scoping, withdrawal deactivation, CP-3 binding).
 - **D2 — finalization deadline under a fake clock** (2 rows): the never-commit-past-ceiling /
   commit-inside-deadline pair needs the store finalize transaction's deadline parameter; lands with the
   phase-3 store finalize. The single-terminal and rollback halves are already spec'd (runs crash-gap tests).
-- **D3 — two-real-connections Postgres staging** (residual halves of 2 rows): the guarantees are spec'd
-  via both sequential orders + injected interleaving; the two-connection Postgres variant runs in the
-  both-dialects CI lane once the store has a Postgres test target (container available locally).
+- **D3 — two-real-connections Postgres staging** (residual halves of 2 rows): CLOSED 2026-09-03 (Task 12a).
+  `caos/tests/test_postgres_races.py` is the PostgreSQL test target: every test opens two SQLAlchemy engines
+  over a database created for it, parks each connection mid-transaction at a named statement so both
+  writers pass their pre-reads before either commits, and asserts one winner, a typed loser and an intact
+  audit chain. It runs in CI against the digest-pinned `postgres:17-alpine` service (`ci.yml` job
+  `postgres`, `CAOS_REQUIRE_POSTGRES=1` so a missing URL fails rather than skips) and locally against the
+  QA container. The SQLite thread races and the compiled `FOR UPDATE` check in `test_store.py` stay as
+  fast mechanism tests and are not PostgreSQL proof. See "Two-connection PostgreSQL races" below.
+
+## Two-connection PostgreSQL races (2026-09-03, enterprise Task 12a; ETR-B07)
+
+`caos/tests/test_postgres_races.py` (27 tests, marker `postgres`) is the behavioural proof that the
+database, not a process lock, serialises every governed race Phase 5 of `ENTERPRISE_READINESS_PLAN.md`
+names. Each row below is one test on two independent connections (two engines, two backend PIDs) with the
+interleaving forced by parking one connection at the named statement. "Before" is what the same test
+observed on the store as it stood at `ca6c33e`; every "before" defect was repaired in the store and the
+repair is what the test now proves.
+
+| Race | Test | Before (on `ca6c33e`) | After |
+| --- | --- | --- | --- |
+| Duplicate upload (SIM-013) | `test_duplicate_upload_race_admits_one_active_source_and_one_set_version` | one active source, typed loser (partial unique index) | unchanged |
+| Identical intake packs | `test_concurrent_identical_intake_packs_admit_one_pack` | one pack admitted, typed loser | unchanged |
+| Source-set version allocation | `test_concurrent_distinct_uploads_allocate_monotonic_source_set_versions` | versions 1 and 2 (case-row `FOR UPDATE`, previously pinned only as compiled SQL) | unchanged, now proven |
+| Upload/withdrawal interleave (SIM-014) | `test_upload_and_withdrawal_interleave_yield_monotonic_history_under_both_orders` | monotonic history under both orders | unchanged |
+| Duplicate withdrawal | `test_duplicate_withdrawal_race_withdraws_once` | **two set versions, two `source.withdrawn` audit rows** | conditional `UPDATE … WHERE withdrawn = FALSE`; the loser gets None |
+| Assumption vs withdrawal (D3) | `test_assumption_creation_and_withdrawal_serialize[withdrawal]` | **assumption READY citing a withdrawn source** | cited rows read `FOR SHARE`; the withdrawal waits and stales it, or the save refuses `EVIDENCE_SOURCE_WITHDRAWN` |
+| Loan-universe import vs withdrawal (D3) | `test_loan_universe_import_and_withdrawal_serialize` | no active universe outlives its source | unchanged |
+| Event sequence (invariant 6) | `test_event_sequence_allocation_serializes_two_writers_on_one_run` | **raw primary-key violation on `(run_id, seq)`** | run row `FOR UPDATE` before `max(seq)+1`; every run-table writer takes the run row first |
+| Budget reserve (invariant 8) | `test_budget_reserve_race_has_one_reservation_and_one_typed_refusal` | **both reserved; in-flight digest overwritten, `used` lost** | `run_budgets` row `FOR UPDATE`; loser `AGENT_BUDGET_EXCEEDED` |
+| Budget reconcile | `test_budget_reconcile_race_applies_the_true_up_exactly_once` | **true-up applied twice** | loser `AGENT_AUTHORITY_MISMATCH` |
+| Budget charge | `test_budget_charge_race_refuses_the_ceiling_before_overspend` | **lost update** | loser `AGENT_BUDGET_EXCEEDED`, `used` exact |
+| Run acceptance (SIM-007, SIM-012) | `test_snapshot_acceptance_race_moves_the_case_and_run_pointers_once` | one winner, `SNAPSHOT_AUTHORITY_CHANGED` | unchanged |
+| Build claim (SIM-015) | `test_model_build_claim_race_has_one_executor` | one executor | unchanged |
+| Build queue | `test_model_queue_race_is_idempotent_with_one_attributed_winner` | idempotent | unchanged |
+| Model sign-off (SIM-016) | `test_model_sign_off_race_has_one_revision_and_one_typed_conflict[False/True]` | **raw IntegrityError on the revision number** | case advisory lock (`store.lock_case`); loser `ModelRevisionConflict` naming the winner |
+| Opinion sign-off | `test_opinion_sign_off_race_leaves_one_head` | **two opinion rows, two heads** | case advisory lock; loser `OpinionHeadConflict` |
+| Draft save | `test_draft_save_race_conflict_carries_the_committed_head` | typed conflict carrying a stale head | case advisory lock; the conflict carries the committed head |
+| Freeze request | `test_freeze_request_race_converges_on_one_job` | **raw IntegrityError on the freeze thread** | case advisory lock; both return one job |
+| Freeze claim (SIM-015) | `test_freeze_claim_race_has_one_renderer` | one renderer | unchanged |
+| Frozen publication | `test_publish_frozen_race_converges_on_one_record_and_one_thread` | **raw IntegrityError on the deliverable id** | case advisory lock; one record, one thread |
+| Filing (SIM-017) | `test_filing_race_files_once_with_one_receipt` | one FILED, one receipt | unchanged |
+| Disconnect after ack (SIM-011) | `test_disconnect_after_an_acknowledged_write_is_resolved_by_idempotent_retry` | — | retry converges on the committed state |
+
+Two further PostgreSQL facts the target surfaced, both repaired: the Task 10 deliverable-store DDL
+(`RAISE EXCEPTION '… % …'`) could not be created through psycopg at all, so `DeliverableStore` failed to
+construct on PostgreSQL (now executed through `sa.text`, which escapes the placeholder); and the model and
+deliverable tables were created lazily, so a fresh deployment's schema depended on usage history (now
+created by `DomainStore.from_url`, which also turns a DDL defect into a refusal to boot).
+
+The mechanism split is deliberate and stays: the process-wide locks (`_AUTHORITY_MUTATION_LOCK`, the
+`ModelStore`/`DeliverableStore` `_WRITE_LOCK`) remain the SQLite serialisation for the development store,
+where `lock_case` and `FOR UPDATE` are no-ops; PostgreSQL relies on the row locks, the transaction-scoped
+case advisory lock and the unique constraints. Neither the SQLite thread races nor the compiled-clause
+checks are PostgreSQL proof; only this module is.
 
 ## Invariant-to-test table + suite reconciliation (2026-08-27, phase 6)
 
@@ -209,8 +263,8 @@ on an over-ceiling charge before `finalize_success` — success never commits pa
 ceiling. Verified: the pre-change runtime fails exactly the wrapper-coverage, final-validation,
 and never-lands tests.
 
-D3 (residual Postgres two-connection halves of 2 rows) remains deferred on its original reason —
-no Postgres test target exists in CI yet; flagged for the phase-6 gate since this is the last phase.
+D3 (residual Postgres two-connection halves of 2 rows) was deferred here on its original reason — no
+Postgres test target existed in CI. It closed on 2026-09-03 with the target described under D3 above.
 
 ## Prompt-injection behaviour suite (2026-08-31)
 

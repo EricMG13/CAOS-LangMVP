@@ -1002,7 +1002,10 @@ class DeliverableService:
         # Nothing is rendered here. The worker publishes every export
         # hash-addressed, reads each back verified, and only then inserts the
         # frozen record (Phase 4 items 11–12; XLSX renders in the worker alone).
-        return self._job_view(self.records.request_freeze(frozen_record, actor, self.store._audit))
+        return self._job_view(self.records.request_freeze(
+            frozen_record, actor, self.store._audit,
+            authorize=lambda conn: self.store.require_standing(conn, case_id, actor, {"ANALYST", "APPROVER", "ADMIN"}),
+        ))
 
     def _publication_context(self, case_id: str, authority: dict[str, Any], source_set: dict[str, Any]) -> dict[str, Any]:
         """Accepted-run identity and the pinned source register for the control sheet."""
@@ -1232,7 +1235,10 @@ class DeliverableService:
                 raise ValueError("SOURCE_SET_CHANGED: the evidence base moved while the gate was parked")
             self._accepted_artifacts(case_id)
             self._verify_frozen_exports(record)
-            filed = self.records.file_record(deliverable_id, actor, self.store._audit)
+            filed = self.records.file_record(
+                deliverable_id, actor, self.store._audit,
+                authorize=lambda conn: self.store.require_standing(conn, case_id, actor, {"APPROVER", "ADMIN"}),
+            )
         if filed is None:
             raise ResumeNotApplied(None)
         return filed

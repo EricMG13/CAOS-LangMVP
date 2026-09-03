@@ -2040,6 +2040,9 @@ def test_filing_refuses_export_metadata_substituted_from_another_reviewed_draft(
     from caos.storage.deliverables import deliverable_frozen
 
     case, source, _authority = seed_ready_case(service, store)
+    # Filing rechecks the approver's case standing inside the commit (Task 12a,
+    # SIM-020), so the filer here holds it like every other service-level filer.
+    add_approver(store, case)
     template = service.templates()["FULL_CREDIT"]
     bind_default_model_for_tests(service, case, template)
     first_revision = service.save_draft(
