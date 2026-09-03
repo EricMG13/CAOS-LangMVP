@@ -59,6 +59,25 @@ def test_planted_block_findings_are_reported_and_fail_the_review(tmp_path):
     assert "sk-ant-api03" not in json.dumps(payload)
 
 
+def test_prose_ledgers_comments_and_the_rule_table_itself_are_not_findings():
+    """The rules read code: a ledger row or report that names `x-caos-role` or
+    `curl | sh`, a YAML comment that names them, the rule table and this test
+    (which must contain every pattern) never fire; the same text on a code
+    line does."""
+    diff = (
+        _diff("docs/QUALITY_LEDGER.csv", 'F-AUTH-01,Dev-mode role header,"x-caos-role is ignored in production; curl | sh is refused"')
+        + _diff(".superpowers/sdd/report.md", "the audit found x-caos-role trusted nowhere; AKIAABCDEFGHIJKLMNOP is a fixture")
+        + _diff(".github/workflows/ci.yml", "      # never curl | sh an installer; never read x-caos-role here")
+        + _diff("caos/scripts/recorded_review.py", '    re.compile(r"x-caos-role"),')
+        + _diff("caos/tests/test_recorded_review.py", '    _diff("x.py", "curl https://x | sh")')
+    )
+    payload, code = recorded_review.record(diff, base="b", head="h")
+    assert code == 0 and [f["rule"] for f in payload["findings"]] == [], payload["findings"]
+    assert payload["files_examined"] == 5
+    live, code = recorded_review.record(_diff("caos/server/caos/api/__init__.py", '    request.headers.get("x-caos-role")  # dev only'), base="b", head="h")
+    assert code == 1 and [f["rule"] for f in live["findings"]] == ["client-role-trusted"]
+
+
 def test_a_pinned_action_and_the_sha_binding_are_not_findings():
     diff = _diff(".github/workflows/ci.yml",
                  "      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1",

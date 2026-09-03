@@ -68,6 +68,7 @@ FILE_MAP = {
     r"^caos/frontend/scripts/identity-a11y": "F-UI-14",
     r"^caos/frontend/scripts/draft-history-smoke": "F-UI-09, F-UI-11",
     r"^caos/frontend/scripts/workbench-smoke": "F-UI-02, F-UI-04",
+    r"^caos/frontend/scripts/run-browsers": "F-UI-02, F-UI-04 (the three-engine runner for the workbench journey)",
     r"^caos/frontend/scripts/draft-history-smoke": "F-UI-02, F-UI-04",
     r"^caos/frontend/scripts/identity-a11y": "F-UI-14, F-UI-15",
     r"^caos/frontend/scripts/production-inventory": "F-OPS-02 (D-009)",

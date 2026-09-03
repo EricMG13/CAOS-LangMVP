@@ -184,7 +184,7 @@ Frontend:
 - `caos/frontend/scripts/a11y-axe.mjs` — review, filed, loading, error and
   refusal states.
 
-Tests: `caos/tests/test_recorded_review.py` (7), `caos/tests/
+Tests: `caos/tests/test_recorded_review.py` (8), `caos/tests/
 test_workflow_security.py` (22), `caos/tests/test_scan_floors.py` (5),
 `caos/tests/spec/test_limits_spec.py` (10), `caos/tests/test_perimeter_ledger.py`
 (5).
@@ -359,13 +359,15 @@ between the font assertion and the failure handler.
 | --- | --- | --- |
 | route security audit | `PY run_sec_audit.py` | `{'audited_routes': 59, 'matrix_cells': 507, 'cross_case_probes': 20, 'failures': 0}` |
 | lint | `PY -m ruff check --config ruff.toml caos/server caos/tests --exclude caos/server/caos/methodology/vendor` (and `qa run_sec_audit.py caos/scripts`) | `All checks passed!` (both) |
-| quality ledger | `PY docs/quality_ledger_coverage.py` | `routes checked: 54   product files: 342   features: 134` / `the ledger documents every route and every product file` (untracked new files count once committed; their FILE_MAP rows exist) |
-| new tests | `PY -m pytest caos/tests/test_recorded_review.py caos/tests/test_workflow_security.py caos/tests/test_scan_floors.py caos/tests/test_perimeter_ledger.py caos/tests/spec/test_limits_spec.py -q` | 7 + 22 + 5 + 5 + 10 passed |
+| quality ledger | `PY docs/quality_ledger_coverage.py` (on the committed tree) | `routes checked: 54   product files: 353   features: 134` / `the ledger documents every route and every product file` — the first run on the committed tree failed on `caos/frontend/scripts/run-browsers.mjs` (no FILE_MAP row; the Task 12a trap again), fixed in the follow-up commit |
+| recorded review on this PR's own diff | `git diff e8ccc06 --unified=0 \| PY caos/scripts/recorded_review.py --diff - --base e8ccc06 --head HEAD` | first run `BLOCKED — 28 files, 4008 added lines, 15 findings`: every BLOCK was a self-match on prose (the report, `QUALITY_LEDGER.csv`, `PERIMETER_LEDGER.csv` naming `x-caos-role` and `curl \| sh`), on the rule table and its test (which must contain the patterns), and on a YAML comment; line rules now skip prose/CSV, the script and its test, and comment lines (`test_prose_ledgers_comments_and_the_rule_table_itself_are_not_findings` pins both the exclusion and that the same text on a code line still fires); rerun `RECORDED — 28 files, 4037 added lines, 2 findings` (REVIEW: the two dependency locks), exit 0 |
+| new tests | `PY -m pytest caos/tests/test_recorded_review.py caos/tests/test_workflow_security.py caos/tests/test_scan_floors.py caos/tests/test_perimeter_ledger.py caos/tests/spec/test_limits_spec.py -q` | 8 + 22 + 5 + 5 + 10 passed (the eighth review test was added in the follow-up commit) |
 | backend suite | `CAOS_TEST_POSTGRES_URL=… ANTHROPIC_API_KEY= OPENROUTER_API_KEY= GEMINI_API_KEY= PY -m pytest caos/tests -q -p no:cacheprovider -W always -rs` | `1211 passed, 4 skipped, 1 warning in 1233.56s (0:20:33)` with the QA PostgreSQL container (`postgres url set: yes`, so the two-connection races and the instance locks ran); skips: three corpus tests (corpus not yet copied, see below) and the nightly-only whole-pack harness cell; the one warning is the third-party StarletteDeprecationWarning; no ResourceWarning |
 | frontend | `npm run lint` · `npx tsc --noEmit` · `npm run test:unit` · `npm run build` | ESLint no issues; tsc no errors; `tests 123 pass 123 fail 0`; build exit 0 |
 | three-engine journey | `CAOS_URL=… node scripts/run-browsers.mjs` (final script and build; :8767 for Chromium/Firefox, :8766 for WebKit) | chromium passed 138 737 ms · firefox passed 147 396 ms · webkit passed 160 593 ms; `console_errors: []` in every report |
 | accessibility | `CAOS_URL=http://127.0.0.1:8766 node scripts/a11y-axe.mjs` (final build) | `{"routes":9,"viewports":6,"combinations":75,…,"states":["empty","populated","review","filed","loading","error","refusal"],…,"violations":0}`; exit 0 |
 | corpus host control (default subset, after copying the corpus) | `ANTHROPIC_API_KEY= … PY -m pytest caos/tests/test_corpus_pathways.py -q -p no:cacheprovider -rs` | `26 passed, 1 skipped, 1 warning in 136.71s` (the skip is the nightly-only whole-pack harness cell) |
+| CI workflow steps | — | not executed here: `ci.yml`, `nightly.yml` and `security-review.yml` were YAML-loaded, pinned by `test_workflow_security.py` (22) and `test_recorded_review.py` (8), and each scanner's CLI shape was checked locally where the tool exists (Trivy 0.72 JSON and CycloneDX on a local image; gitleaks by digest on this machine); the first CI run of the branch is the execution |
 | capacity limits (development scale) | `PY qa/capacity.py limits --url http://127.0.0.1:8767` | PASS ×7, NOT_EXERCISED ×1 (request bytes, edge-only), exit 0 |
 
 ## Check mapping (IAM/SEC/WEB/PERF)

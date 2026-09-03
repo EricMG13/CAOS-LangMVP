@@ -107,6 +107,12 @@ RULES: list[tuple[str, str, object, re.Pattern[str], str]] = [
      "a dependency lock changed: pip-audit, npm audit and the hashed-install gates must stay green"),
 ]
 REDACT = re.compile(r"(AKIA[0-9A-Z]{16}|sk-ant-[A-Za-z0-9_-]{20,}|ghp_[A-Za-z0-9]{36}|xox[baprs]-[A-Za-z0-9-]{10,}|-----BEGIN [A-Z ]*PRIVATE KEY-----.*)")
+# Line rules read code. Prose and ledgers describe the patterns without executing
+# them, the rule table and its test necessarily contain them, and a comment line
+# cannot run anything — so none of those are matched (the path rules still apply).
+PROSE_SUFFIXES = (".md", ".csv", ".txt", ".rst")
+SELF = {"caos/scripts/recorded_review.py", "caos/tests/test_recorded_review.py"}
+COMMENT = re.compile(r"^\s*(#|//|/\*|\*)")
 
 
 def parse_diff(text: str) -> dict[str, list[tuple[int, str]]]:
@@ -156,7 +162,11 @@ def review(files: dict[str, list[tuple[int, str]]]) -> list[dict[str, object]]:
                     findings.append({"rule": rule, "severity": severity, "path": path, "line": None,
                                      "excerpt": "", "note": note})
                 continue
+            if path.endswith(PROSE_SUFFIXES) or path in SELF:
+                continue
             for line_number, text in added:
+                if COMMENT.match(text):
+                    continue
                 if pattern.search(text):
                     findings.append({"rule": rule, "severity": severity, "path": path, "line": line_number,
                                      "excerpt": REDACT.sub("[REDACTED]", text.strip())[:160], "note": note})
