@@ -19,7 +19,7 @@ provider port and identity/qualification record (`engine/provider.py`,
 classifier, the loan-universe importer, the CI and nightly workflows, the
 quality ledger and its coverage script, and the Task 5, 9 and 10 reports.
 
-Status: COMPLETE under host control; every live input is BLOCKED EXTERNAL (table below). Draft PR: see the end of this file.
+Status: COMPLETE under host control; every live input is BLOCKED EXTERNAL (table below). Draft PR: https://github.com/EricMG13/CAOS-LangMVP/pull/52 (commit 650db54).
 
 ## Design (decided before the first test)
 
