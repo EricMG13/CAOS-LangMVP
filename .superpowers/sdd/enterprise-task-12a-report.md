@@ -400,3 +400,21 @@ Doubts enumerated before declaring done, each investigated:
   recheck landed here because SIM-020 proved the defect.
 
 Draft pull request: https://github.com/EricMG13/CAOS-LangMVP/pull/54 (branch `claude/er-task-12a-database-truth`, commit `8afdb67` plus this URL commit).
+
+## CI follow-up (2026-09-03, after the draft PR)
+
+The babysit loop reported both server legs red before pytest ran: `docs/quality_ledger_coverage.py`
+refused because `caos/server/caos/instance_lock.py` and `docs/SIMULATION_LEDGER.csv` mapped to no
+feature. Cause: the gate walks `git ls-files`, and when it ran green here the two files were still
+untracked; they became product files the moment they were committed (the script's own comment
+records the same trap for the ledger files). Fix, as author judgment rather than a mapping tweak:
+two new ledger features — `F-OPS-13` (single-instance enforcement: the checkpoint-location lock,
+its entrypoints, Compose replicas and the manifest, with its tests and the drill result) and
+`F-QUAL-04` (the retained SIM-001–030 ledger and the tests that pin it) — plus `FILE_MAP` entries
+for the two paths, and the `F-OPS-05` backup row refreshed to describe the F1–F3 repairs and the
+2026-09-03 drill. Local gate on the committed tree afterwards:
+
+```text
+$ .venv314/bin/python docs/quality_ledger_coverage.py
+→ routes checked: 54   product files: 342   features: 133 — the ledger documents every route and every product file
+```

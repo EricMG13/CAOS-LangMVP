@@ -51,6 +51,7 @@ FILE_MAP = {
     r"^caos/server/caos/publishing/": "F-DELIV-10, F-DELIV-11",
     r"^caos/server/caos/artifacts/": "F-LU-01..03, F-RV-03",
     r"^caos/server/caos/atomic_files\.py": "F-SRC-09",
+    r"^caos/server/caos/instance_lock\.py": "F-OPS-13",
     r"^caos/server/caos/__init__\.py": "package marker",
     r"^caos/server/dev\.py": "F-OPS-01",
     r"^caos/server/run\.py": "F-OPS-02, F-RUN-20",
@@ -91,6 +92,7 @@ FILE_MAP = {
     # and because this check first went red on exactly these three files, which
     # were untracked when it was written and tracked the moment it was committed.
     r"^docs/(QUALITY_[A-Z]+\.csv|quality_ledger_coverage\.py)$": "the ledger itself",
+    r"^docs/SIMULATION_LEDGER\.csv$": "F-QUAL-04",
     r"^Modular OS/tools/": "F-OPS-07 (module consistency check)",
     r"^Modular OS/": "F-RUN-15 (methodology corpus the vendored bundle is built from)",
 }
