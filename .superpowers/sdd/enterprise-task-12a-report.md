@@ -398,3 +398,5 @@ Doubts enumerated before declaring done, each investigated:
   not the product, and the ceiling's typed 429 is the intended behaviour.
 - Task 12b owns the full authorization matrix; the commit-time standing
   recheck landed here because SIM-020 proved the defect.
+
+Draft pull request: https://github.com/EricMG13/CAOS-LangMVP/pull/54 (branch `claude/er-task-12a-database-truth`, commit `8afdb67` plus this URL commit).
