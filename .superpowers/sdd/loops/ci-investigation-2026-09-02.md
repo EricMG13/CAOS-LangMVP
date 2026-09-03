@@ -18,6 +18,7 @@ larger sample, the correction is kept rather than the first impression.
 | B | Dirty-draft focus-restoration race | `Browser` | **Open** — issue #38, red on main now |
 | C | Suite passes, process never exits, job burns to the 360-min cap | `Server` | **Root-caused and fixed** — teardown race in `Engine._drain_tasks` |
 | D | Consecutive pushes to main cancel their own CI | all | **Open, process** |
+| E | Nightly fires 4-12 h late, and its 30-min cap kills it mid-suite | `Nightly` | **Confirmed 2026-09-03** — cap raise in this PR |
 
 The recurring theme in A and C is the same: **CI does not fail loudly enough**.
 A shipped a runtime dependency CI never had; C spends six hours looking like a
@@ -371,8 +372,34 @@ two consequences are worth stating plainly:
   anyone noticing — the same class of problem as finding C, where a failure
   wore the costume of a routine cancellation.
 
-The 30-minute prediction therefore stands unmeasured, not confirmed and not
-retracted, until a nightly actually runs.
+### Prediction CONFIRMED — 2026-09-03, run 33744570749
+
+The nightly finally fired at **10:29:28 UTC** — 4 h 29 m after its 06:00 slot,
+squarely inside the delay band above, which is why the 06:40 check saw nothing.
+
+`Nightly — backend and frontend regression` (job 100613992206):
+
+| | |
+|---|---|
+| job elapsed | **30 m 14 s** — the `timeout-minutes: 30` cap |
+| `Backend regression` step | 10:30:02 → 10:59:44, **`cancelled`** mid-step |
+| every later step | **`skipped`** |
+
+The prediction was that the job would exceed 30 minutes. It did, and the
+consequence is larger than "a job went red": the kill lands *inside* the backend
+step, so **full lint and route security, the frontend regression, the frontend
+typecheck, the static build, the Playwright install, the workbench journey and
+the accessibility sweep never ran at all.** The nightly has not been a nightly
+for some time — it is a partial backend run that gets guillotined, and
+everything it is supposed to protect downstream of that is silently absent.
+
+And the disguise is finding C's, exactly: GitHub reports a `timeout-minutes`
+kill as `cancelled`, the same word `cancel-in-progress` produces. Run 8 sits in
+the list looking like somebody superseded it.
+
+`nightly.regression` 30 → 90 in this PR is therefore not a precaution against a
+projected trend. It repairs an already-broken gate, and the measurement above is
+the evidence.
 
 ## Recommendations, in the order I would do them
 
