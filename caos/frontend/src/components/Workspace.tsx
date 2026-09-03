@@ -883,13 +883,13 @@ export default function Workspace({ destination, children }: { destination?: Des
   // The opener is taken from the click, not from document.activeElement: WebKit
   // does not focus a button on click, so the dialog would otherwise record
   // <body> as its trigger and cancelling it would drop focus to the landmark.
-  const acceptOpener = useRef<HTMLElement | null>(null);
+  const [acceptOpener, setAcceptOpener] = useState<HTMLElement | null>(null);
   const acceptRun = (event: ReactMouseEvent<HTMLButtonElement>) => {
     if (!runId || !run || run.id !== runId || run.case_id !== caseId) {
       setRunError("Only a run bound to the selected case can be accepted.");
       return;
     }
-    acceptOpener.current = event.currentTarget;
+    setAcceptOpener(event.currentTarget);
     setAcceptPrompt(true);
   };
 
@@ -1045,7 +1045,7 @@ export default function Workspace({ destination, children }: { destination?: Des
       {notice ? <MutationReceipt>{notice}</MutationReceipt> : null}
       <div key={`${active}:${caseId}`}>{routeIsKnown ? <>{renderDestination()}{children}</> : children}</div>
     </WorkbenchShell>
-    <AcceptDialog open={acceptPrompt} trigger={acceptOpener.current} run={run} replaces={authority?.latest_accepted ?? null} pending={pendingAction === "accept-run"} onConfirm={confirmAccept} onClose={() => setAcceptPrompt(false)} />
+    <AcceptDialog open={acceptPrompt} trigger={acceptOpener} run={run} replaces={authority?.latest_accepted ?? null} pending={pendingAction === "accept-run"} onConfirm={confirmAccept} onClose={() => setAcceptPrompt(false)} />
     <DraftDiscardDialog open={discardPrompt !== null} detail={discardPrompt?.detail || ""} trigger={discardPrompt?.trigger || null} onConfirm={() => finishDraftDiscard(true)} onClose={() => finishDraftDiscard(false)} />
   </>;
 }
