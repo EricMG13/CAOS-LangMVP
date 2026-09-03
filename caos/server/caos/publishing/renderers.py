@@ -1,10 +1,21 @@
-"""Frozen-deliverable export renderers (md / pdf / xlsx).
+"""Frozen-deliverable export renderers (md / pdf / xlsx) — Task 10.
 
-Structure follows LEGACY publishing/renderers.py (DECISIONS §5: export
-renderers copy as domain code), rebuilt lean on the libraries actually pinned:
-openpyxl for xlsx and a minimal deterministic PDF writer (reportlab is not a
-dependency of this build). Every export renders exclusively from the frozen
-payload; analyst text with a formula prefix is neutralized to a literal.
+Every export walks one structure, `publication_view(payload)`: the masthead,
+the pages of canonical sections (opinion first, the pathway's sections, then
+the Evidence & QA Control Sheet) and the revision record. Nothing below reads
+draft blocks, model records or the store, so the four formats — these three
+and the browser, which draws `payload["publication"]` directly — carry the
+same facts, numbers, units, citations, origin labels, limitations, model
+identity and opinion by construction.
+
+PDF: pango-view shapes every page from Pango markup (system fonts, so any
+script the image's fonts cover renders; `fonts-noto-cjk` ships in the image),
+pages are paginated by measuring candidate pages, tables repeat their header
+row across a page split, and a rotated transparent `PENDING APPROVAL`
+watermark is merged under each page with pypdf. XLSX: openpyxl, typed numeric
+cells for model-owned values, formula prefixes neutralised, no formulas, frozen
+header rows and filters on every table sheet, deterministic zip re-pack.
+Renders are content-addressed, so nothing here reads the clock.
 """
 
 from __future__ import annotations
@@ -18,148 +29,203 @@ import shutil
 import subprocess
 import tempfile
 import textwrap
-import zlib
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
-FORMULA_PREFIXES = ("=", "+", "-", "@", "\t", "\r")
+from .markdown import (  # noqa: F401 — re-exported for callers and tests
+    FORMULA_PREFIXES,
+    MASTHEAD_FIELDS,
+    PENDING_APPROVAL,
+    _PLAIN_NUMBER,
+    _is_numeric,
+    _masthead_line,
+    _origin_label,
+    _section_rows,
+    _short_id,
+    _walk_sections,
+    publication_view,
+    render_frozen_markdown,
+)
 
 
-def _block_title(block: dict[str, Any], titles: dict[str, str] | None = None) -> str:
-    return (titles or {}).get(block["block_id"]) or block.get("title") or block["kind"].replace("_", " ").title()
+# --- PDF ---------------------------------------------------------------------------
+
+PAGE_WIDTH, PAGE_HEIGHT, MARGIN = 612, 792, 54
+BODY_WIDTH = PAGE_WIDTH - 2 * MARGIN
+FOOTER_HEIGHT = 22  # the footer is its own layer, pinned above the bottom margin
+BODY_HEIGHT = PAGE_HEIGHT - 2 * MARGIN - FOOTER_HEIGHT
+MONO_COLUMNS = 100  # 8pt monospace on a 504pt line
+_FEATURES = 'font_features="liga=0, clig=0, dlig=0"'
+_INK, _META, _RULE = "#16161e", "#5c5c66", "#9c998e"
 
 
-def _citation_lines(block: dict[str, Any]) -> list[str]:
-    return [
-        f"{citation['claim']} [{citation['source_id']}: {', '.join(citation['block_ids'])}]"
-        for citation in block.get("citations") or []
+def _esc(text: str) -> str:
+    return html.escape(str(text), quote=False)
+
+
+def _span(text: str, *, size: float, weight: str = "normal", family: str = "sans", color: str = _INK) -> str:
+    # No letter-spacing anywhere: Pango tracking is emitted as per-glyph
+    # positioning and text extraction then reads "A N A L Y S T", which breaks
+    # search, copy and the cross-format parity check.
+    attributes = [f'font_family="{family}"', f'size="{int(size * 1024)}"', f'weight="{weight}"',
+                  f'foreground="{color}"', _FEATURES]
+    return f"<span {' '.join(attributes)}>{_esc(text)}</span>"
+
+
+def _rule(strong: bool = False) -> str:
+    return _span("─" * MONO_COLUMNS, size=7, family="monospace", color=_INK if strong else _RULE)
+
+
+class _Block:
+    """One indivisible unit of a page: a list of markup lines, whether it must
+    stay with the next block, and the table header it should repeat after a
+    page split (for table rows)."""
+
+    __slots__ = ("lines", "keep_with_next", "repeat_header")
+
+    def __init__(self, lines: list[str], *, keep_with_next: bool = False, repeat_header: list[str] | None = None) -> None:
+        self.lines = lines
+        self.keep_with_next = keep_with_next
+        self.repeat_header = repeat_header
+
+
+def _wrap_cell(text: str, width: int) -> list[str]:
+    """Wrap on spaces; break inside a token only when the token itself is
+    wider than the column (digests, ids), so no ordinary word is ever split."""
+    lines: list[str] = []
+    for paragraph in str(text).split("\n") or [""]:
+        words = paragraph.split(" ")
+        current = ""
+        for word in words:
+            while len(word) > width:
+                if current:
+                    lines.append(current)
+                    current = ""
+                lines.append(word[:width])
+                word = word[width:]
+            candidate = f"{current} {word}".strip() if current else word
+            if len(candidate) <= width:
+                current = candidate
+            else:
+                lines.append(current)
+                current = word
+        lines.append(current)
+    return lines or [""]
+
+
+def _record_rows(rows: list[list[str]]) -> list[_Block]:
+    """Wide tables (wider than the monospace line) become one record per row:
+    `Column  value` lines that never interleave across columns, so a digest or
+    a long disposition reads whole. The header block lists the columns."""
+    header = rows[0]
+    label_width = min(max(len(str(column)) for column in header) + 1, 24)
+    value_width = MONO_COLUMNS - label_width - 2
+    header_lines = [
+        _span("Columns: " + " · ".join(str(column) for column in header), size=8, family="monospace", weight="bold"),
+        _rule(),
     ]
+    blocks = [_Block(header_lines, keep_with_next=True)]
+    for row in rows[1:]:
+        lines: list[str] = []
+        for index, column in enumerate(header):
+            value = str(row[index]) if index < len(row) else ""
+            wrapped = _wrap_cell(value, value_width)
+            lines.append(_span(str(column).ljust(label_width), size=8, family="monospace", color=_META) + "  " + _span(wrapped[0], size=8, family="monospace"))
+            lines.extend(_span(" " * label_width, size=8, family="monospace") + "  " + _span(part, size=8, family="monospace") for part in wrapped[1:])
+        lines.append(_span("·", size=6, color=_RULE))
+        blocks.append(_Block(lines, repeat_header=header_lines))
+    return blocks
 
 
-def _flatten(value: Any, prefix: str = "") -> list[tuple[str, Any]]:
-    items: list[tuple[str, Any]] = []
-    if isinstance(value, dict):
-        for key, child in value.items():
-            items.extend(_flatten(child, f"{prefix}.{key}" if prefix else str(key)))
-    elif isinstance(value, list):
-        for index, child in enumerate(value):
-            items.extend(_flatten(child, f"{prefix}[{index}]"))
+def _mono_table(rows: list[list[str]], *, model_owned: bool) -> list[_Block]:
+    """Fixed-width monospace grid when the natural widths fit the line:
+    numerics right-aligned, cells wrapped on spaces inside their column, header
+    repeated across page splits. Wider tables use the record layout."""
+    if not rows:
+        return []
+    columns = len(rows[0])
+    natural = [max(len(str(row[index])) if index < len(row) else 0 for row in rows) for index in range(columns)]
+    if sum(natural) + 2 * (columns - 1) > MONO_COLUMNS:
+        return _record_rows(rows)
+    numeric = [
+        all(_is_numeric(str(row[index])) for row in rows[1:] if index < len(row)) and len(rows) > 1
+        for index in range(columns)
+    ]
+    widths = list(natural)
+
+    def cell_lines(row: list[str]) -> list[list[str]]:
+        wrapped = [_wrap_cell(str(row[index]) if index < len(row) else "", widths[index]) for index in range(columns)]
+        height = max(len(part) for part in wrapped)
+        return [
+            [
+                (wrapped[index][line] if line < len(wrapped[index]) else "").rjust(widths[index])
+                if numeric[index] else
+                (wrapped[index][line] if line < len(wrapped[index]) else "").ljust(widths[index])
+                for index in range(columns)
+            ]
+            for line in range(height)
+        ]
+
+    def markup(parts: list[str], *, bold: bool) -> str:
+        return _span("  ".join(parts), size=8, family="monospace", weight="bold" if bold else "normal")
+
+    header_lines = [markup(parts, bold=True) for parts in cell_lines(rows[0])] + [_rule()]
+    blocks = [_Block(header_lines, keep_with_next=True)]
+    for row in rows[1:]:
+        blocks.append(_Block([markup(parts, bold=False) for parts in cell_lines(row)], repeat_header=header_lines))
+    return blocks
+
+
+def _section_blocks(section: dict[str, Any], depth: int) -> list[_Block]:
+    heading = [
+        _span(section["title"], size=10.5 - depth, weight="bold")
+        + "  " + _span(_origin_label(section), size=7, family="monospace", color=_META),
+        _rule(strong=depth == 0),
+    ]
+    blocks = [_Block(heading, keep_with_next=True)]
+    kind = section["kind"]
+    if kind == "columns":
+        for column in section["items"]:
+            for item in column:
+                blocks.extend(_section_blocks(item, depth + 1))
+        return blocks
+    rows = _section_rows(section)
+    model_owned = (section.get("origin") or {}).get("kind") == "MODEL"
+    if kind in {"table", "chart"}:
+        if kind == "chart":
+            blocks.append(_Block([_span(
+                f"Chart exhibit · {section.get('recipe', {}).get('chart_kind', 'chart')} · authoritative data table",
+                size=8, color=_META)]))
+        if rows[1:]:
+            blocks.extend(_mono_table(rows, model_owned=model_owned))
+        else:
+            blocks.extend(_mono_table(rows, model_owned=model_owned))
+            blocks.append(_Block([_span("No rows.", size=8, color=_META)]))
+    elif kind == "profile":
+        width = min(max(len(label) for label, _ in rows) + 1, 28)
+        for label, value in rows:
+            wrapped = textwrap.wrap(str(value), width=MONO_COLUMNS - width - 2, break_long_words=True, break_on_hyphens=False) or [""]
+            lines = [
+                _span(str(label).ljust(width), size=8, family="monospace", color=_META) + "  " + _span(wrapped[0], size=8, family="monospace")
+            ] + [
+                _span(" " * width, size=8, family="monospace") + "  " + _span(part, size=8, family="monospace")
+                for part in wrapped[1:]
+            ]
+            blocks.append(_Block(lines))
+    elif kind == "list":
+        for row in rows:
+            blocks.append(_Block([_span(f"• {row[0]}", size=9.5)]))
     else:
-        items.append((prefix, value))
-    return items
+        for paragraph in str(section["body"]).split("\n"):
+            blocks.append(_Block([_span(paragraph if paragraph.strip() else " ", size=9.5)]))
+    if section.get("note"):
+        blocks.append(_Block([_span(section["note"], size=7.5, color=_META)]))
+    blocks.append(_Block([_span(" ", size=6)]))
+    return blocks
 
 
-def _document_sections(payload: dict[str, Any]) -> list[dict[str, Any]] | None:
-    return payload["content"].get("document_sections")
-
-
-def _walk_sections(
-    sections: list[dict[str, Any]], depth: int = 0,
-):
-    for section in sections:
-        yield section, depth
-        if section["kind"] == "columns":
-            for column in section["items"]:
-                yield from _walk_sections(column, depth + 1)
-
-
-def _section_rows(section: dict[str, Any]) -> list[list[str]]:
-    if section["kind"] == "table":
-        return [section["columns"], *section["rows"]]
-    if section["kind"] == "profile":
-        return [[row["label"], row["value"]] for row in section["rows"]]
-    if section["kind"] == "list":
-        return [[item] for item in section["items"]]
-    if section["kind"] == "chart":
-        return [section["accessible_columns"], *section["accessible_rows"]]
-    if section["kind"] == "text":
-        return [[section["body"]]]
-    return []
-
-
-def _document_text_lines(payload: dict[str, Any], sections: list[dict[str, Any]]) -> list[str]:
-    def markdown_row(row: list[str]) -> str:
-        return "| " + " | ".join(str(cell).replace("|", r"\|") for cell in row) + " |"
-
-    lines = [f"{payload['pathway']} Deliverable", ""]
-    for section, depth in _walk_sections(sections):
-        lines.append(f"{'#' * min(2 + depth, 6)} {section['title']}")
-        rows = _section_rows(section)
-        if section["kind"] in {"table", "chart"} and rows:
-            lines.append(markdown_row(rows[0]))
-            lines.append("| " + " | ".join("---" for _ in rows[0]) + " |")
-            lines.extend(markdown_row(row) for row in rows[1:])
-        elif section["kind"] == "profile":
-            lines.extend(f"- {label}: {value}" for label, value in rows)
-        elif section["kind"] == "list":
-            lines.extend(f"- {row[0]}" for row in rows)
-        else:
-            lines.extend(row[0] for row in rows)
-        if section.get("note"):
-            lines.append(section["note"])
-        lines.append("")
-    lines.extend([
-        "# Revision Record",
-        f"- Draft version: {payload['draft']['version']}",
-        f"- Draft digest: {payload['draft']['digest']}",
-        f"- Content digest: {payload['preview_digest']}",
-        f"- Input fingerprint: {payload['input_fingerprint']}",
-        f"- Methodology build: {payload['methodology']['build_id']}",
-    ])
-    return lines
-
-
-def _text_lines(payload: dict[str, Any]) -> list[str]:
-    """The shared textual projection of a frozen payload (md and pdf bodies)."""
-    sections = _document_sections(payload)
-    if sections is not None:
-        return _document_text_lines(payload, sections)
-    lines = [f"{payload['pathway']} Deliverable", ""]
-    model = payload.get("model")
-    if model:
-        lines.append("Model authority outputs:")
-        for key, value in _flatten(model.get("outputs") or {}):
-            lines.append(f"- {key}: {value}")
-        lines.append("")
-    titles = (payload.get("template") or {}).get("block_titles") or {}
-    for block in payload["content"]["blocks"]:
-        lines.append(f"## {_block_title(block, titles)}" if block["kind"] != "HEADING" else f"# {block['text']}")
-        if block["kind"] == "HEADING":
-            lines.append(block["text"])
-        elif block["kind"] in {"NARRATIVE", "LIMITATIONS"}:
-            lines.append(block["text"])
-        elif block["kind"] == "EVIDENCE_REGISTER":
-            lines.extend(f"- {line}" for line in _citation_lines(block))
-        elif block["kind"] == "SCENARIO_EXHIBIT":
-            for key, value in _flatten(block["scenario"].get("outputs") or {}):
-                lines.append(f"- {key}: {value}")
-        else:
-            for key, value in _flatten({k: v for k, v in block.items() if k in ("values", "table", "recipe", "metric_ids", "field_ids")}):
-                lines.append(f"- {key}: {value}")
-        lines.append("")
-    lines.extend([
-        "## Revision Record",
-        f"- Draft version: {payload['draft']['version']}",
-        f"- Draft digest: {payload['draft']['digest']}",
-        f"- Content digest: {payload['preview_digest']}",
-        f"- Input fingerprint: {payload['input_fingerprint']}",
-        f"- Methodology build: {payload['methodology']['build_id']}",
-    ])
-    return lines
-
-
-def render_frozen_markdown(payload: dict[str, Any]) -> bytes:
-    return ("\n".join(_text_lines(payload)) + "\n").encode("utf-8")
-
-
-def _pdf_escape(text: str) -> str:
-    return text.replace("\\", r"\\").replace("(", r"\(").replace(")", r"\)")
-
-
-def _unicode_pdf(pages_of_lines: list[list[str]]) -> bytes:
-    from pypdf import PdfReader, PdfWriter
-
+def _pango_view() -> str:
     executable = shutil.which("pango-view")
     if executable is None:
         for candidate in (Path("/opt/homebrew/bin/pango-view"), Path("/usr/local/bin/pango-view")):
@@ -168,129 +234,270 @@ def _unicode_pdf(pages_of_lines: list[list[str]]) -> bytes:
                 break
     if executable is None:
         raise ValueError("PDF_UNICODE_RENDERER_UNAVAILABLE")
-    environment = {**os.environ, "SOURCE_DATE_EPOCH": "0"}
+    return executable
+
+
+def _shape(executable: str, workspace: Path, name: str, markup: str, *, height: int | None,
+           extra: tuple[str, ...] = ()) -> Path:
+    source = workspace / f"{name}.txt"
+    rendered = workspace / f"{name}.pdf"
+    source.write_text(markup, encoding="utf-8")
+    command = [
+        executable, "--no-display", "--markup", "--pixels", "--font=sans 9.5", f"--margin={MARGIN}",
+        f"--width={BODY_WIDTH}", "--wrap=word-char", "--background=transparent", f"--foreground={_INK}",
+        *extra, f"--output={rendered}", str(source),
+    ]
+    if height is not None:
+        command.insert(-2, f"--height={height}")
+    try:
+        subprocess.run(command, check=True, capture_output=True, timeout=60,
+                       env={**os.environ, "SOURCE_DATE_EPOCH": "0"})
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise ValueError("PDF_UNICODE_RENDERER_FAILED") from exc
+    return rendered
+
+
+def _page_markup(masthead: dict[str, Any], page_name: str, blocks: list[_Block], page_number: int, page_count: int,
+                 *, first: bool) -> str:
+    lines = [
+        _span(f"{masthead.get('issuer', '')} — {masthead.get('report_type', '')}", size=18 if first else 11, weight="bold"),
+        _span(_masthead_line(masthead, page_name), size=7, family="monospace", color=_META),
+        _rule(strong=True),
+    ]
+    if first:
+        lines.append(_span(
+            f"Opinion owner {masthead.get('opinion_owner', '')} / signed {masthead.get('opinion_signed_at', '')} / "
+            f"model {masthead.get('model_identity', '')} / methodology {masthead.get('methodology_build_id', '')}",
+            size=7.5, family="monospace", color=_META))
+        lines.append(_span(f"Machine assistance: {masthead.get('machine_assistance', '')}", size=7.5, family="monospace", color=_META))
+    lines.append(_span(" ", size=6))
+    for block in blocks:
+        lines.extend(block.lines)
+    return "\n".join(lines)
+
+
+def _footer_markup(masthead: dict[str, Any], page_number: int, page_count: int) -> str:
+    footer_left = f"CAOS / {_short_id(masthead.get('deliverable_id', ''))} / {masthead.get('approval_state', PENDING_APPROVAL)} / content digest in Revision Record"
+    footer_right = f"PAGE {page_number} OF {page_count}"
+    gap = max(1, MONO_COLUMNS - len(footer_left) - len(footer_right))
+    return _rule(strong=True) + "\n" + _span(footer_left + " " * gap + footer_right, size=7, family="monospace", color=_META)
+
+
+def _measure(executable: str, workspace: Path, markup: str) -> float:
+    from pypdf import PdfReader
+
+    rendered = _shape(executable, workspace, "measure", markup, height=None)
+    page = PdfReader(rendered).pages[0]
+    return float(page.mediabox.height) - 2 * MARGIN
+
+
+def _footer_page(executable: str, workspace: Path, markup: str):
+    from pypdf import PdfReader
+
+    source = workspace / "footer.txt"
+    rendered = workspace / "footer.pdf"
+    source.write_text(markup, encoding="utf-8")
+    try:
+        subprocess.run(
+            [executable, "--no-display", "--markup", "--pixels", "--margin=0", f"--width={BODY_WIDTH}",
+             "--background=transparent", f"--foreground={_INK}", f"--output={rendered}", str(source)],
+            check=True, capture_output=True, timeout=60, env={**os.environ, "SOURCE_DATE_EPOCH": "0"},
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise ValueError("PDF_UNICODE_RENDERER_FAILED") from exc
+    return PdfReader(rendered).pages[0]
+
+
+_SIZE_ATTRIBUTE = re.compile(r'size="(\d+)"')
+_TAG = re.compile(r"<[^>]+>")
+
+
+def _estimate(lines: list[str]) -> float:
+    """Cheap height bound for a list of markup lines: font size × 1.4 per
+    wrapped visual line, wrapping prose at ~95 characters of 9.5pt sans. It
+    only decides when to pay for a real measurement, never the layout."""
+    total = 0.0
+    for line in lines:
+        sizes = [int(match) / 1024 for match in _SIZE_ATTRIBUTE.findall(line)]
+        size = max(sizes) if sizes else 9.5
+        characters = len(_TAG.sub("", line))
+        per_line = 100 if "monospace" in line else max(40, int(95 * 9.5 / size))
+        total += max(1, -(-characters // per_line)) * size * 1.45
+    return total
+
+
+def _paginate(executable: str, workspace: Path, masthead: dict[str, Any], pages: list[dict[str, Any]]) -> list[tuple[str, list[_Block]]]:
+    """Flow every logical page's blocks into physical pages by measurement.
+
+    Logical pages (Decision, Financials, Control, …) open with a band block
+    and flow on; a physical page breaks only when the measured content no
+    longer fits, so short logical pages never leave most of a sheet blank.
+    Blocks are packed by a cheap estimate, then measured, the tail moved
+    forward until it fits, then topped up while more still measures in. A
+    table row that moves forward drags a copy of its header; a heading never
+    ends a page.
+    """
+    stream: list[tuple[str, _Block]] = []
+    for page in pages:
+        band = _Block([
+            _span(page["name"].upper(), size=8, weight="bold", family="monospace", color=_META),
+            _span(" ", size=4),
+        ], keep_with_next=True)
+        stream.append((page["name"], band))
+        for section in page["sections"]:
+            for block in _section_blocks(section, 0):
+                stream.append((page["name"], block))
+    laid_out: list[tuple[str, list[_Block]]] = []
+    chrome = 6 * 9.5 * 1.45 + 2 * 18 * 1.45  # masthead and rules
+    pending = list(stream)
+    while pending:
+        first = not laid_out
+        page_name = pending[0][0]
+        current: list[tuple[str, _Block]] = []
+        estimate = chrome
+        while pending and estimate + _estimate(pending[0][1].lines) <= BODY_HEIGHT:
+            item = pending.pop(0)
+            current.append(item)
+            estimate += _estimate(item[1].lines)
+        if not current:
+            current.append(pending.pop(0))
+
+        def blocks_of(items: list[tuple[str, _Block]]) -> list[_Block]:
+            return [block for _name, block in items]
+
+        while True:
+            markup = _page_markup(masthead, page_name, blocks_of(current), 99, 99, first=first)
+            if _measure(executable, workspace, markup) <= BODY_HEIGHT or (len(current) == 1 and len(current[0][1].lines) == 1):
+                break
+            carried = [current.pop()]
+            while current and current[-1][1].keep_with_next:
+                carried.insert(0, current.pop())
+            if not current:
+                name, oversized = carried.pop(0)
+                half = max(1, len(oversized.lines) // 2)
+                current.append((name, _Block(oversized.lines[:half])))
+                carried.insert(0, (name, _Block(oversized.lines[half:], keep_with_next=oversized.keep_with_next,
+                                                repeat_header=oversized.repeat_header)))
+            if carried and carried[0][1].repeat_header:
+                carried.insert(0, (carried[0][0], _Block(list(carried[0][1].repeat_header), keep_with_next=True)))
+            pending = carried + pending
+        # Top up in estimated batches (one measurement per batch, halving on
+        # overflow) instead of one measurement per block: a 400-row table costs
+        # a handful of pango calls rather than hundreds.
+        measured = _measure(executable, workspace, _page_markup(masthead, page_name, blocks_of(current), 99, 99, first=first))
+        while pending:
+            room = BODY_HEIGHT - measured
+            batch: list[tuple[str, _Block]] = []
+            spent = 0.0
+            for item in pending:
+                cost = _estimate(item[1].lines)
+                if batch and spent + cost > room:
+                    break
+                batch.append(item)
+                spent += cost
+            while batch:
+                markup = _page_markup(masthead, page_name, blocks_of([*current, *batch]), 99, 99, first=first)
+                height = _measure(executable, workspace, markup)
+                if height <= BODY_HEIGHT:
+                    current.extend(batch)
+                    del pending[:len(batch)]
+                    measured = height
+                    break
+                batch = batch[: len(batch) // 2]
+            if not batch:
+                break
+        carried = []
+        while len(current) > 1 and current[-1][1].keep_with_next and pending:
+            carried.insert(0, current.pop())
+        pending = carried + pending
+        # A table continuing on the next page repeats its header row there.
+        if pending and pending[0][1].repeat_header and not (current and current[-1][1].keep_with_next):
+            pending.insert(0, (pending[0][0], _Block(list(pending[0][1].repeat_header), keep_with_next=True)))
+        laid_out.append((page_name, blocks_of(current)))
+    if not laid_out:
+        laid_out.append((pages[0]["name"] if pages else "Document", []))
+    return laid_out
+
+
+def _watermark_page(executable: str, workspace: Path, text: str):
+    from pypdf import PdfReader
+
+    markup = f'<span font_family="sans" size="{46 * 1024}" weight="bold" foreground="#be5410" alpha="14%" {_FEATURES}>{_esc(text)}</span>'
+    source = workspace / "watermark.txt"
+    rendered = workspace / "watermark.pdf"
+    source.write_text(markup, encoding="utf-8")
+    try:
+        subprocess.run(
+            [executable, "--no-display", "--markup", "--pixels", "--margin=0", "--rotate=-32",
+             "--background=transparent", f"--output={rendered}", str(source)],
+            check=True, capture_output=True, timeout=60, env={**os.environ, "SOURCE_DATE_EPOCH": "0"},
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise ValueError("PDF_UNICODE_RENDERER_FAILED") from exc
+    return PdfReader(rendered).pages[0]
+
+
+def _white_page(executable: str, workspace: Path):
+    """An opaque white letter page: viewers that composite transparency onto
+    black (thumbnailers, some print pipelines) must still show paper."""
+    from pypdf import PdfReader
+
+    source = workspace / "paper.txt"
+    rendered = workspace / "paper.pdf"
+    source.write_text(" ", encoding="utf-8")
+    try:
+        subprocess.run(
+            [executable, "--no-display", "--pixels", "--margin=0", f"--width={PAGE_WIDTH}", f"--height={PAGE_HEIGHT}",
+             "--background=#ffffff", f"--output={rendered}", str(source)],
+            check=True, capture_output=True, timeout=60, env={**os.environ, "SOURCE_DATE_EPOCH": "0"},
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise ValueError("PDF_UNICODE_RENDERER_FAILED") from exc
+    return PdfReader(rendered).pages[0]
+
+
+def render_frozen_pdf(payload: dict[str, Any]) -> bytes:
+    from pypdf import PageObject, PdfReader, PdfWriter, Transformation
+
+    view = publication_view(payload)
+    masthead = view["masthead"]
+    executable = _pango_view()
+    revision_page = {
+        "name": "Revision Record",
+        "sections": [{
+            "kind": "profile", "section_id": "revision_record", "title": "Revision Record", "page": "Revision Record",
+            "editable": False, "origin": {"kind": "SYSTEM", "authority_id": str(masthead.get("deliverable_id", "")), "block_ids": []},
+            "rows": [{"label": label, "value": value or "Unavailable"} for label, value in view["revision"]],
+        }],
+    }
     writer = PdfWriter()
     with tempfile.TemporaryDirectory(prefix="caos-pdf-") as directory:
         workspace = Path(directory)
-        for index, lines in enumerate(pages_of_lines):
-            source = workspace / f"page-{index:04d}.txt"
-            rendered = workspace / f"page-{index:04d}.pdf"
-            # Pango markup so the font's standard ligatures can be switched off:
-            # a Linux sans shapes "fi"/"fl" into one glyph and the PDF then
-            # extracts U+FB01, so the shipped text would no longer equal the
-            # canonical document byte for byte (and "Falsifiers" would not be
-            # searchable). html.escape covers Pango's markup metacharacters.
-            source.write_text(
-                '<span font_features="liga=0, clig=0, dlig=0">'
-                + html.escape("\n".join(lines), quote=False)
-                + "</span>",
-                encoding="utf-8",
-            )
-            try:
-                subprocess.run(
-                    [
-                        executable,
-                        "--no-display",
-                        "--markup",
-                        "--font=sans 10",
-                        "--margin=54",
-                        "--width=504",
-                        "--height=684",
-                        "--wrap=word-char",
-                        f"--output={rendered}",
-                        str(source),
-                    ],
-                    check=True,
-                    capture_output=True,
-                    timeout=30,
-                    env=environment,
-                )
-            except (OSError, subprocess.SubprocessError) as exc:
-                raise ValueError("PDF_UNICODE_RENDERER_FAILED") from exc
-            for page in PdfReader(rendered).pages:
-                writer.add_page(page)
+        laid_out = _paginate(executable, workspace, masthead, [*view["pages"], revision_page])
+        watermark = _watermark_page(executable, workspace, str(masthead.get("watermark") or PENDING_APPROVAL))
+        paper = _white_page(executable, workspace)
+        offset_x = (PAGE_WIDTH - float(watermark.mediabox.width)) / 2
+        offset_y = (PAGE_HEIGHT - float(watermark.mediabox.height)) / 2
+        for index, (page_name, blocks) in enumerate(laid_out, start=1):
+            markup = _page_markup(masthead, page_name, blocks, index, len(laid_out), first=index == 1)
+            rendered = _shape(executable, workspace, f"page-{index:04d}", markup, height=BODY_HEIGHT)
+            content = PdfReader(rendered).pages[0]
+            footer = _footer_page(executable, workspace, _footer_markup(masthead, index, len(laid_out)))
+            base = PageObject.create_blank_page(width=PAGE_WIDTH, height=PAGE_HEIGHT)
+            base.merge_page(paper)
+            base.merge_transformed_page(watermark, Transformation().translate(offset_x, offset_y))
+            # pango-view sizes its page to body + margins; anchor it to the top
+            # of the letter page so the top margin is exact and the footer band
+            # below the body is never overprinted.
+            base.merge_transformed_page(content, Transformation().translate(0, PAGE_HEIGHT - float(content.mediabox.height)))
+            base.merge_transformed_page(footer, Transformation().translate(MARGIN, MARGIN - 4))
+            writer.add_page(base)
         output = io.BytesIO()
         writer.write(output)
     return output.getvalue()
 
 
-def render_frozen_pdf(payload: dict[str, Any]) -> bytes:
-    """Minimal deterministic PDF: one Helvetica text column per page, plain
-    Tj operators — structurally a PDF with extractable text."""
-    text_lines = _text_lines(payload)
-    try:
-        "\n".join(text_lines).encode("cp1252")
-        unicode_required = False
-    except UnicodeEncodeError:
-        unicode_required = True
-    wrap_width, lines_per_page = ((80, 24) if unicode_required else (110, 48))
-    pages_of_lines: list[list[str]] = []
-    current: list[str] = []
-    for raw_line in text_lines:
-        for physical_line in raw_line.splitlines() or [""]:
-            for line in textwrap.wrap(
-                physical_line,
-                width=wrap_width,
-                break_on_hyphens=False,
-            ) or [""]:
-                current.append(line)
-                if len(current) >= lines_per_page:
-                    pages_of_lines.append(current)
-                    current = []
-    if current or not pages_of_lines:
-        pages_of_lines.append(current or [""])
-
-    if unicode_required:
-        return _unicode_pdf(pages_of_lines)
-
-    objects: list[bytes] = []
-
-    def add(obj: bytes) -> int:
-        objects.append(obj)
-        return len(objects)
-
-    font = add(b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>")
-    content_ids = []
-    for lines in pages_of_lines:
-        body = "BT /F1 10 Tf 54 756 Td 14 TL\n"
-        for line in lines:
-            body += f"({_pdf_escape(line)}) Tj T*\n"
-        body += "ET"
-        stream = zlib.compress(body.encode("cp1252"))
-        content_ids.append(add(
-            b"<< /Length " + str(len(stream)).encode() + b" /Filter /FlateDecode >>\nstream\n" + stream + b"\nendstream"
-        ))
-    pages_id = len(objects) + len(pages_of_lines) + 1
-    page_ids = []
-    for content_id in content_ids:
-        page_ids.append(add(
-            f"<< /Type /Page /Parent {pages_id} 0 R /MediaBox [0 0 612 792] "
-            f"/Resources << /Font << /F1 {font} 0 R >> >> /Contents {content_id} 0 R >>".encode()
-        ))
-    kids = " ".join(f"{page_id} 0 R" for page_id in page_ids)
-    # The object must be ADDED outside the assert: under `python -O` the whole
-    # expression vanishes, the /Pages object is never written, and every page
-    # dangles against a missing parent — a silently corrupt PDF whose sha256
-    # still matches the frozen record.
-    written_pages_id = add(f"<< /Type /Pages /Kids [{kids}] /Count {len(page_ids)} >>".encode())
-    assert written_pages_id == pages_id
-    catalog = add(f"<< /Type /Catalog /Pages {pages_id} 0 R >>".encode())
-
-    output = io.BytesIO()
-    output.write(b"%PDF-1.4\n")
-    offsets = [0]
-    for index, obj in enumerate(objects, start=1):
-        offsets.append(output.tell())
-        output.write(f"{index} 0 obj\n".encode() + obj + b"\nendobj\n")
-    xref_at = output.tell()
-    output.write(f"xref\n0 {len(objects) + 1}\n".encode())
-    output.write(b"0000000000 65535 f \n")
-    for offset in offsets[1:]:
-        output.write(f"{offset:010d} 00000 n \n".encode())
-    output.write(
-        f"trailer\n<< /Size {len(objects) + 1} /Root {catalog} 0 R >>\nstartxref\n{xref_at}\n%%EOF\n".encode()
-    )
-    return output.getvalue()
+# --- XLSX ----------------------------------------------------------------------------
 
 
 def _safe_cell(value: Any) -> Any:
@@ -302,10 +509,7 @@ def _safe_cell(value: Any) -> Any:
     return text
 
 
-_PLAIN_NUMBER = re.compile(r"[+-]?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?")
-
-
-def _document_cell(value: str, *, model_value: bool) -> Any:
+def _model_cell(value: str, *, model_value: bool) -> Any:
     if model_value and _PLAIN_NUMBER.fullmatch(value):
         number = float(value)
         if math.isfinite(number):
@@ -313,108 +517,143 @@ def _document_cell(value: str, *, model_value: bool) -> Any:
     return _safe_cell(value)
 
 
-def _append_document_section(sheet: Any, section: dict[str, Any], depth: int = 0) -> None:
-    kind = section["kind"]
-    section_id = section["section_id"]
-    sheet.append([
-        "SECTION" if depth == 0 else "SUBSECTION",
-        _safe_cell(section_id),
-        _safe_cell(section["title"]),
-        _safe_cell(section["page"]),
-        _safe_cell(section["origin"]["kind"]),
-    ])
-    if kind == "columns":
-        for column in section["items"]:
-            for item in column:
-                _append_document_section(sheet, item, depth + 1)
-        return
+MODEL_NUMBER_FORMAT = "#,##0.00;[Red](#,##0.00);0.00"
 
-    rows = _section_rows(section)
-    if kind in {"table", "chart"} and rows:
-        sheet.append(["HEADER", section_id, *(_safe_cell(value) for value in rows[0])])
-        model_owned = section["origin"]["kind"] == "MODEL"
-        for row in rows[1:]:
-            sheet.append([
-                "ROW",
-                section_id,
-                *(
-                    _document_cell(value, model_value=model_owned and index > 0)
-                    for index, value in enumerate(row)
-                ),
-            ])
-    elif kind == "profile":
-        for label, value in rows:
-            sheet.append(["ROW", section_id, _safe_cell(label), _safe_cell(value)])
-    elif kind == "list":
-        for row in rows:
-            sheet.append(["ITEM", section_id, _safe_cell(row[0])])
-    elif rows:
-        sheet.append(["CONTENT", section_id, _safe_cell(rows[0][0])])
-    note = section.get("note")
-    if note:
-        sheet.append(["NOTE", section_id, _safe_cell(note)])
+
+def _sheet_title(used: set[str], title: str) -> str:
+    """Excel caps sheet names at 31 characters; cut at a word boundary only
+    when a title is longer, and suffix a counter only on collision."""
+    cleaned = re.sub(r"[\[\]:*?/\\]", " ", title).strip() or "Sheet"
+    if len(cleaned) > 31:
+        cut = cleaned[:31]
+        cleaned = cut[: cut.rfind(" ")] if " " in cut[8:] else cut
+    candidate = cleaned
+    counter = 2
+    while candidate in used:
+        suffix = f" {counter}"
+        candidate = f"{cleaned[:31 - len(suffix)]}{suffix}"
+        counter += 1
+    used.add(candidate)
+    return candidate
 
 
 def render_frozen_xlsx(payload: dict[str, Any]) -> bytes:
     from openpyxl import Workbook
+    from openpyxl.styles import Alignment, Font, PatternFill
+    from openpyxl.utils import get_column_letter
 
+    view = publication_view(payload)
+    masthead = view["masthead"]
+    bold = Font(bold=True)
+    head_fill = PatternFill("solid", fgColor="E9E7DF")
+    wrap = Alignment(wrap_text=True, vertical="top")
     workbook = Workbook()
+    used_titles: set[str] = set()
+
+    def finish(sheet: Any, *, header_rows: int = 1, widths: dict[int, int] | None = None, filters: bool = False) -> None:
+        sheet.freeze_panes = f"A{header_rows + 1}"
+        for row in sheet.iter_rows(min_row=1, max_row=header_rows):
+            for cell in row:
+                cell.font = bold
+                cell.fill = head_fill
+        lengths: dict[int, int] = {}
+        for row in sheet.iter_rows():
+            for cell in row:
+                if cell.value is None:
+                    continue
+                lengths[cell.column] = max(lengths.get(cell.column, 0), min(len(str(cell.value)), 60))
+                if isinstance(cell.value, str) and len(cell.value) > 40:
+                    cell.alignment = wrap
+        for column, length in lengths.items():
+            sheet.column_dimensions[get_column_letter(column)].width = (widths or {}).get(column, max(10, length + 2))
+        if filters and sheet.max_row > 1 and sheet.max_column > 1:
+            sheet.auto_filter.ref = f"A{header_rows}:{get_column_letter(sheet.max_column)}{sheet.max_row}"
+        sheet.sheet_view.showGridLines = False
+
     cover = workbook.active
-    cover.title = "Cover"
-    for row in (
-        ("Pathway", payload["pathway"]),
-        ("Content digest", payload["preview_digest"]),
-        ("Input fingerprint", payload["input_fingerprint"]),
-        ("Methodology build", payload["methodology"]["build_id"]),
-    ):
-        cover.append([_safe_cell(value) for value in row])
+    cover.title = _sheet_title(used_titles, "Cover & Control")
+    cover.append(["Field", "Value"])
+    cover.append(["Document", f"{masthead.get('issuer', '')} — {masthead.get('report_type', '')}"])
+    for label, key in MASTHEAD_FIELDS:
+        cover.append([label, _safe_cell(str(masthead.get(key, "")))])
+    cover.append(["Watermark", _safe_cell(str(masthead.get("watermark", PENDING_APPROVAL)))])
+    cover.append(["Approver identity", "Recorded in the detached filing receipt and the audit chain, never in this workbook"])
+    for label, value in view["revision"]:
+        cover.append([label, _safe_cell(value)])
+    disclosures = view["disclosures"]
+    for key in ("content_origin", "sources", "machine_assistance", "analyst_opinion_owner", "approval_state", "as_of_date", "version"):
+        if key in disclosures:
+            cover.append([f"Disclosure · {key.replace('_', ' ')}", _safe_cell(str(disclosures[key]))])
+    for item in disclosures.get("limitations") or []:
+        cover.append(["Disclosure · limitation", _safe_cell(str(item))])
+    cover.append(["Sheets", "Report (narrative and profiles), one sheet per table, Revision Record"])
+    finish(cover, widths={1: 28, 2: 100})
 
-    reviewed = workbook.create_sheet("Reviewed Deliverable")
-    register = workbook.create_sheet("Evidence Register")
-    sections = _document_sections(payload)
-    if sections is not None:
-        register.append(["Source", "Blocks", "Claim"])
-        reviewed.append(["Record", "Section ID", "Title / field", "Content", "Authority"])
-        for section in sections:
-            _append_document_section(reviewed, section)
-        for section, _depth in _walk_sections(sections):
-            if section["kind"] == "table" and section["title"] == "Evidence Register":
-                for row in section["rows"]:
-                    register.append([_safe_cell(value) for value in row])
-    else:
-        register.append(["Claim", "Source", "Blocks"])
-        reviewed.append(["Block", "Kind", "Content"])
-        for block in payload["content"]["blocks"]:
-            text = block.get("text") or ""
-            reviewed.append([_safe_cell(block["slot_id"]), _safe_cell(block["kind"]), _safe_cell(text)])
-            if block["kind"] in {"GENERATED_METRIC", "SCENARIO_EXHIBIT"}:
-                values = block.get("values") or (block.get("scenario") or {}).get("outputs") or {}
-                for key, value in _flatten(values):
-                    # Generated model numbers stay typed numbers, never text.
-                    reviewed.append([_safe_cell(f"{block['slot_id']}::{key}"), "MODEL_VALUE",
-                                     float(value) if isinstance(value, (int, float)) and not isinstance(value, bool) else _safe_cell(value)])
-        for block in payload["content"]["blocks"]:
-            for citation in block.get("citations") or []:
-                register.append([
-                    _safe_cell(citation["claim"]), _safe_cell(citation["source_id"]),
-                    _safe_cell(", ".join(citation["block_ids"])),
-                ])
+    report = workbook.create_sheet(_sheet_title(used_titles, "Report"))
+    report.append(["Page", "Section", "Origin", "Authority", "Field", "Content"])
+    tables: list[tuple[str, dict[str, Any], str]] = []
+    for page in view["pages"]:
+        for section, _depth in _walk_sections(page["sections"]):
+            origin = section.get("origin") or {}
+            base = [page["name"], section["title"], _origin_label(section).split(" · ")[0], origin.get("authority_id", "")]
+            kind = section["kind"]
+            if kind in {"table", "chart"}:
+                tables.append((page["name"], section, _sheet_title(used_titles, section["title"])))
+                report.append([*base, "Table", f"See sheet '{tables[-1][2]}' ({len(_section_rows(section)) - 1} rows)"])
+            elif kind == "profile":
+                for label, value in _section_rows(section):
+                    report.append([*base, _safe_cell(label), _safe_cell(value)])
+            elif kind == "list":
+                for row in _section_rows(section):
+                    report.append([*base, "Item", _safe_cell(row[0])])
+            elif kind == "text":
+                report.append([*base, "Text", _safe_cell(section["body"])])
+            elif kind == "columns":
+                report.append([*base, "Group", f"{sum(len(column) for column in section['items'])} sections follow"])
+            if section.get("note"):
+                report.append([*base, "Note", _safe_cell(section["note"])])
+    finish(report, widths={1: 14, 2: 34, 3: 18, 4: 34, 5: 22, 6: 110}, filters=True)
 
-    record = workbook.create_sheet("Revision Record")
-    for row in (
-        ("Draft version", payload["draft"]["version"]),
-        ("Draft digest", payload["draft"]["digest"]),
-        ("Content digest", payload["preview_digest"]),
-    ):
-        record.append([_safe_cell(value) for value in row])
+    for page_name, section, title in tables:
+        sheet = workbook.create_sheet(title)
+        rows = _section_rows(section)
+        model_owned = (section.get("origin") or {}).get("kind") == "MODEL"
+        sheet.append([_safe_cell(value) for value in rows[0]])
+        for row in rows[1:]:
+            values = [
+                _model_cell(str(value), model_value=model_owned and index > 0)
+                for index, value in enumerate(row)
+            ]
+            sheet.append(values)
+            for index, value in enumerate(values, start=1):
+                if isinstance(value, (int, float)) and not isinstance(value, bool):
+                    sheet.cell(row=sheet.max_row, column=index).number_format = MODEL_NUMBER_FORMAT
+        note = [f"{page_name} · {section['title']} · {_origin_label(section)}"]
+        if section.get("note"):
+            note.append(section["note"])
+        sheet.append([])
+        sheet.append([_safe_cell(" · ".join(note))])
+        finish(sheet, filters=True)
 
-    # Renders are content-addressed: identical payloads must yield identical
-    # bytes, so nothing below the pin may read the clock (§12.4 spirit; the
-    # freeze-conflict discriminator depends on it).
+    record = workbook.create_sheet(_sheet_title(used_titles, "Revision Record"))
+    record.append(["Field", "Value"])
+    for label, value in view["revision"]:
+        record.append([label, _safe_cell(value)])
+    finish(record, widths={1: 22, 2: 80})
+
+    for sheet in workbook.worksheets:
+        for row in sheet.iter_rows():
+            for cell in row:
+                if cell.data_type == "f":
+                    raise ValueError("DELIVERABLE_EXPORT_UNSAFE: a formula reached the workbook")
+
     from datetime import datetime
 
     workbook.properties.created = datetime(2026, 1, 1)
     workbook.properties.modified = datetime(2026, 1, 1)
+    workbook.properties.title = f"{masthead.get('issuer', '')} — {masthead.get('report_type', '')}"
+    workbook.properties.subject = str(payload.get("preview_digest", ""))
+    workbook.properties.creator = "CAOS"
     output = io.BytesIO()
     workbook.save(output)
     workbook.close()

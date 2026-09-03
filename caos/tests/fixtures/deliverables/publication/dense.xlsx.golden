@@ -1,0 +1,1926 @@
+{
+ "Calculated Base and Downside": [
+  [
+   "Case / Period / Metric",
+   "Value"
+  ],
+  [
+   "BASE / FY2024 / accessible_liquidity",
+   3.6
+  ],
+  [
+   "BASE / FY2024 / adjusted_ebitda_calc",
+   6.1
+  ],
+  [
+   "BASE / FY2024 / capex",
+   6.6
+  ],
+  [
+   "BASE / FY2024 / fcf",
+   5.1
+  ],
+  [
+   "BASE / FY2024 / interest_cover",
+   4.6
+  ],
+  [
+   "BASE / FY2024 / net_debt",
+   4.1
+  ],
+  [
+   "BASE / FY2024 / revenue",
+   5.6
+  ],
+  [
+   "BASE / FY2024 / total_leverage",
+   3.1
+  ],
+  [
+   "BASE / FY2025 / accessible_liquidity",
+   3.73
+  ],
+  [
+   "BASE / FY2025 / adjusted_ebitda_calc",
+   6.23
+  ],
+  [
+   "BASE / FY2025 / capex",
+   6.73
+  ],
+  [
+   "BASE / FY2025 / fcf",
+   5.23
+  ],
+  [
+   "BASE / FY2025 / interest_cover",
+   4.73
+  ],
+  [
+   "BASE / FY2025 / net_debt",
+   4.23
+  ],
+  [
+   "BASE / FY2025 / revenue",
+   5.73
+  ],
+  [
+   "BASE / FY2025 / total_leverage",
+   3.23
+  ],
+  [
+   "BASE / FY2026 / accessible_liquidity",
+   3.86
+  ],
+  [
+   "BASE / FY2026 / adjusted_ebitda_calc",
+   6.36
+  ],
+  [
+   "BASE / FY2026 / capex",
+   6.86
+  ],
+  [
+   "BASE / FY2026 / fcf",
+   5.36
+  ],
+  [
+   "BASE / FY2026 / interest_cover",
+   4.86
+  ],
+  [
+   "BASE / FY2026 / net_debt",
+   4.36
+  ],
+  [
+   "BASE / FY2026 / revenue",
+   5.86
+  ],
+  [
+   "BASE / FY2026 / total_leverage",
+   3.36
+  ],
+  [
+   "BASE / FY2027 / accessible_liquidity",
+   3.99
+  ],
+  [
+   "BASE / FY2027 / adjusted_ebitda_calc",
+   6.49
+  ],
+  [
+   "BASE / FY2027 / capex",
+   6.99
+  ],
+  [
+   "BASE / FY2027 / fcf",
+   5.49
+  ],
+  [
+   "BASE / FY2027 / interest_cover",
+   4.99
+  ],
+  [
+   "BASE / FY2027 / net_debt",
+   4.49
+  ],
+  [
+   "BASE / FY2027 / revenue",
+   5.99
+  ],
+  [
+   "BASE / FY2027 / total_leverage",
+   3.49
+  ],
+  [
+   "BASE / FY2028 / accessible_liquidity",
+   4.12
+  ],
+  [
+   "BASE / FY2028 / adjusted_ebitda_calc",
+   6.62
+  ],
+  [
+   "BASE / FY2028 / capex",
+   7.12
+  ],
+  [
+   "BASE / FY2028 / fcf",
+   5.62
+  ],
+  [
+   "BASE / FY2028 / interest_cover",
+   5.12
+  ],
+  [
+   "BASE / FY2028 / net_debt",
+   4.62
+  ],
+  [
+   "BASE / FY2028 / revenue",
+   6.12
+  ],
+  [
+   "BASE / FY2028 / total_leverage",
+   3.62
+  ],
+  [
+   "BASE / FY2029 / accessible_liquidity",
+   4.25
+  ],
+  [
+   "BASE / FY2029 / adjusted_ebitda_calc",
+   6.75
+  ],
+  [
+   "BASE / FY2029 / capex",
+   7.25
+  ],
+  [
+   "BASE / FY2029 / fcf",
+   5.75
+  ],
+  [
+   "BASE / FY2029 / interest_cover",
+   5.25
+  ],
+  [
+   "BASE / FY2029 / net_debt",
+   4.75
+  ],
+  [
+   "BASE / FY2029 / revenue",
+   6.25
+  ],
+  [
+   "BASE / FY2029 / total_leverage",
+   3.75
+  ],
+  [
+   "BASE / FY2030 / accessible_liquidity",
+   4.38
+  ],
+  [
+   "BASE / FY2030 / adjusted_ebitda_calc",
+   6.88
+  ],
+  [
+   "BASE / FY2030 / capex",
+   7.38
+  ],
+  [
+   "BASE / FY2030 / fcf",
+   5.88
+  ],
+  [
+   "BASE / FY2030 / interest_cover",
+   5.38
+  ],
+  [
+   "BASE / FY2030 / net_debt",
+   4.88
+  ],
+  [
+   "BASE / FY2030 / revenue",
+   6.38
+  ],
+  [
+   "BASE / FY2030 / total_leverage",
+   3.88
+  ],
+  [
+   "DOWNSIDE / FY2024 / accessible_liquidity",
+   4.3
+  ],
+  [
+   "DOWNSIDE / FY2024 / adjusted_ebitda_calc",
+   6.8
+  ],
+  [
+   "DOWNSIDE / FY2024 / capex",
+   7.3
+  ],
+  [
+   "DOWNSIDE / FY2024 / fcf",
+   5.8
+  ],
+  [
+   "DOWNSIDE / FY2024 / interest_cover",
+   5.3
+  ],
+  [
+   "DOWNSIDE / FY2024 / net_debt",
+   4.8
+  ],
+  [
+   "DOWNSIDE / FY2024 / revenue",
+   6.3
+  ],
+  [
+   "DOWNSIDE / FY2024 / total_leverage",
+   3.8
+  ],
+  [
+   "DOWNSIDE / FY2025 / accessible_liquidity",
+   4.43
+  ],
+  [
+   "DOWNSIDE / FY2025 / adjusted_ebitda_calc",
+   6.93
+  ],
+  [
+   "DOWNSIDE / FY2025 / capex",
+   7.43
+  ],
+  [
+   "DOWNSIDE / FY2025 / fcf",
+   5.93
+  ],
+  [
+   "DOWNSIDE / FY2025 / interest_cover",
+   5.43
+  ],
+  [
+   "DOWNSIDE / FY2025 / net_debt",
+   4.93
+  ],
+  [
+   "DOWNSIDE / FY2025 / revenue",
+   6.43
+  ],
+  [
+   "DOWNSIDE / FY2025 / total_leverage",
+   3.93
+  ],
+  [
+   "DOWNSIDE / FY2026 / accessible_liquidity",
+   4.56
+  ],
+  [
+   "DOWNSIDE / FY2026 / adjusted_ebitda_calc",
+   7.06
+  ],
+  [
+   "DOWNSIDE / FY2026 / capex",
+   7.56
+  ],
+  [
+   "DOWNSIDE / FY2026 / fcf",
+   6.06
+  ],
+  [
+   "DOWNSIDE / FY2026 / interest_cover",
+   5.56
+  ],
+  [
+   "DOWNSIDE / FY2026 / net_debt",
+   5.06
+  ],
+  [
+   "DOWNSIDE / FY2026 / revenue",
+   6.56
+  ],
+  [
+   "DOWNSIDE / FY2026 / total_leverage",
+   4.06
+  ],
+  [
+   "DOWNSIDE / FY2027 / accessible_liquidity",
+   4.69
+  ],
+  [
+   "DOWNSIDE / FY2027 / adjusted_ebitda_calc",
+   7.19
+  ],
+  [
+   "DOWNSIDE / FY2027 / capex",
+   7.69
+  ],
+  [
+   "DOWNSIDE / FY2027 / fcf",
+   6.19
+  ],
+  [
+   "DOWNSIDE / FY2027 / interest_cover",
+   5.69
+  ],
+  [
+   "DOWNSIDE / FY2027 / net_debt",
+   5.19
+  ],
+  [
+   "DOWNSIDE / FY2027 / revenue",
+   6.69
+  ],
+  [
+   "DOWNSIDE / FY2027 / total_leverage",
+   4.19
+  ],
+  [
+   "DOWNSIDE / FY2028 / accessible_liquidity",
+   4.82
+  ],
+  [
+   "DOWNSIDE / FY2028 / adjusted_ebitda_calc",
+   7.32
+  ],
+  [
+   "DOWNSIDE / FY2028 / capex",
+   7.82
+  ],
+  [
+   "DOWNSIDE / FY2028 / fcf",
+   6.32
+  ],
+  [
+   "DOWNSIDE / FY2028 / interest_cover",
+   5.82
+  ],
+  [
+   "DOWNSIDE / FY2028 / net_debt",
+   5.32
+  ],
+  [
+   "DOWNSIDE / FY2028 / revenue",
+   6.82
+  ],
+  [
+   "DOWNSIDE / FY2028 / total_leverage",
+   4.32
+  ],
+  [
+   "DOWNSIDE / FY2029 / accessible_liquidity",
+   4.95
+  ],
+  [
+   "DOWNSIDE / FY2029 / adjusted_ebitda_calc",
+   7.45
+  ],
+  [
+   "DOWNSIDE / FY2029 / capex",
+   7.95
+  ],
+  [
+   "DOWNSIDE / FY2029 / fcf",
+   6.45
+  ],
+  [
+   "DOWNSIDE / FY2029 / interest_cover",
+   5.95
+  ],
+  [
+   "DOWNSIDE / FY2029 / net_debt",
+   5.45
+  ],
+  [
+   "DOWNSIDE / FY2029 / revenue",
+   6.95
+  ],
+  [
+   "DOWNSIDE / FY2029 / total_leverage",
+   4.45
+  ],
+  [
+   "DOWNSIDE / FY2030 / accessible_liquidity",
+   5.08
+  ],
+  [
+   "DOWNSIDE / FY2030 / adjusted_ebitda_calc",
+   7.58
+  ],
+  [
+   "DOWNSIDE / FY2030 / capex",
+   8.08
+  ],
+  [
+   "DOWNSIDE / FY2030 / fcf",
+   6.58
+  ],
+  [
+   "DOWNSIDE / FY2030 / interest_cover",
+   6.08
+  ],
+  [
+   "DOWNSIDE / FY2030 / net_debt",
+   5.58
+  ],
+  [
+   "DOWNSIDE / FY2030 / revenue",
+   7.08
+  ],
+  [
+   "DOWNSIDE / FY2030 / total_leverage",
+   4.58
+  ],
+  [
+   null,
+   null
+  ],
+  [
+   "Financials · Calculated Base and Downside Outputs · Locked · model · <id> · Generated values are locked to the selected model authority.",
+   null
+  ]
+ ],
+ "Cover & Control": [
+  [
+   "Field",
+   "Value"
+  ],
+  [
+   "Document",
+   "Issuer — Investment Committee Credit Memo"
+  ],
+  [
+   "Issuer",
+   "Issuer"
+  ],
+  [
+   "Case",
+   "Case"
+  ],
+  [
+   "Report type",
+   "Investment Committee Credit Memo"
+  ],
+  [
+   "Pathway",
+   "FULL_CREDIT"
+  ],
+  [
+   "As-of date",
+   "Unavailable"
+  ],
+  [
+   "Deliverable",
+   "dlv-<sha256>"
+  ],
+  [
+   "Draft version",
+   "1"
+  ],
+  [
+   "Accepted run",
+   "Unavailable"
+  ],
+  [
+   "Accepted snapshot",
+   "<id>"
+  ],
+  [
+   "Source set",
+   "<id> v1"
+  ],
+  [
+   "Model identity",
+   "ANALYST_REVISION · build <id> · revision <id> · runtime cp_model_v3_python 3"
+  ],
+  [
+   "Methodology build",
+   "<methodology-build>"
+  ],
+  [
+   "Machine assistance",
+   "Provider identity unavailable for the accepted analysis"
+  ],
+  [
+   "Opinion owner",
+   "analyst"
+  ],
+  [
+   "Opinion signed at",
+   "<timestamp>"
+  ],
+  [
+   "Approval state",
+   "PENDING APPROVAL"
+  ],
+  [
+   "Watermark",
+   "PENDING APPROVAL"
+  ],
+  [
+   "Approver identity",
+   "Recorded in the detached filing receipt and the audit chain, never in this workbook"
+  ],
+  [
+   "Deliverable",
+   "dlv-<sha256>"
+  ],
+  [
+   "Draft version",
+   "1"
+  ],
+  [
+   "Draft digest",
+   "<sha256>"
+  ],
+  [
+   "Content digest",
+   "<sha256>"
+  ],
+  [
+   "Input fingerprint",
+   "<sha256>"
+  ],
+  [
+   "Methodology build",
+   "<methodology-build>"
+  ],
+  [
+   "Renderer",
+   "caos.deliverable-renderer.v2"
+  ],
+  [
+   "Disclosure · content origin",
+   "Sections are labelled by origin: analyst judgment, model calculation, accepted analysis artifact, or system control record."
+  ],
+  [
+   "Disclosure · sources",
+   "1 supplied documents in the pinned source set; 1 cited."
+  ],
+  [
+   "Disclosure · machine assistance",
+   "Provider identity unavailable for the accepted analysis"
+  ],
+  [
+   "Disclosure · analyst opinion owner",
+   "analyst"
+  ],
+  [
+   "Disclosure · approval state",
+   "PENDING APPROVAL"
+  ],
+  [
+   "Disclosure · as of date",
+   "Unavailable"
+  ],
+  [
+   "Disclosure · version",
+   "dlv-<sha256> · Draft v1"
+  ],
+  [
+   "Disclosure · limitation",
+   "Analyst limitations: Covenant definitions were not disclosed in the supplied pack."
+  ],
+  [
+   "Disclosure · limitation",
+   "Declared limitation: Covenant definitions unavailable; capex guidance not disclosed."
+  ],
+  [
+   "Sheets",
+   "Report (narrative and profiles), one sheet per table, Revision Record"
+  ]
+ ],
+ "Evidence Register": [
+  [
+   "Source",
+   "Blocks",
+   "Claim"
+  ],
+  [
+   "<id>",
+   "b00001",
+   "Pinned evidence line supports the opinion."
+  ],
+  [
+   null,
+   null,
+   null
+  ],
+  [
+   "Evidence · Evidence Register · Locked · artifact · <id>",
+   null,
+   null
+  ]
+ ],
+ "Generated Metrics · 01": [
+  [
+   "Metric / Case / Period",
+   "Value"
+  ],
+  [
+   "accessible_liquidity / BASE / FY2024",
+   3.6
+  ],
+  [
+   "accessible_liquidity / BASE / FY2025",
+   3.73
+  ],
+  [
+   "accessible_liquidity / BASE / FY2026",
+   3.86
+  ],
+  [
+   "accessible_liquidity / BASE / FY2027",
+   3.99
+  ],
+  [
+   "accessible_liquidity / BASE / FY2028",
+   4.12
+  ],
+  [
+   "accessible_liquidity / BASE / FY2029",
+   4.25
+  ],
+  [
+   "accessible_liquidity / BASE / FY2030",
+   4.38
+  ],
+  [
+   "accessible_liquidity / DOWNSIDE / FY2024",
+   4.3
+  ],
+  [
+   "accessible_liquidity / DOWNSIDE / FY2025",
+   4.43
+  ],
+  [
+   "accessible_liquidity / DOWNSIDE / FY2026",
+   4.56
+  ],
+  [
+   "accessible_liquidity / DOWNSIDE / FY2027",
+   4.69
+  ],
+  [
+   "accessible_liquidity / DOWNSIDE / FY2028",
+   4.82
+  ],
+  [
+   "accessible_liquidity / DOWNSIDE / FY2029",
+   4.95
+  ],
+  [
+   "accessible_liquidity / DOWNSIDE / FY2030",
+   5.08
+  ],
+  [
+   "net_debt / BASE / FY2024",
+   4.1
+  ],
+  [
+   "net_debt / BASE / FY2025",
+   4.23
+  ],
+  [
+   "net_debt / BASE / FY2026",
+   4.36
+  ],
+  [
+   "net_debt / BASE / FY2027",
+   4.49
+  ],
+  [
+   "net_debt / BASE / FY2028",
+   4.62
+  ],
+  [
+   "net_debt / BASE / FY2029",
+   4.75
+  ],
+  [
+   "net_debt / BASE / FY2030",
+   4.88
+  ],
+  [
+   "net_debt / DOWNSIDE / FY2024",
+   4.8
+  ],
+  [
+   "net_debt / DOWNSIDE / FY2025",
+   4.93
+  ],
+  [
+   "net_debt / DOWNSIDE / FY2026",
+   5.06
+  ],
+  [
+   "net_debt / DOWNSIDE / FY2027",
+   5.19
+  ],
+  [
+   "net_debt / DOWNSIDE / FY2028",
+   5.32
+  ],
+  [
+   "net_debt / DOWNSIDE / FY2029",
+   5.45
+  ],
+  [
+   "net_debt / DOWNSIDE / FY2030",
+   5.58
+  ],
+  [
+   "total_leverage / BASE / FY2024",
+   3.1
+  ],
+  [
+   "total_leverage / BASE / FY2025",
+   3.23
+  ],
+  [
+   "total_leverage / BASE / FY2026",
+   3.36
+  ],
+  [
+   "total_leverage / BASE / FY2027",
+   3.49
+  ],
+  [
+   "total_leverage / BASE / FY2028",
+   3.62
+  ],
+  [
+   "total_leverage / BASE / FY2029",
+   3.75
+  ],
+  [
+   "total_leverage / BASE / FY2030",
+   3.88
+  ],
+  [
+   "total_leverage / DOWNSIDE / FY2024",
+   3.8
+  ],
+  [
+   "total_leverage / DOWNSIDE / FY2025",
+   3.93
+  ],
+  [
+   "total_leverage / DOWNSIDE / FY2026",
+   4.06
+  ],
+  [
+   "total_leverage / DOWNSIDE / FY2027",
+   4.19
+  ],
+  [
+   "total_leverage / DOWNSIDE / FY2028",
+   4.32
+  ],
+  [
+   "total_leverage / DOWNSIDE / FY2029",
+   4.45
+  ],
+  [
+   "total_leverage / DOWNSIDE / FY2030",
+   4.58
+  ],
+  [
+   null,
+   null
+  ],
+  [
+   "Appendix · Generated Metrics · 01 · Locked · model · <id> · Generated values are locked to the selected model authority.",
+   null
+  ]
+ ],
+ "Generated Metrics · 02": [
+  [
+   "Metric / Case / Period",
+   "Value"
+  ],
+  [
+   "fcf / BASE / FY2024",
+   5.1
+  ],
+  [
+   "fcf / BASE / FY2025",
+   5.23
+  ],
+  [
+   "fcf / BASE / FY2026",
+   5.36
+  ],
+  [
+   "fcf / BASE / FY2027",
+   5.49
+  ],
+  [
+   "fcf / BASE / FY2028",
+   5.62
+  ],
+  [
+   "fcf / BASE / FY2029",
+   5.75
+  ],
+  [
+   "fcf / BASE / FY2030",
+   5.88
+  ],
+  [
+   "fcf / DOWNSIDE / FY2024",
+   5.8
+  ],
+  [
+   "fcf / DOWNSIDE / FY2025",
+   5.93
+  ],
+  [
+   "fcf / DOWNSIDE / FY2026",
+   6.06
+  ],
+  [
+   "fcf / DOWNSIDE / FY2027",
+   6.19
+  ],
+  [
+   "fcf / DOWNSIDE / FY2028",
+   6.32
+  ],
+  [
+   "fcf / DOWNSIDE / FY2029",
+   6.45
+  ],
+  [
+   "fcf / DOWNSIDE / FY2030",
+   6.58
+  ],
+  [
+   "interest_cover / BASE / FY2024",
+   4.6
+  ],
+  [
+   "interest_cover / BASE / FY2025",
+   4.73
+  ],
+  [
+   "interest_cover / BASE / FY2026",
+   4.86
+  ],
+  [
+   "interest_cover / BASE / FY2027",
+   4.99
+  ],
+  [
+   "interest_cover / BASE / FY2028",
+   5.12
+  ],
+  [
+   "interest_cover / BASE / FY2029",
+   5.25
+  ],
+  [
+   "interest_cover / BASE / FY2030",
+   5.38
+  ],
+  [
+   "interest_cover / DOWNSIDE / FY2024",
+   5.3
+  ],
+  [
+   "interest_cover / DOWNSIDE / FY2025",
+   5.43
+  ],
+  [
+   "interest_cover / DOWNSIDE / FY2026",
+   5.56
+  ],
+  [
+   "interest_cover / DOWNSIDE / FY2027",
+   5.69
+  ],
+  [
+   "interest_cover / DOWNSIDE / FY2028",
+   5.82
+  ],
+  [
+   "interest_cover / DOWNSIDE / FY2029",
+   5.95
+  ],
+  [
+   "interest_cover / DOWNSIDE / FY2030",
+   6.08
+  ],
+  [
+   null,
+   null
+  ],
+  [
+   "Appendix · Generated Metrics · 02 · Locked · model · <id> · Generated values are locked to the selected model authority.",
+   null
+  ]
+ ],
+ "Model Appendix": [
+  [
+   "Case / Period / Metric",
+   "Value"
+  ],
+  [
+   "BASE / FY2024 / accessible_liquidity",
+   3.6
+  ],
+  [
+   "BASE / FY2024 / adjusted_ebitda_calc",
+   6.1
+  ],
+  [
+   "BASE / FY2024 / capex",
+   6.6
+  ],
+  [
+   "BASE / FY2024 / fcf",
+   5.1
+  ],
+  [
+   "BASE / FY2024 / interest_cover",
+   4.6
+  ],
+  [
+   "BASE / FY2024 / net_debt",
+   4.1
+  ],
+  [
+   "BASE / FY2024 / revenue",
+   5.6
+  ],
+  [
+   "BASE / FY2024 / total_leverage",
+   3.1
+  ],
+  [
+   "BASE / FY2025 / accessible_liquidity",
+   3.73
+  ],
+  [
+   "BASE / FY2025 / adjusted_ebitda_calc",
+   6.23
+  ],
+  [
+   "BASE / FY2025 / capex",
+   6.73
+  ],
+  [
+   "BASE / FY2025 / fcf",
+   5.23
+  ],
+  [
+   "BASE / FY2025 / interest_cover",
+   4.73
+  ],
+  [
+   "BASE / FY2025 / net_debt",
+   4.23
+  ],
+  [
+   "BASE / FY2025 / revenue",
+   5.73
+  ],
+  [
+   "BASE / FY2025 / total_leverage",
+   3.23
+  ],
+  [
+   "BASE / FY2026 / accessible_liquidity",
+   3.86
+  ],
+  [
+   "BASE / FY2026 / adjusted_ebitda_calc",
+   6.36
+  ],
+  [
+   "BASE / FY2026 / capex",
+   6.86
+  ],
+  [
+   "BASE / FY2026 / fcf",
+   5.36
+  ],
+  [
+   "BASE / FY2026 / interest_cover",
+   4.86
+  ],
+  [
+   "BASE / FY2026 / net_debt",
+   4.36
+  ],
+  [
+   "BASE / FY2026 / revenue",
+   5.86
+  ],
+  [
+   "BASE / FY2026 / total_leverage",
+   3.36
+  ],
+  [
+   "BASE / FY2027 / accessible_liquidity",
+   3.99
+  ],
+  [
+   "BASE / FY2027 / adjusted_ebitda_calc",
+   6.49
+  ],
+  [
+   "BASE / FY2027 / capex",
+   6.99
+  ],
+  [
+   "BASE / FY2027 / fcf",
+   5.49
+  ],
+  [
+   "BASE / FY2027 / interest_cover",
+   4.99
+  ],
+  [
+   "BASE / FY2027 / net_debt",
+   4.49
+  ],
+  [
+   "BASE / FY2027 / revenue",
+   5.99
+  ],
+  [
+   "BASE / FY2027 / total_leverage",
+   3.49
+  ],
+  [
+   "BASE / FY2028 / accessible_liquidity",
+   4.12
+  ],
+  [
+   "BASE / FY2028 / adjusted_ebitda_calc",
+   6.62
+  ],
+  [
+   "BASE / FY2028 / capex",
+   7.12
+  ],
+  [
+   "BASE / FY2028 / fcf",
+   5.62
+  ],
+  [
+   "BASE / FY2028 / interest_cover",
+   5.12
+  ],
+  [
+   "BASE / FY2028 / net_debt",
+   4.62
+  ],
+  [
+   "BASE / FY2028 / revenue",
+   6.12
+  ],
+  [
+   "BASE / FY2028 / total_leverage",
+   3.62
+  ],
+  [
+   "BASE / FY2029 / accessible_liquidity",
+   4.25
+  ],
+  [
+   "BASE / FY2029 / adjusted_ebitda_calc",
+   6.75
+  ],
+  [
+   "BASE / FY2029 / capex",
+   7.25
+  ],
+  [
+   "BASE / FY2029 / fcf",
+   5.75
+  ],
+  [
+   "BASE / FY2029 / interest_cover",
+   5.25
+  ],
+  [
+   "BASE / FY2029 / net_debt",
+   4.75
+  ],
+  [
+   "BASE / FY2029 / revenue",
+   6.25
+  ],
+  [
+   "BASE / FY2029 / total_leverage",
+   3.75
+  ],
+  [
+   "BASE / FY2030 / accessible_liquidity",
+   4.38
+  ],
+  [
+   "BASE / FY2030 / adjusted_ebitda_calc",
+   6.88
+  ],
+  [
+   "BASE / FY2030 / capex",
+   7.38
+  ],
+  [
+   "BASE / FY2030 / fcf",
+   5.88
+  ],
+  [
+   "BASE / FY2030 / interest_cover",
+   5.38
+  ],
+  [
+   "BASE / FY2030 / net_debt",
+   4.88
+  ],
+  [
+   "BASE / FY2030 / revenue",
+   6.38
+  ],
+  [
+   "BASE / FY2030 / total_leverage",
+   3.88
+  ],
+  [
+   "DOWNSIDE / FY2024 / accessible_liquidity",
+   4.3
+  ],
+  [
+   "DOWNSIDE / FY2024 / adjusted_ebitda_calc",
+   6.8
+  ],
+  [
+   "DOWNSIDE / FY2024 / capex",
+   7.3
+  ],
+  [
+   "DOWNSIDE / FY2024 / fcf",
+   5.8
+  ],
+  [
+   "DOWNSIDE / FY2024 / interest_cover",
+   5.3
+  ],
+  [
+   "DOWNSIDE / FY2024 / net_debt",
+   4.8
+  ],
+  [
+   "DOWNSIDE / FY2024 / revenue",
+   6.3
+  ],
+  [
+   "DOWNSIDE / FY2024 / total_leverage",
+   3.8
+  ],
+  [
+   "DOWNSIDE / FY2025 / accessible_liquidity",
+   4.43
+  ],
+  [
+   "DOWNSIDE / FY2025 / adjusted_ebitda_calc",
+   6.93
+  ],
+  [
+   "DOWNSIDE / FY2025 / capex",
+   7.43
+  ],
+  [
+   "DOWNSIDE / FY2025 / fcf",
+   5.93
+  ],
+  [
+   "DOWNSIDE / FY2025 / interest_cover",
+   5.43
+  ],
+  [
+   "DOWNSIDE / FY2025 / net_debt",
+   4.93
+  ],
+  [
+   "DOWNSIDE / FY2025 / revenue",
+   6.43
+  ],
+  [
+   "DOWNSIDE / FY2025 / total_leverage",
+   3.93
+  ],
+  [
+   "DOWNSIDE / FY2026 / accessible_liquidity",
+   4.56
+  ],
+  [
+   "DOWNSIDE / FY2026 / adjusted_ebitda_calc",
+   7.06
+  ],
+  [
+   "DOWNSIDE / FY2026 / capex",
+   7.56
+  ],
+  [
+   "DOWNSIDE / FY2026 / fcf",
+   6.06
+  ],
+  [
+   "DOWNSIDE / FY2026 / interest_cover",
+   5.56
+  ],
+  [
+   "DOWNSIDE / FY2026 / net_debt",
+   5.06
+  ],
+  [
+   "DOWNSIDE / FY2026 / revenue",
+   6.56
+  ],
+  [
+   "DOWNSIDE / FY2026 / total_leverage",
+   4.06
+  ],
+  [
+   "DOWNSIDE / FY2027 / accessible_liquidity",
+   4.69
+  ],
+  [
+   "DOWNSIDE / FY2027 / adjusted_ebitda_calc",
+   7.19
+  ],
+  [
+   "DOWNSIDE / FY2027 / capex",
+   7.69
+  ],
+  [
+   "DOWNSIDE / FY2027 / fcf",
+   6.19
+  ],
+  [
+   "DOWNSIDE / FY2027 / interest_cover",
+   5.69
+  ],
+  [
+   "DOWNSIDE / FY2027 / net_debt",
+   5.19
+  ],
+  [
+   "DOWNSIDE / FY2027 / revenue",
+   6.69
+  ],
+  [
+   "DOWNSIDE / FY2027 / total_leverage",
+   4.19
+  ],
+  [
+   "DOWNSIDE / FY2028 / accessible_liquidity",
+   4.82
+  ],
+  [
+   "DOWNSIDE / FY2028 / adjusted_ebitda_calc",
+   7.32
+  ],
+  [
+   "DOWNSIDE / FY2028 / capex",
+   7.82
+  ],
+  [
+   "DOWNSIDE / FY2028 / fcf",
+   6.32
+  ],
+  [
+   "DOWNSIDE / FY2028 / interest_cover",
+   5.82
+  ],
+  [
+   "DOWNSIDE / FY2028 / net_debt",
+   5.32
+  ],
+  [
+   "DOWNSIDE / FY2028 / revenue",
+   6.82
+  ],
+  [
+   "DOWNSIDE / FY2028 / total_leverage",
+   4.32
+  ],
+  [
+   "DOWNSIDE / FY2029 / accessible_liquidity",
+   4.95
+  ],
+  [
+   "DOWNSIDE / FY2029 / adjusted_ebitda_calc",
+   7.45
+  ],
+  [
+   "DOWNSIDE / FY2029 / capex",
+   7.95
+  ],
+  [
+   "DOWNSIDE / FY2029 / fcf",
+   6.45
+  ],
+  [
+   "DOWNSIDE / FY2029 / interest_cover",
+   5.95
+  ],
+  [
+   "DOWNSIDE / FY2029 / net_debt",
+   5.45
+  ],
+  [
+   "DOWNSIDE / FY2029 / revenue",
+   6.95
+  ],
+  [
+   "DOWNSIDE / FY2029 / total_leverage",
+   4.45
+  ],
+  [
+   "DOWNSIDE / FY2030 / accessible_liquidity",
+   5.08
+  ],
+  [
+   "DOWNSIDE / FY2030 / adjusted_ebitda_calc",
+   7.58
+  ],
+  [
+   "DOWNSIDE / FY2030 / capex",
+   8.08
+  ],
+  [
+   "DOWNSIDE / FY2030 / fcf",
+   6.58
+  ],
+  [
+   "DOWNSIDE / FY2030 / interest_cover",
+   6.08
+  ],
+  [
+   "DOWNSIDE / FY2030 / net_debt",
+   5.58
+  ],
+  [
+   "DOWNSIDE / FY2030 / revenue",
+   7.08
+  ],
+  [
+   "DOWNSIDE / FY2030 / total_leverage",
+   4.58
+  ],
+  [
+   null,
+   null
+  ],
+  [
+   "Appendix · Model Appendix · Locked · model · <id> · Complete calculated output projection for review.",
+   null
+  ]
+ ],
+ "Registered Evidence Inventory": [
+  [
+   "Source",
+   "Blocks",
+   "Status"
+  ],
+  [
+   "<id>",
+   "b00001",
+   "live"
+  ],
+  [
+   null,
+   null,
+   null
+  ],
+  [
+   "Control · Registered Evidence Inventory · Locked · artifact · <id>",
+   null,
+   null
+  ]
+ ],
+ "Report": [
+  [
+   "Page",
+   "Section",
+   "Origin",
+   "Authority",
+   "Field",
+   "Content"
+  ],
+  [
+   "Decision",
+   "Analyst Opinion",
+   "Analyst judgment",
+   "<id>",
+   "Text",
+   "Hold: the credit remains adequately covered through the forecast horizon."
+  ],
+  [
+   "Decision",
+   "Opinion Sign-Off",
+   "Analyst judgment",
+   "<id>",
+   "Limitations",
+   "Covenant definitions were not disclosed in the supplied pack."
+  ],
+  [
+   "Decision",
+   "Opinion Sign-Off",
+   "Analyst judgment",
+   "<id>",
+   "Material overrides",
+   "None"
+  ],
+  [
+   "Decision",
+   "Opinion Sign-Off",
+   "Analyst judgment",
+   "<id>",
+   "Rationale",
+   "Leverage and liquidity conclusions rest on the cited annual and interim filings."
+  ],
+  [
+   "Decision",
+   "Opinion Sign-Off",
+   "Analyst judgment",
+   "<id>",
+   "Signed by",
+   "analyst"
+  ],
+  [
+   "Decision",
+   "Opinion Sign-Off",
+   "Analyst judgment",
+   "<id>",
+   "Signed at",
+   "<timestamp>"
+  ],
+  [
+   "Decision",
+   "Opinion Sign-Off",
+   "Analyst judgment",
+   "<id>",
+   "Opinion digest",
+   "<sha256>"
+  ],
+  [
+   "Decision",
+   "Opinion Sign-Off",
+   "Analyst judgment",
+   "<id>",
+   "Approval state",
+   "PENDING APPROVAL"
+  ],
+  [
+   "Decision",
+   "Credit Snapshot",
+   "Locked",
+   "<id>",
+   "Group",
+   "2 sections follow"
+  ],
+  [
+   "Decision",
+   "Accepted Analysis",
+   "Locked",
+   "<id>",
+   "Snapshot",
+   "<id>"
+  ],
+  [
+   "Decision",
+   "Analyst Snapshot",
+   "Analyst judgment",
+   "full_credit.section.01",
+   "Text",
+   "In our judgment coverage stays adequate across the seven forecast years under both cases."
+  ],
+  [
+   "Decision",
+   "Recommendation",
+   "Analyst judgment",
+   "full_credit.section.02",
+   "Text",
+   "In our judgment coverage stays adequate across the seven forecast years under both cases."
+  ],
+  [
+   "Decision",
+   "Thesis and Variant View",
+   "Analyst judgment",
+   "full_credit.section.03",
+   "Text",
+   "In our judgment coverage stays adequate across the seven forecast years under both cases."
+  ],
+  [
+   "Business",
+   "Business and Industry",
+   "Analyst judgment",
+   "full_credit.section.04",
+   "Text",
+   "In our judgment coverage stays adequate across the seven forecast years under both cases."
+  ],
+  [
+   "Financials",
+   "Capital Structure",
+   "Analyst judgment",
+   "full_credit.section.05",
+   "Text",
+   "In our judgment coverage stays adequate across the seven forecast years under both cases."
+  ],
+  [
+   "Financials",
+   "Base and Downside Model",
+   "Locked",
+   "<id>",
+   "Group",
+   "2 sections follow"
+  ],
+  [
+   "Financials",
+   "Analyst Model View",
+   "Analyst judgment",
+   "full_credit.section.06",
+   "Text",
+   "In our judgment coverage stays adequate across the seven forecast years under both cases."
+  ],
+  [
+   "Financials",
+   "Calculated Base and Downside Outputs",
+   "Locked",
+   "<id>",
+   "Table",
+   "See sheet 'Calculated Base and Downside' (112 rows)"
+  ],
+  [
+   "Financials",
+   "Calculated Base and Downside Outputs",
+   "Locked",
+   "<id>",
+   "Note",
+   "Generated values are locked to the selected model authority."
+  ],
+  [
+   "Financials",
+   "Liquidity and Covenants",
+   "Analyst judgment",
+   "full_credit.section.07",
+   "Text",
+   "In our judgment coverage stays adequate across the seven forecast years under both cases."
+  ],
+  [
+   "Risk",
+   "Risks, Catalysts, and Falsifiers",
+   "Analyst judgment",
+   "full_credit.section.08",
+   "Text",
+   "In our judgment coverage stays adequate across the seven forecast years under both cases."
+  ],
+  [
+   "Risk",
+   "Monitoring",
+   "Analyst judgment",
+   "full_credit.section.09",
+   "Text",
+   "In our judgment coverage stays adequate across the seven forecast years under both cases."
+  ],
+  [
+   "Appendix",
+   "Generated Metrics · 01",
+   "Locked",
+   "<id>",
+   "Table",
+   "See sheet 'Generated Metrics · 01' (42 rows)"
+  ],
+  [
+   "Appendix",
+   "Generated Metrics · 01",
+   "Locked",
+   "<id>",
+   "Note",
+   "Generated values are locked to the selected model authority."
+  ],
+  [
+   "Appendix",
+   "Generated Metrics · 02",
+   "Locked",
+   "<id>",
+   "Table",
+   "See sheet 'Generated Metrics · 02' (28 rows)"
+  ],
+  [
+   "Appendix",
+   "Generated Metrics · 02",
+   "Locked",
+   "<id>",
+   "Note",
+   "Generated values are locked to the selected model authority."
+  ],
+  [
+   "Appendix",
+   "Model Appendix",
+   "Locked",
+   "<id>",
+   "Table",
+   "See sheet 'Model Appendix' (112 rows)"
+  ],
+  [
+   "Appendix",
+   "Model Appendix",
+   "Locked",
+   "<id>",
+   "Note",
+   "Complete calculated output projection for review."
+  ],
+  [
+   "Appendix",
+   "Limitations · 01",
+   "Analyst judgment",
+   "blk-appendix.limitations.01",
+   "Text",
+   "Covenant definitions unavailable; capex guidance not disclosed."
+  ],
+  [
+   "Evidence",
+   "Evidence Register",
+   "Locked",
+   "<id>",
+   "Table",
+   "See sheet 'Evidence Register' (1 rows)"
+  ],
+  [
+   "Control",
+   "Control Status",
+   "Locked",
+   "dlv-<sha256>",
+   "Approval state",
+   "PENDING APPROVAL"
+  ],
+  [
+   "Control",
+   "Control Status",
+   "Locked",
+   "dlv-<sha256>",
+   "Opinion owner",
+   "analyst · <timestamp>"
+  ],
+  [
+   "Control",
+   "Control Status",
+   "Locked",
+   "dlv-<sha256>",
+   "Freeze identity",
+   "dlv-<sha256> · Draft v1 · <sha256>"
+  ],
+  [
+   "Control",
+   "Control Status",
+   "Locked",
+   "dlv-<sha256>",
+   "Input fingerprint",
+   "<sha256>"
+  ],
+  [
+   "Control",
+   "Control Status",
+   "Locked",
+   "dlv-<sha256>",
+   "Accepted snapshot",
+   "<id>"
+  ],
+  [
+   "Control",
+   "Control Status",
+   "Locked",
+   "dlv-<sha256>",
+   "Source set",
+   "<id> v1"
+  ],
+  [
+   "Control",
+   "Control Status",
+   "Locked",
+   "dlv-<sha256>",
+   "As-of date",
+   "Unavailable"
+  ],
+  [
+   "Control",
+   "Control Status",
+   "Locked",
+   "dlv-<sha256>",
+   "Model identity",
+   "ANALYST_REVISION · build <id> · revision <id> · runtime cp_model_v3_python 3"
+  ],
+  [
+   "Control",
+   "Control Status",
+   "Locked",
+   "dlv-<sha256>",
+   "Methodology build",
+   "<methodology-build>"
+  ],
+  [
+   "Control",
+   "Control Status",
+   "Locked",
+   "dlv-<sha256>",
+   "Machine assistance",
+   "Provider identity unavailable for the accepted analysis"
+  ],
+  [
+   "Control",
+   "Control Status",
+   "Locked",
+   "dlv-<sha256>",
+   "Renderer",
+   "caos.deliverable-renderer.v2"
+  ],
+  [
+   "Control",
+   "Control Status",
+   "Locked",
+   "dlv-<sha256>",
+   "Approver identity",
+   "Recorded in the detached filing receipt and the audit chain, never in these bytes"
+  ],
+  [
+   "Control",
+   "Source Document Register",
+   "Locked",
+   "<id>",
+   "Table",
+   "See sheet 'Source Document Register' (1 rows)"
+  ],
+  [
+   "Control",
+   "Source Document Register",
+   "Locked",
+   "<id>",
+   "Note",
+   "Every supplied document in the pinned source set with its host disposition; cited means referenced by this deliverable's evidence register."
+  ],
+  [
+   "Control",
+   "Registered Evidence Inventory",
+   "Locked",
+   "<id>",
+   "Table",
+   "See sheet 'Registered Evidence Inventory' (1 rows)"
+  ],
+  [
+   "Control",
+   "Limitations and Open QA",
+   "Analyst judgment",
+   "<id>",
+   "Item",
+   "Analyst limitations: Covenant definitions were not disclosed in the supplied pack."
+  ],
+  [
+   "Control",
+   "Limitations and Open QA",
+   "Analyst judgment",
+   "<id>",
+   "Item",
+   "Declared limitation: Covenant definitions unavailable; capex guidance not disclosed."
+  ],
+  [
+   "Control",
+   "Content Origin",
+   "Locked",
+   "dlv-<sha256>",
+   "Analyst-owned sections",
+   "10"
+  ],
+  [
+   "Control",
+   "Content Origin",
+   "Locked",
+   "dlv-<sha256>",
+   "Model-locked sections",
+   "5"
+  ],
+  [
+   "Control",
+   "Content Origin",
+   "Locked",
+   "dlv-<sha256>",
+   "Artifact-locked sections",
+   "3"
+  ],
+  [
+   "Control",
+   "Content Origin",
+   "Locked",
+   "dlv-<sha256>",
+   "System sections",
+   "0"
+  ],
+  [
+   "Control",
+   "Content Origin",
+   "Locked",
+   "dlv-<sha256>",
+   "Convention",
+   "Analyst judgment is labelled as such; locked sections carry the authority id they were generated from; Unavailable marks a value the sources or the model did not provide."
+  ]
+ ],
+ "Revision Record": [
+  [
+   "Field",
+   "Value"
+  ],
+  [
+   "Deliverable",
+   "dlv-<sha256>"
+  ],
+  [
+   "Draft version",
+   "1"
+  ],
+  [
+   "Draft digest",
+   "<sha256>"
+  ],
+  [
+   "Content digest",
+   "<sha256>"
+  ],
+  [
+   "Input fingerprint",
+   "<sha256>"
+  ],
+  [
+   "Methodology build",
+   "<methodology-build>"
+  ],
+  [
+   "Renderer",
+   "caos.deliverable-renderer.v2"
+  ]
+ ],
+ "Source Document Register": [
+  [
+   "Source",
+   "Filename",
+   "SHA-256",
+   "Type",
+   "Period",
+   "Disposition",
+   "Cited"
+  ],
+  [
+   "<id>",
+   "doc.txt",
+   "<sha256>",
+   "unclassified",
+   "Unavailable",
+   "used",
+   "Yes"
+  ],
+  [
+   null,
+   null,
+   null,
+   null,
+   null,
+   null,
+   null
+  ],
+  [
+   "Control · Source Document Register · Locked · artifact · <id> · Every supplied document in the pinned source set with its host disposition; cited means referenced by this deliverable's evidence register.",
+   null,
+   null,
+   null,
+   null,
+   null,
+   null
+  ]
+ ]
+}

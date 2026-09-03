@@ -1327,7 +1327,8 @@ try {
   modelState = "READY"; modelExportState = "READY";
   const reportIdentityPath = (url) => url.pathname === "/api/me";
   let reportRole = "ANALYST";
-  await page.route(reportIdentityPath, (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ role: reportRole }) }));
+  let reportSubject = "analyst";
+  await page.route(reportIdentityPath, (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ role: reportRole, subject: reportSubject }) }));
 
   const reportSections = {
     FULL_CREDIT: ["Credit Snapshot", "Recommendation", "Thesis and Variant View", "Business and Industry", "Capital Structure", "Base and Downside Model", "Liquidity and Covenants", "Risks, Catalysts, and Falsifiers", "Monitoring"],
@@ -1457,8 +1458,36 @@ try {
   };
   const reportWorkspaces = new Map(Object.keys(reportSections).map((pathway) => {
     const draft = reportDraft(pathway);
-    return [pathway, { template: reportTemplate(pathway), current: draft, history: [draft], frozen_history: [], model_eligibility: reportEligibility() }];
+    return [pathway, { template: reportTemplate(pathway), current: draft, history: [draft], frozen_history: [], model_eligibility: reportEligibility(), opinion: { head: null, current: false, reasons: ["OPINION_SIGNOFF_REQUIRED"] }, pending_freezes: [] }];
   }));
+  const reportFreezeJobs = new Map();
+  const reportReceipts = new Map();
+  let opinionSequence = 0;
+  const reportPublication = (pathway, workspace, frozenId, opinion) => {
+    const pages = [];
+    for (const section of workspace.current.content.document_sections) {
+      let page = pages.find((item) => item.name === section.page);
+      if (!page) { page = { name: section.page, sections: [] }; pages.push(page); }
+      page.sections.push(section);
+    }
+    const first = pages[0] || { name: "Decision", sections: [] };
+    if (!pages.length) pages.push(first);
+    first.sections = [
+      { kind: "text", section_id: "analyst_opinion", title: "Analyst Opinion", page: first.name, editable: false, origin: reportOrigin("ANALYST", opinion.opinion_id), body: opinion.opinion },
+      { kind: "profile", section_id: "opinion_sign_off", title: "Opinion Sign-Off", page: first.name, editable: false, origin: reportOrigin("ANALYST", opinion.opinion_id), rows: [{ label: "Limitations", value: opinion.limitations }, { label: "Material overrides", value: opinion.material_overrides }, { label: "Rationale", value: opinion.rationale }, { label: "Signed by", value: opinion.signed_by }, { label: "Approval state", value: "PENDING APPROVAL" }] },
+      ...first.sections,
+    ];
+    pages.push({ name: "Control", sections: [
+      { kind: "profile", section_id: "control_status", title: "Control Status", page: "Control", editable: false, origin: reportOrigin("SYSTEM", frozenId), rows: [{ label: "Approval state", value: "PENDING APPROVAL" }, { label: "Opinion owner", value: opinion.signed_by }, { label: "Approver identity", value: "Recorded in the detached filing receipt and the audit chain, never in these bytes" }] },
+      { kind: "table", section_id: "source_document_register", title: "Source Document Register", page: "Control", editable: false, origin: reportOrigin("ARTIFACT", accepted.id), columns: ["Source", "Filename", "SHA-256", "Type", "Period", "Disposition", "Cited"], rows: [[source.id, "earnings.txt", source.sha256, "interim", "FY2025", "used", "Yes"]], note: null },
+    ] });
+    return {
+      schema_version: "caos.deliverable.publication.v1",
+      masthead: { issuer: caseRecord.issuer, case_name: caseRecord.name, case_id: caseRecord.id, report_type: workspace.template.title, pathway, deliverable_id: frozenId, draft_version: workspace.current.version, draft_digest: workspace.current.digest, input_fingerprint: "e".repeat(64), as_of_date: "2026-08-26", run_id: "run_workbench", accepted_snapshot_id: accepted.id, source_set: `${accepted.source_set_id} v1`, model_identity: `ANALYST_REVISION · build ${modelBuildId}`, methodology_build_id: "deploy-v-workbench", machine_assistance: "Provider host_control · model host_control", approval_state: "PENDING APPROVAL", watermark: "PENDING APPROVAL", opinion_owner: opinion.signed_by, opinion_signed_at: opinion.signed_at, opinion_id: opinion.opinion_id, renderer_version: "caos.deliverable-renderer.v2" },
+      pages,
+      disclosures: { approval_state: "PENDING APPROVAL", analyst_opinion_owner: opinion.signed_by },
+    };
+  };
   let reportConflict = false;
   let holdReportSave = false;
   let reportLastSave;
@@ -1490,15 +1519,28 @@ try {
   await page.route(reportApiPath, async (route) => {
     const url = new URL(route.request().url());
     const suffix = url.pathname.split("/deliverables/")[1];
+    if (suffix.startsWith("freeze-jobs/")) {
+      const job = reportFreezeJobs.get(suffix.split("/")[1]);
+      if (!job) return route.fulfill({ status: 404, contentType: "application/json", body: JSON.stringify({ detail: "freeze job not found" }) });
+      // The worker has published: the frozen record already sits in frozen_history.
+      return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ...job, status: "PUBLISHED", completed_at: "2026-08-26T10:46:00Z" }) });
+    }
     if (suffix.startsWith("by-id/")) {
       const [, deliverableId, action, format] = suffix.split("/");
       const current = [...reportWorkspaces.values()].flatMap((item) => item.frozen_history).find((item) => item.id === deliverableId);
       if (action === "export") return fulfillReportExport(route, deliverableId, format);
+      if (action === "receipt") {
+        const receipt = reportReceipts.get(deliverableId);
+        if (!receipt) return route.fulfill({ status: 404, contentType: "application/json", body: JSON.stringify({ detail: "filing receipt not found" }) });
+        return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(receipt) });
+      }
       if (action === "approve") {
         await waitForHeldReportLifecycle("file");
-        const filed = { ...current, status: "FILED", approved_by: "approver", approved_at: "2026-08-26T12:00:00Z" };
+        if (reportSubject === current.signed_by || reportSubject === current.frozen_by) return route.fulfill({ status: 403, contentType: "application/json", body: JSON.stringify({ detail: { code: "APPROVER_NOT_INDEPENDENT" } }) });
+        const filed = { ...current, status: "FILED", approved_by: reportSubject, approved_at: "2026-08-26T12:00:00Z" };
         const workspace = reportWorkspaces.get(filed.pathway);
         workspace.frozen_history = workspace.frozen_history.map((item) => item.id === filed.id ? filed : item.status === "FILED" ? { ...item, status: "SUPERSEDED", superseded_by_id: filed.id } : item);
+        reportReceipts.set(filed.id, { schema_version: "caos.filing-receipt.v1", receipt_id: `rcpt_${filed.id}`, deliverable_id: filed.id, case_id: caseRecord.id, pathway: filed.pathway, draft_version: filed.draft_version, draft_digest: filed.digest, preview_digest: filed.preview_digest, input_fingerprint: filed.input_fingerprint, approval_hash: `sha256:${filed.preview_digest}`, content_digest: filed.payload.preview_digest, exports: Object.fromEntries(Object.entries(filed.exports).map(([key, value]) => [key, value.sha256])), opinion_id: filed.opinion_id, signed_by: filed.signed_by, frozen_by: filed.frozen_by, frozen_at: filed.frozen_at, approved_by: reportSubject, approved_at: "2026-08-26T12:00:00Z", receipt_digest: "r".repeat(64) });
         return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(filed) });
       }
       if (action === "request-changes") {
@@ -1507,6 +1549,7 @@ try {
         const replacement = reportDraft(current.pathway, workspace.current.version + 1, workspace.current.content);
         const changed = { ...current, status: "CHANGES_REQUESTED", change_request: { comment: route.request().postDataJSON().comment, requested_by: "approver", requested_at: "2026-08-26T11:00:00Z" } };
         workspace.current = replacement; workspace.history.push(replacement); workspace.frozen_history = workspace.frozen_history.map((item) => item.id === changed.id ? changed : item);
+        if (workspace.opinion.head) workspace.opinion = { ...workspace.opinion, current: false, reasons: ["DRAFT_REVISION_CHANGED"] };
         return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ frozen: changed, draft: replacement }) });
       }
     }
@@ -1514,6 +1557,17 @@ try {
     const workspace = reportWorkspaces.get(pathway);
     if (!workspace) return route.fulfill({ status: 404, contentType: "application/json", body: JSON.stringify({ detail: "missing fixture" }) });
     if (route.request().method() === "GET") return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(workspace) });
+    if (action === "opinion") {
+      const payload = route.request().postDataJSON();
+      const expected = workspace.opinion.head?.opinion_id ?? null;
+      if (payload.expected_head_opinion_id !== expected) return route.fulfill({ status: 409, contentType: "application/json", body: JSON.stringify({ detail: { code: "OPINION_HEAD_CONFLICT", current: workspace.opinion.head } }) });
+      if (payload.draft_id !== workspace.current.draft_id || payload.draft_version !== workspace.current.version || payload.draft_digest !== workspace.current.digest) return route.fulfill({ status: 409, contentType: "application/json", body: JSON.stringify({ detail: { code: "OPINION_REVISION_STALE" } }) });
+      for (const field of ["opinion", "limitations", "material_overrides", "rationale"]) assert.ok(typeof payload[field] === "string" && payload[field].trim(), `opinion sign-off omitted ${field}`);
+      opinionSequence += 1;
+      const head = { opinion_id: `opn_${opinionSequence}`, case_id: caseRecord.id, pathway, draft_id: workspace.current.draft_id, revision_id: workspace.current.id, draft_version: workspace.current.version, draft_digest: workspace.current.digest, binding: {}, opinion: payload.opinion, limitations: payload.limitations, material_overrides: payload.material_overrides, rationale: payload.rationale, supersedes_opinion_id: expected, signed_by: reportSubject, signed_at: "2026-08-26T10:40:00Z", opinion_digest: "o".repeat(64) };
+      workspace.opinion = { head, current: true, reasons: [] };
+      return route.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify(head) });
+    }
     if (action === "draft") {
       const payload = route.request().postDataJSON();
       reportLastSave = payload;
@@ -1533,15 +1587,19 @@ try {
         generated_blocks: Object.fromEntries(payload.blocks.filter((block) => block.kind.startsWith("GENERATED") || block.kind === "SCENARIO_EXHIBIT").map((block) => [block.block_id, { status: "READY", outputs: { BASE: { FY2027: { total_leverage: 4.2 } } } }])),
       });
       workspace.current = saved; workspace.history.push(saved);
+      if (workspace.opinion.head) workspace.opinion = { ...workspace.opinion, current: false, reasons: ["DRAFT_REVISION_CHANGED"] };
       return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(workspace) });
     }
     if (action === "freeze") {
       await waitForHeldReportLifecycle("freeze");
+      const payload = route.request().postDataJSON();
+      if (!workspace.opinion.head || !workspace.opinion.current || workspace.opinion.head.draft_digest !== payload.draft_digest) return route.fulfill({ status: 409, contentType: "application/json", body: JSON.stringify({ detail: { code: workspace.opinion.head ? "OPINION_SIGNOFF_STALE" : "OPINION_SIGNOFF_REQUIRED" } }) });
+      const signedOpinion = workspace.opinion.head;
       frozenSequence += 1;
       const previewDigest = String(frozenSequence + 4).repeat(64);
       const inputFingerprint = "e".repeat(64);
       const frozen = {
-        id: `frozen_report_${frozenSequence}`, case_id: caseRecord.id, pathway, draft_version: workspace.current.version, status: "FROZEN", frozen_by: "analyst", frozen_at: "2026-08-26T10:45:00Z", approved_by: null, approved_at: null, approval_comment: null, superseded_by_id: null, change_request: null,
+        id: `frozen_report_${frozenSequence}`, case_id: caseRecord.id, pathway, draft_version: workspace.current.version, status: "FROZEN", frozen_by: reportSubject, frozen_at: "2026-08-26T10:45:00Z", approved_by: null, approved_at: null, approval_comment: null, superseded_by_id: null, change_request: null, signed_by: signedOpinion.signed_by, opinion_id: signedOpinion.opinion_id,
         digest: "d".repeat(64), preview_digest: previewDigest, input_fingerprint: inputFingerprint, authority_identity: {}, model_identity: reportSelection, template_identity: {}, render_identity: {},
         payload: {
           schema_version: "caos.frozen-deliverable.v1", case_id: caseRecord.id, pathway,
@@ -1562,11 +1620,17 @@ try {
           content: workspace.current.content,
           evidence: [{ source_id: source.id, sha256: source.sha256, block_ids: [source.blocks[0].block_id], withdrawn: false }],
           methodology: { build_id: "deploy-v-workbench" }, renderer: { version: "caos.deliverable-renderer.v2", contract_digest: "3".repeat(64) }, input_fingerprint: inputFingerprint, preview_digest: previewDigest,
+          opinion: { opinion_id: signedOpinion.opinion_id, opinion_digest: signedOpinion.opinion_digest, signed_by: signedOpinion.signed_by, signed_at: signedOpinion.signed_at, opinion: signedOpinion.opinion, limitations: signedOpinion.limitations, material_overrides: signedOpinion.material_overrides, rationale: signedOpinion.rationale, binding: {}, supersedes_opinion_id: signedOpinion.supersedes_opinion_id },
+          publication: reportPublication(pathway, workspace, `frozen_report_${frozenSequence}`, signedOpinion),
         },
         exports: Object.fromEntries(["md", "pdf", "xlsx"].map((format) => [format, { deliverable_id: `frozen_report_${frozenSequence}`, format, vault_key: `vault/${format}`, sha256: format.repeat(64).slice(0, 64), size: 512, renderer_identity: {}, created_at: "2026-08-26T10:45:00Z" }])),
       };
+      // The freeze is a worker job: the response is the queued job, and the
+      // frozen record is what the workspace serves once the job is PUBLISHED.
       workspace.frozen_history.push(frozen);
-      return route.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify(frozen) });
+      const job = { job_id: `frz_${frozenSequence}`, case_id: caseRecord.id, pathway, status: "QUEUED", draft_version: frozen.draft_version, draft_digest: frozen.digest, deliverable_id: frozen.id, error: null, requested_by: reportSubject, requested_at: "2026-08-26T10:45:00Z", completed_at: null };
+      reportFreezeJobs.set(job.job_id, job);
+      return route.fulfill({ status: 202, contentType: "application/json", body: JSON.stringify(job) });
     }
   });
   await page.route((url) => url.pathname === `/api/cases/${caseRecord.id}/models/assumption-registry`, (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ version: registryVersion, digest: registryDigest, build_id: modelBuildId, definitions: [{ assumption_id: "operating.consolidated_revenue_growth", label: "Revenue growth", periods: ["FY2025", "FY2026", "FY2027"] }], defaults: [{ assumption_id: "operating.consolidated_revenue_growth", case: "BASE", period_id: "FY2027", status: "READY", value: 0.03, unit: "PERCENT" }] }) }));
@@ -1761,6 +1825,22 @@ try {
   assert.equal(await reportCaseSelect.evaluate((element) => document.activeElement === element), true, "canceling Report Studio case discard did not return focus to the selector");
   await page.getByText(/Saved v7/).waitFor({ timeout: 5000 });
 
+  // Task 10: the analyst signs the opinion on the exact saved revision before freeze.
+  const freezeButton = page.getByRole("button", { name: /Freeze saved v7/ });
+  assert.equal(await freezeButton.isDisabled(), true, "freeze was enabled without a current opinion sign-off");
+  const signOpinion = async (version) => {
+    await page.getByLabel("Opinion", { exact: true }).fill("Hold: coverage stays adequate through the forecast horizon.");
+    await page.getByLabel("Limitations", { exact: true }).fill("Covenant definitions were not disclosed in the supplied pack.");
+    await page.getByLabel(/Material overrides/).fill("None");
+    await page.getByLabel("Rationale", { exact: true }).fill("Leverage and liquidity conclusions rest on the cited interim filing.");
+    await page.getByRole("button", { name: new RegExp(`Sign opinion on saved v${version}`) }).click();
+    await page.getByText(new RegExp(`Opinion signed on saved Draft v${version}`)).waitFor();
+  };
+  await signOpinion(7);
+  assert.ok(await page.locator("[data-opinion-head]").textContent(), "the signed opinion is not shown in the freeze panel");
+  await freezeButton.waitFor();
+  assert.equal(await freezeButton.isDisabled(), false, "freeze stayed blocked after the sign-off");
+
   heldReportLifecycle = "freeze";
   await page.getByRole("button", { name: /Freeze saved v7/ }).click();
   const heldFreezeValue = await thesisEditor.inputValue();
@@ -1786,6 +1866,8 @@ try {
   await page.getByRole("button", { name: /FROZEN · Draft v7/ }).first().click();
   await page.getByText(/Immutable FROZEN review/).waitFor();
   const firstFrozen = reportWorkspaces.get("FULL_CREDIT").frozen_history.at(-1);
+  assert.equal(firstFrozen.signed_by, "analyst", "the frozen record does not bind the opinion signer");
+  assert.equal(firstFrozen.payload.publication.masthead.approval_state, "PENDING APPROVAL");
   assert.equal(firstFrozen.payload.draft.version, 7, "freeze did not bind the exact saved version");
   assert.equal(firstFrozen.payload.model.revision_id, signedReportRevision.id, "freeze changed the signed model authority");
   assert.deepEqual(firstFrozen.payload.content.document_sections, reportWorkspaces.get("FULL_CREDIT").current.content.document_sections, "freeze changed the canonical document");
@@ -1803,8 +1885,21 @@ try {
   const modelAuthorityLabel = frozenPaper.getByText("Locked · model", { exact: true }).first();
   assert.equal(await modelAuthorityLabel.getAttribute("title"), `Authority ${signedReportRevision.id}`);
   assert.equal(firstFrozen.payload.renderer.version, "caos.deliverable-renderer.v2");
+  // The frozen paper is the publication document: opinion first, control sheet last, watermark on every page.
+  await frozenPaper.getByRole("heading", { name: "Analyst Opinion" }).waitFor();
+  await frozenPaper.getByRole("heading", { name: "Source Document Register" }).waitFor();
+  assert.ok((await frozenPaper.locator(".rd-wm").count()) >= 2, "publication pages carry no watermark");
+  assert.equal(await frozenPaper.getByText("Hold: coverage stays adequate through the forecast horizon.", { exact: true }).count(), 1);
 
+  // Separation of duties: the signer (and freeze actor) holds approver standing but never sees File.
   reportRole = "APPROVER";
+  reportSubject = "analyst";
+  await page.goto(`${baseURL}/report-studio/?case=${caseRecord.id}`, { waitUntil: "networkidle" });
+  await page.getByRole("button", { name: /FROZEN · Draft v7/ }).first().click();
+  await page.locator("[data-separation-of-duties]").waitFor();
+  assert.equal(await page.getByRole("button", { name: "File exact Frozen version" }).count(), 0, "the opinion signer was offered File");
+
+  reportSubject = "approver";
   await page.goto(`${baseURL}/report-studio/?case=${caseRecord.id}`, { waitUntil: "networkidle" });
   await page.getByRole("button", { name: /FROZEN · Draft v7/ }).first().click();
   await page.getByLabel("Required comment to request changes").fill("Clarify the downside bridge.");
@@ -1821,7 +1916,16 @@ try {
   await page.getByText("Saved v8", { exact: true }).waitFor();
   assert.equal(reportWorkspaces.get("FULL_CREDIT").frozen_history[0].status, "CHANGES_REQUESTED");
 
+  // The new revision stales the v7 sign-off; the approver-subject signs v8 here as the
+  // authoring analyst would, so the freeze actor and signer are "approver" and the
+  // independent filer below must be a third subject.
+  assert.equal(await page.getByRole("button", { name: /Freeze saved v8/ }).isDisabled(), true, "a stale sign-off left freeze enabled");
+  await signOpinion(8);
   await page.getByRole("button", { name: /Freeze saved v8/ }).click();
+  await page.getByText(/Immutable FROZEN review/).waitFor();
+  reportSubject = "committee-approver";
+  await page.goto(`${baseURL}/report-studio/?case=${caseRecord.id}`, { waitUntil: "networkidle" });
+  await page.getByRole("button", { name: /FROZEN · Draft v8/ }).first().click();
   await page.getByText(/Immutable FROZEN review/).waitFor();
   heldReportLifecycle = "file";
   await page.getByRole("button", { name: "File exact Frozen version" }).click();
@@ -1835,6 +1939,9 @@ try {
   await page.getByRole("combobox", { name: "Pathway template" }).selectOption("FULL_CREDIT");
   await page.getByRole("button", { name: /FILED · Draft v8/ }).first().click();
   await page.getByText(/Immutable FILED review/).waitFor();
+  await page.locator("[data-filing-receipt]").waitFor();
+  assert.match(await page.locator("[data-filing-receipt]").textContent(), /rcpt_frozen_report_2/, "the detached filing receipt is not shown for the filed record");
+  assert.equal(reportReceipts.get("frozen_report_2").approved_by, "committee-approver");
   let governedDownloadCount = 0;
   await page.route(`**/api/cases/${caseRecord.id}/deliverables/by-id/*/export/*`, (route) => {
     governedDownloadCount += 1;

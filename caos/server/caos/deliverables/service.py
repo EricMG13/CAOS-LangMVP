@@ -15,6 +15,8 @@ from __future__ import annotations
 
 import copy
 import hashlib
+import logging
+import re
 import threading
 from contextlib import nullcontext
 from pathlib import Path
@@ -33,12 +35,19 @@ from ..contracts import (
     DeliverableDraftRequest,
     FileDeliverableRequest,
     FreezeDeliverableRequest,
+    SignOpinionRequest,
     digest,
 )
 from ..engine.provider import AgentError
 from ..engine.state import source_set_digest
+from ..observability import log_event
+from ..publishing.document import build_publication
 from ..publishing.renderers import render_frozen_export
-from ..storage.deliverables import DeliverableStore, DeliverableVersionConflict  # noqa: F401 — conflict re-raised to callers
+from ..storage.deliverables import (  # noqa: F401 — conflicts re-raised to callers
+    DeliverableStore,
+    DeliverableVersionConflict,
+    OpinionHeadConflict,
+)
 from ..storage.runs import RunStore
 from ..storage.store import DomainStore, new_id
 from .document import DOCUMENT_SCHEMA_VERSION, compose_document, model_metric_values
@@ -83,6 +92,36 @@ PATHWAY_SECTIONS = {
     "DEEP_RESEARCH": ("Research Question and Scope", "Executive Findings", "Evidence Synthesis", "Counterevidence and Gaps", "Implications for Thesis, Model, and Recommendation", "Unresolved Questions"),
 }
 MODEL_OPTIONAL_PATHWAYS = {"RELATIVE_VALUE", "DEEP_RESEARCH"}
+
+# ANALYST_JUDGMENT is not a citation bypass (Phase 4 item 2). A sentence that
+# states a quantitative documentary claim — a currency amount, a percentage, a
+# multiple, a basis-point move, a thousands-separated figure, a calendar year or
+# a fiscal-period token — must either be cited or open with an explicit
+# judgment framing. ponytail: a regex bound, not language understanding; it
+# catches every figure and none of the qualitative prose, and a false positive
+# costs the analyst one framing phrase or one citation.
+_JUDGMENT_FIGURE = re.compile(
+    r"(?:[£$€¥]\s?\d)"
+    r"|(?:\b(?:USD|EUR|GBP|CHF|JPY|CAD|AUD)\s?\d)"
+    r"|(?:\d[\d,]*(?:\.\d+)?\s?(?:%|x\b|bps\b|bn\b|m\b|mm\b|k\b|million\b|billion\b|percent\b))"
+    r"|(?:\b(?:FY|Q[1-4]|[12]H)\s?\d{2,4}\b)"
+    r"|(?:\b(?:19|20)\d{2}\b)"
+    r"|(?:\b\d{1,3}(?:,\d{3})+\b)",
+    re.IGNORECASE,
+)
+_JUDGMENT_FRAMING = re.compile(
+    r"^\W*(?:we\s+(?:assume|estimate|expect|believe|judge|think|project|forecast)\b"
+    r"|in\s+our\s+(?:judgment|judgement|view|opinion|estimate)\b"
+    r"|our\s+(?:view|estimate|assumption|judgment|judgement|expectation)\b"
+    r"|(?:assumption|judgment|judgement|analyst\s+(?:judgment|judgement|assumption)|estimate)\s*:)",
+    re.IGNORECASE,
+)
+_SENTENCE_BREAK = re.compile(r"(?<=[.!?])\s+|\n+")
+
+FREEZE_JOB_KEYS = (
+    "job_id", "case_id", "pathway", "status", "draft_version", "draft_digest", "deliverable_id",
+    "error", "requested_by", "requested_at", "completed_at",
+)
 
 _OPTIONAL_POLICY = (
     {"kind": "GENERATED_METRIC", "slot_stem": "appendix.generated-metric", "max_items": 4, "order": 1, "model_dependent": True},
@@ -159,6 +198,7 @@ class DeliverableService:
         blocks = [block.model_dump(mode="json") for block in request.blocks]
         self._validate_layout(template, blocks)
         self._validate_citations(case_id, blocks)
+        self._validate_judgment_facts(blocks)
         selection = request.model_selection
         model = self._resolve_selection(case_id, selection)
         self._validate_pathway_authority(case_id, pathway, model)
@@ -243,6 +283,104 @@ class DeliverableService:
                 missing = [block_id for block_id in citation["block_ids"] if block_id not in known]
                 if missing:
                     raise ValueError(f"EVIDENCE_BLOCK_MISMATCH: unknown evidence blocks {missing}")
+
+    @staticmethod
+    def _validate_judgment_facts(blocks: list[dict[str, Any]]) -> None:
+        for block in blocks:
+            if block.get("kind") != "NARRATIVE" or block.get("content_mode") != "ANALYST_JUDGMENT" or block.get("citations"):
+                continue
+            for sentence in _SENTENCE_BREAK.split(block.get("text") or ""):
+                if _JUDGMENT_FIGURE.search(sentence) and not _JUDGMENT_FRAMING.match(sentence):
+                    raise ValueError(
+                        "ANALYST_JUDGMENT_UNCITED_FACT: a quantitative claim in analyst judgment "
+                        "must cite evidence or be framed explicitly as judgment or assumption"
+                    )
+
+    # -- opinion sign-off (append-only, expected-head CAS; invariant 5) -------
+
+    def head_opinion(self, case_id: str, pathway: str) -> dict[str, Any] | None:
+        return self.records.head_opinion(case_id, pathway)
+
+    def opinion_history(self, case_id: str, pathway: str) -> list[dict[str, Any]]:
+        return self.records.opinion_history(case_id, pathway)
+
+    def _opinion_binding(self, case_id: str, revision: dict[str, Any] | None) -> dict[str, Any]:
+        authority = self._authority_for(case_id)
+        if authority is None:
+            raise ValueError("DELIVERABLE_UPSTREAM_AUTHORITY_REQUIRED: no accepted upstream SNAPSHOT identity is pinned")
+        source_set = self.store.current_source_set(case_id) or {"id": None, "version": 0}
+        return {
+            "snapshot_id": authority["snapshot_id"],
+            "source_set_id": source_set["id"],
+            "source_set_version": source_set["version"],
+            "model_identity_digest": digest(((revision or {}).get("content") or {}).get("model_identity")),
+            "methodology_build_id": authority["methodology_build_id"],
+        }
+
+    def sign_opinion(self, case_id: str, pathway: str, request: SignOpinionRequest, *, actor: str) -> dict[str, Any]:
+        self._template_for(pathway)
+        head = self.records.head_revision(case_id, pathway)
+        if head is None or (head["draft_id"], head["version"], head["digest"]) != (
+            request.draft_id, request.draft_version, request.draft_digest,
+        ):
+            raise ValueError("OPINION_REVISION_STALE: the sign-off must bind the current saved revision")
+        # Invariant 1 at the sign-off boundary: withdrawn evidence cannot be signed over.
+        self._validate_citations(case_id, head["content"]["blocks"])
+        record = {
+            "case_id": case_id,
+            "pathway": pathway,
+            "draft_id": head["draft_id"],
+            "revision_id": head["revision_id"],
+            "draft_version": head["version"],
+            "draft_digest": head["digest"],
+            "binding": self._opinion_binding(case_id, head),
+            "opinion": request.opinion,
+            "limitations": request.limitations,
+            "material_overrides": request.material_overrides,
+            "rationale": request.rationale,
+        }
+        return self.records.sign_opinion(record, request.expected_head_opinion_id, actor, self.store._audit)
+
+    def _opinion_staleness(self, case_id: str, opinion: dict[str, Any], revision: dict[str, Any] | None) -> list[str]:
+        reasons: list[str] = []
+        if (
+            revision is None
+            or revision["revision_id"] != opinion["revision_id"]
+            or revision["version"] != opinion["draft_version"]
+            or revision["digest"] != opinion["draft_digest"]
+        ):
+            reasons.append("DRAFT_REVISION_CHANGED")
+        try:
+            binding = self._opinion_binding(case_id, revision)
+        except ValueError:
+            reasons.append("ACCEPTED_SNAPSHOT_CHANGED")
+            return reasons
+        signed = opinion["binding"]
+        if binding["snapshot_id"] != signed["snapshot_id"]:
+            reasons.append("ACCEPTED_SNAPSHOT_CHANGED")
+        if (binding["source_set_id"], binding["source_set_version"]) != (signed["source_set_id"], signed["source_set_version"]):
+            reasons.append("SOURCE_SET_CHANGED")
+        if binding["model_identity_digest"] != signed["model_identity_digest"]:
+            reasons.append("MODEL_AUTHORITY_CHANGED")
+        if binding["methodology_build_id"] != signed["methodology_build_id"]:
+            reasons.append("METHODOLOGY_CHANGED")
+        return reasons
+
+    def opinion_state(self, case_id: str, pathway: str) -> dict[str, Any]:
+        head = self.records.head_opinion(case_id, pathway)
+        if head is None:
+            return {"head": None, "current": False, "reasons": ["OPINION_SIGNOFF_REQUIRED"]}
+        reasons = self._opinion_staleness(case_id, head, self.records.head_revision(case_id, pathway))
+        return {"head": head, "current": not reasons, "reasons": reasons}
+
+    def _require_current_opinion(self, case_id: str, pathway: str, revision: dict[str, Any]) -> dict[str, Any]:
+        opinion = self.records.head_opinion(case_id, pathway)
+        if opinion is None:
+            raise ValueError("OPINION_SIGNOFF_REQUIRED: freeze needs a signed analyst opinion on this exact revision")
+        reasons = self._opinion_staleness(case_id, opinion, revision)
+        if reasons:
+            raise ValueError("OPINION_SIGNOFF_STALE: " + ", ".join(reasons))
+        return opinion
 
     # -- model selection -----------------------------------------------------
 
@@ -559,6 +697,8 @@ class DeliverableService:
             "template": self._template_for(pathway),
             "draft": self.records.head_revision(case_id, pathway),
             "frozen": self.records.frozen_for_pathway(case_id, pathway),
+            "opinion": self.opinion_state(case_id, pathway),
+            "pending_freezes": [self._job_view(job) for job in self.records.pending_freeze_jobs(case_id, pathway)],
         }
 
     def revision_history(self, case_id: str, pathway: str) -> list[dict[str, Any]]:
@@ -820,55 +960,159 @@ class DeliverableService:
             "renderer": {"version": "caos.deliverable-renderer.v2"},
             "input_fingerprint": input_fingerprint,
         }
-        payload["preview_digest"] = digest({key: value for key, value in payload.items() if key != "preview_digest"})
         thread_id = filing_thread_id(
             case_id=case_id, pathway=pathway, draft_version=revision["version"],
             draft_digest=draft_digest, build_id=build_id,
         )
+        deliverable_id = f"dlv-{thread_id[4:]}"
+        # The opinion is the analyst's; it must be current against this exact
+        # revision and every authority it was signed over (Phase 4 items 1–3).
+        opinion = self._require_current_opinion(case_id, pathway, revision)
+        payload["opinion"] = {
+            key: opinion[key]
+            for key in (
+                "opinion_id", "opinion_digest", "signed_by", "signed_at", "opinion", "limitations",
+                "material_overrides", "rationale", "binding", "supersedes_opinion_id",
+            )
+        }
+        payload["publication"] = build_publication(
+            payload=payload,
+            opinion=opinion,
+            case=self.store.get_case(case_id) or {},
+            deliverable_id=deliverable_id,
+            **self._publication_context(case_id, authority, source_set),
+        )
+        payload["preview_digest"] = digest({key: value for key, value in payload.items() if key != "preview_digest"})
+        frozen_record = {
+            "deliverable_id": deliverable_id,
+            "thread_id": thread_id,
+            "case_id": case_id,
+            "pathway": pathway,
+            "status": "FROZEN",
+            "input_fingerprint": input_fingerprint,
+            "build_id": build_id,
+            "payload": payload,
+            "authority": frozen_authority,
+            "draft_version": revision["version"],
+            "draft_digest": draft_digest,
+            "created_by": actor,
+            "opinion_id": opinion["opinion_id"],
+            "signed_by": opinion["signed_by"],
+        }
+        # Nothing is rendered here. The worker publishes every export
+        # hash-addressed, reads each back verified, and only then inserts the
+        # frozen record (Phase 4 items 11–12; XLSX renders in the worker alone).
+        return self._job_view(self.records.request_freeze(frozen_record, actor, self.store._audit))
+
+    def _publication_context(self, case_id: str, authority: dict[str, Any], source_set: dict[str, Any]) -> dict[str, Any]:
+        """Accepted-run identity and the pinned source register for the control sheet."""
+        runs = self.engine.runs if self.engine is not None else RunStore(self.store.engine)
+        snapshot = runs.get_snapshot(authority["snapshot_id"]) if authority.get("snapshot_id") else None
+        run = runs.get_run(snapshot["run_id"]) if snapshot is not None else None
+        sources = self.store.sources_for_live_set(case_id, source_set.get("id"), source_set.get("version")) or []
+        intake = self.store.latest_intake(case_id) or {}
+        dispositions = {
+            row["sha256"]: row
+            for row in ((intake.get("record") or {}).get("documents") or [])
+            if isinstance(row, dict) and isinstance(row.get("sha256"), str)
+        }
+        return {
+            "provider_identity": (run or {}).get("provider_identity"),
+            "accepted_at": (snapshot or {}).get("accepted_at"),
+            "run_id": (snapshot or {}).get("run_id"),
+            "sources": [
+                {"id": source["id"], "filename": source["filename"], "sha256": source["sha256"]}
+                for source in sources
+            ],
+            "dispositions": dispositions,
+        }
+
+    # -- worker-side publication of freeze jobs -------------------------------
+
+    @staticmethod
+    def _job_view(job: dict[str, Any]) -> dict[str, Any]:
+        record = job["frozen_record"]
+        return {
+            "job_id": job["job_id"], "case_id": job["case_id"], "pathway": job["pathway"], "status": job["status"],
+            "draft_version": record["draft_version"], "draft_digest": record["draft_digest"],
+            "deliverable_id": job["deliverable_id"], "error": job["error"], "requested_by": job["requested_by"],
+            "requested_at": job["requested_at"], "completed_at": job["completed_at"],
+        }
+
+    def freeze_job(self, case_id: str, job_id: str) -> dict[str, Any] | None:
+        job = self.records.freeze_job(job_id)
+        if job is None or job["case_id"] != case_id:
+            return None
+        return self._job_view(job)
+
+    def frozen_record_for_job(self, case_id: str, job_id: str) -> dict[str, Any] | None:
+        job = self.records.freeze_job(job_id)
+        if job is None or job["case_id"] != case_id or not job["deliverable_id"]:
+            return None
+        return self.records.frozen_record(case_id, job["deliverable_id"])
+
+    def recover_freeze_jobs(self) -> int:
+        return self.records.recover_freeze_jobs()
+
+    def run_pending_freezes(self) -> int:
+        """One worker pass over QUEUED freeze jobs. A failure finalizes that job
+        FAILED with a typed code and audit row and never kills the pass."""
+        processed = 0
+        for job_id in self.records.queued_freeze_job_ids():
+            job = self.records.claim_freeze_job(job_id)
+            if job is None:
+                continue
+            processed += 1
+            try:
+                self._publish_freeze_job(job)
+            except Exception as exc:  # noqa: BLE001 — every failure is finalized on the job it took
+                message = str(exc)
+                code = message.split(":", 1)[0] if message.startswith("DELIVERABLE_") else "DELIVERABLE_RENDER_FAILED"
+                log_event("worker.job_failed", level=logging.ERROR, kind="freeze", job_id=job_id,
+                          detail=type(exc).__name__, code=code)
+                self.records.fail_freeze_job(job_id, code, job["requested_by"], self.store._audit)
+        return processed
+
+    def _publish_freeze_job(self, job: dict[str, Any]) -> dict[str, Any]:
+        record = copy.deepcopy(job["frozen_record"])
+        payload = record["payload"]
+        if payload.get("preview_digest") != digest({key: value for key, value in payload.items() if key != "preview_digest"}):
+            raise ValueError("DELIVERABLE_PREVIEW_INTEGRITY_FAILED: queued payload does not match its digest")
         with self._freeze_lock:
             rendered = {format_name: self._render(payload, format_name) for format_name in EXPORT_FORMATS}
-            exports = {}
+            exports: dict[str, dict[str, Any]] = {}
             for format_name, content in rendered.items():
                 sha256 = hashlib.sha256(content).hexdigest()
                 _path, vault_key, size = publish_hash_addressed_bytes(
-                    self.vault_dir,
-                    ("deliverables", thread_id),
-                    format_name,
-                    content,
-                    expected_sha256=sha256,
-                    max_bytes=MAX_EXPORT_BYTES,
+                    self.vault_dir, ("deliverables", record["thread_id"]), format_name, content,
+                    expected_sha256=sha256, max_bytes=MAX_EXPORT_BYTES,
                 )
-                exports[format_name] = {
-                    "vault_key": vault_key,
-                    "sha256": sha256,
-                    "size": size,
-                }
-            frozen_record = {
-                "deliverable_id": f"dlv-{thread_id[4:]}",
-                "thread_id": thread_id,
-                "case_id": case_id,
-                "pathway": pathway,
-                "status": "FROZEN",
-                "input_fingerprint": input_fingerprint,
-                "build_id": build_id,
-                "payload": payload,
-                "exports": exports,
-                "authority": frozen_authority,
-                "draft_version": revision["version"],
-                "draft_digest": draft_digest,
-                "created_by": actor,
-            }
-            frozen_record["preview_digest"] = frozen_approval_digest(frozen_record)
-            self._validate_frozen_integrity(frozen_record)
-            record, created = self.records.insert_frozen(
-                frozen_record, actor, self.store._audit
-            )
-        self._validate_frozen_integrity(record)
-        if not created and record["preview_digest"] != frozen_record["preview_digest"]:
-            # The gate's own render is the only render: a divergent render for
-            # the same freeze identity is a conflict, never an overwrite.
-            raise ValueError("DELIVERABLE_FREEZE_CONFLICT: a divergent render exists for this freeze identity")
-        return record
+                exports[format_name] = {"vault_key": vault_key, "sha256": sha256, "size": size}
+            # Verified read of every published export before any record exists.
+            for meta in exports.values():
+                read_verified_vault_bytes(
+                    self.vault_dir, meta["vault_key"], expected_sha256=meta["sha256"],
+                    expected_size=meta["size"], max_bytes=MAX_EXPORT_BYTES,
+                )
+            record["exports"] = exports
+            record["preview_digest"] = frozen_approval_digest(record)
+            self._validate_frozen_integrity(record)
+            stored, _created = self.records.publish_frozen(job["job_id"], record, job["requested_by"], self.store._audit)
+        self._validate_frozen_integrity(stored)
+        return stored
+
+    def rerender_freeze_job_for_tests(self, job_id: str) -> dict[str, Any]:
+        """Force a second render of a published identity (the conflict probe)."""
+        import sqlalchemy as sa
+
+        from ..storage.deliverables import deliverable_freeze_jobs
+
+        with self.records.engine.begin() as conn:
+            conn.execute(sa.update(deliverable_freeze_jobs).where(deliverable_freeze_jobs.c.job_id == job_id)
+                         .values(status="RENDERING"))
+        job = self.records.freeze_job(job_id)
+        assert job is not None
+        return self._publish_freeze_job(job)
 
     def _revision_for_freeze(self, case_id: str, request: FreezeDeliverableRequest) -> dict[str, Any]:
         revision = self.records.revision_for_freeze(
@@ -939,6 +1183,10 @@ class DeliverableService:
             raise ValueError("DELIVERABLE_STALE_PREVIEW: approval binds the exact frozen PREVIEW digest")
         if request.input_fingerprint != record["input_fingerprint"]:
             raise ValueError("DELIVERABLE_STALE_PREVIEW: approval FINGERPRINT does not match the frozen identity")
+        # Separation of duties (Phase 4 item 5): the opinion signer and the
+        # freeze actor never file their own output, whatever their standing.
+        if actor in {record.get("signed_by"), record["created_by"]}:
+            raise ValueError("APPROVER_NOT_INDEPENDENT: the opinion signer and the freeze actor cannot file this output")
         guard = self.models.publication_guard() if self.models is not None else nullcontext()
         with self.store.authority_guard(), guard:
             content = record["payload"].get("content") or {}
@@ -1043,6 +1291,14 @@ class DeliverableService:
             raise ValueError("DELIVERABLE_EXPORT_UNAVAILABLE: frozen export set is incomplete")
         for format_name in EXPORT_FORMATS:
             self._verified_export(record, format_name)
+
+    def filing_receipt(self, case_id: str, deliverable_id: str) -> dict[str, Any] | None:
+        return self.records.filing_receipt(case_id, deliverable_id)
+
+    def record_export_download(self, case_id: str, deliverable_id: str, format_name: str, *, actor: str) -> None:
+        """Audit a served download (AUD-009). Refused downloads are logged, never audited."""
+        self.store.audit_event("deliverable.exported", actor, case_id=case_id,
+                               deliverable_id=deliverable_id, format=format_name)
 
     def export(self, deliverable_id: str, format_name: str) -> tuple[bytes, str]:
         record = self._frozen_by_id(deliverable_id)
@@ -1152,6 +1408,9 @@ class DeliverableService:
 
     def audit_events_for_tests(self, case_id: str) -> list[dict[str, Any]]:
         return [event for event in self.store.audit_trail(limit=2_000) if event.get("case_id") == case_id]
+
+    def filing_receipts_for_tests(self, case_id: str) -> list[dict[str, Any]]:
+        return self.records.filing_receipts(case_id)
 
     def tamper_frozen_payload_for_tests(self, deliverable_id: str) -> None:
         self.records.tamper_frozen_payload(deliverable_id)

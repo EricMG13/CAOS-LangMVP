@@ -122,6 +122,27 @@ Standing rules that back them:
   thin SSE tail of `run_events` (Last-Event-ID resume; stream closes once a
   terminal run is fully delivered). The frontend never reads event payloads —
   event names trigger a RunRecord refetch.
+- Publication (DECISIONS §14.19, Task 10). The analyst signs an opinion on the
+  exact saved revision (`POST …/deliverables/{pathway}/opinion`, append-only
+  `deliverable_opinions`, expected-head CAS); freeze refuses without a current
+  sign-off and refuses an `ANALYST_JUDGMENT` narrative that states an uncited
+  figure. `POST …/freeze` renders nothing: it queues a
+  `deliverable_freeze_jobs` row and `worker.py` renders md/pdf/xlsx from the
+  frozen payload's `publication` document, publishes hash-addressed, reads
+  each export back verified, and only then writes the FROZEN record — so a
+  local freeze completes only with `python caos/server/worker.py` running
+  beside `dev.py`, exactly like model builds. Filing refuses the opinion
+  signer and the freeze actor (`APPROVER_NOT_INDEPENDENT`) and writes an
+  immutable detached receipt (`GET …/by-id/{id}/receipt`); the approved bytes
+  always read `PENDING APPROVAL`. `POST /api/cases/{id}/members` provisions a
+  distinct approver (stored case APPROVER/ADMIN standing plus a current global
+  writer role). The audit log is append-only and hash-chained per case
+  (`audit_chain_heads` lock row; `store.audit_chain`/`verify_audit_chain`);
+  `GET /api/cases/{id}/audit-package` serves the case package and
+  `caos/server/caos/audit/verify_package.py` verifies it with the standard
+  library alone, re-rendering the Markdown export from the frozen payload.
+  `caos/publishing/markdown.py` is copied verbatim into the verifier and a
+  test pins the copy; change them together.
 - `observability.py` — structured JSON logs on stdout (stdlib only). Seven log
   points and no debug channel: run/node transitions (all of them via
   `RunStore._emit`), typed refusals, provider call start/finish, budget
@@ -366,6 +387,27 @@ engine, the bundle, or the routes.
   without marking the original `superseded` (`intake/service.py::
   _apply_dispositions` groups the current pack only). The model's lineage then
   binds both by citation. Supersession across intakes is a follow-up.
+- Earnings Update and Covenant & Refinancing deliverables bind the prior Full
+  Credit base build (DECISIONS §14.18), so their pathway effects reach the
+  overlay build and the model export but not the published deliverable; the
+  Distressed overlay does render. Binding those two pathways' deliverables to
+  their overlay builds is a model-authority change that existing tests pin
+  (`test_live_incremental_pathway_publishes_against_a_validated_prior_full_credit_model`)
+  and stays open after Task 10.
+- The deliverable export route still serves md/pdf/xlsx as
+  `application/octet-stream` (a wire-visible decision, unchanged in Task 10);
+  the audit package is `application/zip`, which the gzip middleware already
+  excludes.
+- The audit chain has no external anchor beyond the audit package manifest:
+  an actor who can drop the database triggers and rewrite every row after a
+  point can re-chain the tail. Detect that by comparing a retained package's
+  `audit/head.json` with the live head; an HMAC key or an external timestamp
+  anchor is the upgrade path.
+- Freezing renders the PDF with pango-view page by page (each page embeds its
+  own font subsets), so a filed PDF is roughly 90–150 KB per page and a freeze
+  costs two to ten seconds of worker time; the deliverable spec files take
+  about seven minutes for that reason. A single multi-page pango render or a
+  shared font subset is the upgrade path.
 - Blocks live in one JSON column on the source row, so `read_evidence` parses
   every block of a source on each call. Measured at the ceiling: a 10 MB source
   costs 17 ms per read, so a run's ~80 reads cost about 1.4 s. Fine at current

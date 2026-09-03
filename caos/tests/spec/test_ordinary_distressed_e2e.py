@@ -483,7 +483,10 @@ def _publish_overlay(
     assert revision["content"]["model_selection"] == selection
     assert revision["content"]["model_identity"]["build_id"] == overlay["id"]
 
-    frozen = service.freeze(
+    from test_deliverables_spec import sign_min
+
+    sign_min(service, case_id, revision)
+    job = service.freeze(
         case_id,
         FreezeDeliverableRequest(
             draft_id=revision["draft_id"],
@@ -492,6 +495,9 @@ def _publish_overlay(
         ),
         actor="analyst",
     )
+    assert service.run_pending_freezes() == 1
+    frozen = service.frozen_record_for_job(case_id, job["job_id"])
+    assert frozen is not None, service.freeze_job(case_id, job["job_id"])
     source_set = service.store.current_source_set(case_id)
     expected_authority = {
         "accepted_snapshot_id": snapshot["id"],

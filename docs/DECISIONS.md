@@ -620,3 +620,75 @@ Consolidation note: where §6 conflicts with §10/§11/§12 (output Σ vs Σ+max
     current overlay for Distressed; rendering the new effects in published
     outputs is Task 10's. Licensed market marks and live-model qualification
     of every effect remain external inputs.
+19. **Opinion ownership, worker-published freeze, detached filing receipt,
+    append-only audit chain and the offline audit package (2026-09-03, Task
+    10, gates G7 and G8, ETR-B13).** An analyst opinion is an append-only,
+    digest-bound store record (`deliverable_opinions`): it binds the exact
+    draft revision (id, version, digest), the accepted snapshot, the source-set
+    version, the digest of the revision's model identity and the methodology
+    build, carries opinion, limitations, material overrides and rationale as
+    required BoundaryText, and is signed through an expected-head CAS
+    (`OPINION_HEAD_CONFLICT`); a single-actor release, so a store CAS and not
+    an interrupt (invariant 5). Freeze refuses `OPINION_SIGNOFF_REQUIRED` /
+    `OPINION_SIGNOFF_STALE`: editing the draft, moving the source set,
+    superseding the snapshot or moving the model invalidates the sign-off by
+    construction. `ANALYST_JUDGMENT` is not a citation bypass: a sentence that
+    states a quantitative documentary claim (currency, percent, multiple,
+    basis points, thousands-separated figure, year or fiscal-period token) is
+    refused as `ANALYST_JUDGMENT_UNCITED_FACT` unless the block is cited or the
+    sentence opens with an explicit judgment framing; this is a regex bound
+    recorded as such, not language understanding. Freeze no longer renders in
+    the API process: `POST …/freeze` validates and queues a
+    `deliverable_freeze_jobs` row keyed by the freeze thread identity (202,
+    idempotent under race and retry, FAILED jobs requeue), and `worker.py`
+    renders Markdown, PDF and XLSX, publishes each hash-addressed, reads each
+    back verified, and only then inserts the FROZEN record, parks the filing
+    thread, audits `deliverable.frozen` and marks the job PUBLISHED in one
+    transaction; a failure leaves a typed FAILED job and no frozen record;
+    startup recovery requeues RENDERING jobs under the worker's single-instance
+    lock; a divergent render for a published identity is
+    `DELIVERABLE_FREEZE_CONFLICT`. XLSX therefore renders in the worker alone,
+    and local development needs `python caos/server/worker.py` beside
+    `dev.py` for a freeze to complete, exactly as model builds already do.
+    Filing enforces separation of duties at the CAS
+    (`APPROVER_NOT_INDEPENDENT`: the opinion signer and the freeze actor never
+    file their own output) and writes an immutable detached receipt
+    (`deliverable_filing_receipts`: approver, time, opinion id and signer,
+    approval digest, fingerprint, export digests, approval hash,
+    `receipt_digest`) in the filing transaction; the approved bytes always
+    read `PENDING APPROVAL` and are never rerendered, not even to name the
+    approver. A distinct approver is provisioned by
+    `POST /api/cases/{case_id}/members`, which requires stored case
+    APPROVER/ADMIN standing plus a current global writer role, like filing.
+    Every export walks one server-frozen publication document
+    (`payload.publication`: masthead, opinion-first pages, the pathway's
+    canonical sections, an Evidence & QA Control Sheet, disclosures); Markdown,
+    PDF (pango-view markup, measured pagination, repeated table headers,
+    record layout for wide tables, pinned footer, transparent rotated
+    watermark) and XLSX (cover and control, report, one filtered typed sheet
+    per table, revision record, no formulas) render from it in the worker and
+    the browser draws it directly, so parity is by construction and pinned by
+    `test_publication_goldens_spec.py` across normal, dense, long-text,
+    multilingual, held and filed states. The audit log is append-only at the
+    database boundary (UPDATE/DELETE triggers on both dialects) and hash-chained
+    per case under a head-row lock (`audit_chain_heads`), so mutation,
+    deletion, insertion and reordering are detectable; legacy rows are chained
+    once at startup; the wire shape of `audit_trail` is unchanged and typed
+    refusals stay unaudited (logged). `GET /api/cases/{case_id}/audit-package`
+    builds a case-scoped zip (manifests with digests; sources as block ids and
+    text digests only; source sets; intakes; runs with plans, nodes, events,
+    budgets, snapshots and artifacts; models and workbooks; deliverable
+    revisions, opinions, jobs, frozen records, receipts and the exact filed
+    bytes; the case audit chain; methodology and runtime identity) and
+    `caos/server/caos/audit/verify_package.py`, standard library only,
+    recomputes every digest and link and re-renders the Markdown export byte
+    for byte from the frozen payload; its renderer copy is pinned byte-equal
+    to `caos/publishing/markdown.py`. Deliberately not changed: the export
+    route's media types (`application/octet-stream` for md/pdf/xlsx) and its
+    gzip exclusion stay as they were, as a wire-visible decision for its
+    owner; Earnings Update and Covenant & Refinancing deliverables still bind
+    the prior Full Credit base build (§14.18), so their pathway effects reach
+    the model export and the overlay build but not yet the published
+    deliverable — a follow-up, not a silent narrowing. The blind rubric review
+    by two analysts and an external stakeholder is candidate-only work and
+    remains BLOCKED EXTERNAL with its inputs prepared.

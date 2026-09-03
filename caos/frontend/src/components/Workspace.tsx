@@ -89,6 +89,7 @@ export default function Workspace({ destination, children }: { destination?: Des
   // failure. This default also covers Model Builder and Report Studio, which
   // compute `role !== "READER"` from this same value.
   const [role, setRole] = useState("READER");
+  const [subject, setSubject] = useState("");
   const [roleResolved, setRoleResolved] = useState(false);
   const [authority, setAuthority] = useState<SnapshotView | null>(null);
   const [drawer, setDrawer] = useState<DrawerState | null>(null);
@@ -537,8 +538,9 @@ export default function Workspace({ destination, children }: { destination?: Des
     document.addEventListener("click", guardDraftNavigation, true);
     window.addEventListener("popstate", guardBrowserHistory, true);
     window.addEventListener("beforeunload", guardUnload);
-    void request<{ role: string }>("/api/me", {}, controller.signal).then((who) => {
+    void request<{ role: string; subject: string }>("/api/me", {}, controller.signal).then((who) => {
       setRole(["ANALYST", "APPROVER", "ADMIN"].includes(who.role) ? who.role : "READER");
+      setSubject(typeof who.subject === "string" ? who.subject : "");
       setRoleResolved(true);
     }).catch((caught) => {
       if (!(caught instanceof DOMException && caught.name === "AbortError")) {
@@ -1005,7 +1007,7 @@ export default function Workspace({ destination, children }: { destination?: Des
       case "RV Screener": return <RVView key={caseId} writeAccess={writeAccess} caseId={caseId} />;
       case "Command Center": return <CommandView caseId={caseId} question={routeQuestion} />;
       case "Model Builder": return <ModelBuilder caseId={caseId} role={role} onDraftStateChange={onModelDraftStateChange} />;
-      case "Report Studio": return <ReportStudio key={caseId} caseId={caseId} role={role} selectedCase={selectedCase} onDraftStateChange={onReportDraftStateChange} requestDraftDiscard={requestDraftDiscard} />;
+      case "Report Studio": return <ReportStudio key={caseId} caseId={caseId} role={role} subject={subject} selectedCase={selectedCase} onDraftStateChange={onReportDraftStateChange} requestDraftDiscard={requestDraftDiscard} />;
       case "Admin Studio": return <AdminView />;
     }
   };
