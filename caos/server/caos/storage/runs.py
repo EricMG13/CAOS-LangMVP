@@ -21,6 +21,7 @@ from ..engine.budget import MAX_ATTEMPT_RECORDS
 from ..engine.provider import AgentError, ProviderIdentity
 from ..methodology.canonical import (
     MAX_CANONICAL_MARKDOWN_CHARS,
+    RESEARCH_HANDOFF_FIELDS,
     CanonicalHandoffMetadata,
     canonicalize_for_tests,
     validate_model_sources,
@@ -129,6 +130,31 @@ executions = sa.Table(
     sa.Column("module_id", sa.String, nullable=False),
 )
 
+# Deep Research governance (Task 7; DECISIONS §14.16): the validated brief, the
+# host-proposed plan, and the digest-bound approval — one row per DEEP_RESEARCH
+# run, written in the run's own transactions so a restart finds all of it.
+run_research = sa.Table(
+    "run_research", run_metadata,
+    sa.Column("run_id", sa.String, primary_key=True),
+    sa.Column("case_id", sa.String, nullable=False),
+    sa.Column("phase", sa.String, nullable=False),  # brief_locked | awaiting_approval | approved
+    sa.Column("brief", sa.JSON, nullable=False),
+    sa.Column("brief_digest", sa.String, nullable=False),
+    sa.Column("proposed_plan", sa.JSON),
+    sa.Column("proposed_plan_hash", sa.String),
+    sa.Column("approved_plan_hash", sa.String),
+    sa.Column("approved_by", sa.String),
+    sa.Column("approved_at", sa.String),
+    sa.Column("updated_at", sa.String, nullable=False),
+)
+
+_RESEARCH_FIELDS = (
+    "phase", "brief", "brief_digest", "proposed_plan", "proposed_plan_hash",
+    "approved_plan_hash", "approved_by", "approved_at",
+)
+PLAN_APPROVAL_REQUIRED = "PLAN_APPROVAL_REQUIRED"
+_PLAN_APPROVAL_MESSAGE = "Approve the exact proposed research plan before substantive research."
+
 
 class StoreConflict(ValueError):
     def __init__(self, code: str, message: str = "") -> None:
@@ -155,6 +181,39 @@ _CALCULATION_FIELDS = {
     "script_digest", "script_bytes", "dependency_digests", "calculator_digest",
     "canonical_input", "input_digest", "output_digest", "canonical_output",
 }
+
+
+_HOST_DERIVED_FIELDS = (
+    "module_id", "module_name", "run_id", "analysis_date", "confidence_score",
+    "confidence_band", "qa_status", "committee_status", "upstream_artifacts_used",
+    "downstream_consumers", "issuer_name", "issuer_id",
+    "calculation_limitations",
+)
+
+
+def _valid_research_projection(host_identity: Any, handoff: CanonicalHandoffMetadata) -> bool:
+    """A plan-approval module (CP-DR) carries the approved research scope in its
+    host identity and the nine host-stamped envelope fields in its frontmatter;
+    every other module carries neither. The two must agree with each other and
+    with the host identity the verifier re-derived (Task 7)."""
+    research = host_identity.get("research") if isinstance(host_identity, dict) else None
+    stamped = [getattr(handoff, field) is not None for field in RESEARCH_HANDOFF_FIELDS]
+    if research is None:
+        return not any(stamped)
+    return (
+        all(stamped)
+        and isinstance(research, dict)
+        and set(research) == {"brief", "brief_digest", "approved_plan_hash", "workstreams"}
+        and isinstance(research.get("brief"), dict)
+        and _is_sha256(research.get("brief_digest"))
+        and isinstance(research.get("workstreams"), list)
+        and handoff.approved_plan_hash == research.get("approved_plan_hash")
+        and handoff.research_question == research["brief"].get("research_question")
+        and handoff.scope_type == "issuer"
+        and handoff.scope_key == host_identity.get("issuer_id")
+        and handoff.subject_name == host_identity.get("issuer_name")
+        and handoff.source_mode == "supplied_only"
+    )
 
 
 def _is_nonblank(value: Any) -> bool:
@@ -378,9 +437,19 @@ def _valid_canonical_payload(
         handoff = CanonicalHandoffMetadata.model_validate(payload.get("handoff_metadata"))
     except ValueError:
         return False
+    if not _valid_research_projection(host_identity, handoff):
+        return False
+    expected_provenance = {
+        "host_derived_fields": [
+            *_HOST_DERIVED_FIELDS,
+            *(RESEARCH_HANDOFF_FIELDS if handoff.approved_plan_hash is not None else ()),
+        ],
+        "provider_declared_bounded_fields": ["limitation_flags", "validation_warnings"],
+        "reporting_period_basis": "host_pinned_run_date",
+    }
     if (
         not isinstance(host_identity, dict)
-        or set(host_identity) != {
+        or set(host_identity) - {"research"} != {
             "module_id", "module_name", "run_id", "case_id", "issuer_name", "issuer_id",
             "reporting_period", "analysis_date", "profile_id", "selection_id", "source_set_id",
             "source_set_version", "calculator_ids", "upstream_digests",
@@ -437,16 +506,7 @@ def _valid_canonical_payload(
         or confidence.get("basis") != "provider_declared_bounded_counts"
         or confidence.get("arithmetic") != "host_recomputed"
         or confidence.get("analyst_review_required") is not True
-        or provenance != {
-            "host_derived_fields": [
-                "module_id", "module_name", "run_id", "analysis_date", "confidence_score",
-                "confidence_band", "qa_status", "committee_status", "upstream_artifacts_used",
-                "downstream_consumers", "issuer_name", "issuer_id",
-                "calculation_limitations",
-            ],
-            "provider_declared_bounded_fields": ["limitation_flags", "validation_warnings"],
-            "reporting_period_basis": "host_pinned_run_date",
-        }
+        or provenance != expected_provenance
         or not _valid_calculation_limitations(
             payload.get("calculation_limitations"), host_identity.get("calculator_ids"),
         )
@@ -505,7 +565,7 @@ def _valid_canonical_payload(
         run_identity=host_identity,
         delivered=delivered,
         build_id=identity["methodology_build_id"],
-        handoff_metadata=handoff.model_dump(),
+        handoff_metadata=handoff.model_dump(exclude_none=True),
     )
     return all(payload.get(key) == rebuilt[key] for key in (
         "schema_version", "module_id", "canonical_output", "methodology", "host_identity",
@@ -720,9 +780,14 @@ class RunStore:
     # -- events (always inside a caller transaction) ----------------------
 
     def _emit(self, conn: sa.Connection, run_id: str, event: str, **data: Any) -> None:
+        # The run row is locked before `seq` is allocated: two connections
+        # emitting for one run otherwise both read max(seq) and collide on the
+        # (run_id, seq) key. Every run-table writer takes the run row first
+        # (runs, then nodes/artifacts/budget, then events), so the order is
+        # cycle-free. Proven by test_postgres_races.py; a no-op on SQLite.
         try:
             identity = _provider_identity(conn.execute(
-                sa.select(runs.c.provider_identity).where(runs.c.id == run_id)
+                sa.select(runs.c.provider_identity).where(runs.c.id == run_id).with_for_update()
             ).scalar())
         except StoreConflict:
             # An invalid identity must not roll back the terminal transition
@@ -760,7 +825,9 @@ class RunStore:
                    focus_questions: list[str] | None = None,
                    upgraded_from_run_id: str | None = None,
                    provider_identity: ProviderIdentity | dict[str, Any] | None = None,
-                   schema_version: str = "caos-state-v1") -> dict[str, Any]:
+                   schema_version: str = "caos-state-v1",
+                   research_brief: dict[str, Any] | None = None,
+                   research_brief_digest: str | None = None) -> dict[str, Any]:
         run_id = new_id("run")
         identity = _provider_identity(provider_identity)
         with self.engine.begin() as conn:
@@ -771,8 +838,21 @@ class RunStore:
                 created_by=actor, created_at=now_iso(), schema_version=schema_version,
                 provider_identity=identity,
             ))
+            if research_brief is not None:
+                # The brief is locked in the run's creating transaction: no run
+                # row without its brief, no brief without its run (invariant 6).
+                conn.execute(run_research.insert().values(
+                    run_id=run_id, case_id=case_id, phase="brief_locked",
+                    brief=research_brief, brief_digest=research_brief_digest,
+                    proposed_plan=None, proposed_plan_hash=None, approved_plan_hash=None,
+                    approved_by=None, approved_at=None, updated_at=now_iso(),
+                ))
             self._emit(conn, run_id, "run.created", case_id=case_id, pathway=pathway, depth=depth)
         return self.get_run(run_id)
+
+    def _research_record(self, conn: sa.Connection, run_id: str) -> dict[str, Any] | None:
+        row = conn.execute(sa.select(run_research).where(run_research.c.run_id == run_id)).mappings().first()
+        return {key: row[key] for key in _RESEARCH_FIELDS} if row is not None else None
 
     def get_run(self, run_id: str) -> dict[str, Any] | None:
         with self.engine.connect() as conn:
@@ -782,10 +862,114 @@ class RunStore:
             node_rows = conn.execute(
                 sa.select(run_nodes).where(run_nodes.c.run_id == run_id).order_by(run_nodes.c.stage, run_nodes.c.module_id)
             ).mappings().all()
+            research = self._research_record(conn, run_id)
         record = dict(row)
         record["nodes"] = [dict(node) for node in node_rows]
         record["node_ids"] = [node["id"] for node in node_rows]
+        record["research"] = research
         return record
+
+    # -- Deep Research governance (Task 7; invariant 5) ------------------------
+
+    def propose_research_plan(self, run_id: str, plan: dict[str, Any], plan_hash: str) -> str:
+        """Park the run on the plan-approval interrupt with the exact proposed
+        plan and its canonical hash. Idempotent on re-entry after a crash (same
+        hash) and refuses a different plan for the same run; emits
+        research.plan_ready once and run.paused on the real transition."""
+        with self.engine.begin() as conn:
+            research = conn.execute(
+                sa.select(run_research).where(run_research.c.run_id == run_id)
+            ).mappings().first()
+            if research is None:
+                raise StoreConflict("RESEARCH_BRIEF_MISSING", "run has no research brief")
+            if research["phase"] == "approved":
+                raise StoreConflict("RESEARCH_PLAN_NOT_PENDING", "the plan is already approved")
+            if research["proposed_plan_hash"] not in (None, plan_hash):
+                raise StoreConflict("RESEARCH_PLAN_MISMATCH", "a different plan was already proposed for this run")
+            previous = conn.execute(sa.select(runs.c.status).where(runs.c.id == run_id)).scalar()
+            if previous in TERMINAL or previous is None:
+                raise StoreConflict("RESUME_NOT_APPLIED", "run is terminal")
+            first_proposal = research["proposed_plan_hash"] is None
+            conn.execute(
+                sa.update(run_research)
+                .where(run_research.c.run_id == run_id)
+                .values(phase="awaiting_approval", proposed_plan=plan, proposed_plan_hash=plan_hash,
+                        updated_at=now_iso())
+            )
+            conn.execute(
+                sa.update(runs).where(runs.c.id == run_id)
+                .values(status="paused", error={"code": PLAN_APPROVAL_REQUIRED, "message": _PLAN_APPROVAL_MESSAGE})
+            )
+            conn.execute(
+                sa.update(resume_tickets)
+                .where(resume_tickets.c.thread_id == run_id, resume_tickets.c.consumed == 0)
+                .values(consumed=1)
+            )
+            ticket = f"int-{new_id('t')[2:]}"
+            conn.execute(resume_tickets.insert().values(
+                thread_id=run_id, interrupt_id=ticket, consumed=0, created_at=now_iso(),
+            ))
+            if previous != "paused":
+                self._emit(conn, run_id, "run.paused", code=PLAN_APPROVAL_REQUIRED, interrupt_id=ticket)
+            if first_proposal:
+                self._emit(conn, run_id, "research.plan_ready", plan_hash=plan_hash, interrupt_id=ticket)
+            return ticket
+
+    def approve_research_plan(self, run_id: str, plan_hash: str, actor: str, *, audit: Any) -> dict[str, Any]:
+        """Expected-hash compare-and-swap: only the exact proposed hash, only
+        while the run is parked on this gate, exactly once. The research row,
+        the run transition, the ticket, the run event and the audit event are
+        one transaction."""
+        with self.engine.begin() as conn:
+            research = conn.execute(
+                sa.select(run_research).where(run_research.c.run_id == run_id)
+            ).mappings().first()
+            run = conn.execute(
+                sa.select(runs.c.case_id, runs.c.status, runs.c.error).where(runs.c.id == run_id)
+            ).mappings().first()
+            if (
+                research is None or run is None
+                or research["phase"] != "awaiting_approval"
+                or run["status"] != "paused"
+                or (run["error"] or {}).get("code") != PLAN_APPROVAL_REQUIRED
+            ):
+                raise StoreConflict("RESEARCH_PLAN_NOT_PENDING", "no research plan is awaiting approval")
+            if research["proposed_plan_hash"] != plan_hash:
+                raise StoreConflict("RESEARCH_PLAN_STALE", "approval binds the exact proposed plan hash")
+            now = now_iso()
+            changed = conn.execute(
+                sa.update(run_research)
+                .where(
+                    run_research.c.run_id == run_id,
+                    run_research.c.phase == "awaiting_approval",
+                    run_research.c.proposed_plan_hash == plan_hash,
+                )
+                .values(phase="approved", approved_plan_hash=plan_hash, approved_by=actor,
+                        approved_at=now, updated_at=now)
+            ).rowcount
+            if changed != 1:
+                raise StoreConflict("RESEARCH_PLAN_NOT_PENDING", "the approval was already consumed")
+            changed = conn.execute(
+                sa.update(runs)
+                .where(runs.c.id == run_id, runs.c.status == "paused")
+                .values(status="running", error=None)
+            ).rowcount
+            if changed != 1:
+                raise StoreConflict("RESEARCH_PLAN_NOT_PENDING", "run left the approval gate")
+            conn.execute(
+                sa.update(resume_tickets)
+                .where(resume_tickets.c.thread_id == run_id, resume_tickets.c.consumed == 0)
+                .values(consumed=1)
+            )
+            self._emit(conn, run_id, "research.plan_approved", plan_hash=plan_hash)
+            audit(conn, "research.plan_approved", actor, case_id=run["case_id"], run_id=run_id, plan_hash=plan_hash)
+        return self.get_run(run_id)
+
+    def mutate_research_for_tests(self, run_id: str, **values: Any) -> None:
+        """Test seam only: forge the stored research row so the execution-time
+        continuity check has something to refuse."""
+        with self.engine.begin() as conn:
+            conn.execute(sa.update(run_research).where(run_research.c.run_id == run_id).values(**values))
 
     def non_terminal_runs(self) -> list[dict[str, Any]]:
         with self.engine.connect() as conn:
@@ -804,7 +988,9 @@ class RunStore:
         A re-pause supersedes any stale unconsumed ticket (no stranded ticket
         population) and emits run.paused only on a real status transition."""
         with self.engine.begin() as conn:
-            previous = conn.execute(sa.select(runs.c.status).where(runs.c.id == run_id)).scalar()
+            previous = conn.execute(
+                sa.select(runs.c.status).where(runs.c.id == run_id).with_for_update()
+            ).scalar()
             if previous in TERMINAL or previous is None:
                 raise StoreConflict("RESUME_NOT_APPLIED", "run is terminal")
             conn.execute(sa.update(runs).where(runs.c.id == run_id).values(status="paused", error={"code": code}))
@@ -870,6 +1056,14 @@ class RunStore:
 
     def node_running(self, run_id: str, module_id: str) -> None:
         with self.engine.begin() as conn:
+            status = conn.execute(
+                sa.select(runs.c.status).where(runs.c.id == run_id).with_for_update()
+            ).scalar()
+            if status in TERMINAL:
+                # A sibling in the same superstep may reach here after the run
+                # was finalized under it; a terminal run never shows a node
+                # `running` (SIM-003: the post-restart user-visible state).
+                return
             changed = conn.execute(
                 sa.update(run_nodes)
                 .where(run_nodes.c.run_id == run_id, run_nodes.c.module_id == module_id,
@@ -951,7 +1145,7 @@ class RunStore:
             authority = conn.execute(
                 sa.select(
                     runs.c.case_id, runs.c.provider_identity, runs.c.plan, runs.c.plan_digest,
-                ).where(runs.c.id == run_id)
+                ).where(runs.c.id == run_id).with_for_update()
             ).mappings().one()
             identity = _provider_identity(authority["provider_identity"])
             plan = authority.get("plan") or {}
@@ -1193,7 +1387,13 @@ class RunStore:
         return dict(row) if row else None
 
     def _budget_locked(self, conn: sa.Connection, run_id: str) -> dict[str, Any]:
-        row = conn.execute(sa.select(run_budgets).where(run_budgets.c.run_id == run_id)).mappings().first()
+        # Locked, as the name always promised: reserve, reconcile, charge and
+        # attempt recording are read-modify-write on one ledger row, and two
+        # connections without the lock both pass the ceiling check and the
+        # second overwrites the first's in-flight digest (invariant 8 lost).
+        row = conn.execute(
+            sa.select(run_budgets).where(run_budgets.c.run_id == run_id).with_for_update()
+        ).mappings().first()
         if row is None:
             raise StoreConflict("AGENT_BUDGET_EXCEEDED", "budget ledger missing")
         return dict(row)

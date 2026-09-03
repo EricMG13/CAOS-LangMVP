@@ -1,0 +1,72 @@
+{
+  "schema_version": "caos.corpus-pack.v1",
+  "pack_id": "C02",
+  "version": "1.0.0",
+  "title": "Sparse pack with material missing evidence",
+  "purpose": "C02: no annual or interim statements and no debt documents; no committee-ready conclusion is supportable, so CP-0 must refuse with the typed insufficiency.",
+  "kind": "negative",
+  "stage": "run",
+  "issuer": "Northstar Cruise Holdings Inc",
+  "licence_class": "synthetic",
+  "provenance": "caos/tests/corpus/synthetic.py",
+  "bytes": {
+    "source": "synthetic",
+    "location": "caos/tests/corpus/synthetic.py",
+    "owner": null,
+    "artifact": null
+  },
+  "documents": [
+    {
+      "filename": "northstar-fy2025-guidance.txt",
+      "sha256": "9ad163c93e15f9380428fab411358ff2c05067982e3903e6ff769a4aabbbae9b",
+      "media_type": "text/plain",
+      "document_type": "management_guidance",
+      "period": "FY2025",
+      "supersession": "current",
+      "provenance": "caos/tests/corpus/synthetic.py::c02_sparse",
+      "disposition": "used",
+      "analytical_role": "relevant",
+      "reason": "guidance only; no statements"
+    },
+    {
+      "filename": "northstar-investor-note.txt",
+      "sha256": "0817b718cad2b7330d44e4c6b9a46b61b1cec927d45d24c295bfc1f3b4eedba0",
+      "media_type": "text/plain",
+      "document_type": "other",
+      "period": null,
+      "supersession": "current",
+      "provenance": "caos/tests/corpus/synthetic.py::c02_sparse",
+      "disposition": "used",
+      "analytical_role": "irrelevant",
+      "reason": "prose note without financial statements"
+    }
+  ],
+  "documents_from": null,
+  "applies_to": [
+    {
+      "pathway": "FULL_CREDIT",
+      "depth": "full",
+      "outcome": "refused",
+      "proves_pathway": false
+    },
+    {
+      "pathway": "EARNINGS_UPDATE",
+      "depth": "full",
+      "outcome": "refused",
+      "proves_pathway": false
+    }
+  ],
+  "answer_key": {
+    "file": "answer_key.json",
+    "version": "1.0.0",
+    "sha256": "79f8e23168891ffe29e84d255ed5fece4f2ea5ba40ddfcb14bdf3a49ec6f2093",
+    "approvals": [
+      {
+        "scope": "host_control",
+        "reviewer": "Claude Fable 5.1 (ER-G6 implementer)",
+        "approved_at": "2026-09-03",
+        "note": "host-control attestation of the draft key: orchestration proof only, never analysis"
+      }
+    ]
+  }
+}

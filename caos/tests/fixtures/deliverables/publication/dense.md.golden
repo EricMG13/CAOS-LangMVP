@@ -1,0 +1,449 @@
+# Issuer — Investment Committee Credit Memo
+
+CAOS / FULL CREDIT / MASTHEAD / PENDING APPROVAL / AS OF Unavailable / <id>... / DRAFT v1
+
+| Field | Value |
+| --- | --- |
+| Issuer | Issuer |
+| Case | Case |
+| Report type | Investment Committee Credit Memo |
+| Pathway | FULL_CREDIT |
+| As-of date | Unavailable |
+| Deliverable | dlv-<sha256> |
+| Draft version | 1 |
+| Accepted run | Unavailable |
+| Accepted snapshot | <id> |
+| Source set | <id> v1 |
+| Model identity | ANALYST_REVISION · build <id> · revision <id> · runtime cp_model_v3_python 3 |
+| Methodology build | <methodology-build> |
+| Machine assistance | Provider identity unavailable for the accepted analysis |
+| Opinion owner | analyst |
+| Opinion signed at | <timestamp> |
+| Approval state | PENDING APPROVAL |
+
+> PENDING APPROVAL — the approver is recorded in the detached filing receipt, never in these bytes.
+
+## Decision · Page 1 of 7
+
+### Analyst Opinion · Analyst judgment · <id>
+Hold: the credit remains adequately covered through the forecast horizon.
+
+### Opinion Sign-Off · Analyst judgment · <id>
+- **Limitations:** Covenant definitions were not disclosed in the supplied pack.
+- **Material overrides:** None
+- **Rationale:** Leverage and liquidity conclusions rest on the cited annual and interim filings.
+- **Signed by:** analyst
+- **Signed at:** <timestamp>
+- **Opinion digest:** <sha256>
+- **Approval state:** PENDING APPROVAL
+
+### Credit Snapshot · Locked · artifact · <id>
+#### Accepted Analysis · Locked · artifact · <id>
+- **Snapshot:** <id>
+
+#### Analyst Snapshot · Analyst judgment
+In our judgment coverage stays adequate across the seven forecast years under both cases.
+
+### Recommendation · Analyst judgment
+In our judgment coverage stays adequate across the seven forecast years under both cases.
+
+### Thesis and Variant View · Analyst judgment
+In our judgment coverage stays adequate across the seven forecast years under both cases.
+
+## Business · Page 2 of 7
+
+### Business and Industry · Analyst judgment
+In our judgment coverage stays adequate across the seven forecast years under both cases.
+
+## Financials · Page 3 of 7
+
+### Capital Structure · Analyst judgment
+In our judgment coverage stays adequate across the seven forecast years under both cases.
+
+### Base and Downside Model · Locked · model · <id>
+#### Analyst Model View · Analyst judgment
+In our judgment coverage stays adequate across the seven forecast years under both cases.
+
+#### Calculated Base and Downside Outputs · Locked · model · <id>
+| Case / Period / Metric | Value |
+| --- | ---: |
+| BASE / FY2024 / accessible_liquidity | 3.6 |
+| BASE / FY2024 / adjusted_ebitda_calc | 6.1 |
+| BASE / FY2024 / capex | 6.6 |
+| BASE / FY2024 / fcf | 5.1 |
+| BASE / FY2024 / interest_cover | 4.6 |
+| BASE / FY2024 / net_debt | 4.1 |
+| BASE / FY2024 / revenue | 5.6 |
+| BASE / FY2024 / total_leverage | 3.1 |
+| BASE / FY2025 / accessible_liquidity | 3.73 |
+| BASE / FY2025 / adjusted_ebitda_calc | 6.23 |
+| BASE / FY2025 / capex | 6.73 |
+| BASE / FY2025 / fcf | 5.23 |
+| BASE / FY2025 / interest_cover | 4.73 |
+| BASE / FY2025 / net_debt | 4.23 |
+| BASE / FY2025 / revenue | 5.73 |
+| BASE / FY2025 / total_leverage | 3.23 |
+| BASE / FY2026 / accessible_liquidity | 3.86 |
+| BASE / FY2026 / adjusted_ebitda_calc | 6.36 |
+| BASE / FY2026 / capex | 6.86 |
+| BASE / FY2026 / fcf | 5.36 |
+| BASE / FY2026 / interest_cover | 4.86 |
+| BASE / FY2026 / net_debt | 4.36 |
+| BASE / FY2026 / revenue | 5.86 |
+| BASE / FY2026 / total_leverage | 3.36 |
+| BASE / FY2027 / accessible_liquidity | 3.99 |
+| BASE / FY2027 / adjusted_ebitda_calc | 6.49 |
+| BASE / FY2027 / capex | 6.99 |
+| BASE / FY2027 / fcf | 5.49 |
+| BASE / FY2027 / interest_cover | 4.99 |
+| BASE / FY2027 / net_debt | 4.49 |
+| BASE / FY2027 / revenue | 5.99 |
+| BASE / FY2027 / total_leverage | 3.49 |
+| BASE / FY2028 / accessible_liquidity | 4.12 |
+| BASE / FY2028 / adjusted_ebitda_calc | 6.62 |
+| BASE / FY2028 / capex | 7.12 |
+| BASE / FY2028 / fcf | 5.62 |
+| BASE / FY2028 / interest_cover | 5.12 |
+| BASE / FY2028 / net_debt | 4.62 |
+| BASE / FY2028 / revenue | 6.12 |
+| BASE / FY2028 / total_leverage | 3.62 |
+| BASE / FY2029 / accessible_liquidity | 4.25 |
+| BASE / FY2029 / adjusted_ebitda_calc | 6.75 |
+| BASE / FY2029 / capex | 7.25 |
+| BASE / FY2029 / fcf | 5.75 |
+| BASE / FY2029 / interest_cover | 5.25 |
+| BASE / FY2029 / net_debt | 4.75 |
+| BASE / FY2029 / revenue | 6.25 |
+| BASE / FY2029 / total_leverage | 3.75 |
+| BASE / FY2030 / accessible_liquidity | 4.38 |
+| BASE / FY2030 / adjusted_ebitda_calc | 6.88 |
+| BASE / FY2030 / capex | 7.38 |
+| BASE / FY2030 / fcf | 5.88 |
+| BASE / FY2030 / interest_cover | 5.38 |
+| BASE / FY2030 / net_debt | 4.88 |
+| BASE / FY2030 / revenue | 6.38 |
+| BASE / FY2030 / total_leverage | 3.88 |
+| DOWNSIDE / FY2024 / accessible_liquidity | 4.3 |
+| DOWNSIDE / FY2024 / adjusted_ebitda_calc | 6.8 |
+| DOWNSIDE / FY2024 / capex | 7.3 |
+| DOWNSIDE / FY2024 / fcf | 5.8 |
+| DOWNSIDE / FY2024 / interest_cover | 5.3 |
+| DOWNSIDE / FY2024 / net_debt | 4.8 |
+| DOWNSIDE / FY2024 / revenue | 6.3 |
+| DOWNSIDE / FY2024 / total_leverage | 3.8 |
+| DOWNSIDE / FY2025 / accessible_liquidity | 4.43 |
+| DOWNSIDE / FY2025 / adjusted_ebitda_calc | 6.93 |
+| DOWNSIDE / FY2025 / capex | 7.43 |
+| DOWNSIDE / FY2025 / fcf | 5.93 |
+| DOWNSIDE / FY2025 / interest_cover | 5.43 |
+| DOWNSIDE / FY2025 / net_debt | 4.93 |
+| DOWNSIDE / FY2025 / revenue | 6.43 |
+| DOWNSIDE / FY2025 / total_leverage | 3.93 |
+| DOWNSIDE / FY2026 / accessible_liquidity | 4.56 |
+| DOWNSIDE / FY2026 / adjusted_ebitda_calc | 7.06 |
+| DOWNSIDE / FY2026 / capex | 7.56 |
+| DOWNSIDE / FY2026 / fcf | 6.06 |
+| DOWNSIDE / FY2026 / interest_cover | 5.56 |
+| DOWNSIDE / FY2026 / net_debt | 5.06 |
+| DOWNSIDE / FY2026 / revenue | 6.56 |
+| DOWNSIDE / FY2026 / total_leverage | 4.06 |
+| DOWNSIDE / FY2027 / accessible_liquidity | 4.69 |
+| DOWNSIDE / FY2027 / adjusted_ebitda_calc | 7.19 |
+| DOWNSIDE / FY2027 / capex | 7.69 |
+| DOWNSIDE / FY2027 / fcf | 6.19 |
+| DOWNSIDE / FY2027 / interest_cover | 5.69 |
+| DOWNSIDE / FY2027 / net_debt | 5.19 |
+| DOWNSIDE / FY2027 / revenue | 6.69 |
+| DOWNSIDE / FY2027 / total_leverage | 4.19 |
+| DOWNSIDE / FY2028 / accessible_liquidity | 4.82 |
+| DOWNSIDE / FY2028 / adjusted_ebitda_calc | 7.32 |
+| DOWNSIDE / FY2028 / capex | 7.82 |
+| DOWNSIDE / FY2028 / fcf | 6.32 |
+| DOWNSIDE / FY2028 / interest_cover | 5.82 |
+| DOWNSIDE / FY2028 / net_debt | 5.32 |
+| DOWNSIDE / FY2028 / revenue | 6.82 |
+| DOWNSIDE / FY2028 / total_leverage | 4.32 |
+| DOWNSIDE / FY2029 / accessible_liquidity | 4.95 |
+| DOWNSIDE / FY2029 / adjusted_ebitda_calc | 7.45 |
+| DOWNSIDE / FY2029 / capex | 7.95 |
+| DOWNSIDE / FY2029 / fcf | 6.45 |
+| DOWNSIDE / FY2029 / interest_cover | 5.95 |
+| DOWNSIDE / FY2029 / net_debt | 5.45 |
+| DOWNSIDE / FY2029 / revenue | 6.95 |
+| DOWNSIDE / FY2029 / total_leverage | 4.45 |
+| DOWNSIDE / FY2030 / accessible_liquidity | 5.08 |
+| DOWNSIDE / FY2030 / adjusted_ebitda_calc | 7.58 |
+| DOWNSIDE / FY2030 / capex | 8.08 |
+| DOWNSIDE / FY2030 / fcf | 6.58 |
+| DOWNSIDE / FY2030 / interest_cover | 6.08 |
+| DOWNSIDE / FY2030 / net_debt | 5.58 |
+| DOWNSIDE / FY2030 / revenue | 7.08 |
+| DOWNSIDE / FY2030 / total_leverage | 4.58 |
+_Generated values are locked to the selected model authority._
+
+### Liquidity and Covenants · Analyst judgment
+In our judgment coverage stays adequate across the seven forecast years under both cases.
+
+## Risk · Page 4 of 7
+
+### Risks, Catalysts, and Falsifiers · Analyst judgment
+In our judgment coverage stays adequate across the seven forecast years under both cases.
+
+### Monitoring · Analyst judgment
+In our judgment coverage stays adequate across the seven forecast years under both cases.
+
+## Appendix · Page 5 of 7
+
+### Generated Metrics · 01 · Locked · model · <id>
+| Metric / Case / Period | Value |
+| --- | ---: |
+| accessible_liquidity / BASE / FY2024 | 3.6 |
+| accessible_liquidity / BASE / FY2025 | 3.73 |
+| accessible_liquidity / BASE / FY2026 | 3.86 |
+| accessible_liquidity / BASE / FY2027 | 3.99 |
+| accessible_liquidity / BASE / FY2028 | 4.12 |
+| accessible_liquidity / BASE / FY2029 | 4.25 |
+| accessible_liquidity / BASE / FY2030 | 4.38 |
+| accessible_liquidity / DOWNSIDE / FY2024 | 4.3 |
+| accessible_liquidity / DOWNSIDE / FY2025 | 4.43 |
+| accessible_liquidity / DOWNSIDE / FY2026 | 4.56 |
+| accessible_liquidity / DOWNSIDE / FY2027 | 4.69 |
+| accessible_liquidity / DOWNSIDE / FY2028 | 4.82 |
+| accessible_liquidity / DOWNSIDE / FY2029 | 4.95 |
+| accessible_liquidity / DOWNSIDE / FY2030 | 5.08 |
+| net_debt / BASE / FY2024 | 4.1 |
+| net_debt / BASE / FY2025 | 4.23 |
+| net_debt / BASE / FY2026 | 4.36 |
+| net_debt / BASE / FY2027 | 4.49 |
+| net_debt / BASE / FY2028 | 4.62 |
+| net_debt / BASE / FY2029 | 4.75 |
+| net_debt / BASE / FY2030 | 4.88 |
+| net_debt / DOWNSIDE / FY2024 | 4.8 |
+| net_debt / DOWNSIDE / FY2025 | 4.93 |
+| net_debt / DOWNSIDE / FY2026 | 5.06 |
+| net_debt / DOWNSIDE / FY2027 | 5.19 |
+| net_debt / DOWNSIDE / FY2028 | 5.32 |
+| net_debt / DOWNSIDE / FY2029 | 5.45 |
+| net_debt / DOWNSIDE / FY2030 | 5.58 |
+| total_leverage / BASE / FY2024 | 3.1 |
+| total_leverage / BASE / FY2025 | 3.23 |
+| total_leverage / BASE / FY2026 | 3.36 |
+| total_leverage / BASE / FY2027 | 3.49 |
+| total_leverage / BASE / FY2028 | 3.62 |
+| total_leverage / BASE / FY2029 | 3.75 |
+| total_leverage / BASE / FY2030 | 3.88 |
+| total_leverage / DOWNSIDE / FY2024 | 3.8 |
+| total_leverage / DOWNSIDE / FY2025 | 3.93 |
+| total_leverage / DOWNSIDE / FY2026 | 4.06 |
+| total_leverage / DOWNSIDE / FY2027 | 4.19 |
+| total_leverage / DOWNSIDE / FY2028 | 4.32 |
+| total_leverage / DOWNSIDE / FY2029 | 4.45 |
+| total_leverage / DOWNSIDE / FY2030 | 4.58 |
+_Generated values are locked to the selected model authority._
+
+### Generated Metrics · 02 · Locked · model · <id>
+| Metric / Case / Period | Value |
+| --- | ---: |
+| fcf / BASE / FY2024 | 5.1 |
+| fcf / BASE / FY2025 | 5.23 |
+| fcf / BASE / FY2026 | 5.36 |
+| fcf / BASE / FY2027 | 5.49 |
+| fcf / BASE / FY2028 | 5.62 |
+| fcf / BASE / FY2029 | 5.75 |
+| fcf / BASE / FY2030 | 5.88 |
+| fcf / DOWNSIDE / FY2024 | 5.8 |
+| fcf / DOWNSIDE / FY2025 | 5.93 |
+| fcf / DOWNSIDE / FY2026 | 6.06 |
+| fcf / DOWNSIDE / FY2027 | 6.19 |
+| fcf / DOWNSIDE / FY2028 | 6.32 |
+| fcf / DOWNSIDE / FY2029 | 6.45 |
+| fcf / DOWNSIDE / FY2030 | 6.58 |
+| interest_cover / BASE / FY2024 | 4.6 |
+| interest_cover / BASE / FY2025 | 4.73 |
+| interest_cover / BASE / FY2026 | 4.86 |
+| interest_cover / BASE / FY2027 | 4.99 |
+| interest_cover / BASE / FY2028 | 5.12 |
+| interest_cover / BASE / FY2029 | 5.25 |
+| interest_cover / BASE / FY2030 | 5.38 |
+| interest_cover / DOWNSIDE / FY2024 | 5.3 |
+| interest_cover / DOWNSIDE / FY2025 | 5.43 |
+| interest_cover / DOWNSIDE / FY2026 | 5.56 |
+| interest_cover / DOWNSIDE / FY2027 | 5.69 |
+| interest_cover / DOWNSIDE / FY2028 | 5.82 |
+| interest_cover / DOWNSIDE / FY2029 | 5.95 |
+| interest_cover / DOWNSIDE / FY2030 | 6.08 |
+_Generated values are locked to the selected model authority._
+
+### Model Appendix · Locked · model · <id>
+| Case / Period / Metric | Value |
+| --- | ---: |
+| BASE / FY2024 / accessible_liquidity | 3.6 |
+| BASE / FY2024 / adjusted_ebitda_calc | 6.1 |
+| BASE / FY2024 / capex | 6.6 |
+| BASE / FY2024 / fcf | 5.1 |
+| BASE / FY2024 / interest_cover | 4.6 |
+| BASE / FY2024 / net_debt | 4.1 |
+| BASE / FY2024 / revenue | 5.6 |
+| BASE / FY2024 / total_leverage | 3.1 |
+| BASE / FY2025 / accessible_liquidity | 3.73 |
+| BASE / FY2025 / adjusted_ebitda_calc | 6.23 |
+| BASE / FY2025 / capex | 6.73 |
+| BASE / FY2025 / fcf | 5.23 |
+| BASE / FY2025 / interest_cover | 4.73 |
+| BASE / FY2025 / net_debt | 4.23 |
+| BASE / FY2025 / revenue | 5.73 |
+| BASE / FY2025 / total_leverage | 3.23 |
+| BASE / FY2026 / accessible_liquidity | 3.86 |
+| BASE / FY2026 / adjusted_ebitda_calc | 6.36 |
+| BASE / FY2026 / capex | 6.86 |
+| BASE / FY2026 / fcf | 5.36 |
+| BASE / FY2026 / interest_cover | 4.86 |
+| BASE / FY2026 / net_debt | 4.36 |
+| BASE / FY2026 / revenue | 5.86 |
+| BASE / FY2026 / total_leverage | 3.36 |
+| BASE / FY2027 / accessible_liquidity | 3.99 |
+| BASE / FY2027 / adjusted_ebitda_calc | 6.49 |
+| BASE / FY2027 / capex | 6.99 |
+| BASE / FY2027 / fcf | 5.49 |
+| BASE / FY2027 / interest_cover | 4.99 |
+| BASE / FY2027 / net_debt | 4.49 |
+| BASE / FY2027 / revenue | 5.99 |
+| BASE / FY2027 / total_leverage | 3.49 |
+| BASE / FY2028 / accessible_liquidity | 4.12 |
+| BASE / FY2028 / adjusted_ebitda_calc | 6.62 |
+| BASE / FY2028 / capex | 7.12 |
+| BASE / FY2028 / fcf | 5.62 |
+| BASE / FY2028 / interest_cover | 5.12 |
+| BASE / FY2028 / net_debt | 4.62 |
+| BASE / FY2028 / revenue | 6.12 |
+| BASE / FY2028 / total_leverage | 3.62 |
+| BASE / FY2029 / accessible_liquidity | 4.25 |
+| BASE / FY2029 / adjusted_ebitda_calc | 6.75 |
+| BASE / FY2029 / capex | 7.25 |
+| BASE / FY2029 / fcf | 5.75 |
+| BASE / FY2029 / interest_cover | 5.25 |
+| BASE / FY2029 / net_debt | 4.75 |
+| BASE / FY2029 / revenue | 6.25 |
+| BASE / FY2029 / total_leverage | 3.75 |
+| BASE / FY2030 / accessible_liquidity | 4.38 |
+| BASE / FY2030 / adjusted_ebitda_calc | 6.88 |
+| BASE / FY2030 / capex | 7.38 |
+| BASE / FY2030 / fcf | 5.88 |
+| BASE / FY2030 / interest_cover | 5.38 |
+| BASE / FY2030 / net_debt | 4.88 |
+| BASE / FY2030 / revenue | 6.38 |
+| BASE / FY2030 / total_leverage | 3.88 |
+| DOWNSIDE / FY2024 / accessible_liquidity | 4.3 |
+| DOWNSIDE / FY2024 / adjusted_ebitda_calc | 6.8 |
+| DOWNSIDE / FY2024 / capex | 7.3 |
+| DOWNSIDE / FY2024 / fcf | 5.8 |
+| DOWNSIDE / FY2024 / interest_cover | 5.3 |
+| DOWNSIDE / FY2024 / net_debt | 4.8 |
+| DOWNSIDE / FY2024 / revenue | 6.3 |
+| DOWNSIDE / FY2024 / total_leverage | 3.8 |
+| DOWNSIDE / FY2025 / accessible_liquidity | 4.43 |
+| DOWNSIDE / FY2025 / adjusted_ebitda_calc | 6.93 |
+| DOWNSIDE / FY2025 / capex | 7.43 |
+| DOWNSIDE / FY2025 / fcf | 5.93 |
+| DOWNSIDE / FY2025 / interest_cover | 5.43 |
+| DOWNSIDE / FY2025 / net_debt | 4.93 |
+| DOWNSIDE / FY2025 / revenue | 6.43 |
+| DOWNSIDE / FY2025 / total_leverage | 3.93 |
+| DOWNSIDE / FY2026 / accessible_liquidity | 4.56 |
+| DOWNSIDE / FY2026 / adjusted_ebitda_calc | 7.06 |
+| DOWNSIDE / FY2026 / capex | 7.56 |
+| DOWNSIDE / FY2026 / fcf | 6.06 |
+| DOWNSIDE / FY2026 / interest_cover | 5.56 |
+| DOWNSIDE / FY2026 / net_debt | 5.06 |
+| DOWNSIDE / FY2026 / revenue | 6.56 |
+| DOWNSIDE / FY2026 / total_leverage | 4.06 |
+| DOWNSIDE / FY2027 / accessible_liquidity | 4.69 |
+| DOWNSIDE / FY2027 / adjusted_ebitda_calc | 7.19 |
+| DOWNSIDE / FY2027 / capex | 7.69 |
+| DOWNSIDE / FY2027 / fcf | 6.19 |
+| DOWNSIDE / FY2027 / interest_cover | 5.69 |
+| DOWNSIDE / FY2027 / net_debt | 5.19 |
+| DOWNSIDE / FY2027 / revenue | 6.69 |
+| DOWNSIDE / FY2027 / total_leverage | 4.19 |
+| DOWNSIDE / FY2028 / accessible_liquidity | 4.82 |
+| DOWNSIDE / FY2028 / adjusted_ebitda_calc | 7.32 |
+| DOWNSIDE / FY2028 / capex | 7.82 |
+| DOWNSIDE / FY2028 / fcf | 6.32 |
+| DOWNSIDE / FY2028 / interest_cover | 5.82 |
+| DOWNSIDE / FY2028 / net_debt | 5.32 |
+| DOWNSIDE / FY2028 / revenue | 6.82 |
+| DOWNSIDE / FY2028 / total_leverage | 4.32 |
+| DOWNSIDE / FY2029 / accessible_liquidity | 4.95 |
+| DOWNSIDE / FY2029 / adjusted_ebitda_calc | 7.45 |
+| DOWNSIDE / FY2029 / capex | 7.95 |
+| DOWNSIDE / FY2029 / fcf | 6.45 |
+| DOWNSIDE / FY2029 / interest_cover | 5.95 |
+| DOWNSIDE / FY2029 / net_debt | 5.45 |
+| DOWNSIDE / FY2029 / revenue | 6.95 |
+| DOWNSIDE / FY2029 / total_leverage | 4.45 |
+| DOWNSIDE / FY2030 / accessible_liquidity | 5.08 |
+| DOWNSIDE / FY2030 / adjusted_ebitda_calc | 7.58 |
+| DOWNSIDE / FY2030 / capex | 8.08 |
+| DOWNSIDE / FY2030 / fcf | 6.58 |
+| DOWNSIDE / FY2030 / interest_cover | 6.08 |
+| DOWNSIDE / FY2030 / net_debt | 5.58 |
+| DOWNSIDE / FY2030 / revenue | 7.08 |
+| DOWNSIDE / FY2030 / total_leverage | 4.58 |
+_Complete calculated output projection for review._
+
+### Limitations · 01 · Analyst judgment
+Covenant definitions unavailable; capex guidance not disclosed.
+
+## Evidence · Page 6 of 7
+
+### Evidence Register · Locked · artifact · <id>
+| Source | Blocks | Claim |
+| --- | ---: | --- |
+| <id> | b00001 | Pinned evidence line supports the opinion. |
+
+## Control · Page 7 of 7
+
+### Control Status · Locked · system · dlv-<sha256>
+- **Approval state:** PENDING APPROVAL
+- **Opinion owner:** analyst · <timestamp>
+- **Freeze identity:** dlv-<sha256> · Draft v1 · <sha256>
+- **Input fingerprint:** <sha256>
+- **Accepted snapshot:** <id>
+- **Source set:** <id> v1
+- **As-of date:** Unavailable
+- **Model identity:** ANALYST_REVISION · build <id> · revision <id> · runtime cp_model_v3_python 3
+- **Methodology build:** <methodology-build>
+- **Machine assistance:** Provider identity unavailable for the accepted analysis
+- **Renderer:** caos.deliverable-renderer.v3
+- **Approver identity:** Recorded in the detached filing receipt and the audit chain, never in these bytes
+
+### Source Document Register · Locked · artifact · <id>
+| Source | Filename | SHA-256 | Type | Period | Disposition | Cited |
+| --- | --- | --- | --- | --- | --- | --- |
+| <id> | doc.txt | <sha256> | unclassified | Unavailable | used | Yes |
+_Every supplied document in the pinned source set with its host disposition; cited means referenced by this deliverable's evidence register._
+
+### Registered Evidence Inventory · Locked · artifact · <id>
+| Source | Blocks | Status |
+| --- | ---: | --- |
+| <id> | b00001 | live |
+
+### Limitations and Open QA · Analyst judgment · <id>
+- Analyst limitations: Covenant definitions were not disclosed in the supplied pack.
+- Declared limitation: Covenant definitions unavailable; capex guidance not disclosed.
+
+### Content Origin · Locked · system · dlv-<sha256>
+- **Analyst-owned sections:** 10
+- **Model-locked sections:** 5
+- **Artifact-locked sections:** 3
+- **System sections:** 0
+- **Convention:** Analyst judgment is labelled as such; locked sections carry the authority id they were generated from; Unavailable marks a value the sources or the model did not provide.
+
+## Revision Record
+- Deliverable: dlv-<sha256>
+- Draft version: 1
+- Draft digest: <sha256>
+- Content digest: <sha256>
+- Input fingerprint: <sha256>
+- Methodology build: <methodology-build>
+- Renderer: caos.deliverable-renderer.v3

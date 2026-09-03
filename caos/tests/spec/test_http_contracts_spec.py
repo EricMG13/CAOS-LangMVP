@@ -92,6 +92,7 @@ KEY_SETS = {
         "deep_research_available": None,
         "deep_research_unavailable_reason": None,
         "pathway_fit": {"fit": None, "message": None},
+        "latest_intake_id": None,
     },
     "source": {
         "id": None,
@@ -228,6 +229,18 @@ AUDIT_ACTION_DETAILS = {
     "note.promoted": {"case_id": "case", "note_id": "note", "source_id": "source"},
     "assumption.created": {"case_id": "case", "assumption_id": "assumption"},
     "rv.universe_versioned": {"case_id": "case", "version": 1},
+    "intake.admitted": {"case_id": "case", "intake_id": "intake", "source_count": 3},
+    "intake.run_started": {"case_id": "case", "intake_id": "intake", "run_id": "run", "pathway": "FULL_CREDIT"},
+    "intake.refused": {"case_id": None, "code": "INTAKE_ADMISSION_REFUSED"},
+    "deliverable.opinion.signed": {"case_id": "case", "pathway": "FULL_CREDIT", "opinion_id": "opinion",
+                                   "revision_id": "revision", "version": 3, "sha256": "a" * 64},
+    "deliverable.freeze_queued": {"case_id": "case", "pathway": "FULL_CREDIT", "deliverable_id": "deliverable"},
+    "deliverable.freeze_failed": {"case_id": "case", "pathway": "FULL_CREDIT", "deliverable_id": "deliverable",
+                                  "code": "DELIVERABLE_RENDER_FAILED"},
+    "deliverable.frozen": {"case_id": "case", "deliverable_id": "deliverable", "preview_digest": "b" * 64},
+    "deliverable.filed": {"case_id": "case", "deliverable_id": "deliverable", "sha256": "c" * 64},
+    "deliverable.exported": {"case_id": "case", "deliverable_id": "deliverable", "format": "pdf"},
+    "audit.package_exported": {"case_id": "case", "sha256": "d" * 64},
 }
 
 FULL_RUNTIME = {
@@ -722,6 +735,7 @@ OPENAPI_EXEMPT = {
     ("get", "/api/cases/{case_id}/model-revisions/{revision_id}/download"),
     ("get", "/api/cases/{case_id}/deliverables/by-id/{deliverable_id}/export/{format_name}"),
     ("get", "/api/cases/{case_id}/reports/export/{format_name}"),
+    ("get", "/api/cases/{case_id}/audit-package"),
 }
 
 
@@ -758,6 +772,10 @@ def test_openapi_refs_a_named_component_schema_for_every_2xx_json_response(clien
         "LoanUniverseFindingResponse",
         "ModelListResponse",
         "VisualRecipeValidationResponse",
+        "ResearchStateResponse",
+        "ResearchPlanResponse",
+        "IntakeResponse",
+        "IntakeDocumentResponse",
     ],
 )
 def test_openapi_named_response_schemas_forbid_additional_properties(client, schema_name):
@@ -1054,7 +1072,7 @@ def test_response_validation_fails_closed_on_the_idempotent_import_path(client, 
 # test_withdrawn_source_detail_remains_retrievable_with_strict_public_shape -> test_withdrawn_source_detail_remains_retrievable_with_strict_public_shape
 # test_distinct_duplicate_note_promotion_is_a_structured_source_conflict -> test_distinct_duplicate_note_promotion_is_a_structured_source_conflict
 # test_snapshot_diff_accepts_added_artifacts_without_snapshot_ids -> test_snapshot_diff_entries_are_module_id_and_digest_only + test_snapshot_diff_entries_reject_artifact_and_snapshot_ids
-# test_openapi_declares_strict_models_for_every_json_success_response -> test_openapi_refs_a_named_component_schema_for_every_2xx_json_response + test_openapi_named_response_schemas_forbid_additional_properties (x9 schemas; ResearchStateResponse/ResearchPlanResponse dropped: CP-DR-only surface, out of MVP scope) + test_openapi_loan_import_serves_the_strict_universe_schema_on_200_and_201
+# test_openapi_declares_strict_models_for_every_json_success_response -> test_openapi_refs_a_named_component_schema_for_every_2xx_json_response + test_openapi_named_response_schemas_forbid_additional_properties (x11 schemas; ResearchStateResponse/ResearchPlanResponse restored by Task 7, key sets pinned in spec/test_research_spec.py) + test_openapi_loan_import_serves_the_strict_universe_schema_on_200_and_201
 # test_canonical_generation_is_strict_and_preserves_completed_module_omission -> test_canonical_generation_round_trips_and_preserves_completed_modules_omission + test_canonical_generation_rejects_unknown_keys
 # test_loan_universe_findings_are_strict -> test_loan_universe_response_round_trips_a_full_rejected_payload + test_loan_universe_finding_rejects_an_unknown_key
 # test_idempotent_loan_import_uses_fastapi_response_validation -> test_response_validation_fails_closed_on_the_idempotent_import_path

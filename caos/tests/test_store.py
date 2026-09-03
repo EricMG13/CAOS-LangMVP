@@ -217,3 +217,16 @@ def test_source_set_version_allocation_locks_the_case_row(tmp_path):
         assert "FOR UPDATE" in str(locked.compile(dialect=postgresql.dialect()))
     finally:
         store.close()
+
+
+def test_a_fresh_store_creates_the_whole_schema_at_startup(store):
+    """RESTORE-DRILL-2026-08-30 F1: the model and deliverable tables no longer
+    depend on usage history, so a never-used deployment restores under the
+    same table set as a busy one and a DDL defect refuses to boot."""
+    import sqlalchemy as sa
+
+    tables = set(sa.inspect(store.engine).get_table_names())
+    assert {"cases", "sources", "source_sets", "audit_events", "audit_chain_heads",
+            "model_builds", "model_revisions", "model_revision_heads",
+            "deliverable_revisions", "deliverable_frozen", "deliverable_opinions",
+            "deliverable_freeze_jobs", "deliverable_filing_receipts", "deliverable_threads"} <= tables

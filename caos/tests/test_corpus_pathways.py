@@ -32,10 +32,29 @@ if str(SERVER) not in sys.path:
 from caos.config import Settings  # noqa: E402
 from caos.contracts import INTERNAL_PATHWAYS, PATHWAYS, Depth  # noqa: E402
 from caos.engine.graphs import compiled_route  # noqa: E402
-from caos.engine.runtime import MVP_PATHWAYS, EngineError  # noqa: E402
+from caos.engine.runtime import MVP_PATHWAYS, EngineError, startable_routes  # noqa: E402
 from caos.storage.store import DomainStore  # noqa: E402
 
 from calculator_fixtures import VALID_CALCULATION_INPUTS  # noqa: E402
+
+FIXTURES = Path(__file__).resolve().parent / "fixtures" / "cp_model"
+MODEL_FIXTURES = {
+    "CP-1": "cp1.md", "CP-1A": "cp1a.md", "CP-1B": "cp1b.md",
+    "CP-2": "cp2.md", "CP-2A": "cp2a.md", "CP-2G": "cp2g.md",
+}
+# What each accepted (pathway, depth) must read as in Model Builder under host
+# control: the complete model, one overlay effect, or the typed precondition.
+# Relative Value has no market-marks workbook in this pack (licensed marks are
+# an external input), so its full route reads the typed missing-marks state.
+MODEL_EFFECTS = {
+    ("FULL_CREDIT", "full"): "FULL_MODEL",
+    ("EARNINGS_UPDATE", "full"): "EARNINGS_PERIOD_FORECAST_VARIANCE",
+    ("COVENANT_REFINANCING", "full"): "COVENANT_REFINANCING_ASSUMPTIONS",
+    ("RELATIVE_VALUE", "full"): "RELATIVE_VALUE_MARKET_MARKS_REQUIRED",
+    ("DISTRESSED_RESTRUCTURING", "full"): "DISTRESSED_SCENARIO_RECOVERY",
+    ("DISTRESSED_RESTRUCTURING", "screen"): "DISTRESSED_SCENARIO_RECOVERY",
+    ("DEEP_RESEARCH", "full"): "DEEP_RESEARCH_REVALIDATION",
+}
 
 CORPUS = Path(__file__).resolve().parent / "corpus"
 DOCUMENTS = CORPUS / "documents"
@@ -74,8 +93,22 @@ requires_corpus = pytest.mark.skipif(len(DOCS) != len(PACK_NAMES), reason=f"corp
 pytestmark = pytest.mark.corpus_run
 
 GOLDEN = [(pathway, depth) for pathway in INTERNAL_PATHWAYS for depth in (Depth.SCREEN, Depth.FULL)]
-LIVE_ROUTES = [route for route in GOLDEN if route[0] in MVP_PATHWAYS]
+# The engine's own startable list: every cut pathway at every depth it runs
+# (Deep Research is full-depth only, §14.1).
+LIVE_ROUTES = [route for route in GOLDEN if (route[0], route[1].value) in set(startable_routes())]
 CUT_ROUTES = [route for route in GOLDEN if route[0] not in MVP_PATHWAYS]
+DEPTH_CUT_ROUTES = [route for route in GOLDEN if route[0] in MVP_PATHWAYS and route not in LIVE_ROUTES]
+# A fixture brief for the Deep Research host control: orchestration proof only
+# — it proves the brief, the approval gate and the route complete on a supplied
+# pack, not that any research question about Carnival was answered.
+RESEARCH_BRIEF = {
+    "research_question": "How resilient is liquidity through the next refinancing?",
+    "decision_context": "Committee review of an existing position.",
+    "as_of_date": "2026-01-01",
+    "time_horizon": "12 months",
+    "must_answer": ["Nearest maturity"],
+    "exclusions": [],
+}
 ROUTES = LIVE_ROUTES if CORPUS_FULL else [
     route for route in LIVE_ROUTES if route[0] in {"FULL_CREDIT", "DISTRESSED_RESTRUCTURING"}
 ]
@@ -178,9 +211,15 @@ class CorpusProvider:
         self.calls = 0
         self.reads = 0
         self.identity = host_control_identity()
+        # Sources read so far in each run: the double spreads one read of every
+        # pinned source across the route (the read allowance is per module, so
+        # thirty documents cannot all be read in one), which is what lets every
+        # supplied document reach the cited analysis.
+        self.read_by_run: dict[str, set[str]] = {}
 
     def bind(self, sources: list[dict]) -> None:
         self.evidence = [(source["id"], source["blocks"][0]["block_id"]) for source in sources]
+        self.sha256_by_source = {source["id"]: source["sha256"] for source in sources}
 
     def count_tokens(self, request) -> int:
         return 1_000
@@ -190,6 +229,11 @@ class CorpusProvider:
 
         assert self.evidence, "CorpusProvider used before bind()"
         self.calls += 1
+        from caos.engine.budget import EVIDENCE_READS_PER_MODULE
+
+        prompt = json.loads(str(request.messages[0]["content"]).split("\n", 1)[1])
+        identity = prompt["host_identity"]
+        module_id, run_id = identity["module_id"], identity["run_id"]
         tool_results = [
             json.loads(block["content"])
             for message in request.messages
@@ -202,10 +246,17 @@ class CorpusProvider:
              if tool["name"] == "run_methodology_calculation"),
             None,
         )
-        if not tool_results:
-            current = self.evidence[self.reads % len(self.evidence)]
+        evidence_results = [result for result in tool_results if isinstance(result, list)]
+        read_here = {row["source_id"] for result in evidence_results for row in result}
+        read_so_far = self.read_by_run.setdefault(run_id, set())
+        read_so_far.update(read_here)
+        remaining = [pair for pair in self.evidence if pair[0] not in read_so_far]
+        if (remaining and len(evidence_results) < EVIDENCE_READS_PER_MODULE) or not evidence_results:
+            if remaining and len(evidence_results) < EVIDENCE_READS_PER_MODULE:
+                source_id, block_id = remaining[0]
+            else:
+                source_id, block_id = self.evidence[self.reads % len(self.evidence)]
             self.reads += 1
-            source_id, block_id = current
             block = ProviderBlock(
                 type="tool_use", id=f"tool-{self.calls}", name="read_evidence",
                 input={"source_id": source_id, "block_ids": [block_id]},
@@ -215,8 +266,7 @@ class CorpusProvider:
                 usage=ProviderUsage(input_tokens=1_000, output_tokens=50),
                 request_id="req-corpus-tool",
             )
-        evidence_result = next(result for result in tool_results if isinstance(result, list))
-        returned = {(row["source_id"], row["block_id"]) for row in evidence_result}
+        returned = {(row["source_id"], row["block_id"]) for result in evidence_results for row in result}
         self.delivered.update(returned)
         self.delivery_log.append(returned)
         calculation_records = [result for result in tool_results if isinstance(result, dict)]
@@ -238,22 +288,37 @@ class CorpusProvider:
                     usage=ProviderUsage(input_tokens=1_000, output_tokens=50),
                     request_id="req-corpus-calculation",
                 )
-        source_id, block_id = next(iter(returned))
+        rows = sorted(returned)
+        source_id, block_id = rows[0]
+        if module_id in MODEL_FIXTURES:
+            # The canonical modules emit the golden CP-MODEL fixtures re-identified
+            # to this run and to the first source delivered here, so the host-control
+            # Full Credit run yields a buildable model and every later route an overlay.
+            markdown = (
+                (FIXTURES / MODEL_FIXTURES[module_id]).read_text(encoding="utf-8")
+                .replace('"run-cp-model-fixture"', json.dumps(run_id))
+                .replace("SRC-1", source_id)
+                .replace("block-1", block_id)
+                .replace("b" * 64, self.sha256_by_source[source_id])
+                .replace("Acme Credit Ltd", identity["issuer_name"])
+                .replace("Acme-Credit", identity["issuer_id"])
+            )
+        else:
+            markdown = CANONICAL_BODY + "\n\n| source_id | value |\n| --- | --- |\n" + "\n".join(
+                f"| {cited_source} | scripted |" for cited_source, _block in rows
+            )
         envelope = json.dumps({
-            "markdown": (
-                CANONICAL_BODY
-                + f"\n\n| source_id | value |\n| --- | --- |\n| {source_id} | scripted |"
-            ),
-            "evidence_refs": [{"source_id": source_id, "block_id": block_id}],
+            "markdown": markdown,
+            "evidence_refs": [{"source_id": cited_source, "block_id": cited_block} for cited_source, cited_block in rows],
             "calculation_refs": [
                 {field: record[field] for field in (
                     "calculator_id", "script_digest", "calculator_digest", "input_digest", "output_digest",
                 )}
                 for record in calculation_records
             ],
-            "lineage_counts": {"directly_sourced": 1},
-            "fields_present": 1,
-            "fields_total": 1,
+            "lineage_counts": {"directly_sourced": len(rows)},
+            "fields_present": len(rows),
+            "fields_total": len(rows),
             "source_gate": "pass",
         })
         return ProviderMessage(
@@ -352,6 +417,14 @@ def test_user_uploaded_document_is_admitted_with_blocks(client, store, document:
 
 @requires_corpus
 async def test_supported_routes_complete_host_path_on_30_document_upload(client, store, engine, provider):
+    """Every startable route on the whole pack: the run completes, every pinned
+    document is cited by the run's artifacts, and the accepted snapshot reads
+    in Model Builder as its pathway's declared model effect (Task 9) — the
+    complete model, an overlay bound to that model, or the typed precondition.
+    Host control proves orchestration and lineage, never analysis."""
+    from caos.models.service import ModelService
+
+    models = ModelService(store=store, vault_dir=engine.settings.storage_dir, engine=engine)
     case_id = open_case(client, "Carnival complete pack")
     sources = seed(client, case_id)
     provider.bind(sources)
@@ -361,16 +434,27 @@ async def test_supported_routes_complete_host_path_on_30_document_upload(client,
         for source in sources for block in source["blocks"]
     }
     source_ids = {source["id"] for source in sources}
+    base_build = None
 
     for pathway, depth in ROUTES:
         calls_before = provider.calls
         deliveries_before = len(provider.delivery_log)
         started = await engine.start_run(
             case_id=case_id, pathway=pathway, depth=depth.value, actor="analyst",
+            research_brief=RESEARCH_BRIEF if pathway == "DEEP_RESEARCH" else None,
         )
         run_id = started["id"]
-        await engine.wait(run_id)
-        run = engine.get_run(run_id)
+        run = await engine.wait(run_id)
+        if pathway == "DEEP_RESEARCH":
+            # The governed gate: the run parks on the host-proposed plan and
+            # resumes only on the exact approved hash (invariant 5).
+            assert run["status"] == "paused" and run["error"]["code"] == "PLAN_APPROVAL_REQUIRED"
+            assert run["research"]["brief"] == RESEARCH_BRIEF
+            await engine.approve_research_plan(
+                run_id, plan_hash=run["research"]["proposed_plan_hash"], actor="analyst",
+            )
+            run = await engine.wait(run_id)
+            assert run["research"]["approved_plan_hash"] == run["research"]["proposed_plan_hash"]
         assert run["status"] == "succeeded", run.get("error")
         assert provider.calls > calls_before
         assert tuple(node["module_id"] for node in run["nodes"]) == compiled_route(pathway, depth.value).nodes
@@ -389,11 +473,38 @@ async def test_supported_routes_complete_host_path_on_30_document_upload(client,
         delivered_this_route = set().union(*provider.delivery_log[deliveries_before:])
         assert delivered_this_route
         assert delivered_this_route <= cited_blocks
+        # Source-complete lineage: every pinned document reaches the cited analysis.
+        assert {source_id for source_id, _block in cited_blocks} == source_ids, (pathway, depth)
         cp4c = next((artifact for artifact in artifacts if artifact["module_id"] == "CP-4C"), None)
         if cp4c is not None:
             assert {record["calculator_id"] for record in cp4c["payload"]["calculations"]} == {
                 "funding_gap", "recovery_waterfall",
             }
+
+        # The accepted snapshot's declared model effect (DECISIONS §14.18).
+        snapshot = await engine.accept(run_id, actor="analyst")
+        expected = MODEL_EFFECTS.get((pathway, depth.value), "FULL_DEPTH_REQUIRED")
+        readiness = models.readiness(case_id)
+        if expected in {"FULL_DEPTH_REQUIRED", "RELATIVE_VALUE_MARKET_MARKS_REQUIRED"}:
+            assert readiness["status"] == "NOT_READY", (pathway, depth, readiness)
+            assert [blocker["code"] for blocker in readiness["blockers"]] == [expected]
+            continue
+        assert readiness["status"] == "READY_TO_BUILD", (pathway, depth, readiness)
+        queued = next(build for build in models.list_builds(case_id) if build["snapshot_id"] == snapshot["id"])
+        build = models.run_build_for_tests(queued["id"])
+        assert build["status"] == "READY", (pathway, depth, build.get("error"))
+        lineage = build["payload"]["source_lineage"]
+        assert {row["source_id"] for row in lineage} == source_ids
+        assert {row["binding"] for row in lineage} <= {"MODEL_INPUT", "CITED_ANALYSIS"}
+        if expected == "FULL_MODEL":
+            assert "pathway_effects" not in build["payload"]
+            base_build = build
+        else:
+            assert base_build is not None
+            effect, = build["payload"]["pathway_effects"]
+            assert effect["effect_id"] == expected
+            assert effect["base_model"]["build_id"] == base_build["id"]
+            assert build["payload"]["tabs"] == base_build["payload"]["tabs"]
 
 
 @requires_corpus
@@ -408,17 +519,53 @@ async def test_unavailable_routes_refuse_without_pinning_30_document_case(client
         assert store.current_source_set(case_id) == pinned
         assert engine.active_execution_count() == 0
 
-        if pathway in PATHWAYS and not (pathway == "DEEP_RESEARCH" and depth is Depth.SCREEN):
-            body = {"pathway": pathway, "depth": depth.value}
-            if pathway == "DEEP_RESEARCH":
-                body["research_brief"] = {
-                    "research_question": "How resilient is liquidity through the next refinancing?",
-                    "decision_context": "Committee review of an existing position.",
-                    "as_of_date": "2026-01-01",
-                    "time_horizon": "12 months",
-                    "must_answer": ["Nearest maturity"],
-                    "exclusions": [],
-                }
-            response = client.post(f"/api/cases/{case_id}/runs", json=body)
+        if pathway in PATHWAYS:
+            response = client.post(f"/api/cases/{case_id}/runs", json={"pathway": pathway, "depth": depth.value})
             assert response.status_code == 422, response.text
             assert response.json()["detail"] == {"code": "PATHWAY_NOT_AVAILABLE"}
+
+    # A cut pathway at a depth the engine does not run (Deep Research at
+    # screen) is refused by the depth rule, again without pinning.
+    assert DEPTH_CUT_ROUTES == [("DEEP_RESEARCH", Depth.SCREEN)]
+    for pathway, depth in DEPTH_CUT_ROUTES:
+        with pytest.raises(EngineError, match="DEPTH_NOT_SUPPORTED"):
+            await engine.start_run(
+                case_id=case_id, pathway=pathway, depth=depth.value, actor="analyst",
+                research_brief=RESEARCH_BRIEF,
+            )
+        assert store.current_source_set(case_id) == pinned
+        assert engine.active_execution_count() == 0
+        response = client.post(
+            f"/api/cases/{case_id}/runs",
+            json={"pathway": pathway, "depth": depth.value, "research_brief": RESEARCH_BRIEF},
+        )
+        assert response.status_code == 422, response.text
+
+
+@requires_corpus
+@pytest.mark.skipif(not CORPUS_FULL, reason="the harness cell over the whole pack is nightly (CORPUS_FULL=1) evidence")
+def test_qualification_harness_scores_the_carnival_pack_under_host_control(tmp_path: Path):
+    """Task 11: one qualification cell (C01, Full Credit, full) runs end to end
+    through the harness under the answer-keyed host control — intake refusal
+    observed and scored, the pack admitted, the run driven, accepted and built,
+    every dimension scored, the result bound to identity, corpus, build, date,
+    expiry and reviewer. Orchestration proof only: the result reads
+    host_control and can never read QUALIFIED."""
+    out = tmp_path / "evidence"
+    completed = subprocess.run(
+        [sys.executable, str(CORPUS / "qualify.py"), "cell", "--binding", "host_control", "--pack", "C01",
+         "--pathway", "FULL_CREDIT", "--depth", "full", "--reviewer", "suite", "--out", str(out)],
+        cwd=CORPUS.parents[2],
+        env={**os.environ, "ANTHROPIC_API_KEY": "", "OPENROUTER_API_KEY": "", "CAOS_PROVIDER": ""},
+        capture_output=True, text=True, check=False,
+    )
+    summary = json.loads(completed.stdout[completed.stdout.index("{"):])
+    assert completed.returncode == 0, summary
+    retained = json.loads(next(out.rglob("rep-*.json")).read_text())
+    dimensions = retained["scores"]["dimensions"]
+    assert retained["verdict"] == "pass" and retained["binding"]["qualification_status"] == "host_control"
+    assert dimensions["document_use"]["detail"]["problems"] == []
+    assert dimensions["facts"]["detail"]["required_failed"] == []
+    assert dimensions["model_effect"]["detail"]["build_status"] == "READY"
+    assert dimensions["citations"]["pass"] and dimensions["unsupported_claims"]["pass"]
+    assert retained["corpus"]["approval"]["scope"] == "host_control"

@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { chromium, request } from "playwright";
 
 const baseURL = process.env.CAOS_URL || "http://127.0.0.1:8000";
@@ -177,8 +178,15 @@ try {
   let expectedPreviewValidationFailures = 0;
   let expectedSignOffConflicts = 0;
   let expectedReportConflicts = 0;
+  let expectedIntakeRefusals = 0;
   page.on("console", (message) => {
     if (message.type() !== "error") return;
+    if (expectedIntakeRefusals > 0
+      && message.location().url.endsWith("/api/intake")
+      && /^Failed to load resource: the server responded with a status of 422 \(Unprocessable (?:Entity|Content)\)$/.test(message.text())) {
+      expectedIntakeRefusals -= 1;
+      return;
+    }
     if (message.location().url === expectedNotFoundURL
       && message.text() === "Failed to load resource: the server responded with a status of 404 (Not Found)") {
       expectedNotFoundURL = "";
@@ -310,7 +318,7 @@ try {
     const url = new URL(window.location.href);
     return url.searchParams.get("case") === expectedCaseId && !url.searchParams.has("run");
   }, idleCase.id);
-  await page.getByText("No current execution. Select a purpose and depth to create an immutable plan.", { exact: true }).waitFor();
+  await page.getByText("No current execution. Drop documents on Cases to start analysis, or compile a route here.", { exact: true }).waitFor();
   // The URL settling correctly is not enough: a stale route replay can re-attach the
   // previous issuer's run and then self-correct, which is still a wrong read.
   const boundaryUrlWrites = await page.evaluate(([boundaryCaseId, staleRunId]) => {
@@ -422,10 +430,154 @@ try {
     if (document.activeElement !== element) throw new Error("focus did not return to the palette trigger");
   }));
 
+  // --- Document-first intake (Task 8; UX-001 to UX-020) ------------------------------
+  // The golden journey asks for nothing but files: no case form, no pathway, no
+  // depth, no model, no budget. The six route selections are data cases of this one
+  // journey, and a refused pack creates nothing.
+  const intakeDoc = (kind, issuer, options = {}) => {
+    const fy = options.fiscalYear ?? 2024;
+    const texts = {
+      annual: `${issuer}\nFORM 10-K\nANNUAL REPORT\nFor the fiscal year ended November 30, ${fy}\n${issuer} reports consolidated results for fiscal ${fy}.\nRevenue 1,160\nEBITDA 222\nTotal debt 3,400\n`,
+      quarterly: `${issuer}\nFORM 10-Q\nQUARTERLY REPORT\nFor the quarterly period ended August 31, ${fy + 1}\nThree months ended August 31, ${fy + 1}\nRevenue 310\nEBITDA 61\n`,
+      earnings: `${issuer} Reports Third Quarter ${fy + 1} Results\nEARNINGS RELEASE\nThree months ended August 31, ${fy + 1}\nAdjusted EBITDA 64\n`,
+      guidance: `${issuer}\nBUSINESS UPDATE AND GUIDANCE\nFull year ${fy + 1} outlook\nManagement forecast: adjusted EBITDA guidance of 250 to 260.\n`,
+      agreement: `CREDIT AGREEMENT\ndated as of March 15, 2023\namong ${issuer}, as Borrower,\nthe Lenders party hereto and the Administrative Agent.\nSection 6.10 Financial Covenants. Term Loan B. Revolving Credit Facility.\n`,
+      amendment: `AMENDMENT NO. 2 TO CREDIT AGREEMENT\ndated as of June 1, 2025\namong ${issuer}, as Borrower, and the Lenders.\nAmended and Restated Section 6.10.\n`,
+      restructuring: `${issuer}\nTRANSACTION SUPPORT AGREEMENT\nExchange offer for the senior unsecured notes; restructuring support agreement\nwith the ad hoc group of lenders. Forbearance through December 2025.\n`,
+      brief: JSON.stringify({ research_question: "How resilient is liquidity through the next refinancing?", decision_context: "Committee review of an existing position.", as_of_date: "2026-01-01", time_horizon: "12 months", must_answer: ["Nearest maturity"], exclusions: [] }),
+    };
+    const names = { annual: "10k-fy2024.txt", quarterly: "10q-q3.txt", earnings: "q3-earnings.txt", guidance: "guidance.txt", agreement: "credit-agreement.txt", amendment: "amendment-2.txt", restructuring: "tsa.txt", brief: "research-brief.json" };
+    return { name: `${issuer.split(" ")[0].toLowerCase()}-${names[kind]}`, mimeType: kind === "brief" ? "application/json" : "text/plain", buffer: Buffer.from(texts[kind]) };
+  };
+  const loanUniverseWorkbook = { name: "REF_CP-3_Sector_RV.xlsx", mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", buffer: readFileSync(new URL("../../tests/fixtures/documents/REF_CP-3_Sector_RV.xlsx", import.meta.url)) };
+  const intakeCases = [
+    { pathway: "FULL_CREDIT", issuer: `Goldenpack-${fixtureSuffix} Holdings`, docs: (issuer) => [intakeDoc("annual", issuer), intakeDoc("quarterly", issuer), intakeDoc("agreement", issuer)] },
+    { pathway: "EARNINGS_UPDATE", issuer: `Earningspack-${fixtureSuffix} Holdings`, docs: (issuer) => [intakeDoc("earnings", issuer), intakeDoc("guidance", issuer)] },
+    { pathway: "COVENANT_REFINANCING", issuer: `Legalpack-${fixtureSuffix} Holdings`, docs: (issuer) => [intakeDoc("agreement", issuer), intakeDoc("amendment", issuer)] },
+    { pathway: "RELATIVE_VALUE", issuer: `Marketpack-${fixtureSuffix} Holdings`, docs: (issuer) => [intakeDoc("annual", issuer), intakeDoc("quarterly", issuer), loanUniverseWorkbook] },
+    { pathway: "DISTRESSED_RESTRUCTURING", issuer: `Stresspack-${fixtureSuffix} Holdings`, docs: (issuer) => [intakeDoc("annual", issuer), intakeDoc("agreement", issuer), intakeDoc("restructuring", issuer)] },
+    { pathway: "DEEP_RESEARCH", issuer: `Researchpack-${fixtureSuffix} Holdings`, docs: (issuer) => [intakeDoc("annual", issuer), intakeDoc("quarterly", issuer), intakeDoc("brief", issuer)] },
+  ];
+  const listCases = async () => {
+    const response = await api.get("/api/cases");
+    const body = await response.json();
+    assert.ok(Array.isArray(body), `GET /api/cases answered ${response.status()}: ${JSON.stringify(body).slice(0, 200)}`);
+    return body;
+  };
+  const casesBefore = (await listCases()).length;
+  // The six route selections are data cases of the one server journey: every pack
+  // goes through POST /api/intake and its route is read back from the durable
+  // record. Two of them also drive the browser surface (the golden Full Credit pack
+  // end to end, and the Deep Research pack whose brief is a file); driving all six
+  // through the browser would push the smoke past the per-subject request ceiling
+  // (300/min), because every adopted run streams a refetch per run event.
+  for (const intakeCase of intakeCases) {
+    const form = new FormData();
+    for (const document of intakeCase.docs(`Api${intakeCase.issuer}`)) form.append("files", new Blob([document.buffer], { type: document.mimeType }), document.name);
+    const submitted = await api.post("/api/intake", { multipart: form });
+    assert.equal(submitted.status(), 201, `${intakeCase.pathway} pack was not admitted: ${(await submitted.text()).slice(0, 200)}`);
+    const record = await submitted.json();
+    assert.equal(record.status, "started");
+    assert.equal(record.route.pathway, intakeCase.pathway, `host classification selected ${record.route.pathway} for the ${intakeCase.pathway} pack`);
+    assert.equal(record.route.selected_by, "host_classification");
+    assert.equal(record.run.plan.pathway, intakeCase.pathway);
+    assert.equal(record.run.plan.depth, "full");
+    assert.equal(record.case.issuer, `Api${intakeCase.issuer}`, "the case issuer was not derived from the documents");
+    assert.ok(record.documents.every((document) => document.disposition === "used"), "a pack document was not used as evidence");
+  }
+  // One page load for the browser packs: each intake adopts its own new case in place.
+  await page.goto(`${baseURL}/cases/`, { waitUntil: "networkidle" });
+  const browserCases = intakeCases.filter((item) => item.pathway === "FULL_CREDIT" || item.pathway === "DEEP_RESEARCH");
+  for (const [index, intakeCase] of browserCases.entries()) {
+    const intakePanel = page.getByRole("region", { name: "Analyze documents" });
+    await intakePanel.waitFor();
+    assert.equal(await page.locator("#pathway").count(), 0, "the golden journey exposes a pathway picker");
+    assert.equal(await intakePanel.getByRole("combobox").count(), 0, "the intake panel asks for an analytical choice");
+    const fileInput = intakePanel.locator("#intake-files");
+    await fileInput.setInputFiles(intakeCase.docs(intakeCase.issuer));
+    const analyze = intakePanel.getByRole("button", { name: /^Analyze \d+ documents?$/ });
+    await analyze.focus();
+    await page.keyboard.press("Enter");
+    await page.getByRole("status").getByText(/documents? admitted\. .* selected by host classification\. Execution started\./).waitFor({ timeout: 60_000 });
+    const manifest = intakePanel.getByRole("region", { name: "Source disposition manifest" });
+    await manifest.waitFor();
+    assert.equal(await manifest.locator("tbody tr").count(), intakeCase.docs(intakeCase.issuer).length, "the manifest does not list every document");
+    await intakePanel.getByText("selected by host classification", { exact: false }).first().waitFor();
+    const intakeCaseRecord = (await listCases()).find((item) => item.issuer === intakeCase.issuer);
+    assert.ok(intakeCaseRecord, `no case was derived for ${intakeCase.issuer}`);
+    const intakeRecord = await (await api.get(`/api/cases/${intakeCaseRecord.id}/intake`)).json();
+    assert.equal(intakeRecord.status, "started");
+    assert.equal(intakeRecord.route.pathway, intakeCase.pathway, `host classification selected ${intakeRecord.route.pathway} for the ${intakeCase.pathway} pack`);
+    assert.equal(intakeRecord.route.depth, "full");
+    assert.equal(intakeRecord.run.plan.pathway, intakeCase.pathway);
+    assert.equal(intakeRecord.run.accepted_snapshot_id, null, "an intake run was accepted on the analyst's behalf");
+    if (index === 0) {
+      // The golden journey: the run completes on the host-control provider and the
+      // panel opens the review, which is the run console's ready-for-acceptance
+      // state — the analyst still has to decide.
+      await intakePanel.getByRole("link", { name: "Open review" }).waitFor({ timeout: 120_000 });
+      await intakePanel.getByRole("link", { name: "Open review" }).click();
+      await page.waitForURL((url) => url.pathname === "/run-console/" && url.searchParams.get("case") === intakeCaseRecord.id);
+      await page.getByRole("status").getByText("Run status: succeeded", { exact: true }).waitFor();
+      await page.getByRole("button", { name: "Accept analytical snapshot" }).waitFor();
+      const reviewed = await (await api.get(`/api/cases/${intakeCaseRecord.id}`)).json();
+      assert.equal(reviewed.accepted_snapshot_id, null, "completion was presented as the analyst's acceptance");
+      await page.setViewportSize({ width: 720, height: 900 });
+      await page.goto(`${baseURL}/cases/?case=${intakeCaseRecord.id}`, { waitUntil: "networkidle" });
+      await page.getByRole("region", { name: "Source disposition manifest" }).waitFor();
+      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth), false, "the intake evidence overflows at 200% desktop zoom width");
+      await page.setViewportSize({ width: 1440, height: 1000 });
+      await page.goto(`${baseURL}/cases/`, { waitUntil: "networkidle" });
+    }
+  }
+  // A refused pack: one malformed PDF refuses the whole pack and creates nothing.
+  await page.goto(`${baseURL}/cases/`, { waitUntil: "networkidle" });
+  const refusedPanel = page.getByRole("region", { name: "Analyze documents" });
+  await refusedPanel.locator("#intake-files").setInputFiles([
+    intakeDoc("annual", `Refusedpack-${fixtureSuffix} Holdings`),
+    { name: "scan.pdf", mimeType: "application/pdf", buffer: Buffer.from("%PDF-1.4\nnot a pdf object stream") },
+  ]);
+  expectedIntakeRefusals = 1;
+  await refusedPanel.getByRole("button", { name: /^Analyze 2 documents$/ }).click();
+  const refusalBlock = page.getByRole("alert").filter({ hasText: "Documents not admitted" });
+  await refusalBlock.waitFor();
+  await refusalBlock.getByText("scan.pdf", { exact: true }).waitFor();
+  assert.equal((await listCases()).length, casesBefore + intakeCases.length + browserCases.length, "a refused pack created a case");
+
   await page.goto(`${baseURL}/run-console/?case=${caseRecord.id}`, { waitUntil: "networkidle" });
+  // Deep Research availability is derived from runtime truth. This server binds
+  // the host-control provider, so the route is offered and the governed journey
+  // runs live: brief → host-proposed plan → digest-bound approval → completion.
+  const liveCaseDetail = await (await api.get(`/api/cases/${caseRecord.id}`)).json();
+  assert.equal(liveCaseDetail.deep_research_available, true, `server derived Deep Research unavailable: ${liveCaseDetail.deep_research_unavailable_reason}`);
   const deepResearchOption = page.locator('#pathway option[value="DEEP_RESEARCH"]');
-  assert.equal(await deepResearchOption.isDisabled(), true, "Deep Research was enabled before actor-specific availability resolved");
-  await page.getByText("Deep Research is disabled for this deployment.", { exact: true }).waitFor();
+  assert.equal(await deepResearchOption.isDisabled(), false, "Deep Research stayed disabled although the server derives it available");
+  await page.getByRole("combobox", { name: "Purpose" }).selectOption("DEEP_RESEARCH");
+  await page.getByRole("textbox", { name: "Research question" }).fill("How resilient is liquidity through the next refinancing?");
+  await page.getByRole("textbox", { name: "Decision context" }).fill("Committee review of an existing position.");
+  await page.getByLabel("As-of date").fill("2026-01-01");
+  await page.getByRole("textbox", { name: "Time horizon" }).fill("12 months");
+  await page.getByRole("textbox", { name: "Must-answer lines" }).fill("Nearest maturity");
+  await page.getByRole("button", { name: "Compile and run" }).click();
+  await page.getByRole("status").getByText("Route compiled. Execution started.", { exact: true }).waitFor();
+  await page.getByRole("heading", { name: "Proposed research plan" }).waitFor({ timeout: 60_000 });
+  await page.getByRole("status").getByText("Run status: Pending approval", { exact: true }).waitFor();
+  const liveRunId = new URL(page.url()).searchParams.get("run")
+    || (await (await api.get(`/api/cases/${caseRecord.id}`)).json()).current_execution_id;
+  assert.ok(liveRunId, "neither the run console URL nor the case wire names the live research run");
+  const livePlanResponse = await api.get(`/api/runs/${liveRunId}/research-plan`);
+  assert.equal(livePlanResponse.status(), 200, "the research plan route is not served");
+  const livePlanState = await livePlanResponse.json();
+  assert.equal(livePlanState.phase, "awaiting_approval");
+  const livePlan = page.locator(".research-plan");
+  await livePlan.getByText(livePlanState.proposed_plan_hash, { exact: true }).waitFor();
+  assert.equal(await livePlan.locator(".research-workstreams > li").count(), livePlanState.proposed_plan.workstreams.length, "the live plan did not render every proposed workstream");
+  await page.getByRole("button", { name: "Approve research plan" }).click();
+  await page.getByRole("status").getByText("Research plan approved. Execution resumes against the approved plan hash.", { exact: true }).waitFor();
+  await page.getByRole("status").getByText("Run status: succeeded", { exact: true }).waitFor({ timeout: 120_000 });
+  const approvedState = await (await api.get(`/api/runs/${liveRunId}/research-plan`)).json();
+  assert.equal(approvedState.phase, "approved");
+  assert.equal(approvedState.approved_plan_hash, livePlanState.proposed_plan_hash, "execution resumed on a plan other than the approved one");
 
   let caseDetailFixtureHits = 0;
   let startFixtureHits = 0;
@@ -1096,7 +1248,17 @@ try {
   await discardDraftDialog().waitFor({ state: "hidden" });
   assert.equal(page.url(), dirtyURL, "dismissed dirty-draft warning allowed browser history navigation");
   assert.equal(await firstAssumption.inputValue(), "0.06", "browser history restoration dropped the dirty local forecast value");
-  await page.waitForFunction(() => document.activeElement?.getAttribute("aria-label") === "Revenue growth, FY2025, BASE");
+  await page.waitForFunction(() => document.activeElement?.getAttribute("aria-label") === "Revenue growth, FY2025, BASE").catch(async (error) => {
+    // A bare timeout says nothing about which restoration path ran; report
+    // where focus actually is, whether a modal still holds it, and the
+    // history entry the workspace settled on.
+    const focus = await page.evaluate(() => {
+      const active = document.activeElement;
+      const dialog = document.querySelector('[role="dialog"]');
+      return { tag: active?.tagName, id: active?.id, label: active?.getAttribute("aria-label"), dialog: dialog?.getAttribute("aria-label") ?? null, href: location.href, state: window.history.state };
+    });
+    throw new Error(`focus did not return to the dirty editor after browser history cancelation: ${JSON.stringify(focus)}`, { cause: error });
+  });
   assert.equal(await firstAssumption.evaluate((element) => document.activeElement === element), true, "Escape did not return focus to the dirty editor after browser history cancelation");
   await page.waitForFunction(() => {
     const state = window.history.state;
@@ -1175,7 +1337,8 @@ try {
   modelState = "READY"; modelExportState = "READY";
   const reportIdentityPath = (url) => url.pathname === "/api/me";
   let reportRole = "ANALYST";
-  await page.route(reportIdentityPath, (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ role: reportRole }) }));
+  let reportSubject = "analyst";
+  await page.route(reportIdentityPath, (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ role: reportRole, subject: reportSubject }) }));
 
   const reportSections = {
     FULL_CREDIT: ["Credit Snapshot", "Recommendation", "Thesis and Variant View", "Business and Industry", "Capital Structure", "Base and Downside Model", "Liquidity and Covenants", "Risks, Catalysts, and Falsifiers", "Monitoring"],
@@ -1305,8 +1468,36 @@ try {
   };
   const reportWorkspaces = new Map(Object.keys(reportSections).map((pathway) => {
     const draft = reportDraft(pathway);
-    return [pathway, { template: reportTemplate(pathway), current: draft, history: [draft], frozen_history: [], model_eligibility: reportEligibility() }];
+    return [pathway, { template: reportTemplate(pathway), current: draft, history: [draft], frozen_history: [], model_eligibility: reportEligibility(), opinion: { head: null, current: false, reasons: ["OPINION_SIGNOFF_REQUIRED"] }, pending_freezes: [] }];
   }));
+  const reportFreezeJobs = new Map();
+  const reportReceipts = new Map();
+  let opinionSequence = 0;
+  const reportPublication = (pathway, workspace, frozenId, opinion) => {
+    const pages = [];
+    for (const section of workspace.current.content.document_sections) {
+      let page = pages.find((item) => item.name === section.page);
+      if (!page) { page = { name: section.page, sections: [] }; pages.push(page); }
+      page.sections.push(section);
+    }
+    const first = pages[0] || { name: "Decision", sections: [] };
+    if (!pages.length) pages.push(first);
+    first.sections = [
+      { kind: "text", section_id: "analyst_opinion", title: "Analyst Opinion", page: first.name, editable: false, origin: reportOrigin("ANALYST", opinion.opinion_id), body: opinion.opinion },
+      { kind: "profile", section_id: "opinion_sign_off", title: "Opinion Sign-Off", page: first.name, editable: false, origin: reportOrigin("ANALYST", opinion.opinion_id), rows: [{ label: "Limitations", value: opinion.limitations }, { label: "Material overrides", value: opinion.material_overrides }, { label: "Rationale", value: opinion.rationale }, { label: "Signed by", value: opinion.signed_by }, { label: "Approval state", value: "PENDING APPROVAL" }] },
+      ...first.sections,
+    ];
+    pages.push({ name: "Control", sections: [
+      { kind: "profile", section_id: "control_status", title: "Control Status", page: "Control", editable: false, origin: reportOrigin("SYSTEM", frozenId), rows: [{ label: "Approval state", value: "PENDING APPROVAL" }, { label: "Opinion owner", value: opinion.signed_by }, { label: "Approver identity", value: "Recorded in the detached filing receipt and the audit chain, never in these bytes" }] },
+      { kind: "table", section_id: "source_document_register", title: "Source Document Register", page: "Control", editable: false, origin: reportOrigin("ARTIFACT", accepted.id), columns: ["Source", "Filename", "SHA-256", "Type", "Period", "Disposition", "Cited"], rows: [[source.id, "earnings.txt", source.sha256, "interim", "FY2025", "used", "Yes"]], note: null },
+    ] });
+    return {
+      schema_version: "caos.deliverable.publication.v1",
+      masthead: { issuer: caseRecord.issuer, case_name: caseRecord.name, case_id: caseRecord.id, report_type: workspace.template.title, pathway, deliverable_id: frozenId, draft_version: workspace.current.version, draft_digest: workspace.current.digest, input_fingerprint: "e".repeat(64), as_of_date: "2026-08-26", run_id: "run_workbench", accepted_snapshot_id: accepted.id, source_set: `${accepted.source_set_id} v1`, model_identity: `ANALYST_REVISION · build ${modelBuildId}`, methodology_build_id: "deploy-v-workbench", machine_assistance: "Provider host_control · model host_control", approval_state: "PENDING APPROVAL", watermark: "PENDING APPROVAL", opinion_owner: opinion.signed_by, opinion_signed_at: opinion.signed_at, opinion_id: opinion.opinion_id, renderer_version: "caos.deliverable-renderer.v3" },
+      pages,
+      disclosures: { approval_state: "PENDING APPROVAL", analyst_opinion_owner: opinion.signed_by },
+    };
+  };
   let reportConflict = false;
   let holdReportSave = false;
   let reportLastSave;
@@ -1338,15 +1529,28 @@ try {
   await page.route(reportApiPath, async (route) => {
     const url = new URL(route.request().url());
     const suffix = url.pathname.split("/deliverables/")[1];
+    if (suffix.startsWith("freeze-jobs/")) {
+      const job = reportFreezeJobs.get(suffix.split("/")[1]);
+      if (!job) return route.fulfill({ status: 404, contentType: "application/json", body: JSON.stringify({ detail: "freeze job not found" }) });
+      // The worker has published: the frozen record already sits in frozen_history.
+      return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ...job, status: "PUBLISHED", completed_at: "2026-08-26T10:46:00Z" }) });
+    }
     if (suffix.startsWith("by-id/")) {
       const [, deliverableId, action, format] = suffix.split("/");
       const current = [...reportWorkspaces.values()].flatMap((item) => item.frozen_history).find((item) => item.id === deliverableId);
       if (action === "export") return fulfillReportExport(route, deliverableId, format);
+      if (action === "receipt") {
+        const receipt = reportReceipts.get(deliverableId);
+        if (!receipt) return route.fulfill({ status: 404, contentType: "application/json", body: JSON.stringify({ detail: "filing receipt not found" }) });
+        return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(receipt) });
+      }
       if (action === "approve") {
         await waitForHeldReportLifecycle("file");
-        const filed = { ...current, status: "FILED", approved_by: "approver", approved_at: "2026-08-26T12:00:00Z" };
+        if (reportSubject === current.signed_by || reportSubject === current.frozen_by) return route.fulfill({ status: 403, contentType: "application/json", body: JSON.stringify({ detail: { code: "APPROVER_NOT_INDEPENDENT" } }) });
+        const filed = { ...current, status: "FILED", approved_by: reportSubject, approved_at: "2026-08-26T12:00:00Z" };
         const workspace = reportWorkspaces.get(filed.pathway);
         workspace.frozen_history = workspace.frozen_history.map((item) => item.id === filed.id ? filed : item.status === "FILED" ? { ...item, status: "SUPERSEDED", superseded_by_id: filed.id } : item);
+        reportReceipts.set(filed.id, { schema_version: "caos.filing-receipt.v1", receipt_id: `rcpt_${filed.id}`, deliverable_id: filed.id, case_id: caseRecord.id, pathway: filed.pathway, draft_version: filed.draft_version, draft_digest: filed.digest, preview_digest: filed.preview_digest, input_fingerprint: filed.input_fingerprint, approval_hash: `sha256:${filed.preview_digest}`, content_digest: filed.payload.preview_digest, exports: Object.fromEntries(Object.entries(filed.exports).map(([key, value]) => [key, value.sha256])), opinion_id: filed.opinion_id, signed_by: filed.signed_by, frozen_by: filed.frozen_by, frozen_at: filed.frozen_at, approved_by: reportSubject, approved_at: "2026-08-26T12:00:00Z", receipt_digest: "r".repeat(64) });
         return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(filed) });
       }
       if (action === "request-changes") {
@@ -1355,6 +1559,7 @@ try {
         const replacement = reportDraft(current.pathway, workspace.current.version + 1, workspace.current.content);
         const changed = { ...current, status: "CHANGES_REQUESTED", change_request: { comment: route.request().postDataJSON().comment, requested_by: "approver", requested_at: "2026-08-26T11:00:00Z" } };
         workspace.current = replacement; workspace.history.push(replacement); workspace.frozen_history = workspace.frozen_history.map((item) => item.id === changed.id ? changed : item);
+        if (workspace.opinion.head) workspace.opinion = { ...workspace.opinion, current: false, reasons: ["DRAFT_REVISION_CHANGED"] };
         return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ frozen: changed, draft: replacement }) });
       }
     }
@@ -1362,6 +1567,17 @@ try {
     const workspace = reportWorkspaces.get(pathway);
     if (!workspace) return route.fulfill({ status: 404, contentType: "application/json", body: JSON.stringify({ detail: "missing fixture" }) });
     if (route.request().method() === "GET") return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(workspace) });
+    if (action === "opinion") {
+      const payload = route.request().postDataJSON();
+      const expected = workspace.opinion.head?.opinion_id ?? null;
+      if (payload.expected_head_opinion_id !== expected) return route.fulfill({ status: 409, contentType: "application/json", body: JSON.stringify({ detail: { code: "OPINION_HEAD_CONFLICT", current: workspace.opinion.head } }) });
+      if (payload.draft_id !== workspace.current.draft_id || payload.draft_version !== workspace.current.version || payload.draft_digest !== workspace.current.digest) return route.fulfill({ status: 409, contentType: "application/json", body: JSON.stringify({ detail: { code: "OPINION_REVISION_STALE" } }) });
+      for (const field of ["opinion", "limitations", "material_overrides", "rationale"]) assert.ok(typeof payload[field] === "string" && payload[field].trim(), `opinion sign-off omitted ${field}`);
+      opinionSequence += 1;
+      const head = { opinion_id: `opn_${opinionSequence}`, case_id: caseRecord.id, pathway, draft_id: workspace.current.draft_id, revision_id: workspace.current.id, draft_version: workspace.current.version, draft_digest: workspace.current.digest, binding: {}, opinion: payload.opinion, limitations: payload.limitations, material_overrides: payload.material_overrides, rationale: payload.rationale, supersedes_opinion_id: expected, signed_by: reportSubject, signed_at: "2026-08-26T10:40:00Z", opinion_digest: "o".repeat(64) };
+      workspace.opinion = { head, current: true, reasons: [] };
+      return route.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify(head) });
+    }
     if (action === "draft") {
       const payload = route.request().postDataJSON();
       reportLastSave = payload;
@@ -1381,15 +1597,19 @@ try {
         generated_blocks: Object.fromEntries(payload.blocks.filter((block) => block.kind.startsWith("GENERATED") || block.kind === "SCENARIO_EXHIBIT").map((block) => [block.block_id, { status: "READY", outputs: { BASE: { FY2027: { total_leverage: 4.2 } } } }])),
       });
       workspace.current = saved; workspace.history.push(saved);
+      if (workspace.opinion.head) workspace.opinion = { ...workspace.opinion, current: false, reasons: ["DRAFT_REVISION_CHANGED"] };
       return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(workspace) });
     }
     if (action === "freeze") {
       await waitForHeldReportLifecycle("freeze");
+      const payload = route.request().postDataJSON();
+      if (!workspace.opinion.head || !workspace.opinion.current || workspace.opinion.head.draft_digest !== payload.draft_digest) return route.fulfill({ status: 409, contentType: "application/json", body: JSON.stringify({ detail: { code: workspace.opinion.head ? "OPINION_SIGNOFF_STALE" : "OPINION_SIGNOFF_REQUIRED" } }) });
+      const signedOpinion = workspace.opinion.head;
       frozenSequence += 1;
       const previewDigest = String(frozenSequence + 4).repeat(64);
       const inputFingerprint = "e".repeat(64);
       const frozen = {
-        id: `frozen_report_${frozenSequence}`, case_id: caseRecord.id, pathway, draft_version: workspace.current.version, status: "FROZEN", frozen_by: "analyst", frozen_at: "2026-08-26T10:45:00Z", approved_by: null, approved_at: null, approval_comment: null, superseded_by_id: null, change_request: null,
+        id: `frozen_report_${frozenSequence}`, case_id: caseRecord.id, pathway, draft_version: workspace.current.version, status: "FROZEN", frozen_by: reportSubject, frozen_at: "2026-08-26T10:45:00Z", approved_by: null, approved_at: null, approval_comment: null, superseded_by_id: null, change_request: null, signed_by: signedOpinion.signed_by, opinion_id: signedOpinion.opinion_id,
         digest: "d".repeat(64), preview_digest: previewDigest, input_fingerprint: inputFingerprint, authority_identity: {}, model_identity: reportSelection, template_identity: {}, render_identity: {},
         payload: {
           schema_version: "caos.frozen-deliverable.v1", case_id: caseRecord.id, pathway,
@@ -1409,12 +1629,18 @@ try {
           },
           content: workspace.current.content,
           evidence: [{ source_id: source.id, sha256: source.sha256, block_ids: [source.blocks[0].block_id], withdrawn: false }],
-          methodology: { build_id: "deploy-v-workbench" }, renderer: { version: "caos.deliverable-renderer.v2", contract_digest: "3".repeat(64) }, input_fingerprint: inputFingerprint, preview_digest: previewDigest,
+          methodology: { build_id: "deploy-v-workbench" }, renderer: { version: "caos.deliverable-renderer.v3", contract_digest: "3".repeat(64) }, input_fingerprint: inputFingerprint, preview_digest: previewDigest,
+          opinion: { opinion_id: signedOpinion.opinion_id, opinion_digest: signedOpinion.opinion_digest, signed_by: signedOpinion.signed_by, signed_at: signedOpinion.signed_at, opinion: signedOpinion.opinion, limitations: signedOpinion.limitations, material_overrides: signedOpinion.material_overrides, rationale: signedOpinion.rationale, binding: {}, supersedes_opinion_id: signedOpinion.supersedes_opinion_id },
+          publication: reportPublication(pathway, workspace, `frozen_report_${frozenSequence}`, signedOpinion),
         },
         exports: Object.fromEntries(["md", "pdf", "xlsx"].map((format) => [format, { deliverable_id: `frozen_report_${frozenSequence}`, format, vault_key: `vault/${format}`, sha256: format.repeat(64).slice(0, 64), size: 512, renderer_identity: {}, created_at: "2026-08-26T10:45:00Z" }])),
       };
+      // The freeze is a worker job: the response is the queued job, and the
+      // frozen record is what the workspace serves once the job is PUBLISHED.
       workspace.frozen_history.push(frozen);
-      return route.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify(frozen) });
+      const job = { job_id: `frz_${frozenSequence}`, case_id: caseRecord.id, pathway, status: "QUEUED", draft_version: frozen.draft_version, draft_digest: frozen.digest, deliverable_id: frozen.id, error: null, requested_by: reportSubject, requested_at: "2026-08-26T10:45:00Z", completed_at: null };
+      reportFreezeJobs.set(job.job_id, job);
+      return route.fulfill({ status: 202, contentType: "application/json", body: JSON.stringify(job) });
     }
   });
   await page.route((url) => url.pathname === `/api/cases/${caseRecord.id}/models/assumption-registry`, (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ version: registryVersion, digest: registryDigest, build_id: modelBuildId, definitions: [{ assumption_id: "operating.consolidated_revenue_growth", label: "Revenue growth", periods: ["FY2025", "FY2026", "FY2027"] }], defaults: [{ assumption_id: "operating.consolidated_revenue_growth", case: "BASE", period_id: "FY2027", status: "READY", value: 0.03, unit: "PERCENT" }] }) }));
@@ -1609,6 +1835,22 @@ try {
   assert.equal(await reportCaseSelect.evaluate((element) => document.activeElement === element), true, "canceling Report Studio case discard did not return focus to the selector");
   await page.getByText(/Saved v7/).waitFor({ timeout: 5000 });
 
+  // Task 10: the analyst signs the opinion on the exact saved revision before freeze.
+  const freezeButton = page.getByRole("button", { name: /Freeze saved v7/ });
+  assert.equal(await freezeButton.isDisabled(), true, "freeze was enabled without a current opinion sign-off");
+  const signOpinion = async (version) => {
+    await page.getByLabel("Opinion", { exact: true }).fill("Hold: coverage stays adequate through the forecast horizon.");
+    await page.getByLabel("Limitations", { exact: true }).fill("Covenant definitions were not disclosed in the supplied pack.");
+    await page.getByLabel(/Material overrides/).fill("None");
+    await page.getByLabel("Rationale", { exact: true }).fill("Leverage and liquidity conclusions rest on the cited interim filing.");
+    await page.getByRole("button", { name: new RegExp(`Sign opinion on saved v${version}`) }).click();
+    await page.getByText(new RegExp(`Opinion signed on saved Draft v${version}`)).waitFor();
+  };
+  await signOpinion(7);
+  assert.ok(await page.locator("[data-opinion-head]").textContent(), "the signed opinion is not shown in the freeze panel");
+  await freezeButton.waitFor();
+  assert.equal(await freezeButton.isDisabled(), false, "freeze stayed blocked after the sign-off");
+
   heldReportLifecycle = "freeze";
   await page.getByRole("button", { name: /Freeze saved v7/ }).click();
   const heldFreezeValue = await thesisEditor.inputValue();
@@ -1634,6 +1876,8 @@ try {
   await page.getByRole("button", { name: /FROZEN · Draft v7/ }).first().click();
   await page.getByText(/Immutable FROZEN review/).waitFor();
   const firstFrozen = reportWorkspaces.get("FULL_CREDIT").frozen_history.at(-1);
+  assert.equal(firstFrozen.signed_by, "analyst", "the frozen record does not bind the opinion signer");
+  assert.equal(firstFrozen.payload.publication.masthead.approval_state, "PENDING APPROVAL");
   assert.equal(firstFrozen.payload.draft.version, 7, "freeze did not bind the exact saved version");
   assert.equal(firstFrozen.payload.model.revision_id, signedReportRevision.id, "freeze changed the signed model authority");
   assert.deepEqual(firstFrozen.payload.content.document_sections, reportWorkspaces.get("FULL_CREDIT").current.content.document_sections, "freeze changed the canonical document");
@@ -1650,9 +1894,22 @@ try {
   assert.equal(await frozenPaper.getByText("123,456.78", { exact: true }).count(), 0, "Frozen preview bypassed canonical document sections");
   const modelAuthorityLabel = frozenPaper.getByText("Locked · model", { exact: true }).first();
   assert.equal(await modelAuthorityLabel.getAttribute("title"), `Authority ${signedReportRevision.id}`);
-  assert.equal(firstFrozen.payload.renderer.version, "caos.deliverable-renderer.v2");
+  assert.equal(firstFrozen.payload.renderer.version, "caos.deliverable-renderer.v3");
+  // The frozen paper is the publication document: opinion first, control sheet last, watermark on every page.
+  await frozenPaper.getByRole("heading", { name: "Analyst Opinion" }).waitFor();
+  await frozenPaper.getByRole("heading", { name: "Source Document Register" }).waitFor();
+  assert.ok((await frozenPaper.locator(".rd-wm").count()) >= 2, "publication pages carry no watermark");
+  assert.equal(await frozenPaper.getByText("Hold: coverage stays adequate through the forecast horizon.", { exact: true }).count(), 1);
 
+  // Separation of duties: the signer (and freeze actor) holds approver standing but never sees File.
   reportRole = "APPROVER";
+  reportSubject = "analyst";
+  await page.goto(`${baseURL}/report-studio/?case=${caseRecord.id}`, { waitUntil: "networkidle" });
+  await page.getByRole("button", { name: /FROZEN · Draft v7/ }).first().click();
+  await page.locator("[data-separation-of-duties]").waitFor();
+  assert.equal(await page.getByRole("button", { name: "File exact Frozen version" }).count(), 0, "the opinion signer was offered File");
+
+  reportSubject = "approver";
   await page.goto(`${baseURL}/report-studio/?case=${caseRecord.id}`, { waitUntil: "networkidle" });
   await page.getByRole("button", { name: /FROZEN · Draft v7/ }).first().click();
   await page.getByLabel("Required comment to request changes").fill("Clarify the downside bridge.");
@@ -1669,7 +1926,16 @@ try {
   await page.getByText("Saved v8", { exact: true }).waitFor();
   assert.equal(reportWorkspaces.get("FULL_CREDIT").frozen_history[0].status, "CHANGES_REQUESTED");
 
+  // The new revision stales the v7 sign-off; the approver-subject signs v8 here as the
+  // authoring analyst would, so the freeze actor and signer are "approver" and the
+  // independent filer below must be a third subject.
+  assert.equal(await page.getByRole("button", { name: /Freeze saved v8/ }).isDisabled(), true, "a stale sign-off left freeze enabled");
+  await signOpinion(8);
   await page.getByRole("button", { name: /Freeze saved v8/ }).click();
+  await page.getByText(/Immutable FROZEN review/).waitFor();
+  reportSubject = "committee-approver";
+  await page.goto(`${baseURL}/report-studio/?case=${caseRecord.id}`, { waitUntil: "networkidle" });
+  await page.getByRole("button", { name: /FROZEN · Draft v8/ }).first().click();
   await page.getByText(/Immutable FROZEN review/).waitFor();
   heldReportLifecycle = "file";
   await page.getByRole("button", { name: "File exact Frozen version" }).click();
@@ -1683,6 +1949,9 @@ try {
   await page.getByRole("combobox", { name: "Pathway template" }).selectOption("FULL_CREDIT");
   await page.getByRole("button", { name: /FILED · Draft v8/ }).first().click();
   await page.getByText(/Immutable FILED review/).waitFor();
+  await page.locator("[data-filing-receipt]").waitFor();
+  assert.match(await page.locator("[data-filing-receipt]").textContent(), /rcpt_frozen_report_2/, "the detached filing receipt is not shown for the filed record");
+  assert.equal(reportReceipts.get("frozen_report_2").approved_by, "committee-approver");
   let governedDownloadCount = 0;
   await page.route(`**/api/cases/${caseRecord.id}/deliverables/by-id/*/export/*`, (route) => {
     governedDownloadCount += 1;
@@ -1856,6 +2125,7 @@ try {
   assert.equal(await readerPage.evaluate(() => document.querySelector("main")?.textContent?.includes("Reader access")), true,
     "Cases did not say why the write panels are absent");
   await absent(readerPage, "Create case");
+  await absent(readerPage, "Analyze documents");
   assert.ok(await readerPage.getByRole("row").count() > 1, "READER lost read access to the case register");
 
   await readerPage.goto(`${baseURL}/sources/?case=${caseRecord.id}`, { waitUntil: "networkidle" });
@@ -1876,6 +2146,7 @@ try {
   await readerPage.goto(`${baseURL}/cases/?case=${caseRecord.id}`, { waitUntil: "networkidle" });
   await readerPage.waitForTimeout(500);
   await absent(readerPage, "Create case");
+  await absent(readerPage, "Analyze documents");
   await absent(readerPage, "Upload and version");
   assert.equal(await readerPage.locator("main input[type=file]").count(), 0,
     "an unresolved identity left a write control on the page");

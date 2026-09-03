@@ -27,6 +27,7 @@
   --caos-paper-soft: #6a6a72;
   --caos-paper-success: #166534;
   --caos-paper-warning: #a24310;
+  --caos-paper-watermark: #be5410;
   --caos-paper-critical: #b91c1c;
   --space-xs: 4px;
   --space-sm: 8px;
@@ -335,10 +336,22 @@ a.dag-node:hover strong, a.dag-node:focus-visible strong { text-decoration: unde
 .portfolio-contract-notice p { margin: var(--space-xs) 0 0; }
 .flag { color: var(--caos-warning); font: 700 10px/1 var(--font-mono), ui-monospace, monospace; letter-spacing: .08em; }
 .selected-row { background: var(--caos-elevated); box-shadow: inset 2px 0 0 var(--caos-accent); }
-.cases-register { grid-column: 1 / span 9; grid-row: 1 / span 2; }
-.cases-create { grid-column: 10 / span 3; grid-row: 1; }
-.cases-fit { grid-column: 10 / span 3; grid-row: 2; }
-.cases-intake { grid-column: 1 / -1; }
+.cases-intake { grid-column: 1 / -1; grid-row: 1; }
+.cases-register { grid-column: 1 / span 9; grid-row: 2 / span 2; }
+.cases-create { grid-column: 10 / span 3; grid-row: 2; }
+.cases-fit { grid-column: 10 / span 3; grid-row: 3; }
+.intake-form { display: grid; gap: var(--space-md); }
+.dropzone { display: grid; gap: var(--space-sm); border: 1px dashed var(--caos-border-strong); border-radius: var(--radius-lg); padding: var(--space-lg); background: var(--caos-bg); transition: border-color 160ms var(--ease-out), background-color 160ms var(--ease-out); }
+.dropzone.is-dragging, .dropzone:focus-within { border-color: var(--caos-accent); background: color-mix(in srgb, var(--caos-accent) 6%, var(--caos-bg)); }
+.dropzone label { display: grid; gap: var(--space-xs); cursor: pointer; }
+.dropzone label span { font-size: 12px; }
+.dropzone input[type="file"] { color: var(--caos-muted); max-width: 100%; }
+.dropzone p { margin: 0; }
+.intake-evidence h3 { margin: 0; }
+.intake-bind { margin: 0; }
+.intake-bind label { display: flex; align-items: center; gap: var(--space-sm); text-transform: none; letter-spacing: normal; font-weight: 400; color: var(--caos-text); }
+.intake-facts { grid-template-columns: max-content minmax(0, 1fr); }
+.intake-manifest td, .intake-manifest th { white-space: normal; }
 .command-changes { grid-column: 1 / span 8; }
 .command-lens { grid-column: 9 / span 4; }
 .command-boundary { grid-column: 1 / -1; }
@@ -499,6 +512,19 @@ a.dag-node:hover strong, a.dag-node:focus-visible strong { text-decoration: unde
 .evidence-source-block p { margin: 0; max-height: 5.5em; overflow: hidden; line-height: 1.4; }
 .scenario-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-sm); }
 .approval-panel { display: grid; gap: var(--space-md); }
+.opinion-form { display: grid; gap: var(--space-sm); }
+.opinion-form textarea { min-height: 56px; }
+.opinion-record { display: grid; gap: 3px; border: 1px solid var(--caos-border); border-radius: var(--radius-lg); padding: var(--space-sm) var(--space-md); }
+.opinion-record p { margin: 0; }
+.freeze-job { display: flex; align-items: center; gap: var(--space-sm); }
+.rd-band { margin: 12px 0 2px; color: var(--caos-paper-meta); font: 700 8.5px/1.4 var(--font-mono), ui-monospace, monospace; letter-spacing: .12em; text-transform: uppercase; }
+.rd-wm { pointer-events: none; position: absolute; inset: 0; z-index: 1; display: grid; place-items: center; overflow: hidden; }
+.rd-wm span { transform: rotate(-16deg); color: color-mix(in srgb, var(--caos-paper-watermark) 16%, transparent); font: 700 26px/1 var(--font-mono), ui-monospace, monospace; letter-spacing: .32em; white-space: nowrap; }
+.rd-page-container { position: relative; }
+.rd-masthead-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 4px 14px; margin: 6px 0 0; font: 500 8.5px/1.45 var(--font-mono), ui-monospace, monospace; color: var(--caos-paper-meta); }
+.rd-masthead-facts div { display: grid; gap: 1px; }
+.rd-masthead-facts dt { font-weight: 700; }
+.rd-masthead-facts dd { margin: 0; overflow-wrap: anywhere; color: var(--caos-paper-ink); }
 .deliverable-document { color: var(--caos-ink); padding: 40px 46px 26px; font-family: var(--font-sans), ui-sans-serif, system-ui, sans-serif; }
 .deliverable-document :focus-visible { outline-color: var(--caos-paper-link); }
 .rd-page-container + .rd-page-container { border-top: 1px dashed var(--caos-paper-rule); margin-top: 26px; padding-top: 30px; }

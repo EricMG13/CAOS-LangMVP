@@ -178,7 +178,10 @@ class ConfirmDraftRequest(StrictModel):
     confirmation: Literal["CONFIRM_DRAFT"]
 
 
-ResearchBriefItem = Annotated[str, Field(min_length=1, max_length=200)]
+# The brief reaches pinned run state (the plan digest binds its digest), so
+# every string is BoundaryText, never a bare str.
+ResearchBriefItem = Annotated[BoundaryText, Field(min_length=1, max_length=200)]
+ResearchBriefText = Annotated[BoundaryText, Field(min_length=1, max_length=400)]
 # Item-level caps for the other wire string lists. A `max_length` on the list
 # bounds the count only; without these each element is unbounded.
 FocusQuestion = Annotated[BoundaryText, Field(min_length=1, max_length=400)]
@@ -187,10 +190,10 @@ IdentifierItem = Annotated[str, Field(min_length=1, max_length=120)]
 
 
 class ResearchBrief(StrictModel):
-    research_question: str = Field(min_length=1, max_length=400)
-    decision_context: str = Field(min_length=1, max_length=400)
+    research_question: ResearchBriefText
+    decision_context: ResearchBriefText
     as_of_date: date
-    time_horizon: str = Field(min_length=1, max_length=200)
+    time_horizon: Annotated[BoundaryText, Field(min_length=1, max_length=200)]
     must_answer: list[ResearchBriefItem] = Field(default_factory=list, max_length=10)
     exclusions: list[ResearchBriefItem] = Field(default_factory=list, max_length=10)
 
@@ -629,6 +632,21 @@ class FreezeDeliverableRequest(StrictModel):
 class FileDeliverableRequest(StrictModel):
     preview_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     input_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+
+class SignOpinionRequest(StrictModel):
+    """Analyst opinion sign-off (Task 10, DECISIONS §14.19): binds the exact
+    draft revision; every statement is required and explicit ("None" is written,
+    never left blank); the head CAS is the caller's expected current opinion."""
+
+    draft_id: str = Field(min_length=1, max_length=120)
+    draft_version: int = Field(ge=1)
+    draft_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    expected_head_opinion_id: str | None = Field(default=None, max_length=120)
+    opinion: NonBlankBoundaryText = Field(min_length=1, max_length=4000)
+    limitations: NonBlankBoundaryText = Field(min_length=1, max_length=4000)
+    material_overrides: NonBlankBoundaryText = Field(min_length=1, max_length=4000)
+    rationale: NonBlankBoundaryText = Field(min_length=1, max_length=8000)
 
 
 class RequestDeliverableChangesRequest(FileDeliverableRequest):

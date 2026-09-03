@@ -156,6 +156,24 @@ rv_universes = sa.Table(
     sa.Column("created_at", sa.String, nullable=False),
 )
 
+# Document-first intake (Task 8): one row per submitted pack — the manifest,
+# the host route decision, the suggestions, the run it started and any typed
+# clarification — written in the same transaction as the sources it admitted,
+# so refresh and restart read exactly what the analyst was shown.
+case_intakes = sa.Table(
+    "case_intakes", metadata,
+    sa.Column("id", sa.String, primary_key=True),
+    sa.Column("case_id", sa.String, sa.ForeignKey("cases.id"), nullable=False),
+    sa.Column("intake_key", sa.String, nullable=False),
+    sa.Column("status", sa.String, nullable=False),
+    sa.Column("record", sa.JSON, nullable=False),
+    sa.Column("run_id", sa.String),
+    sa.Column("refusal", sa.JSON),
+    sa.Column("created_by", sa.String, nullable=False),
+    sa.Column("created_at", sa.String, nullable=False),
+    sa.Column("updated_at", sa.String, nullable=False),
+)
+
 audit_events = sa.Table(
     "audit_events", metadata,
     sa.Column("seq", sa.Integer, primary_key=True, autoincrement=True),
@@ -164,7 +182,50 @@ audit_events = sa.Table(
     sa.Column("actor", sa.String, nullable=False),
     sa.Column("at", sa.String, nullable=False),
     sa.Column("data", sa.JSON, nullable=False),
+    # Integrity chain (Task 10, DECISIONS §14.19): per-case chains keyed by
+    # case id (or `__global__`), contiguous `chain_seq`, each row linked to its
+    # predecessor's digest. Nullable only so a legacy table can be migrated;
+    # `_ensure_audit_schema` backfills every row before the triggers go on.
+    sa.Column("chain_key", sa.String),
+    sa.Column("chain_seq", sa.Integer),
+    sa.Column("prev_digest", sa.String),
+    sa.Column("digest", sa.String),
+    sa.Index("uq_audit_chain_seq", "chain_key", "chain_seq", unique=True),
 )
+
+# One row per chain plus the `__lock__` row every audit insert locks first, so
+# chain heads are read under the same serialisation that assigns `chain_seq`.
+audit_chain_heads = sa.Table(
+    "audit_chain_heads", metadata,
+    sa.Column("chain_key", sa.String, primary_key=True),
+    sa.Column("chain_seq", sa.Integer, nullable=False),
+    sa.Column("digest", sa.String, nullable=False),
+)
+_AUDIT_LOCK_KEY = "__lock__"
+_AUDIT_CHAIN_COLUMNS = ("chain_key", "chain_seq", "prev_digest", "digest")
+SQLITE_AUDIT_UPDATE_DDL = (
+    "CREATE TRIGGER audit_events_append_only BEFORE UPDATE ON audit_events BEGIN "
+    "SELECT RAISE(ABORT, 'APPEND_ONLY: audit events are immutable'); END"
+)
+SQLITE_AUDIT_DELETE_DDL = (
+    "CREATE TRIGGER audit_events_no_delete BEFORE DELETE ON audit_events BEGIN "
+    "SELECT RAISE(ABORT, 'APPEND_ONLY: audit events cannot be deleted'); END"
+)
+POSTGRES_AUDIT_FUNCTION_DDL = """
+CREATE OR REPLACE FUNCTION caos_audit_event_immutable() RETURNS trigger AS $$
+BEGIN
+    IF TG_OP = 'DELETE' THEN
+        RAISE EXCEPTION 'APPEND_ONLY: audit events cannot be deleted';
+    END IF;
+    RAISE EXCEPTION 'APPEND_ONLY: audit events are immutable';
+END;
+$$ LANGUAGE plpgsql
+""".strip()
+POSTGRES_AUDIT_TRIGGER_DDL = """
+CREATE TRIGGER audit_events_append_only
+BEFORE UPDATE OR DELETE ON audit_events
+FOR EACH ROW EXECUTE FUNCTION caos_audit_event_immutable()
+""".strip()
 
 PUBLIC_SOURCE_HIDDEN = {"vault_path", "withdrawn_at"}
 _INSTANCE_LOCK_NAMESPACE = int.from_bytes(b"CAOS", "big")
@@ -183,6 +244,113 @@ def _terminate_process(role: str) -> None:
         os._exit(1)
 
 
+def _chain_key_for(details: dict[str, Any]) -> str:
+    from ..audit.chain import GLOBAL_CHAIN
+
+    case_id = details.get("case_id")
+    return case_id if isinstance(case_id, str) and case_id else GLOBAL_CHAIN
+
+
+def _json_round_trip(value: Any) -> Any:
+    """The digest is taken over what the column will read back: sorted keys,
+    tuples as lists, no Python-only scalars."""
+    return json.loads(json.dumps(value, sort_keys=True))
+
+
+def lock_case(conn: sa.Connection, case_id: str) -> None:
+    """Serialise this transaction with every other head-moving writer of one
+    case: model sign-off, opinion sign-off, draft append, freeze request and
+    frozen publication all read a head and insert after it, and on two
+    connections both readers see the same head. A transaction-scoped PostgreSQL
+    advisory lock (released at commit or rollback, never held across calls)
+    makes the second reader wait for the first commit and re-read. The thread
+    locks in ModelStore and DeliverableStore stay as the SQLite mechanism,
+    where a single writer already serialises and this is a no-op. Proven by
+    caos/tests/test_postgres_races.py (Task 12a)."""
+    if conn.dialect.name == "postgresql":
+        conn.execute(sa.text("SELECT pg_advisory_xact_lock(hashtext(:key))"), {"key": case_id})
+
+
+def _backfill_audit_chain(conn: sa.Connection) -> None:
+    """Chain every unchained row once, in `seq` order, continuing each chain
+    from its recorded head. Runs with the append-only triggers dropped."""
+    from ..audit.chain import GENESIS, event_digest
+
+    heads = {
+        row["chain_key"]: dict(row)
+        for row in conn.execute(sa.select(audit_chain_heads)).mappings().all()
+    }
+    pending = conn.execute(
+        sa.select(audit_events).where(audit_events.c.chain_key.is_(None)).order_by(audit_events.c.seq)
+    ).mappings().all()
+    for stored in pending:
+        row = dict(stored)
+        data = row["data"] if isinstance(row["data"], dict) else json.loads(row["data"])
+        chain_key = _chain_key_for(data)
+        head = heads.get(chain_key)
+        chained = {
+            "chain_key": chain_key,
+            "chain_seq": (head["chain_seq"] if head else 0) + 1,
+            "id": row["id"], "action": row["action"], "actor": row["actor"], "at": row["at"],
+            "data": _json_round_trip(data),
+            "prev_digest": head["digest"] if head else GENESIS,
+        }
+        chained["digest"] = event_digest(chained)
+        conn.execute(sa.update(audit_events).where(audit_events.c.seq == row["seq"]).values(
+            chain_key=chain_key, chain_seq=chained["chain_seq"],
+            prev_digest=chained["prev_digest"], digest=chained["digest"],
+        ))
+        heads[chain_key] = {"chain_key": chain_key, "chain_seq": chained["chain_seq"], "digest": chained["digest"]}
+        if head is None:
+            conn.execute(audit_chain_heads.insert().values(**heads[chain_key]))
+        else:
+            conn.execute(sa.update(audit_chain_heads).where(audit_chain_heads.c.chain_key == chain_key)
+                         .values(chain_seq=chained["chain_seq"], digest=chained["digest"]))
+    if _AUDIT_LOCK_KEY not in heads:
+        conn.execute(audit_chain_heads.insert().values(chain_key=_AUDIT_LOCK_KEY, chain_seq=0, digest=GENESIS))
+
+
+def _ensure_audit_schema(engine: sa.Engine) -> None:
+    """Migrate a pre-chain `audit_events` table in place, then arm the
+    append-only triggers. Idempotent; every real store passes through here."""
+    dialect = engine.dialect.name
+    if dialect == "postgresql":
+        with engine.begin() as conn:
+            conn.exec_driver_sql("DROP TRIGGER IF EXISTS audit_events_append_only ON audit_events")
+            for column, kind in (("chain_key", "VARCHAR"), ("chain_seq", "INTEGER"),
+                                 ("prev_digest", "VARCHAR"), ("digest", "VARCHAR")):
+                conn.exec_driver_sql(f"ALTER TABLE audit_events ADD COLUMN IF NOT EXISTS {column} {kind}")
+            conn.exec_driver_sql(
+                "CREATE UNIQUE INDEX IF NOT EXISTS uq_audit_chain_seq ON audit_events (chain_key, chain_seq)"
+            )
+            _backfill_audit_chain(conn)
+            conn.exec_driver_sql(POSTGRES_AUDIT_FUNCTION_DDL)
+            conn.exec_driver_sql(POSTGRES_AUDIT_TRIGGER_DDL)
+        return
+    if dialect != "sqlite":
+        raise RuntimeError(f"unsupported domain-store dialect: {dialect}")
+    with engine.connect() as conn:
+        conn.exec_driver_sql("BEGIN IMMEDIATE")
+        try:
+            conn.exec_driver_sql("DROP TRIGGER IF EXISTS audit_events_append_only")
+            conn.exec_driver_sql("DROP TRIGGER IF EXISTS audit_events_no_delete")
+            columns = {row[1] for row in conn.exec_driver_sql('PRAGMA table_info("audit_events")')}
+            for column, kind in (("chain_key", "VARCHAR"), ("chain_seq", "INTEGER"),
+                                 ("prev_digest", "VARCHAR"), ("digest", "VARCHAR")):
+                if column not in columns:
+                    conn.exec_driver_sql(f"ALTER TABLE audit_events ADD COLUMN {column} {kind}")
+            conn.exec_driver_sql(
+                "CREATE UNIQUE INDEX IF NOT EXISTS uq_audit_chain_seq ON audit_events (chain_key, chain_seq)"
+            )
+            _backfill_audit_chain(conn)
+            conn.exec_driver_sql(SQLITE_AUDIT_UPDATE_DDL)
+            conn.exec_driver_sql(SQLITE_AUDIT_DELETE_DDL)
+            conn.commit()
+        except BaseException:
+            conn.rollback()
+            raise
+
+
 def _public_source(row: dict[str, Any]) -> dict[str, Any]:
     return {key: value for key, value in row.items() if key not in PUBLIC_SOURCE_HIDDEN}
 
@@ -198,6 +366,18 @@ class DomainStore:
         engine = sa.create_engine(url, json_serializer=lambda value: json.dumps(value, sort_keys=True))
         try:
             metadata.create_all(engine)
+            _ensure_audit_schema(engine)
+            # The whole schema at startup, not on first use: a deployment that
+            # had never queued a build or saved a draft used to lack the model
+            # and deliverable tables, so its (good) backups failed the restore
+            # drill's table check (RESTORE-DRILL-2026-08-30 F1), and a DDL
+            # defect in those stores surfaced as a 500 on the first request
+            # instead of a refusal to boot. Run tables arrive with the Engine.
+            from .deliverables import DeliverableStore
+            from .models import ModelStore
+
+            ModelStore(engine)
+            DeliverableStore(engine)
         except Exception:
             engine.dispose()
             raise
@@ -273,9 +453,48 @@ class DomainStore:
     # -- audit ------------------------------------------------------------
 
     def _audit(self, conn: sa.Connection, action: str, actor: str, **details: Any) -> None:
-        conn.execute(audit_events.insert().values(
-            id=new_id("aud"), action=action, actor=actor, at=now_iso(), data=details,
-        ))
+        """Append one chained audit row inside the caller's transaction.
+
+        The `__lock__` head row is locked first — `SELECT … FOR UPDATE` on
+        PostgreSQL, a no-op `UPDATE` on SQLite that takes the writer lock — so
+        the chain head is read after every concurrent writer has committed and
+        `chain_seq` is assigned without gaps or forks. `uq_audit_chain_seq` is
+        the database's own second opinion.
+        """
+        from ..audit.chain import GENESIS, event_digest
+
+        lock = audit_chain_heads.c.chain_key == _AUDIT_LOCK_KEY
+        if conn.dialect.name == "postgresql":
+            conn.execute(sa.select(audit_chain_heads).where(lock).with_for_update())
+        else:
+            conn.execute(sa.update(audit_chain_heads).where(lock).values(chain_seq=0))
+        data = _json_round_trip(details)
+        chain_key = _chain_key_for(data)
+        head = conn.execute(
+            sa.select(audit_chain_heads).where(audit_chain_heads.c.chain_key == chain_key)
+        ).mappings().first()
+        row = {
+            "chain_key": chain_key,
+            "chain_seq": (head["chain_seq"] if head else 0) + 1,
+            "id": new_id("aud"), "action": action, "actor": actor, "at": now_iso(),
+            "data": data,
+            "prev_digest": head["digest"] if head else GENESIS,
+        }
+        row["digest"] = event_digest(row)
+        conn.execute(audit_events.insert().values(**row))
+        if head is None:
+            conn.execute(audit_chain_heads.insert().values(
+                chain_key=chain_key, chain_seq=row["chain_seq"], digest=row["digest"],
+            ))
+        else:
+            moved = conn.execute(
+                sa.update(audit_chain_heads)
+                .where(audit_chain_heads.c.chain_key == chain_key,
+                       audit_chain_heads.c.chain_seq == head["chain_seq"])
+                .values(chain_seq=row["chain_seq"], digest=row["digest"])
+            ).rowcount
+            if moved != 1:  # pragma: no cover — the lock makes this unreachable
+                raise IntegrityError("audit chain head moved under the lock", None, None)
 
     def audit_event(self, action: str, actor: str, **details: Any) -> None:
         with self.engine.begin() as conn:
@@ -287,6 +506,57 @@ class DomainStore:
                 sa.select(audit_events).order_by(audit_events.c.seq.desc()).limit(limit)
             ).mappings().all()
         return [{"id": r["id"], "action": r["action"], "actor": r["actor"], "at": r["at"], **r["data"]} for r in rows]
+
+    def audit_chain(self, chain_key: str | None = None) -> list[dict[str, Any]]:
+        """Chained rows ascending by (chain_key, chain_seq); one chain when keyed."""
+        query = sa.select(audit_events).order_by(audit_events.c.chain_key, audit_events.c.chain_seq)
+        if chain_key is not None:
+            query = query.where(audit_events.c.chain_key == chain_key)
+        with self.engine.connect() as conn:
+            rows = conn.execute(query).mappings().all()
+        return [
+            {"chain_key": r["chain_key"], "chain_seq": r["chain_seq"], "id": r["id"], "action": r["action"],
+             "actor": r["actor"], "at": r["at"], "data": r["data"], "prev_digest": r["prev_digest"],
+             "digest": r["digest"]}
+            for r in rows
+        ]
+
+    def audit_chain_head(self, chain_key: str) -> dict[str, Any] | None:
+        with self.engine.connect() as conn:
+            row = conn.execute(
+                sa.select(audit_chain_heads).where(audit_chain_heads.c.chain_key == chain_key)
+            ).mappings().first()
+        return dict(row) if row else None
+
+    def verify_audit_chain(self, chain_key: str | None = None) -> dict[str, list[dict[str, Any]]]:
+        """Findings per chain key; an empty mapping means every chain is intact."""
+        from ..audit.chain import verify_chain
+
+        rows = self.audit_chain(chain_key)
+        chains: dict[str, list[dict[str, Any]]] = {}
+        for row in rows:
+            chains.setdefault(row["chain_key"], []).append(row)
+        keys = [chain_key] if chain_key is not None else sorted(
+            set(chains) | {head["chain_key"] for head in self._audit_heads() if head["chain_key"] != _AUDIT_LOCK_KEY}
+        )
+        findings = {
+            key: verify_chain(chains.get(key, []), self.audit_chain_head(key))
+            for key in keys
+        }
+        return {key: value for key, value in findings.items() if value}
+
+    def _audit_heads(self) -> list[dict[str, Any]]:
+        with self.engine.connect() as conn:
+            return [dict(row) for row in conn.execute(sa.select(audit_chain_heads)).mappings().all()]
+
+    def disarm_audit_triggers_for_tests(self) -> None:
+        """Simulate a privileged tamperer dropping the append-only triggers."""
+        with self.engine.begin() as conn:
+            if conn.dialect.name == "postgresql":
+                conn.exec_driver_sql("DROP TRIGGER IF EXISTS audit_events_append_only ON audit_events")
+            else:
+                conn.exec_driver_sql("DROP TRIGGER IF EXISTS audit_events_append_only")
+                conn.exec_driver_sql("DROP TRIGGER IF EXISTS audit_events_no_delete")
 
     # -- cases ------------------------------------------------------------
 
@@ -328,6 +598,20 @@ class DomainStore:
                 )
             ).scalar()
         return role is not None and (roles is None or role in roles)
+
+    def require_standing(self, conn: sa.Connection, case_id: str, actor: str, roles: set[str]) -> None:
+        """Commit-time authorization inside the caller's transaction (SIM-020):
+        the membership row is read under FOR SHARE, so a concurrent revocation
+        waits for this commit or is already visible, and stale authority
+        established at the route never crosses a governed commit. Raises the
+        typed refusal the route maps to 403."""
+        role = conn.execute(
+            sa.select(case_members.c.role)
+            .where(case_members.c.case_id == case_id, case_members.c.subject == actor)
+            .with_for_update(read=True)
+        ).scalar()
+        if role is None or role not in roles:
+            raise ValueError("CASE_STANDING_REVOKED: the actor's case standing changed before the write committed")
 
     def add_member(self, case_id: str, actor: str, member: str, role: str, actor_role: str | None = None) -> bool:
         with self.engine.begin() as conn:
@@ -429,13 +713,149 @@ class DomainStore:
             raise ValueError("source content already active") from exc
         return {**_public_source(saved), "source_set": source_set}
 
+    # -- document-first intake (Task 8) ----------------------------------------
+
+    def admit_intake(
+        self,
+        *,
+        actor: str,
+        case_id: str | None,
+        new_case: dict[str, Any] | None,
+        prepared: list[dict[str, Any]],
+        intake_key: str,
+        status: str,
+        record: dict[str, Any],
+        refusal: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Admit a whole pack in ONE transaction: the case when it is new (with
+        its creator's membership and `case.created`), every source row, one
+        source-set version carrying all of them, one `source.ingested` audit row
+        per source, the intake row, and `intake.admitted`. Nothing here can be
+        half-done: a duplicate or a failing insert rolls the whole pack back."""
+        intake_id = new_id("intk")
+        now = now_iso()
+        try:
+            with _AUTHORITY_MUTATION_LOCK, self.engine.begin() as conn:
+                if case_id is None:
+                    if new_case is None:
+                        raise ValueError("intake needs a case or a new case")
+                    case_id = new_id("case")
+                    conn.execute(cases.insert().values(
+                        id=case_id, name=new_case["name"], issuer=new_case["issuer"],
+                        sector=new_case["sector"], created_by=actor, created_at=now,
+                    ))
+                    conn.execute(case_members.insert().values(case_id=case_id, subject=actor, role="ANALYST"))
+                    self._audit(conn, "case.created", actor, case_id=case_id)
+                admitted_ids: list[str] = []
+                for source in prepared:
+                    saved = {
+                        **source, "id": source.get("id") or new_id("src"), "case_id": case_id,
+                        "created_by": actor, "created_at": now, "withdrawn": False,
+                    }
+                    source["id"] = saved["id"]
+                    duplicate = conn.execute(
+                        sa.select(sources.c.id).where(
+                            sources.c.case_id == case_id,
+                            sources.c.sha256 == saved["sha256"],
+                            sources.c.withdrawn.is_(False),
+                        )
+                    ).first()
+                    if duplicate:
+                        raise ValueError("source content already active")
+                    conn.execute(sources.insert().values(**{k: saved.get(k) for k in (
+                        "id", "case_id", "filename", "media_type", "bytes", "sha256",
+                        "vault_path", "blocks", "created_by", "created_at", "withdrawn", "source_kind",
+                    )}))
+                    admitted_ids.append(saved["id"])
+                    self._audit(conn, "source.ingested", actor, case_id=case_id, source_id=saved["id"], sha256=saved["sha256"])
+                if admitted_ids:
+                    self._next_source_set(conn, case_id, actor, add=admitted_ids, remove=set())
+                conn.execute(case_intakes.insert().values(
+                    id=intake_id, case_id=case_id, intake_key=intake_key, status=status,
+                    record=record, run_id=None, refusal=refusal, created_by=actor,
+                    created_at=now, updated_at=now,
+                ))
+                self._audit(conn, "intake.admitted", actor, case_id=case_id, intake_id=intake_id,
+                            source_count=len(admitted_ids))
+        except IntegrityError as exc:
+            raise ValueError("source content already active") from exc
+        return self.get_intake(intake_id)  # type: ignore[return-value]
+
+    def refuse_intake(self, actor: str, code: str, *, case_id: str | None) -> None:
+        """A refused pack persists nothing but its audit row; the case, if any,
+        is untouched."""
+        with self.engine.begin() as conn:
+            self._audit(conn, "intake.refused", actor, case_id=case_id, code=code)
+
+    def update_intake(self, intake_id: str, **changes: Any) -> dict[str, Any] | None:
+        allowed = {"status", "run_id", "refusal", "record"}
+        bad = set(changes) - allowed
+        if bad:
+            raise ValueError(f"unsupported intake update: {sorted(bad)}")
+        with self.engine.begin() as conn:
+            conn.execute(sa.update(case_intakes).where(case_intakes.c.id == intake_id)
+                         .values(**changes, updated_at=now_iso()))
+        return self.get_intake(intake_id)
+
+    def record_intake_run(self, intake_id: str, actor: str, *, run_id: str, pathway: str) -> dict[str, Any] | None:
+        with self.engine.begin() as conn:
+            case_id = conn.execute(sa.select(case_intakes.c.case_id).where(case_intakes.c.id == intake_id)).scalar()
+            conn.execute(sa.update(case_intakes).where(case_intakes.c.id == intake_id)
+                         .values(status="started", run_id=run_id, refusal=None, updated_at=now_iso()))
+            self._audit(conn, "intake.run_started", actor, case_id=case_id, intake_id=intake_id,
+                        run_id=run_id, pathway=pathway)
+        return self.get_intake(intake_id)
+
+    def get_intake(self, intake_id: str) -> dict[str, Any] | None:
+        with self.engine.connect() as conn:
+            row = conn.execute(sa.select(case_intakes).where(case_intakes.c.id == intake_id)).mappings().first()
+        return dict(row) if row else None
+
+    def latest_intake(self, case_id: str) -> dict[str, Any] | None:
+        with self.engine.connect() as conn:
+            row = conn.execute(
+                sa.select(case_intakes).where(case_intakes.c.case_id == case_id)
+                .order_by(case_intakes.c.created_at.desc(), case_intakes.c.id.desc()).limit(1)
+            ).mappings().first()
+        return dict(row) if row else None
+
+    def intakes_for_case(self, case_id: str) -> list[dict[str, Any]]:
+        """Every intake admitted into a case, oldest first: together their
+        manifests carry the host disposition of each source the case pinned,
+        which the model's lineage record reads (a later intake's row for the
+        same source supersedes an earlier one)."""
+        with self.engine.connect() as conn:
+            rows = conn.execute(
+                sa.select(case_intakes).where(case_intakes.c.case_id == case_id)
+                .order_by(case_intakes.c.created_at.asc(), case_intakes.c.id.asc())
+            ).mappings().all()
+        return [dict(row) for row in rows]
+
+    def find_intake_by_key(self, actor: str, intake_key: str) -> dict[str, Any] | None:
+        with self.engine.connect() as conn:
+            row = conn.execute(
+                sa.select(case_intakes).where(
+                    case_intakes.c.intake_key == intake_key, case_intakes.c.created_by == actor,
+                ).order_by(case_intakes.c.created_at.desc()).limit(1)
+            ).mappings().first()
+        return dict(row) if row else None
+
     def withdraw(self, case_id: str, source_id: str, actor: str) -> dict[str, Any] | None:
         with _AUTHORITY_MUTATION_LOCK, self.engine.begin() as conn:
             row = conn.execute(sa.select(sources).where(sources.c.id == source_id)).mappings().first()
             if row is None or row["case_id"] != case_id or row["withdrawn"]:
                 return None
             withdrawn_at = now_iso()
-            conn.execute(sa.update(sources).where(sources.c.id == source_id).values(withdrawn=True, withdrawn_at=withdrawn_at))
+            # Conditional on the flag it read: a duplicate withdrawal on a second
+            # connection re-evaluates against the committed row and matches
+            # nothing, so one withdrawal mints one set version and one audit
+            # event; the loser is told the source is no longer active.
+            if not conn.execute(
+                sa.update(sources)
+                .where(sources.c.id == source_id, sources.c.withdrawn.is_(False))
+                .values(withdrawn=True, withdrawn_at=withdrawn_at)
+            ).rowcount:
+                return None
             if self._current_set_locked(conn, case_id):
                 self._next_source_set(conn, case_id, actor, add=[], remove={source_id})
             citing = conn.execute(sa.select(assumptions).where(assumptions.c.case_id == case_id)).mappings().all()
@@ -802,11 +1222,15 @@ class DomainStore:
 
     def save_assumption(self, case_id: str, data: dict[str, Any], evidence_ids: list[str], actor: str) -> dict[str, Any]:
         with self.engine.begin() as conn:
+            # FOR SHARE on the cited rows: a withdrawal on another connection
+            # waits for this insert to commit and then stales it, or commits
+            # first and this re-read sees the flag — an assumption never ends
+            # READY citing a withdrawn source (SPEC_RECONCILIATION D3).
             active = set(conn.execute(
                 sa.select(sources.c.id).where(
                     sources.c.id.in_(evidence_ids or []), sources.c.withdrawn.is_(False),
                     sources.c.case_id == case_id,
-                )
+                ).with_for_update(read=True)
             ).scalars().all()) if evidence_ids else set()
             missing = [evidence_id for evidence_id in (evidence_ids or []) if evidence_id not in active]
             if missing:

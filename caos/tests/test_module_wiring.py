@@ -176,3 +176,44 @@ async def test_cp5_agent_wiring_is_registry_only(tmp_path):
     full depth — the QA terminal the pathway gains from this wiring."""
     artifacts, provider = await _run_pathway(tmp_path, "COVENANT_REFINANCING")
     _assert_agent_executed(artifacts, provider, "CP-5")
+
+
+async def test_cp_dr_agent_wiring_is_registry_only(tmp_path):
+    """CP-DR DeepResearch executes as an agent on DEEP_RESEARCH full depth once
+    its plan is approved; the registry entry is the only wiring (Task 7)."""
+    from caos.engine.runtime import Engine
+
+    settings = Settings(storage_dir=tmp_path / "vault", agent_execution_enabled=True)
+    store = DomainStore.from_url(f"sqlite:///{tmp_path / 'caos.db'}")
+    engine = None
+    try:
+        case, source = _seed_case(store)
+        provider = ScriptedProvider(source["id"])
+        engine = Engine.create(settings=settings, store=store,
+                               checkpoint_path=tmp_path / "ck.db", provider=provider)
+        run = await engine.start_run(
+            case_id=case["id"], pathway="DEEP_RESEARCH", depth="full", actor="analyst",
+            research_brief={
+                "research_question": "How resilient is liquidity through the next refinancing?",
+                "decision_context": "Committee review of an existing position.",
+                "as_of_date": "2026-01-01",
+                "time_horizon": "12 months",
+                "must_answer": ["Nearest maturity"],
+                "exclusions": [],
+            },
+        )
+        paused = await engine.wait(run["id"])
+        assert paused["status"] == "paused" and paused["error"]["code"] == "PLAN_APPROVAL_REQUIRED"
+        await engine.approve_research_plan(
+            run["id"], plan_hash=paused["research"]["proposed_plan_hash"], actor="analyst",
+        )
+        record = await engine.wait(run["id"])
+        assert record["status"] == "succeeded", record.get("error")
+        artifacts = {a["module_id"]: a for a in engine.artifacts_for_run(run["id"])}
+        _assert_agent_executed(artifacts, provider, "CP-DR")
+    finally:
+        try:
+            if engine is not None:
+                await engine.aclose()
+        finally:
+            store.close()

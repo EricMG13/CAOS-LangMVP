@@ -16,7 +16,7 @@ import sqlalchemy as sa
 from sqlalchemy.exc import IntegrityError
 
 from ..contracts import digest
-from .store import new_id, now_iso, sources
+from .store import lock_case, new_id, now_iso, sources
 
 model_metadata = sa.MetaData()
 
@@ -152,8 +152,9 @@ class ModelRevisionConflict(ValueError):
 
 
 class ModelStore:
-    # ponytail: one process-wide write lock serialises sign-off CAS on SQLite;
-    # Postgres would use SELECT ... FOR UPDATE on the head row instead.
+    # The process-wide write lock serialises the sign-off CAS on SQLite; on
+    # PostgreSQL the transaction takes the case advisory lock (store.lock_case)
+    # before it reads the head, which is what orders two connections.
     _WRITE_LOCK = threading.Lock()
 
     def __init__(self, engine: sa.Engine) -> None:
@@ -296,7 +297,8 @@ class ModelStore:
     def update_build(self, build_id: str, *, expected_status: tuple[str, ...] | None = None,
                      expected_input_fingerprint: str | None = None,
                      expected_export_status: str | None = None,
-                     expected_live_source_ids: list[str] | None = None, **values: Any) -> bool:
+                     expected_live_source_ids: list[str] | None = None,
+                     audit: Any = None, **values: Any) -> bool:
         with self.engine.begin() as conn:
             where = [model_builds.c.id == build_id]
             if expected_status is not None:
@@ -308,7 +310,24 @@ class ModelStore:
                 where.append(model_builds.c.export["status"].as_string() == expected_export_status)
             if expected_live_source_ids is not None:
                 where.append(self._live_sources_condition(expected_live_source_ids))
-            return bool(conn.execute(sa.update(model_builds).where(*where).values(**values)).rowcount)
+            changed = bool(conn.execute(sa.update(model_builds).where(*where).values(**values)).rowcount)
+            if changed and audit is not None:
+                # Transactional pairing: the audit row commits with the
+                # transition it records, or not at all.
+                audit(conn)
+            return changed
+
+    def requeue_building_builds(self) -> int:
+        """BUILDING -> QUEUED for every build a dead executor left behind (SIM-008).
+        Only the single-instance worker calls this, at start, so no live
+        calculation is stolen; the calculation is deterministic and publication is
+        identity-bound, so re-execution is safe."""
+        with self.engine.begin() as conn:
+            return conn.execute(
+                sa.update(model_builds)
+                .where(model_builds.c.status == "BUILDING")
+                .values(status="QUEUED", started_at=None)
+            ).rowcount
 
     def active_build_count(self) -> int:
         with self.engine.connect() as conn:
@@ -347,6 +366,7 @@ class ModelStore:
         """CAS append: head must equal the caller's expectation; the revision
         row, head advance, and audit event commit in one transaction."""
         with self._WRITE_LOCK, self.engine.begin() as conn:
+            lock_case(conn, case_id)
             head = conn.execute(
                 sa.select(model_revision_heads).where(model_revision_heads.c.case_id == case_id)
             ).mappings().first()

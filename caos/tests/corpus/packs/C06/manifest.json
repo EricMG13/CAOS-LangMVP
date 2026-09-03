@@ -1,0 +1,78 @@
+{
+  "schema_version": "caos.corpus-pack.v1",
+  "pack_id": "C06",
+  "version": "1.0.0",
+  "title": "Finance-company perimeter requiring industrial and finance debt separation",
+  "purpose": "C06: the annual report carries industrial debt and a non-recourse financing-subsidiary debt separately; the analysis must keep both perimeters distinct.",
+  "kind": "negative",
+  "stage": "run",
+  "issuer": "Northstar Cruise Holdings Inc",
+  "licence_class": "synthetic",
+  "provenance": "caos/tests/corpus/synthetic.py",
+  "bytes": {
+    "source": "synthetic",
+    "location": "caos/tests/corpus/synthetic.py",
+    "owner": null,
+    "artifact": null
+  },
+  "documents": [
+    {
+      "filename": "northstar-10k-fy2024.txt",
+      "sha256": "818f616b62f56525d3d2db1bc349f06e4c167a8e7004860451544d4155ddf651",
+      "media_type": "text/plain",
+      "document_type": "annual_report",
+      "period": "FY2024",
+      "supersession": "current",
+      "provenance": "caos/tests/corpus/synthetic.py::c06_perimeter",
+      "disposition": "used",
+      "analytical_role": "relevant",
+      "reason": "annual report separating the industrial and financing perimeters"
+    },
+    {
+      "filename": "northstar-10q-q3-2025.txt",
+      "sha256": "9693c5af5106a7477ae6d9be04b03fc124e74fda8f0f51f68f9a4f383f789966",
+      "media_type": "text/plain",
+      "document_type": "quarterly_report",
+      "period": "FY2025-Q3",
+      "supersession": "current",
+      "provenance": "caos/tests/corpus/synthetic.py::c06_perimeter",
+      "disposition": "used",
+      "analytical_role": "relevant",
+      "reason": "interim statement"
+    },
+    {
+      "filename": "northstar-credit-agreement.txt",
+      "sha256": "d8e07f5fee49f0ea46df09beed10d8493e315476bdbca273c573862bf5e81223",
+      "media_type": "text/plain",
+      "document_type": "credit_agreement",
+      "period": null,
+      "supersession": "current",
+      "provenance": "caos/tests/corpus/synthetic.py::c06_perimeter",
+      "disposition": "used",
+      "analytical_role": "relevant",
+      "reason": "covenant terms"
+    }
+  ],
+  "documents_from": null,
+  "applies_to": [
+    {
+      "pathway": "FULL_CREDIT",
+      "depth": "full",
+      "outcome": "succeeded",
+      "proves_pathway": false
+    }
+  ],
+  "answer_key": {
+    "file": "answer_key.json",
+    "version": "1.0.0",
+    "sha256": "c0739e2e17ca2c10c7fe8fb142722443cf1bcd311c660920183d1f9fc532af18",
+    "approvals": [
+      {
+        "scope": "host_control",
+        "reviewer": "Claude Fable 5.1 (ER-G6 implementer)",
+        "approved_at": "2026-09-03",
+        "note": "host-control attestation of the draft key: orchestration proof only, never analysis"
+      }
+    ]
+  }
+}

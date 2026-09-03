@@ -1,0 +1,67 @@
+{
+  "schema_version": "caos.answer-key.v1",
+  "pack_id": "C04",
+  "version": "1.0.0",
+  "authored_by": "Claude Fable 5.1 (ER-G6 implementer)",
+  "status": "draft-host-control",
+  "intake": {
+    "status": "started",
+    "route": [
+      "FULL_CREDIT",
+      "full"
+    ],
+    "refusal_code": null,
+    "dispositions": {
+      "northstar-10k-fy2024.txt": "superseded",
+      "northstar-10q-q3-2025.txt": "used",
+      "northstar-q3-2025-earnings.txt": "used",
+      "northstar-fy2025-guidance.txt": "used",
+      "northstar-credit-agreement.txt": "used",
+      "northstar-amendment-2.txt": "used",
+      "northstar-10k-fy2024-restated.txt": "used"
+    }
+  },
+  "expected_facts": [
+    {
+      "id": "F1",
+      "statement": "Restated FY2024 revenue",
+      "value": "1,140",
+      "unit": "USD millions",
+      "period": "FY2024",
+      "source": "northstar-10k-fy2024-restated.txt",
+      "match": [
+        "Revenue 1,140"
+      ],
+      "required": true,
+      "cells": null
+    }
+  ],
+  "conflicts": [],
+  "forbidden_conclusions": [
+    {
+      "id": "X1",
+      "description": "The superseded revenue figure must not be stated as FY2024 revenue",
+      "match": [
+        "Revenue 1,160"
+      ]
+    }
+  ],
+  "cells": {
+    "FULL_CREDIT/full": {
+      "outcome": "succeeded",
+      "proves_pathway": false,
+      "refusal_code": null,
+      "model_effect": "FULL_MODEL",
+      "readiness": "READY_TO_BUILD",
+      "max_latency_seconds": 900,
+      "prerequisite": null,
+      "host_control": {
+        "model_fixtures": true,
+        "calculators": "fixtures",
+        "source_gate": "pass",
+        "gaps": []
+      },
+      "after_run": null
+    }
+  }
+}

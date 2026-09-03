@@ -4,15 +4,39 @@
     {
       "name": "caos-frontend",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev", "--prefix", "caos/frontend"],
+      "runtimeArgs": [
+        "run",
+        "dev",
+        "--prefix",
+        "caos/frontend"
+      ],
       "port": 3000
     },
     {
       "name": "caos-api",
       "runtimeExecutable": "uv",
-      "runtimeArgs": ["run", "--project", "caos/server", "python", "caos/server/dev.py"],
+      "runtimeArgs": [
+        "run",
+        "--project",
+        "caos/server",
+        "python",
+        "caos/server/dev.py"
+      ],
       "port": 8000,
       "autoPort": true
+    },
+    {
+      "name": "caos-gates",
+      "runtimeExecutable": "env",
+      "runtimeArgs": [
+        "PORT=8766",
+        "CAOS_DATA_DIR=.dev-data/gates",
+        "CAOS_PROVIDER=host_control",
+        "AGENT_EXECUTION_ENABLED=true",
+        "caos/server/.venv314/bin/python",
+        "caos/server/dev.py"
+      ],
+      "port": 8766
     }
   ]
 }

@@ -446,3 +446,381 @@ Consolidation note: where §6 conflicts with §10/§11/§12 (output Σ vs Σ+max
     keyless browser gates; production refuses it at the provider builder and at
     engine construction. Local development evidence is produced on Python 3.14
     (decision D3), matching nightly and the image.
+16. **Deep Research: governed brief and digest-bound plan approval (2026-09-02,
+    Task 7).** `DEEP_RESEARCH` joins the engine cut at full depth only
+    (`runtime.supported_depths`; the LITE route still compiles, the engine
+    never starts it, so `startable_routes()` is the one list the case wire,
+    the corpus control and the probes enumerate). CP-DR is a registry entry
+    (`modules/registry.py`, `plan_approval=True`, golden authority digest
+    `76e990f4…`) over the vendored `cp-dr-deep-research` skill; the bundle is
+    untouched. The brief (`contracts.ResearchBrief`, every string
+    `BoundaryText`) is validated before any row exists, locked in the run's
+    creating transaction (`run_research`), and bound into run authority as
+    `plan.research_brief_digest` at gate exit; it selects nothing about the
+    node set (invariant 10). After CP-0 succeeds, the CP-DR node builds the
+    plan as a pure function of the pinned run plan, the brief and the upstream
+    artifacts (`engine/research.py`: three workstreams — primary, adversarial,
+    synthesis — `source_mode` fixed to `supplied_only`), persists it with
+    `sha256:<canonical digest>` and parks the run on the second interrupt
+    `PLAN_APPROVAL_REQUIRED` (events `run.paused`, `research.plan_ready`;
+    no metered bracket covers the wait). Approval is a store compare-and-swap
+    on the exact proposed hash while the run is parked on this gate
+    (`RESEARCH_PLAN_STALE`, `RESEARCH_PLAN_NOT_PENDING`), one transaction
+    with the run transition, the ticket, the run event
+    `research.plan_approved` and the audit event of the same name; the engine
+    re-checks provider identity and pinned-source liveness first and never
+    drives the graph inline. On re-entry the node recomputes the plan and
+    refuses `RESEARCH_PLAN_MISMATCH` when the approved hash is not the plan
+    that would execute; a `POST /resume` re-parks, and startup recovery
+    re-enters an interrupted thread whose run is already `running` (approved,
+    then crashed before the continuation) rather than skipping it. The approved scope rides the
+    module's host identity (`research`: brief, brief digest, approved hash,
+    workstreams) into the prompt under the untrusted label and into the
+    artifact, and the host stamps the nine CP-DR envelope fields the pinned
+    common validator requires (`scope_type`, `scope_key`, `subject_name`,
+    `research_question`, `source_mode`, `approved_plan_hash`,
+    `coverage_score` = validated field coverage, `research_status`,
+    `research_stop_reason`) — a stored CP-DR artifact is always `Complete`
+    because a partial or failed gate is a typed refusal in the validate step.
+    Wire: `CanonicalRunResponse.research` (`ResearchStateResponse`, present on
+    Deep Research runs only), `GET /api/runs/{id}/research-plan` (case member)
+    and `POST /api/runs/{id}/research-plan/approve` (case writer; 404 for
+    outsiders, 403 for readers, 409 stale/not-pending, 422 malformed hash).
+    `deep_research_available` is `Engine.deep_research_availability()` — the
+    cut, the compiled route, the registry and the provider binding — never a
+    literal. Deep Research is model-optional: it declares no numeric effect
+    (item 18 supersedes the original "acceptance queues no build" —
+    acceptance now queues a `DEEP_RESEARCH_REVALIDATION` overlay when a Full
+    Credit model exists in the case, and `queue_build` answers
+    `MODEL_NOT_READY: DEEP_RESEARCH_NO_NUMERIC_EFFECT` when none does); the
+    deliverable draft, freeze, file and reconstruction path is the ordinary
+    one. Host control proves orchestration only; the C22 pack and live-model
+    qualification are external inputs.
+17. **Document-first intake (2026-09-02, Task 8, ETR-B01).** Supplied
+    documents are the only analytical input of the golden journey.
+    `POST /api/intake` is one strict multipart transaction (`files`, optional
+    `case_id`) served by `intake/service.py`, which orchestrates the existing
+    domain services and never another route. Admission is prepare-all then
+    admit-all: `sources/domain.py::prepare_upload` is the single-source
+    route's own check sequence split off from the store write (`ingest_upload`
+    composes the two, so the route and its tripwires do not move); any file
+    that fails refuses the whole pack with a typed `422` and one structured
+    finding per file, persisting nothing but a content-addressed vault blob
+    and an `intake.refused` audit row. `DomainStore.admit_intake` commits the
+    case (when new, with its membership and `case.created`), every source
+    row, one source-set version, `source.ingested` per source, the
+    `case_intakes` row and `intake.admitted` in one transaction, so no
+    partial, invisible or unaudited admission can exist. Host classification
+    (`sources/classify.py`) is deterministic and bounded: document type,
+    period, revision status, issuer candidate and text layer are read through
+    fixed signal tables over the first blocks and the filename; each value
+    carries its signals and a confidence, the wire labels the set
+    `host_classification`, and the UI shows them as machine suggestions.
+    Instructions in documents are inert because type and route depend on
+    structural signals — a form heading, a legal instrument, a brief that
+    validates against `ResearchBrief`, a workbook that parses against the
+    CP-3 template — never on imperative text. The route is Full Credit at
+    full depth unless the pack proves a narrower objective: a valid brief
+    file selects Deep Research (the brief is still the analyst's, supplied as
+    a file); a valid loan-universe workbook selects Relative Value and is
+    imported through `import_loan_source` so the gate pins it; a
+    restructuring instrument selects Distressed; an earnings-only pack
+    selects Earnings Update; a legal-only pack selects Covenant &
+    Refinancing. Case resolution never crosses membership: an explicit case
+    needs write standing (404 outsiders, 403 readers); otherwise the actor's
+    own cases are matched by normalized issuer and only an unambiguous match
+    resolves; mixed issuers (`INTAKE_ISSUER_AMBIGUOUS`) and a pack that
+    disagrees with the explicit case (`INTAKE_ISSUER_MISMATCH`) are refused.
+    Exact duplicates collapse to one source with both names on the manifest;
+    a same-name different-bytes pair is `INTAKE_SOURCE_CONFLICT`; a restated
+    document supersedes the original for its period and both stay admitted
+    and linked. A pack with no usable evidence stays admitted and returns
+    the typed `INTAKE_EVIDENCE_INSUFFICIENT` clarification with its next
+    action; dropping the missing document into the same case admits only
+    what is new and starts the run. An engine refusal leaves the pack
+    admitted in `execution_unavailable` with its typed code. The intake key
+    (actor, normalized issuer, sorted digests) makes a double submit return
+    the same intake and run; `GET /api/cases/{id}/intake` and
+    `cases.current_execution_id` are what refresh and restart read. The
+    frontend adds the reserved `.cases-intake` panel — a real multi-file
+    input behind its label plus a drop region, fenced by a local request
+    counter and the authority match, adopting the case then the run through
+    the reducer under the inert `intake` scope — and keeps the run console
+    as the one home for progress and acceptance; a completed intake run is
+    presented for review and never accepted on the analyst's behalf. Known
+    bound: the 32 MiB edge body cap limits one request; a larger pack is
+    admitted across intakes into the same case.
+18. **Every pathway declares one model effect, and a model is source-complete
+    or it is not READY (2026-09-02, Task 9, ETR-B12).** Full Credit builds the
+    complete model from the six canonical artifacts as before. Every other
+    pathway resolves through one overlay mechanism
+    (`models/service.py::_resolve_overlay_snapshot`): the nearest validated
+    Full Credit ancestor in the acceptance chain (intermediate snapshots by
+    identity, the base fully live), the base build re-verified by
+    recomputation, the accepted run's calculation records re-executed against
+    the pinned binding record for record (`_validated_calculations`,
+    generalised from the CP-4C check), and one `pathway_effects` entry
+    (`caos.model-pathway-effect.v1`) on a byte-identical copy of the base tabs
+    under the overlay's own input fingerprint. The base model's periods,
+    assumptions and outputs are never rewritten (CALC-006 by construction);
+    reported actuals, external forecasts and analyst scenarios keep distinct
+    `authority` labels inside the effect. Effects: Earnings Update
+    `EARNINGS_PERIOD_FORECAST_VARIANCE` (the run's verified CP-1/CP-1B
+    `credit_metrics` periods as `REPORTED_ACTUAL`, and reported-minus-forecast
+    per base and downside column for the same fiscal year, with
+    `FORECAST_PERIOD_NOT_MODELLED`, `ACTUAL_NOT_DISCLOSED` and
+    `ZERO_FORECAST_DENOMINATOR` as named gaps — never zero); Covenant &
+    Refinancing `COVENANT_REFINANCING_ASSUMPTIONS` (CP-4 `covenant_headroom`
+    tests and CP-4C `funding_gap` views as documentary terms, plus
+    `assumption_updates` mapping a maximum-leverage test to
+    `covenant.max_total_leverage`: `PROPOSED_FOR_SIGN_OFF` when the base slot is
+    READY, `PROPOSED_REQUIRES_FULL_CREDIT_HANDOFF` when the accepted CP-2G
+    handoff left it UNAVAILABLE, because the pinned engine lets a preview move
+    a value and never a status; `UNMAPPED_COVENANT_TEST` otherwise); Relative
+    Value `RELATIVE_VALUE_MARKET_MARKS` (the loan universe the run pinned at its
+    gate, re-read and digest-verified, attached as a bounded row projection
+    with `time_alignment` against the base model's latest reported period end
+    and the run's analysis date — `ALIGNED`, `PRECEDES_LATEST_REPORTED_PERIOD`
+    or `POSTDATES_ANALYSIS`, the last two as named limitations; a run with no
+    pinned workbook reads `RELATIVE_VALUE_MARKET_MARKS_REQUIRED`); Distressed
+    `DISTRESSED_SCENARIO_RECOVERY` (shape unchanged from §14.15); Deep Research
+    `DEEP_RESEARCH_REVALIDATION` (`numeric_effect: NONE`, the base recomputed
+    and compared, the brief digest and approved plan hash bound; with no Full
+    Credit model in the case readiness is `DEEP_RESEARCH_NO_NUMERIC_EFFECT` —
+    this supersedes item 16's "acceptance queues no build"). Acceptance of any
+    of the six pathways queues its effect (`on_accepted`). Two further truthful
+    readiness states: `FULL_DEPTH_REQUIRED` when the accepted route lacks the
+    modules the effect consumes (screen-depth Full Credit, Earnings, Covenant
+    and Relative Value; Distressed screen keeps CP-4C and overlays), and
+    `PRIOR_FULL_CREDIT_MODEL_REQUIRED` for an overlay pathway with no Full
+    Credit model in its chain (Distressed keeps `DISTRESSED_BASE_MODEL_REQUIRED`);
+    `queue_build` answers `MODEL_NOT_READY: <code>` so the wire code is
+    unchanged. Source lineage is part of every build: one row per source in the
+    accepted snapshot's set with the intake disposition and reason (every intake
+    of the case, later rows superseding), the expected consumers, the artifacts
+    that cite it, whether a model-facing table names it, and one binding —
+    `MODEL_INPUT`, `CITED_ANALYSIS`, `MARKET_MARKS`, `RESEARCH_BRIEF`,
+    `SUPERSEDED`, `NOT_REQUIRED` or `UNBOUND`. A `used` document of a relevant
+    class (annual, quarterly, earnings, guidance, legal, restructuring, market
+    marks, brief) that is `UNBOUND` makes the model
+    `MODEL_SOURCE_LINEAGE_INCOMPLETE` (NOT_READY, the detail naming the source
+    ids); an `other` document nothing consumed is `NOT_REQUIRED` with its reason,
+    never silently discarded. The lineage digest is in the input fingerprint,
+    the lineage rides the payload, the preview worksheet and the export
+    ("Source Lineage" audit sheet beside "Pathway Effects"), and the READY
+    transition writes `model.build_ready` (build, snapshot, run, payload
+    digest) in the same transaction. `HostControlProvider` reads one block of
+    every pinned source, bounded by the module read allowance, so keyless runs
+    are source-complete up to that allowance; the corpus double spreads one
+    read of each of the thirty documents across the route. Loan-workbook cell
+    text passes `validate_boundary_text` at the importer
+    (`RV_CELL_TEXT_INVALID`, workbook REJECTED), closing the `CLAUDE.md` gap at
+    the one seam every path shares. Deliverables still bind the prior Full
+    Credit base for Earnings and Covenant (§10.10 as amended by §14.15) and the
+    current overlay for Distressed; rendering the new effects in published
+    outputs is Task 10's. Licensed market marks and live-model qualification
+    of every effect remain external inputs.
+19. **Opinion ownership, worker-published freeze, detached filing receipt,
+    append-only audit chain and the offline audit package (2026-09-03, Task
+    10, gates G7 and G8, ETR-B13).** An analyst opinion is an append-only,
+    digest-bound store record (`deliverable_opinions`): it binds the exact
+    draft revision (id, version, digest), the accepted snapshot, the source-set
+    version, the digest of the revision's model identity and the methodology
+    build, carries opinion, limitations, material overrides and rationale as
+    required BoundaryText, and is signed through an expected-head CAS
+    (`OPINION_HEAD_CONFLICT`); a single-actor release, so a store CAS and not
+    an interrupt (invariant 5). Freeze refuses `OPINION_SIGNOFF_REQUIRED` /
+    `OPINION_SIGNOFF_STALE`: editing the draft, moving the source set,
+    superseding the snapshot or moving the model invalidates the sign-off by
+    construction. `ANALYST_JUDGMENT` is not a citation bypass: a sentence that
+    states a quantitative documentary claim (currency, percent, multiple,
+    basis points, thousands-separated figure, year or fiscal-period token) is
+    refused as `ANALYST_JUDGMENT_UNCITED_FACT` unless the block is cited or the
+    sentence opens with an explicit judgment framing; this is a regex bound
+    recorded as such, not language understanding. Freeze no longer renders in
+    the API process: `POST …/freeze` validates and queues a
+    `deliverable_freeze_jobs` row keyed by the freeze thread identity (202,
+    idempotent under race and retry, FAILED jobs requeue), and `worker.py`
+    renders Markdown, PDF and XLSX, publishes each hash-addressed, reads each
+    back verified, and only then inserts the FROZEN record, parks the filing
+    thread, audits `deliverable.frozen` and marks the job PUBLISHED in one
+    transaction; a failure leaves a typed FAILED job and no frozen record;
+    startup recovery requeues RENDERING jobs under the worker's single-instance
+    lock; a divergent render for a published identity is
+    `DELIVERABLE_FREEZE_CONFLICT`. XLSX therefore renders in the worker alone,
+    and local development needs `python caos/server/worker.py` beside
+    `dev.py` for a freeze to complete, exactly as model builds already do.
+    Filing enforces separation of duties at the CAS
+    (`APPROVER_NOT_INDEPENDENT`: the opinion signer and the freeze actor never
+    file their own output) and writes an immutable detached receipt
+    (`deliverable_filing_receipts`: approver, time, opinion id and signer,
+    approval digest, fingerprint, export digests, approval hash,
+    `receipt_digest`) in the filing transaction; the approved bytes always
+    read `PENDING APPROVAL` and are never rerendered, not even to name the
+    approver. A distinct approver is provisioned by
+    `POST /api/cases/{case_id}/members`, which requires stored case
+    APPROVER/ADMIN standing plus a current global writer role, like filing.
+    Every export walks one server-frozen publication document
+    (`payload.publication`: masthead, opinion-first pages, the pathway's
+    canonical sections, an Evidence & QA Control Sheet, disclosures); Markdown,
+    PDF (pango-view markup, measured pagination, repeated table headers,
+    record layout for wide tables, pinned footer, transparent rotated
+    watermark) and XLSX (cover and control, report, one filtered typed sheet
+    per table, revision record, no formulas) render from it in the worker and
+    the browser draws it directly, so parity is by construction and pinned by
+    `test_publication_goldens_spec.py` across normal, dense, long-text,
+    multilingual, held and filed states. The audit log is append-only at the
+    database boundary (UPDATE/DELETE triggers on both dialects) and hash-chained
+    per case under a head-row lock (`audit_chain_heads`), so mutation,
+    deletion, insertion and reordering are detectable; legacy rows are chained
+    once at startup; the wire shape of `audit_trail` is unchanged and typed
+    refusals stay unaudited (logged). `GET /api/cases/{case_id}/audit-package`
+    builds a case-scoped zip (manifests with digests; sources as block ids and
+    text digests only; source sets; intakes; runs with plans, nodes, events,
+    budgets, snapshots and artifacts; models and workbooks; deliverable
+    revisions, opinions, jobs, frozen records, receipts and the exact filed
+    bytes; the case audit chain; methodology and runtime identity) and
+    `caos/server/caos/audit/verify_package.py`, standard library only,
+    recomputes every digest and link and re-renders the Markdown export byte
+    for byte from the frozen payload; its renderer copy is pinned byte-equal
+    to `caos/publishing/markdown.py`. Deliberately not changed: the export
+    route's media types (`application/octet-stream` for md/pdf/xlsx) and its
+    gzip exclusion stay as they were, as a wire-visible decision for its
+    owner; Earnings Update and Covenant & Refinancing deliverables still bind
+    the prior Full Credit base build (§14.18), so their pathway effects reach
+    the model export and the overlay build but not yet the published
+    deliverable — a follow-up, not a silent narrowing. The blind rubric review
+    by two analysts and an external stakeholder is candidate-only work and
+    remains BLOCKED EXTERNAL with its inputs prepared.
+
+    **Addendum (2026-09-03, CI follow-up — the font pin).** The first CI run
+    of this task paginated the PDF goldens differently from the developer Mac
+    (dense 8 pages against 7, multilingual 4 against 3) and extracted
+    "body ." with a stray space: pango-view resolved "sans" and "monospace"
+    through each host's fontconfig — Verdana and Andale Mono on the Mac,
+    DejaVu on Ubuntu, Noto CJK's Latin glyphs in the image, which installs no
+    DejaVu at all — so one frozen payload had three renderings. The fix is a
+    font pin, not a golden update. The renderer vendors DejaVu Sans and DejaVu
+    Sans Mono (regular and bold, release 2.37, Bitstream Vera licence) under
+    `caos/server/caos/publishing/fonts/`, verifies the four files against the
+    digests in `renderers.FONT_BUNDLE` before a render and refuses with
+    `PDF_FONT_BUNDLE_INVALID`, serves them through a hermetic fontconfig
+    (bundle first, the host's configuration after it for the scripts the
+    bundle lacks, Debian's own DejaVu rejected by path) with pango pinned to
+    the fontconfig backend, hinting off, unhinted metrics and subpixel glyph
+    positions, and gives every span an absolute line height so a fallback
+    face (Noto CJK in the image, whatever a developer host has) never moves a
+    page break. Masthead metadata is wrapped at spaces before pango sees it,
+    so a build id never splits at its hyphen. The renderer version is
+    `caos.deliverable-renderer.v3`. The goldens were regenerated under the pin
+    after every page and sheet was inspected, and their page counts now equal
+    what CI rendered. What stays host-dependent is glyph shape for scripts
+    beyond DejaVu's coverage; `fonts-noto-cjk` remains the image's declared
+    fallback.
+
+20. **The qualification corpus, attested answer keys and the live-matrix
+    harness (2026-09-03, Task 11, ETR-B05 and ETR-B11).** Every qualification
+    pack C01–C22 is one versioned manifest under
+    `caos/tests/corpus/packs/<id>/` (`caos.corpus-pack.v1`: purpose, kind,
+    stage, issuer, licence class, provenance, byte source, one row per
+    document with SHA-256, media and document type, period, supersession,
+    disposition, analytical role and reason, the cells the pack applies to,
+    and the answer-key attestation) beside its answer key
+    (`caos.answer-key.v1`: expected facts with source and match strings,
+    conflicts, forbidden conclusions, per-cell outcome, refusal code, model
+    effect, readiness, prerequisite, latency bound and host-control script).
+    Bytes never enter a manifest: Carnival (C01, shared by C17–C20) stays
+    `sources.txt` + `fetch.sh` outside pytest; C02–C16 are regenerated by
+    `synthetic.py` and digest-checked (a fixture change is a manifest change
+    through `qualify.py pin`); the licensed marks (C20), the Lumen stressed
+    pack (C21) and the research pack (C22) are supplied under
+    `$CAOS_CORPUS_EXTERNAL_DIR/<pack>/` by their owners and are unacquired
+    until digest-pinned — an unpinned byte is `CORPUS_BYTES_UNACQUIRED`,
+    never a skip. An answer key is signed by attestation: the manifest
+    carries the key file's digest and scoped approvals; `host_control` scope
+    licenses the orchestration proof, `analyst` scope alone licenses a live
+    cell, and the pin tool refuses to re-sign an analyst-approved key. The
+    harness (`caos/tests/corpus/qualify.py`) runs one cell per fresh process
+    and store through the ordinary provider path — `run.build_provider` for
+    a live binding, the answer-keyed double (identity `host_control`) for
+    orchestration proof — admits the pack through the document-first intake
+    when the host classifies it onto the cell's route and through the source
+    routes otherwise, starts the run on the public route, approves a Deep
+    Research plan on its exact hash, accepts, and executes the model build
+    with the worker's function. `scoring.py` scores outcome (static route),
+    facts (match string and a cited block of the expected source), citations
+    (admitted and delivered), unsupported claims (forbidden conclusions and
+    numeric traceability to delivered evidence, calculation records or the
+    key, with fixture model tables exempt only under host control and
+    recorded as such), conflicts, document use (intake dispositions, every
+    relevant document cited, nothing non-relevant bound as `MODEL_INPUT`),
+    model effect, refusal, latency, budget, C12 injection invariance
+    (tools, verified authority digests, budget limits, identity and host
+    identity equal between the clean and injected runs; no injected marker
+    in any artifact) and ingest steps. Every result binds the provider
+    identity (model, provider, adapter, parameter/policy digest), the corpus
+    digest, the build (commit, methodology build id and manifest digest),
+    the date, an expiry (`review_days` = 90) and the reviewer; `aggregate`
+    counts three passes per live cell, never averages, discards stale or
+    expired results (MOD-023, MOD-024), lets a refusal prove nothing, and
+    reads `ORCHESTRATION_PROOF` for host control and `QUALIFIED` only for a
+    complete live matrix. The protected workflow
+    (`.github/workflows/enterprise-qualification.yml`, dispatch-only) runs
+    the live matrix with pinned actions and retains the evidence red or
+    green. Nothing here qualifies a binding: the credentials, the analyst
+    approvals and the external packs are external inputs recorded in
+    `.superpowers/sdd/enterprise-task-11-report.md`.
+
+21. **Database truth, retained simulations, the single-instance lock and the
+    backup snapshot point (2026-09-03, Task 12a, ETR-B07, ETR-B10, G6).**
+    Serialisation of every governed race is a property of the database, proven
+    on two independent PostgreSQL connections, never of a process lock. The
+    read-then-write paths that a second connection could race are now
+    database-ordered: `RunStore._emit` locks the run row before it allocates
+    `seq`, and every run-table writer (`node_running`, `complete_node`,
+    `pause_run`, finalisation) takes the run row first so the lock order is
+    cycle-free; `_budget_locked` locks the ledger row (`FOR UPDATE`) so reserve,
+    reconcile and charge cannot lose an update or overwrite an in-flight digest
+    (invariant 8); `withdraw` is conditional on the flag it read; `save_assumption`
+    reads the cited sources `FOR SHARE`; model sign-off, opinion sign-off, draft
+    append, freeze request and frozen publication take a transaction-scoped
+    advisory lock on the case (`store.lock_case`) before reading their head, so
+    the loser re-reads and receives the typed conflict naming the winner. The
+    process-wide locks stay as the SQLite mechanism, where these are no-ops.
+    `caos/tests/test_postgres_races.py` is the only PostgreSQL proof; it runs
+    in CI against the digest-pinned container (`ci.yml` job `postgres`,
+    `CAOS_REQUIRE_POSTGRES=1`) and locally against the QA container; SQLite
+    thread races and compiled `FOR UPDATE` checks are mechanism tests and are
+    never called PostgreSQL evidence. Membership is rechecked at commit time
+    inside the freeze-request and filing transactions (`DomainStore.
+    require_standing`, `FOR SHARE` on the membership row, `CASE_STANDING_REVOKED`
+    → 403), because a revocation between the route's check and the commit
+    otherwise filed with stale authority (SIM-020). A database that cannot be
+    reached before a write is the typed 503 `STORE_UNAVAILABLE` (SIM-010). The
+    worker requeues `BUILDING` rows a dead predecessor left behind exactly as
+    it requeues `RENDERING` freeze jobs (SIM-008). `node_running` never marks a
+    node on a terminal run (SIM-003). SIM-001–SIM-030 each map to a retained
+    test in `docs/SIMULATION_LEDGER.csv` (pinned by
+    `caos/tests/test_simulation_ledger.py`) built on the existing kill-after-
+    module, commit-gap, mid-provider-call, worker-fallback, render-failure and
+    injection seams; the only new seams are the faulting host-control double,
+    checkpoint-file damage, `ENOSPC`, and the disconnect-after-ack race. The
+    single application instance is enforced by an exclusive operating-system
+    lock over the checkpoint location (`caos/instance_lock.py`, `flock` on
+    `checkpoints.db.lock`, taken by `run.py` and `dev.py` before recovery runs
+    or a socket is bound) in addition to the PostgreSQL role advisory locks; a
+    second instance fails typed (`INSTANCE_ALREADY_RUNNING`) and is proven by a
+    second process. Compose declares `deploy.replicas: 1` for `app` and
+    `worker` and `caos/deploy/ENVIRONMENT_MANIFEST.md` records the ceiling.
+    The whole schema is created at startup (`DomainStore.from_url` constructs
+    the model and deliverable stores), which is also what let the PostgreSQL
+    target find that the Task 10 deliverable DDL could not be created through
+    psycopg (`%` in `RAISE`): it is now executed through `sa.text`.
+    `backup.sh` resolves the vault volume from the app container's `/vault`
+    mount or `CAOS_VAULT_VOLUME`, never a Compose label, fails loudly, and
+    captures both halves at one snapshot point by pausing the app and worker
+    containers for the capture (`checkpoints.db-shm` excluded); the restore
+    drill asserts the full startup schema. Not decided here: a distributed
+    checkpointer, a shared fleet, a high-availability control plane, an export
+    claim, or removing the SQLite process locks. Evidence:
+    `.superpowers/sdd/enterprise-task-12a-report.md`.

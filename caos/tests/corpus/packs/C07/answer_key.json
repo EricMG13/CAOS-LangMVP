@@ -1,0 +1,65 @@
+{
+  "schema_version": "caos.answer-key.v1",
+  "pack_id": "C07",
+  "version": "1.0.0",
+  "authored_by": "Claude Fable 5.1 (ER-G6 implementer)",
+  "status": "draft-host-control",
+  "intake": {
+    "status": "started",
+    "route": [
+      "FULL_CREDIT",
+      "full"
+    ],
+    "refusal_code": null,
+    "dispositions": {
+      "northstar-scan.pdf": "insufficient",
+      "northstar-ocr-note.txt": "used",
+      "northstar-10k-fy2024.txt": "used",
+      "northstar-credit-agreement.txt": "used"
+    }
+  },
+  "expected_facts": [
+    {
+      "id": "F1",
+      "statement": "FY2024 revenue",
+      "value": "1,160",
+      "unit": "USD millions",
+      "period": "FY2024",
+      "source": "northstar-10k-fy2024.txt",
+      "match": [
+        "Revenue 1,160"
+      ],
+      "required": true,
+      "cells": null
+    }
+  ],
+  "conflicts": [],
+  "forbidden_conclusions": [
+    {
+      "id": "X1",
+      "description": "OCR-garbled figures are not evidence",
+      "match": [
+        "3,4OO",
+        "1,16O"
+      ]
+    }
+  ],
+  "cells": {
+    "FULL_CREDIT/full": {
+      "outcome": "succeeded",
+      "proves_pathway": false,
+      "refusal_code": null,
+      "model_effect": null,
+      "readiness": null,
+      "max_latency_seconds": 900,
+      "prerequisite": null,
+      "host_control": {
+        "model_fixtures": false,
+        "calculators": "fixtures",
+        "source_gate": "pass",
+        "gaps": []
+      },
+      "after_run": null
+    }
+  }
+}

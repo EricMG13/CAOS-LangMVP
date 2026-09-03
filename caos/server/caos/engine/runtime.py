@@ -59,6 +59,8 @@ from .budget import (
 from .deterministic import build_deterministic_payload
 from .evidence import EvidenceReader
 from .loop import ProviderSlots, reject_duplicate_keys, run_agent_module
+from .research import RESEARCH_HANDOFF_FIELDS, build_research_plan, research_handoff_fields, research_plan_hash, validate_brief
+from .research import brief_digest as research_brief_digest
 from .provider import (
     READ_EVIDENCE_TOOL,
     AgentError,
@@ -74,7 +76,24 @@ MVP_PATHWAYS = {
     "COVENANT_REFINANCING",
     "RELATIVE_VALUE",
     "DISTRESSED_RESTRUCTURING",
+    "DEEP_RESEARCH",
 }
+
+# Deep Research has no screen depth (DECISIONS §14.1): the catalog compiles a
+# LITE route, the engine never starts it. Every other pathway runs at both.
+_PATHWAY_DEPTHS = {"DEEP_RESEARCH": ("full",)}
+
+
+def supported_depths(pathway: str) -> tuple[str, ...]:
+    return _PATHWAY_DEPTHS.get(pathway, ("screen", "full"))
+
+
+def startable_routes() -> list[tuple[str, str]]:
+    """Every (pathway, depth) cell this engine will start — the one list the
+    case wire, the corpus host control and the probes enumerate."""
+    return [(pathway, depth) for pathway in sorted(MVP_PATHWAYS) for depth in supported_depths(pathway)]
+
+PLAN_APPROVAL_REQUIRED = "PLAN_APPROVAL_REQUIRED"
 
 _CALCULATION_REF_FIELDS = (
     "calculator_id",
@@ -102,7 +121,7 @@ def _agent_module_ids_for_plan(plan: dict[str, Any]) -> list[str]:
     agent_modules = []
     for node in plan["nodes"]:
         spec = MODULES.get(node["module_id"])
-        if spec is None:  # a route node without a registry entry (CP-DR until Task 7) is not budgeted
+        if spec is None:  # a route node without a registry entry is not budgeted
             continue
         if (spec.mode_full if depth == "full" else spec.mode_screen) == "agent":
             agent_modules.append(node["module_id"])
@@ -745,6 +764,11 @@ class Engine:
         plan.pop("plan_digest", None)
         plan["source_set_digest"] = state_mod.source_set_digest(current)
         plan["source_authority"] = state_mod.source_authority(live_sources)
+        if run.get("research") is not None:
+            # The brief is bound into run authority through the plan digest; it
+            # selects nothing about the node set (invariant 10). Absent, never
+            # null, on every other pathway (§12.1).
+            plan["research_brief_digest"] = run["research"]["brief_digest"]
         # §12.6: the plan pins the integrity-manifest digest at gate exit.
         plan["manifest_digest"] = digest(self.bundle.integrity)
         plan["provider_identity"] = run.get("provider_identity")
@@ -927,7 +951,7 @@ class Engine:
         case = self.store.get_case(run["case_id"])
         if case is None:
             raise AgentError("AGENT_AUTHORITY_MISMATCH", "run case is unavailable")
-        return {
+        identity = {
             "module_id": module_id,
             "module_name": self._plan_node(plan, module_id)["module_name"],
             "run_id": run["id"],
@@ -943,6 +967,63 @@ class Engine:
             "calculator_ids": [binding["calculator_id"] for binding in calculator_bindings],
             "upstream_digests": [artifact["digest"] for artifact in upstream],
         }
+        research_identity = self._research_identity(run, module_id)
+        if research_identity is not None:
+            identity["research"] = research_identity
+        return identity
+
+    def _research_identity(self, run: dict[str, Any], module_id: str) -> dict[str, Any] | None:
+        """The approved research scope a plan-approval module executes under:
+        host-owned, carried in the artifact's host identity and re-derived by
+        the verifier from the run's research row (Task 7)."""
+        from ..modules.registry import MODULES
+
+        research = run.get("research")
+        if not MODULES[module_id].plan_approval or research is None:
+            return None
+        plan = research.get("proposed_plan") or {}
+        return {
+            "brief": research["brief"],
+            "brief_digest": research["brief_digest"],
+            "approved_plan_hash": research["approved_plan_hash"],
+            "workstreams": plan.get("workstreams") or [],
+        }
+
+    def _await_research_approval(
+        self, run: dict[str, Any], plan: dict[str, Any], module_id: str, upstream: list[dict[str, Any]],
+    ) -> str:
+        """Propose the host-built plan and park the run until the exact hash is
+        approved (invariant 5). The node re-runs from the top on every resume,
+        so the loop re-reads the store rather than trusting a resume value; an
+        approval that no longer matches the plan that would execute is refused."""
+        from langgraph.types import interrupt
+
+        run_id = run["id"]
+        research = run.get("research")
+        if research is None or plan.get("research_brief_digest") != research["brief_digest"]:
+            raise AgentError("AGENT_AUTHORITY_MISMATCH", "research brief is not bound to the pinned plan")
+        proposed = build_research_plan(
+            build_id=plan["build_id"],
+            run_plan_digest=run["plan_digest"],
+            brief=research["brief"],
+            source_set_id=plan["source_set_id"],
+            source_set_version=plan["source_set_version"],
+            upstream_artifacts=[
+                {"module_id": a["module_id"], "artifact_id": a["id"], "digest": a["digest"]} for a in upstream
+            ],
+            scope_key=run["case_id"].replace("_", "-"),
+        )
+        plan_hash = research_plan_hash(proposed)
+        while research["phase"] != "approved":
+            ticket = self.runs.propose_research_plan(run_id, proposed, plan_hash)
+            log_event("gate.interrupt", run_id=run_id, module_id=module_id,
+                      reason=PLAN_APPROVAL_REQUIRED, interrupt_id=ticket)
+            interrupt({"reason": PLAN_APPROVAL_REQUIRED, "ticket": ticket})
+            research = self.runs.get_run(run_id)["research"]
+        if research["approved_plan_hash"] != plan_hash:
+            raise AgentError("RESEARCH_PLAN_MISMATCH", "the approved plan is not the plan that would execute")
+        log_event("gate.resolved", run_id=run_id, module_id=module_id, reason=PLAN_APPROVAL_REQUIRED)
+        return plan_hash
 
     def _artifact_content_expectations(
         self,
@@ -1138,6 +1219,11 @@ class Engine:
             source_set, live_sources = self._live_plan_sources(run, plan)
             upstream = self._upstream_digests(run_id, plan, module_id)
             fingerprint = self._input_fingerprint(plan, plan_digest, module_id, [a["digest"] for a in upstream])
+            if MODULES[module_id].plan_approval:
+                # Digest-bound human gate (invariant 5) before reuse or
+                # execution; the wait sits outside every metered bracket.
+                self._await_research_approval(run, plan, module_id, upstream)
+                run = self.runs.get_run(run_id)
 
             # §12.14: the reuse-validation segment is a bracketed charge on
             # metered (agent-budgeted) runs; gate/interrupt waits accrue nothing.
@@ -1362,6 +1448,9 @@ class Engine:
                 "calculator_ids": list(spec.calculators),
                 "upstream_digests": [a["digest"] for a in upstream],
             }
+            research_identity = self._research_identity(run, module_id)
+            if research_identity is not None:
+                host_identity["research"] = research_identity
             # §12.6 verify-at-use: prompt bytes are hashed against the PINNED
             # build's manifest, whose digest the plan carries from gate exit.
             if plan.get("manifest_digest") != digest(self.bundle.integrity):
@@ -1585,6 +1674,25 @@ class Engine:
                     "issuer_name": host_identity["issuer_name"],
                     "issuer_id": host_identity["issuer_id"],
                 }
+                host_derived = [
+                    "module_id", "module_name", "run_id", "analysis_date",
+                    "confidence_score", "confidence_band", "qa_status",
+                    "committee_status", "upstream_artifacts_used",
+                    "downstream_consumers", "issuer_name", "issuer_id",
+                    "calculation_limitations",
+                ]
+                if research_identity is not None:
+                    # The CP-DR envelope is stamped by the host from the approved
+                    # plan and the validated contract, never from provider prose.
+                    handoff_metadata.update(research_handoff_fields(
+                        brief=research_identity["brief"],
+                        approved_plan_hash=research_identity["approved_plan_hash"],
+                        subject_name=host_identity["issuer_name"],
+                        scope_key=host_identity["issuer_id"],
+                        fields_present=output.fields_present,
+                        fields_total=output.fields_total,
+                    ))
+                    host_derived.extend(RESEARCH_HANDOFF_FIELDS)
                 envelope = canonicalize_for_tests(
                     module_id=module_id,
                     provider_markdown=output.markdown,
@@ -1601,13 +1709,7 @@ class Engine:
                 )
                 envelope["host_confidence"] = confidence
                 envelope["handoff_metadata_provenance"] = {
-                    "host_derived_fields": [
-                        "module_id", "module_name", "run_id", "analysis_date",
-                        "confidence_score", "confidence_band", "qa_status",
-                        "committee_status", "upstream_artifacts_used",
-                        "downstream_consumers", "issuer_name", "issuer_id",
-                        "calculation_limitations",
-                    ],
+                    "host_derived_fields": host_derived,
                     "provider_declared_bounded_fields": [
                         "limitation_flags", "validation_warnings",
                     ],
@@ -1889,10 +1991,12 @@ class Engine:
 
     async def start_run(self, *, case_id: str, pathway: str, depth: str, actor: str,
                         focus_questions: list[str] | None = None,
-                        upgraded_from_run_id: str | None = None) -> dict[str, Any]:
+                        upgraded_from_run_id: str | None = None,
+                        research_brief: dict[str, Any] | None = None) -> dict[str, Any]:
         return await self._start_run(
             case_id=case_id, pathway=pathway, depth=depth, actor=actor,
             focus_questions=focus_questions, upgraded_from_run_id=upgraded_from_run_id,
+            research_brief=research_brief,
             allow_placeholder_deterministic=False, scripted=False,
         )
 
@@ -1901,11 +2005,13 @@ class Engine:
         focus_questions: list[str] | None = None,
         upgraded_from_run_id: str | None = None,
         allow_placeholder_deterministic: bool = False,
+        research_brief: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         self._require_host_control_for_tests()
         return await self._start_run(
             case_id=case_id, pathway=pathway, depth=depth, actor=actor,
             focus_questions=focus_questions, upgraded_from_run_id=upgraded_from_run_id,
+            research_brief=research_brief,
             allow_placeholder_deterministic=allow_placeholder_deterministic, scripted=False,
         )
 
@@ -1915,10 +2021,26 @@ class Engine:
         upgraded_from_run_id: str | None,
         allow_placeholder_deterministic: bool,
         scripted: bool,
+        research_brief: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         if pathway not in MVP_PATHWAYS:
             raise EngineError("PATHWAY_NOT_AVAILABLE", f"{pathway} is outside the MVP cut")
         depth = Depth(depth).value
+        if depth not in supported_depths(pathway):
+            raise EngineError("DEPTH_NOT_SUPPORTED", f"{pathway} does not run at {depth} depth")
+        research: dict[str, Any] | None = None
+        if pathway == "DEEP_RESEARCH":
+            # The brief is refused before any row exists: no run, no pin, no
+            # pointer for a brief the contract or the boundary rules reject.
+            if research_brief is None:
+                raise EngineError("RESEARCH_BRIEF_REQUIRED", "DEEP_RESEARCH requires a research brief")
+            try:
+                brief = validate_brief(research_brief)
+            except AgentError as exc:
+                raise EngineError(exc.code, "research brief refused") from exc
+            research = {"brief": brief, "brief_digest": research_brief_digest(brief)}
+        elif research_brief is not None:
+            raise EngineError("RESEARCH_BRIEF_NOT_APPLICABLE", "research_brief is only valid for DEEP_RESEARCH")
         if self.store.get_case(case_id) is None:
             raise EngineError("CASE_NOT_FOUND", case_id)
         model_jobs = self._model_service.active_job_count() if self._model_service is not None else 0
@@ -1939,7 +2061,9 @@ class Engine:
                                    focus_questions=focus_questions,
                                    upgraded_from_run_id=upgraded_from_run_id,
                                    provider_identity=self._provider_identity,
-                                   schema_version=state_mod.SCHEMA_VERSION)
+                                   schema_version=state_mod.SCHEMA_VERSION,
+                                   research_brief=research["brief"] if research else None,
+                                   research_brief_digest=research["brief_digest"] if research else None)
         if allow_placeholder_deterministic:
             self._placeholder_deterministic_runs.add(run["id"])
         if scripted:
@@ -1986,6 +2110,59 @@ class Engine:
         self._schedule_continuation(run_id)
         return self.get_run(run_id)
 
+    async def approve_research_plan(self, run_id: str, *, plan_hash: str, actor: str) -> dict[str, Any]:
+        """Approve the exact proposed plan (invariant 5). The store does the
+        compare-and-swap; this re-checks identity and pinned-source liveness
+        first and schedules the continuation afterwards — approval never drives
+        the graph inline, so the serving loop keeps answering."""
+        run = self.runs.get_run(run_id)
+        if run is None:
+            raise EngineError("RUN_NOT_FOUND", run_id)
+        if run.get("research") is None:
+            raise EngineError("RESEARCH_PLAN_NOT_PENDING", "run has no research plan")
+        try:
+            self._assert_run_provider_identity(run)
+        except AgentError as exc:
+            raise EngineError(exc.code, "provider identity is not current") from exc
+        if run.get("plan_digest"):
+            try:
+                self._live_plan_sources(run, run["plan"])
+            except AgentError as exc:
+                raise EngineError("SOURCE_SET_CHANGED", "one or more pinned sources are unavailable") from exc
+        try:
+            self.runs.approve_research_plan(run_id, plan_hash, actor, audit=self.store._audit)
+        except StoreConflict as exc:
+            raise EngineError(exc.code, "research plan approval refused") from exc
+        self._schedule_continuation(run_id)
+        return self.get_run(run_id)
+
+    def deep_research_availability(self) -> tuple[bool, str | None]:
+        """Runtime truth for the case wire's `deep_research_available`: the cut,
+        the compiled route, the registry and the provider binding — never a
+        literal (Task 7)."""
+        from ..methodology.bundle import MethodologyError
+        from ..modules.registry import MODULES
+        from .graphs import compiled_route
+
+        if "DEEP_RESEARCH" not in MVP_PATHWAYS:
+            return False, "Deep Research is outside this deployment's route cut."
+        try:
+            route = compiled_route("DEEP_RESEARCH", "full", self.settings.deploy_v_root)
+        except MethodologyError:
+            return False, "The Deep Research route does not compile from the verified bundle."
+        missing = [module_id for module_id in route.nodes if module_id not in MODULES]
+        if missing:
+            return False, f"Deep Research route nodes are not registered: {', '.join(missing)}."
+        if not self.settings.agent_execution_enabled:
+            return False, "Deep Research requires agent execution, which is disabled for this deployment."
+        if self.provider is None or self._provider_identity is None:
+            return False, "Deep Research requires a qualified provider binding, which is not configured."
+        try:
+            self._provider_identity.ensure_current()
+        except AgentError as exc:
+            return False, f"Deep Research requires a current provider qualification ({exc.code})."
+        return True, None
+
     async def wait(self, run_id: str) -> dict[str, Any]:
         run = self.runs.get_run(run_id)
         if run is None:
@@ -2016,7 +2193,16 @@ class Engine:
             graph = await self._graph(run["pathway"], run["depth"])
             graph_state = await graph.aget_state(self._config(run["id"]))
             if any(task.interrupts for task in graph_state.tasks):
-                log_event("recovery.run", run_id=run["id"], action="skipped_interrupt")
+                if run["status"] != "running":
+                    log_event("recovery.run", run_id=run["id"], action="skipped_interrupt")
+                    continue
+                # The gate was cleared out of band (a research plan approved,
+                # status already `running`) and the process died before the
+                # continuation ran: the checkpointed interrupt waits on nobody,
+                # so re-enter the node from the last checkpoint (invariant 6).
+                self._raw_schema_check(run["id"])
+                log_event("recovery.run", run_id=run["id"], action="resumed_after_gate")
+                await self._drive(run["id"], None)
                 continue
             self._raw_schema_check(run["id"])
             if graph_state.created_at is None:

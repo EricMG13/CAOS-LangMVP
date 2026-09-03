@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import copy
 import json
+import re
 from contextlib import contextmanager
 from contextvars import ContextVar
 import tempfile
@@ -27,6 +28,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from ..contracts import (
+    validate_boundary_text,
     ModelPreviewRequest,
     ModelRebasePreviewRequest,
     ModelScenarioRequest,
@@ -45,7 +47,9 @@ from ..atomic_files import (
     publish_hash_addressed_bytes,
     read_verified_vault_bytes,
 )
+from ..artifacts.loan_universe import universe_digest
 from ..modules.registry import CP_MODEL_INPUT_MODULES
+from ..methodology.canonical import model_facing_source_ids
 from ..methodology.execution import MAX_CALCULATION_NODES, calculation_output_complete
 from ..storage.models import ModelStore
 from ..storage.store import DomainStore, now_iso
@@ -74,6 +78,58 @@ PRIOR_FULL_CREDIT_PUBLICATION_PATHWAYS = frozenset({
     "EARNINGS_UPDATE",
     "COVENANT_REFINANCING",
 })
+# Task 9 (DECISIONS §14.18): every pathway declares one model effect. Full
+# Credit builds the complete model; every other pathway overlays the nearest
+# validated Full Credit model with one effect and its own input fingerprint.
+PATHWAY_EFFECT_SCHEMA = "caos.model-pathway-effect.v1"
+OVERLAY_PATHWAYS = frozenset({
+    "EARNINGS_UPDATE", "COVENANT_REFINANCING", "RELATIVE_VALUE", DISTRESSED_PATHWAY, "DEEP_RESEARCH",
+})
+MODEL_EFFECT_PATHWAYS = frozenset({"FULL_CREDIT", *OVERLAY_PATHWAYS})
+EFFECT_IDS = {
+    "EARNINGS_UPDATE": "EARNINGS_PERIOD_FORECAST_VARIANCE",
+    "COVENANT_REFINANCING": "COVENANT_REFINANCING_ASSUMPTIONS",
+    "RELATIVE_VALUE": "RELATIVE_VALUE_MARKET_MARKS",
+    DISTRESSED_PATHWAY: "DISTRESSED_SCENARIO_RECOVERY",
+    "DEEP_RESEARCH": "DEEP_RESEARCH_REVALIDATION",
+}
+# The modules an effect consumes. An accepted route without them (screen
+# depth) is a depth precondition, reported as such — never as input corruption.
+EFFECT_MODULES = {
+    "FULL_CREDIT": CANONICAL_MODULES,
+    "EARNINGS_UPDATE": ("CP-1", "CP-1B"),
+    "COVENANT_REFINANCING": ("CP-4", "CP-4C"),
+    "RELATIVE_VALUE": ("CP-3",),
+    DISTRESSED_PATHWAY: ("CP-4C",),
+    "DEEP_RESEARCH": ("CP-DR",),
+}
+BASE_MODEL_CODES = {
+    DISTRESSED_PATHWAY: "DISTRESSED_BASE_MODEL_REQUIRED",
+    "DEEP_RESEARCH": "DEEP_RESEARCH_NO_NUMERIC_EFFECT",
+}
+DEFAULT_BASE_MODEL_CODE = "PRIOR_FULL_CREDIT_MODEL_REQUIRED"
+# Document classes whose `used` disposition must reach a model input, a pinned
+# market-marks workbook, the bound brief or the cited analysis before a build
+# may read READY (ETR-B12). Anything else that is used but uncited is recorded
+# as NOT_REQUIRED with its reason — explicit, never silently discarded.
+RELEVANT_DOCUMENT_TYPES = frozenset({
+    "annual_report", "quarterly_report", "earnings_release", "management_guidance",
+    "credit_agreement", "amendment", "restructuring", "market_marks", "research_brief",
+})
+# Reported `credit_metrics` inputs and the base-model output each is compared with.
+VARIANCE_METRICS = (
+    ("revenue", "revenue"),
+    ("adjusted_ebitda", "adjusted_ebitda_calc"),
+    ("total_debt", "total_debt_reported"),
+    ("cash_and_equivalents", "cash_and_equivalents"),
+)
+MARKET_MARK_FIELDS = (
+    "instrument_key", "company", "borrower_name", "sector", "sub_sector", "ranking",
+    "size_mn", "margin_bps", "maturity_date", "bid_points", "ask_points",
+    "mid_ytm_pct", "mid_3y_dm_bps",
+)
+MAX_LINEAGE_DETAIL_IDS = 20
+_ANNUAL_PERIOD = re.compile(r"^FY(\d{4})$")
 # ponytail: bounds a corrupted prior-snapshot chain; raise only if a legitimate
 # case ever approaches one thousand accepted analyses.
 MAX_SNAPSHOT_ANCESTORS = 1_000
@@ -147,6 +203,34 @@ DISTRESSED_BASE_MODEL_DETAIL = (
     "Accept and complete a Full Credit model before building a Distressed "
     "Restructuring overlay."
 )
+LINEAGE_INCOMPLETE_DETAIL = (
+    "One or more admitted documents reached no model input, calculation or "
+    "cited analysis in the accepted run, so the model is not source-complete."
+)
+# Readiness renders these as NOT_READY with the code as the blocker: each is a
+# precondition the analyst can act on, never input corruption.
+PRECONDITION_DETAILS = {
+    "ACCEPTED_FULL_CREDIT_REQUIRED": WRONG_PATHWAY_AUTHORITY_DETAIL,
+    "DISTRESSED_BASE_MODEL_REQUIRED": DISTRESSED_BASE_MODEL_DETAIL,
+    "PRIOR_FULL_CREDIT_MODEL_REQUIRED": (
+        "This pathway's model effect overlays a Full Credit model. Accept and "
+        "complete a Full Credit model in this case first."
+    ),
+    "DEEP_RESEARCH_NO_NUMERIC_EFFECT": (
+        "Deep Research declares no numeric model effect, and this case has no "
+        "Full Credit model to revalidate."
+    ),
+    "FULL_DEPTH_REQUIRED": (
+        "The accepted run is a screen-depth route without the modules the "
+        "model effect depends on. Run the pathway at full depth and accept it."
+    ),
+    "RELATIVE_VALUE_MARKET_MARKS_REQUIRED": (
+        "The accepted Relative Value run pinned no market-marks workbook. "
+        "Supply the CP-3 loan-universe workbook with the documents and run "
+        "Relative Value again."
+    ),
+    "MODEL_SOURCE_LINEAGE_INCOMPLETE": LINEAGE_INCOMPLETE_DETAIL,
+}
 
 
 def _is_sha256(value: Any) -> bool:
@@ -182,9 +266,9 @@ def _export_identity_digest(
     })
 
 
-def _pathway_effect_rows(effects: list[dict[str, Any]]):
+def _audit_rows(root: str, value: Any):
     """Flatten validated JSON into deterministic, formula-safe audit rows."""
-    stack: list[tuple[str, Any]] = [("pathway_effects", effects)]
+    stack: list[tuple[str, Any]] = [(root, value)]
     row_count = 0
     while stack:
         path, value = stack.pop()
@@ -216,24 +300,24 @@ def _pathway_effect_rows(effects: list[dict[str, Any]]):
         for index, chunk in enumerate(chunks, 1):
             row_count += 1
             if row_count > MAX_PATHWAY_EFFECT_EXPORT_ROWS:
-                raise ModelInputError("Distressed pathway effect is too large to export")
+                raise ModelInputError(f"{root} audit record is too large to export")
             chunk_path = path if len(chunks) == 1 else f"{path}.chunk.{index:04d}"
             yield chunk_path, chunk
 
 
-def _pathway_effect_tab(effects: list[dict[str, Any]]) -> dict[str, Any]:
-    rows = [("Field", "Value"), *_pathway_effect_rows(effects)]
+def _audit_tab(tab_id: str, title: str, root: str, value: Any) -> dict[str, Any]:
+    rows = [("Field", "Value"), *_audit_rows(root, value)]
     cells = []
     for row, values in enumerate(rows, 1):
-        for column, value in enumerate(values, 1):
+        for column, cell_value in enumerate(values, 1):
             cells.append({
                 "address": f"R{row}C{column}",
                 "row": row,
                 "column": column,
-                "value": value,
+                "value": cell_value,
                 "value_type": (
                     "number"
-                    if isinstance(value, (int, float)) and not isinstance(value, bool)
+                    if isinstance(cell_value, (int, float)) and not isinstance(cell_value, bool)
                     else "text"
                 ),
                 "formula": None,
@@ -244,22 +328,80 @@ def _pathway_effect_tab(effects: list[dict[str, Any]]) -> dict[str, Any]:
                 "source_refs": None,
             })
     return {
-        "id": "PATHWAY_EFFECTS",
-        "title": "Pathway Effects",
+        "id": tab_id,
+        "title": title,
         "max_row": len(rows),
         "max_column": 2,
         "cells": cells,
     }
 
 
-def _with_pathway_effects(worksheet: dict[str, Any], effects: list[dict[str, Any]]) -> dict[str, Any]:
-    if not effects:
+def _audit_tabs(payload: dict[str, Any] | None) -> list[dict[str, Any]]:
+    """The audit worksheets a build's payload earns: the pathway effect when the
+    build is an overlay, and the source lineage on every build."""
+    tabs: list[dict[str, Any]] = []
+    effects = (payload or {}).get("pathway_effects") or []
+    if effects:
+        tabs.append(_audit_tab("PATHWAY_EFFECTS", "Pathway Effects", "pathway_effects", effects))
+    lineage = (payload or {}).get("source_lineage") or []
+    if lineage:
+        tabs.append(_audit_tab("SOURCE_LINEAGE", "Source Lineage", "source_lineage", lineage))
+    return tabs
+
+
+def _with_audit_tabs(worksheet: dict[str, Any], payload: dict[str, Any] | None) -> dict[str, Any]:
+    tabs = _audit_tabs(payload)
+    if not tabs:
         return worksheet
     result = copy.deepcopy(worksheet)
-    if any(tab.get("title") == "Pathway Effects" for tab in result.get("tabs", [])):
-        raise ModelInputError("duplicate Pathway Effects worksheet")
-    result["tabs"].append(_pathway_effect_tab(effects))
+    titles = {tab.get("title") for tab in result.get("tabs", [])}
+    for tab in tabs:
+        if tab["title"] in titles:
+            raise ModelInputError(f"duplicate {tab['title']} worksheet")
+        result["tabs"].append(tab)
     return result
+
+
+def _table_rows(markdown: str, table_id: str) -> list[dict[str, str]]:
+    """Rows of one vendor-validated stable table, keyed by its header names.
+    Bounded by the document the vendor already validated; a missing table is
+    an empty list, never a guess."""
+    marker = f"<!-- table-id: {table_id} -->"
+    start = markdown.find(marker)
+    if start < 0:
+        return []
+    lines = markdown[start + len(marker):].splitlines()
+    header: list[str] | None = None
+    rows: list[dict[str, str]] = []
+    for line in lines:
+        if not line.lstrip().startswith("|"):
+            if header is not None:
+                break
+            continue
+        cells = [cell.strip() for cell in line.strip().strip("|").split("|")]
+        if header is None:
+            header = cells
+            continue
+        if all(set(cell.replace("-", "").replace(":", "")) == set() for cell in cells):
+            continue
+        if len(cells) == len(header):
+            rows.append(dict(zip(header, cells)))
+    return rows
+
+
+def _decimal_text(value: Any) -> str | None:
+    """A finite JSON number as its exact decimal text; None stays None and a
+    non-finite operand is refused before use (invariant 7)."""
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, (int, float, Decimal)):
+        raise ModelInputError("non-numeric model effect operand")
+    number = value if isinstance(value, Decimal) else Decimal(str(value))
+    if not number.is_finite():
+        raise ModelInputError("non-finite model effect operand")
+    # Calculator outputs arrive as JSON floats (1000.0); the exact value, not
+    # the float's spelling, is the record.
+    return format(number.normalize(), "f")
 
 
 def _materialize_workbook_tabs(path: Path, tabs: list[dict[str, Any]]) -> None:
@@ -368,7 +510,7 @@ class ModelService:
     def on_accepted(self, run: dict[str, Any], actor: str) -> None:
         """Accept-time auto-queue. Acceptance is already durable; any failure
         here (readiness, queue, dispatch) leaves it standing."""
-        if run.get("pathway") not in {"FULL_CREDIT", DISTRESSED_PATHWAY}:
+        if run.get("pathway") not in MODEL_EFFECT_PATHWAYS:
             return
         self.queue_build(run["case_id"], actor)
 
@@ -393,16 +535,32 @@ class ModelService:
     def _resolve_snapshot(
         self, snapshot: dict[str, Any], *, deadline: float | None = None,
     ) -> dict[str, Any]:
-        """Resolve either a clean Full Credit model or its explicit Distressed overlay."""
+        """Resolve the accepted pathway's declared model effect: the complete
+        Full Credit model, or one overlay on the nearest validated Full Credit
+        model (DECISIONS §14.18)."""
         with _resolution_scope():
             run = self._validated_snapshot_run(snapshot)
+            if run["pathway"] not in MODEL_EFFECT_PATHWAYS:
+                raise ModelInputError(
+                    "accepted pathway declares no model effect",
+                    code="ACCEPTED_FULL_CREDIT_REQUIRED",
+                )
+            self._require_effect_modules(run)
             if run["pathway"] == "FULL_CREDIT":
                 return self._resolve_full_credit_snapshot(snapshot, run)
-            if run["pathway"] == DISTRESSED_PATHWAY:
-                return self._resolve_distressed_snapshot(snapshot, run, deadline=deadline)
+            return self._resolve_overlay_snapshot(snapshot, run, deadline=deadline)
+
+    @staticmethod
+    def _require_effect_modules(run: dict[str, Any]) -> None:
+        planned = {
+            node.get("module_id")
+            for node in (run.get("plan") or {}).get("nodes") or []
+            if isinstance(node, dict)
+        }
+        if not set(EFFECT_MODULES[run["pathway"]]) <= planned:
             raise ModelInputError(
-                "accepted FULL_CREDIT or DISTRESSED_RESTRUCTURING run required",
-                code="ACCEPTED_FULL_CREDIT_REQUIRED",
+                "accepted route lacks the modules the model effect depends on",
+                code="FULL_DEPTH_REQUIRED",
             )
 
     def _resolve_full_credit_snapshot(
@@ -454,6 +612,8 @@ class ModelService:
             "derived_from": by_module["CP-2A"]["digest"],
             "status": "READY",
         })
+        model_markdown = {**markdown, "CP-2A": by_module["CP-2A"]["markdown"]}
+        lineage = self._source_lineage(snapshot, run, artifacts, model_markdown=model_markdown)
         fingerprint = digest({
             "case_id": snapshot["case_id"],
             "accepted_run_id": snapshot["run_id"],
@@ -461,6 +621,7 @@ class ModelService:
             "accepted_snapshot_digest": snapshot.get("digest"),
             "source_set": {"id": source_set["id"], "version": source_set["version"]},
             "artifacts": [{"module_id": item["module_id"], "digest": item["digest"]} for item in inventory],
+            "source_lineage_digest": digest(lineage),
             "methodology_build_id": self.engine.bundle.build_id,
             "calculation_runtime": self.bundle.calculation_runtime,
         })
@@ -469,7 +630,9 @@ class ModelService:
             "source_set": {"id": source_set["id"], "version": source_set["version"]},
             "artifact_inventory": inventory,
             "markdown": markdown,
+            "model_markdown": model_markdown,
             "input_fingerprint": fingerprint,
+            "source_lineage": lineage,
         }
 
     def _validated_snapshot_run(
@@ -522,24 +685,149 @@ class ModelService:
             or source_set.get("case_id") != snapshot["case_id"]
             or source_set.get("version") != snapshot["source_set_version"]
             or source_set_digest(source_set) != plan.get("source_set_digest")
-            or (
-                require_live_sources
-                and self.store.sources_for_live_set(
-                    snapshot["case_id"],
-                    snapshot["source_set_id"],
-                    snapshot["source_set_version"],
-                ) is None
-            )
         ):
             raise ModelInputError(
                 "Accepted snapshot source authority is unavailable",
                 code=error_code,
             )
+        if require_live_sources:
+            live = self.store.sources_for_live_set(
+                snapshot["case_id"],
+                snapshot["source_set_id"],
+                snapshot["source_set_version"],
+            )
+            if live is None:
+                raise ModelInputError(
+                    "Accepted snapshot source authority is unavailable",
+                    code=error_code,
+                )
+            memo = _RESOLUTION_MEMO.get()
+            if memo is not None:
+                memo[("live", snapshot["id"])] = live
         return run
+
+    def _live_snapshot_sources(self, snapshot: dict[str, Any]) -> list[dict[str, Any]]:
+        memo = _RESOLUTION_MEMO.get()
+        cached = memo.get(("live", snapshot["id"])) if memo is not None else None
+        if cached is not None:
+            return cached
+        live = self.store.sources_for_live_set(
+            snapshot["case_id"], snapshot["source_set_id"], snapshot["source_set_version"],
+        )
+        if live is None:
+            raise ModelInputError("Accepted snapshot source authority is unavailable")
+        return live
+
+    def _source_lineage(
+        self,
+        snapshot: dict[str, Any],
+        run: dict[str, Any],
+        artifacts: list[dict[str, Any]],
+        *,
+        model_markdown: dict[str, str] | None,
+        market_marks_source_id: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """One row per pinned source: the intake disposition and reason, the
+        expected consumers, the artifacts that cite it, whether a model-facing
+        table names it, and the binding that follows. A `used` relevant document
+        bound to nothing makes the model incomplete (typed, never READY)."""
+        manifest: dict[str, dict[str, Any]] = {}
+        # Every intake the case admitted, oldest first: a later intake's row for
+        # a source supersedes an earlier one. A duplicate row (the same bytes
+        # dropped again) never speaks for the source: when it is the only row —
+        # the bytes were admitted through the source route — it lends its
+        # classification, and the source stays `used`, so a relevant document
+        # cannot be waved through as "not required" by re-dropping it.
+        for intake in self.store.intakes_for_case(snapshot["case_id"]):
+            for row in ((intake.get("record") or {}).get("documents") or []):
+                source_id = row.get("source_id") if isinstance(row, dict) else None
+                if not isinstance(source_id, str):
+                    continue
+                if row.get("disposition") == "duplicate":
+                    if source_id not in manifest:
+                        manifest[source_id] = {
+                            **row, "disposition": "used",
+                            "reason": "admitted through the source route; classified when the same bytes were dropped again",
+                        }
+                    continue
+                manifest[source_id] = row
+        cited: dict[str, set[str]] = {}
+        for artifact in artifacts:
+            for ref in (artifact.get("payload") or {}).get("evidence_refs") or []:
+                source_id = ref.get("source_id") if isinstance(ref, dict) else ref
+                if isinstance(source_id, str):
+                    cited.setdefault(source_id, set()).add(artifact["module_id"])
+        model_inputs: set[str] = set()
+        for module_id, text in (model_markdown or {}).items():
+            if isinstance(text, str):
+                model_inputs |= model_facing_source_ids(text, module_id=module_id)
+        pinned_universe = ((run.get("plan") or {}).get("loan_universe") or {}).get("source_id")
+        brief_bound = run.get("research") is not None
+        rows: list[dict[str, Any]] = []
+        for source in self._live_snapshot_sources(snapshot):
+            source_id = source["id"]
+            row = manifest.get(source_id)
+            document_type = str(row.get("document_type") or "unclassified") if row else "unclassified"
+            disposition = str(row.get("disposition") or "used") if row else "used"
+            reason = str(row.get("reason") or "") if row else "supplied through the source route; no intake manifest"
+            try:
+                reason = validate_boundary_text(reason)
+            except ValueError:
+                reason = "manifest reason failed boundary validation"
+            cited_by = sorted(cited.get(source_id, ()))
+            in_model = source_id in model_inputs
+            if disposition == "superseded":
+                binding = "SUPERSEDED"
+            elif disposition != "used":
+                binding = "NOT_REQUIRED"
+            elif in_model:
+                binding = "MODEL_INPUT"
+            elif source_id in {pinned_universe, market_marks_source_id}:
+                binding = "MARKET_MARKS"
+            elif document_type == "research_brief" and brief_bound:
+                binding = "RESEARCH_BRIEF"
+            elif cited_by:
+                binding = "CITED_ANALYSIS"
+            elif document_type not in RELEVANT_DOCUMENT_TYPES and document_type != "unclassified":
+                binding = "NOT_REQUIRED"
+                reason = f"{reason}; no model consumer for document type {document_type}"
+            else:
+                binding = "UNBOUND"
+            period = (row or {}).get("period") if row else None
+            rows.append({
+                "source_id": source_id,
+                "sha256": source["sha256"],
+                "document_type": document_type,
+                "period": period.get("label") if isinstance(period, dict) else None,
+                "version_status": (row or {}).get("version_status"),
+                "disposition": disposition,
+                "reason": reason,
+                "consumers": [str(item) for item in ((row or {}).get("consumers") or [])],
+                "cited_by": cited_by,
+                "model_input": in_model,
+                "binding": binding,
+            })
+        rows.sort(key=lambda item: item["source_id"])
+        unbound = [item["source_id"] for item in rows if item["binding"] == "UNBOUND"]
+        if unbound:
+            listed = ", ".join(unbound[:MAX_LINEAGE_DETAIL_IDS])
+            raise ModelInputError(
+                "admitted evidence reached no model input, calculation or cited analysis",
+                code="MODEL_SOURCE_LINEAGE_INCOMPLETE",
+                detail=(
+                    f"{len(unbound)} admitted document(s) ({listed}) reached no model input, "
+                    "calculation or cited analysis in the accepted run, so the model is not "
+                    "source-complete. Re-run the analysis so every relevant document is used, "
+                    "or withdraw the unused documents and run again."
+                ),
+            )
+        return rows
 
     def _prior_full_credit_snapshot(
         self,
         snapshot: dict[str, Any],
+        *,
+        code: str = DEFAULT_BASE_MODEL_CODE,
     ) -> tuple[dict[str, Any], dict[str, Any]]:
         current = snapshot
         seen = {snapshot["id"]}
@@ -553,16 +841,16 @@ class ModelService:
                 break
             run = self._validated_snapshot_run(
                 previous,
-                error_code="DISTRESSED_BASE_MODEL_REQUIRED",
+                error_code=code,
                 require_live_sources=False,
             )
             if run["pathway"] == "FULL_CREDIT":
-                self._validated_snapshot_run(previous, error_code="DISTRESSED_BASE_MODEL_REQUIRED")
+                self._validated_snapshot_run(previous, error_code=code)
                 return previous, run
             current = previous
         raise ModelInputError(
-            "A prior Full Credit snapshot is required for Distressed modeling",
-            code="DISTRESSED_BASE_MODEL_REQUIRED",
+            "A prior Full Credit snapshot is required for this pathway's model effect",
+            code=code,
         )
 
     def _validated_base_build(
@@ -571,6 +859,7 @@ class ModelService:
         resolved: dict[str, Any],
         *,
         deadline: float | None = None,
+        code: str = DEFAULT_BASE_MODEL_CODE,
     ) -> dict[str, Any]:
         build = self.builds.build_for_fingerprint(
             snapshot["case_id"], resolved["input_fingerprint"]
@@ -597,7 +886,7 @@ class ModelService:
         ):
             raise ModelInputError(
                 "A validated READY Full Credit model is required",
-                code="DISTRESSED_BASE_MODEL_REQUIRED",
+                code=code,
             )
         self._resolved_cache.pop(build["id"], None)
         self._defaults_cache.pop(build["id"], None)
@@ -606,7 +895,7 @@ class ModelService:
         except (ModelInputError, ValueError):
             raise ModelInputError(
                 "The prior Full Credit model calculation is invalid",
-                code="DISTRESSED_BASE_MODEL_REQUIRED",
+                code=code,
             ) from None
         if (
             build["payload"] != expected_result["payload"]
@@ -617,7 +906,7 @@ class ModelService:
         ):
             raise ModelInputError(
                 "The prior Full Credit model identity is invalid",
-                code="DISTRESSED_BASE_MODEL_REQUIRED",
+                code=code,
             ) from None
         return build
 
@@ -687,31 +976,37 @@ class ModelService:
             memo[key] = (artifacts, inventory)
         return artifacts, inventory
 
-    def _validated_distressed_calculations(
+    def _validated_calculations(
         self,
         artifact: dict[str, Any],
+        module_id: str,
+        *,
+        required: frozenset[str] = frozenset(),
     ) -> list[dict[str, Any]]:
+        """Every calculation record an accepted artifact carries, re-verified
+        against the pinned binding and re-executed before the model may consume
+        it; `required` names the calculators the effect cannot do without."""
         records = artifact["payload"].get("calculations")
-        if not isinstance(records, list) or not records:
-            raise ModelInputError("CP-4C calculation records are unavailable")
+        if not isinstance(records, list) or (required and not records):
+            raise ModelInputError(f"{module_id} calculation records are unavailable")
         try:
             bindings = {
                 item["calculator_id"]: item
                 for item in self.engine._calculation_runtime.binding_manifest()
-                if item["module_id"] == "CP-4C"
+                if item["module_id"] == module_id
             }
         except (AttributeError, KeyError, TypeError, ValueError):
-            raise ModelInputError("CP-4C calculation authority is unavailable") from None
-        if set(bindings) != DISTRESSED_CALCULATORS:
-            raise ModelInputError("CP-4C calculation authority is unavailable")
+            raise ModelInputError(f"{module_id} calculation authority is unavailable") from None
+        if not required <= set(bindings):
+            raise ModelInputError(f"{module_id} calculation authority is unavailable")
         calculator_ids: set[str] = set()
         validated: list[dict[str, Any]] = []
         for record in records:
             if not isinstance(record, dict):
-                raise ModelInputError("CP-4C calculation record is invalid")
+                raise ModelInputError(f"{module_id} calculation record is invalid")
             calculator_id = record.get("calculator_id")
             if calculator_id in calculator_ids:
-                raise ModelInputError("CP-4C calculation record is duplicated")
+                raise ModelInputError(f"{module_id} calculation record is duplicated")
             dependencies = record.get("dependency_digests")
             binding = bindings.get(calculator_id)
             if (
@@ -731,7 +1026,7 @@ class ModelService:
                 }
                 or record.get("schema_version") != "caos.methodology-calculation.v1"
                 or record.get("methodology_build_id") != self.engine.bundle.build_id
-                or record.get("module_id") != "CP-4C"
+                or record.get("module_id") != module_id
                 or binding is None
                 or record.get("script_digest") != binding["script_digest"]
                 or record.get("script_bytes") != binding["script_bytes"]
@@ -740,81 +1035,111 @@ class ModelService:
                 or not _is_sha256(record.get("input_digest"))
                 or not _is_sha256(record.get("output_digest"))
             ):
-                raise ModelInputError("CP-4C calculation record identity is invalid")
+                raise ModelInputError(f"{module_id} calculation record identity is invalid")
             try:
                 canonical_input = clean_json(record["canonical_input"])
                 canonical_output = clean_json(record["canonical_output"])
             except (KeyError, TypeError, ValueError):
-                raise ModelInputError("CP-4C calculation output is invalid") from None
+                raise ModelInputError(f"{module_id} calculation output is invalid") from None
             if (
                 type(canonical_input) is not dict
                 or digest(canonical_input) != record["input_digest"]
                 or digest(canonical_output) != record["output_digest"]
             ):
-                raise ModelInputError("CP-4C calculation input or output digest is invalid")
+                raise ModelInputError(f"{module_id} calculation input or output digest is invalid")
             try:
                 recalculated = self.engine._calculation_runtime.execute(
-                    "CP-4C",
+                    module_id,
                     calculator_id,
                     canonical_input,
                 )
             except (AttributeError, KeyError, TypeError, ValueError):
-                raise ModelInputError("CP-4C calculation cannot be reconstructed") from None
+                raise ModelInputError(f"{module_id} calculation cannot be reconstructed") from None
             if recalculated != record:
-                raise ModelInputError("CP-4C calculation reconstruction differs")
+                raise ModelInputError(f"{module_id} calculation reconstruction differs")
             if not calculation_output_complete(
-                "CP-4C",
+                module_id,
                 calculator_id,
                 recalculated["canonical_output"],
             ):
-                raise ModelInputError("CP-4C calculation is incomplete")
+                raise ModelInputError(f"{module_id} calculation is incomplete")
             calculator_ids.add(calculator_id)
             validated.append(copy.deepcopy(record))
-        if calculator_ids != DISTRESSED_CALCULATORS:
-            raise ModelInputError("CP-4C funding gap and recovery calculations are required")
+        if not required <= calculator_ids:
+            raise ModelInputError(f"{module_id} required calculations are missing")
         return validated
 
-    def _resolve_distressed_snapshot(
+    @staticmethod
+    def _calculation_limitations(
+        by_module: dict[str, dict[str, Any]],
+        module_ids: tuple[str, ...],
+    ) -> list[dict[str, Any]]:
+        """Host-declared calculation limitations of the consumed modules, copied
+        verbatim: a calculator that stayed incomplete is a named gap on the
+        effect, never a zero."""
+        return [
+            {"module_id": module_id, "limitation": copy.deepcopy(limitation)}
+            for module_id in module_ids
+            for limitation in ((by_module.get(module_id) or {}).get("payload") or {}).get("calculation_limitations") or []
+        ]
+
+    def _resolve_overlay_snapshot(
         self,
         snapshot: dict[str, Any],
         run: dict[str, Any],
         *,
         deadline: float | None = None,
     ) -> dict[str, Any]:
-        if run["pathway"] != DISTRESSED_PATHWAY:
-            raise ModelInputError("accepted Distressed run required")
+        """One overlay on the nearest validated Full Credit model: the base
+        build is re-verified by recomputation, the accepted run's calculation
+        records are re-executed, and the pathway's effect rides the payload
+        under its own input fingerprint. The base tabs are copied unchanged, so
+        no reported period, assumption or output is ever overwritten."""
+        pathway = run["pathway"]
+        code = BASE_MODEL_CODES.get(pathway, DEFAULT_BASE_MODEL_CODE)
         artifacts, inventory = self._validated_snapshot_artifacts(snapshot, run)
-        cp4c = next(
-            (artifact for artifact in artifacts if artifact["module_id"] == "CP-4C"),
-            None,
-        )
-        if cp4c is None:
-            raise ModelInputError("CP-4C artifact is unavailable")
-
-        base_snapshot, base_run = self._prior_full_credit_snapshot(snapshot)
+        by_module = {artifact["module_id"]: artifact for artifact in artifacts}
+        base_snapshot, base_run = self._prior_full_credit_snapshot(snapshot, code=code)
         try:
             self._validated_snapshot_artifacts(base_snapshot, base_run)
             base_resolved = self._resolve_full_credit_snapshot(base_snapshot, base_run)
         except (ModelInputError, ValueError):
-            raise ModelInputError(
-                "The prior Full Credit snapshot is invalid",
-                code="DISTRESSED_BASE_MODEL_REQUIRED",
-            ) from None
-        base_build = self._validated_base_build(base_snapshot, base_resolved, deadline=deadline)
-        calculations = self._validated_distressed_calculations(cp4c)
+            raise ModelInputError("The prior Full Credit snapshot is invalid", code=code) from None
+        base_build = self._validated_base_build(base_snapshot, base_resolved, deadline=deadline, code=code)
         source_set = self.store.source_set(snapshot["source_set_id"])
         if (
             source_set is None
             or source_set.get("case_id") != snapshot["case_id"]
             or source_set.get("version") != snapshot["source_set_version"]
         ):
-            raise ModelInputError("Distressed source set is unavailable")
-
+            raise ModelInputError("accepted source set is unavailable")
+        deadline = deadline if deadline is not None else self._new_deadline()
+        builder = {
+            "EARNINGS_UPDATE": self._earnings_effect,
+            "COVENANT_REFINANCING": self._covenant_effect,
+            "RELATIVE_VALUE": self._relative_value_effect,
+            DISTRESSED_PATHWAY: self._distressed_effect,
+            "DEEP_RESEARCH": self._deep_research_effect,
+        }[pathway]
+        content = builder(snapshot, run, by_module, base_build, base_resolved, source_set, deadline)
+        authority = {
+            "run_id": snapshot["run_id"],
+            "snapshot_id": snapshot["id"],
+            "snapshot_digest": snapshot["digest"],
+            "source_set_id": snapshot["source_set_id"],
+            "source_set_version": snapshot["source_set_version"],
+            "provider_identity_digest": (snapshot.get("provider_identity") or {}).get("identity_digest"),
+            "artifacts": [
+                {"module_id": item["module_id"], "artifact_id": item["artifact_id"], "digest": item["digest"]}
+                for item in inventory
+            ],
+            **content.get("authority_extra", {}),
+        }
+        calculations = content["calculations"]
         effect = {
-            "schema_version": "caos.model-pathway-effect.v1",
-            "effect_id": "DISTRESSED_SCENARIO_RECOVERY",
-            "pathway": DISTRESSED_PATHWAY,
-            "treatment": "BASE_MODEL_REUSED_WITH_DISTRESSED_SCENARIO_OVERLAY",
+            "schema_version": PATHWAY_EFFECT_SCHEMA,
+            "effect_id": EFFECT_IDS[pathway],
+            "pathway": pathway,
             "base_model": {
                 "build_id": base_build["id"],
                 "run_id": base_snapshot["run_id"],
@@ -830,37 +1155,22 @@ class ModelService:
                 "methodology_build_id": base_build["methodology_build_id"],
                 "calculation_runtime": base_build["calculation_runtime"],
             },
-            "distressed_authority": {
-                "run_id": snapshot["run_id"],
-                "snapshot_id": snapshot["id"],
-                "snapshot_digest": snapshot["digest"],
-                "source_set_id": snapshot["source_set_id"],
-                "source_set_version": snapshot["source_set_version"],
-                "provider_identity_digest": (
-                    snapshot.get("provider_identity") or {}
-                ).get("identity_digest"),
-                "artifacts": [
-                    {
-                        "module_id": item["module_id"],
-                        "artifact_id": item["artifact_id"],
-                        "digest": item["digest"],
-                    }
-                    for item in inventory
-                ],
-                "cp4c_artifact_id": cp4c["id"],
-                "cp4c_artifact_digest": cp4c["digest"],
-            },
+            ("distressed_authority" if pathway == DISTRESSED_PATHWAY else "accepted_authority"): authority,
             "calculations": calculations,
             "calculation_records_digest": digest(calculations),
+            "limitations": content["limitations"],
             "methodology_build_id": self.engine.bundle.build_id,
             "cp_model_runtime": self.bundle.calculation_runtime,
-            "scope": (
-                "The prior Full Credit operating model is reused unchanged; "
-                "only the CP-4C funding-gap and recovery analysis is overlaid."
-            ),
+            **content["sections"],
         }
+        lineage = self._source_lineage(
+            snapshot, run, artifacts,
+            model_markdown=base_resolved["model_markdown"],
+            market_marks_source_id=content.get("market_marks_source_id"),
+        )
         model_payload = copy.deepcopy(base_build["payload"])
         model_payload["pathway_effects"] = [effect]
+        model_payload["source_lineage"] = lineage
         fingerprint = digest({
             "case_id": snapshot["case_id"],
             "accepted_run_id": snapshot["run_id"],
@@ -869,15 +1179,12 @@ class ModelService:
             "previous_snapshot_id": snapshot.get("previous_snapshot_id"),
             "source_set": {"id": source_set["id"], "version": source_set["version"]},
             "artifacts": [
-                {
-                    "module_id": item["module_id"],
-                    "artifact_id": item["artifact_id"],
-                    "digest": item["digest"],
-                }
+                {"module_id": item["module_id"], "artifact_id": item["artifact_id"], "digest": item["digest"]}
                 for item in inventory
             ],
             "base_model": effect["base_model"],
-            "calculation_records_digest": effect["calculation_records_digest"],
+            "effect_digest": digest(effect),
+            "source_lineage_digest": digest(lineage),
             "methodology_build_id": self.engine.bundle.build_id,
             "calculation_runtime": self.bundle.calculation_runtime,
         })
@@ -886,10 +1193,247 @@ class ModelService:
             "source_set": {"id": source_set["id"], "version": source_set["version"]},
             "artifact_inventory": inventory,
             "markdown": base_resolved["markdown"],
+            "model_markdown": base_resolved["model_markdown"],
             "input_fingerprint": fingerprint,
             "base_build": base_build,
             "pathway_effect": effect,
             "model_payload": model_payload,
+            "source_lineage": lineage,
+        }
+
+    @staticmethod
+    def _require_artifact(by_module: dict[str, dict[str, Any]], module_id: str) -> dict[str, Any]:
+        artifact = by_module.get(module_id)
+        if artifact is None:
+            raise ModelInputError(f"{module_id} artifact is unavailable")
+        return artifact
+
+    def _distressed_effect(self, snapshot, run, by_module, base_build, base_resolved, source_set, deadline):
+        cp4c = self._require_artifact(by_module, "CP-4C")
+        calculations = self._validated_calculations(cp4c, "CP-4C", required=DISTRESSED_CALCULATORS)
+        return {
+            "calculations": calculations,
+            "limitations": self._calculation_limitations(by_module, ("CP-4C",)),
+            "authority_extra": {"cp4c_artifact_id": cp4c["id"], "cp4c_artifact_digest": cp4c["digest"]},
+            "sections": {
+                "treatment": "BASE_MODEL_REUSED_WITH_DISTRESSED_SCENARIO_OVERLAY",
+                "scope": (
+                    "The prior Full Credit operating model is reused unchanged; "
+                    "only the CP-4C funding-gap and recovery analysis is overlaid."
+                ),
+            },
+        }
+
+    def _earnings_effect(self, snapshot, run, by_module, base_build, base_resolved, source_set, deadline):
+        """Reported periods from the run's verified credit_metrics records, and
+        the variance of each against the base model's forecast for the same
+        fiscal year. Reported actuals and analyst forecasts keep distinct
+        authority; a missing side is a named gap, never zero."""
+        calculations: list[dict[str, Any]] = []
+        period_updates: list[dict[str, Any]] = []
+        for module_id in ("CP-1", "CP-1B"):
+            artifact = self._require_artifact(by_module, module_id)
+            records = self._validated_calculations(
+                artifact, module_id,
+                required=frozenset({"credit_metrics"}) if module_id == "CP-1" else frozenset(),
+            )
+            calculations.extend(records)
+            for record in records:
+                if record["calculator_id"] != "credit_metrics":
+                    continue
+                periods = record["canonical_output"].get("periods") or {}
+                for period_id in sorted(periods):
+                    period = periods[period_id] or {}
+                    period_updates.append({
+                        "period_id": period_id,
+                        "module_id": module_id,
+                        "authority": "REPORTED_ACTUAL",
+                        "reported": {
+                            key: _decimal_text(value)
+                            for key, value in sorted((period.get("inputs") or {}).items())
+                        },
+                        "kpis": {
+                            key: _decimal_text(value)
+                            for key, value in sorted((period.get("kpis") or {}).items())
+                        },
+                        "not_calculable": [str(item) for item in period.get("not_calculable") or []],
+                        "record_output_digest": record["output_digest"],
+                    })
+        _defaults, base_outputs = self._defaults(base_build, deadline)
+        return {
+            "calculations": calculations,
+            "limitations": self._calculation_limitations(by_module, ("CP-1", "CP-1B")),
+            "sections": {
+                "treatment": "BASE_MODEL_REUSED_WITH_REPORTED_PERIODS_AND_FORECAST_VARIANCE",
+                "period_updates": period_updates,
+                "forecast_variance": _forecast_variance(period_updates, base_outputs),
+                "scope": (
+                    "The prior Full Credit model is reused unchanged; the accepted "
+                    "earnings run's reported periods are attached and compared "
+                    "with the model's forecast for the same fiscal years."
+                ),
+            },
+        }
+
+    def _covenant_effect(self, snapshot, run, by_module, base_build, base_resolved, source_set, deadline):
+        """Covenant tests from CP-4 and the refinancing wall from CP-4C, both
+        documentary, plus the base registry slots a test maps to as proposals
+        for sign-off. Nothing is applied to the signed model here."""
+        calculations: list[dict[str, Any]] = []
+        covenant_updates: list[dict[str, Any]] = []
+        refinancing_updates: list[dict[str, Any]] = []
+        for module_id in ("CP-4", "CP-4C"):
+            artifact = self._require_artifact(by_module, module_id)
+            records = self._validated_calculations(artifact, module_id)
+            calculations.extend(records)
+            for record in records:
+                output = record["canonical_output"]
+                if record["calculator_id"] == "covenant_headroom":
+                    for row in output.get("headroom") or []:
+                        covenant_updates.append({
+                            "module_id": module_id,
+                            "test": row.get("test"),
+                            "test_type": row.get("test_type"),
+                            "threshold": _decimal_text(row.get("threshold")),
+                            "current_ratio": _decimal_text(row.get("current_ratio")),
+                            "headroom": _decimal_text(row.get("headroom")),
+                            "status": row.get("status"),
+                            "missing_inputs": [str(item) for item in row.get("missing_inputs") or []],
+                            "authority": "DOCUMENTARY_COVENANT_TERMS",
+                            "record_output_digest": record["output_digest"],
+                        })
+                elif record["calculator_id"] == "funding_gap":
+                    for view in ("as_of_balance_sheet_date", "pro_forma_for_subsequent_events"):
+                        if isinstance(output.get(view), dict):
+                            refinancing_updates.append({
+                                "module_id": module_id,
+                                "view": view,
+                                "maturity_wall": copy.deepcopy(output[view].get("maturity_wall")),
+                                "liquidity": copy.deepcopy(output[view].get("liquidity")),
+                                "gap": copy.deepcopy(output[view].get("gap")),
+                                "authority": "DOCUMENTARY_INSTRUMENT_TERMS",
+                                "record_output_digest": record["output_digest"],
+                            })
+        defaults, _outputs = self._defaults(base_build, deadline)
+        return {
+            "calculations": calculations,
+            "limitations": self._calculation_limitations(by_module, ("CP-4", "CP-4C")),
+            "sections": {
+                "treatment": "BASE_MODEL_REUSED_WITH_COVENANT_AND_REFINANCING_UPDATES",
+                "covenant_updates": covenant_updates,
+                "refinancing_updates": refinancing_updates,
+                "assumption_updates": _covenant_assumption_updates(covenant_updates, defaults),
+                "scope": (
+                    "The prior Full Credit model is reused unchanged; the accepted "
+                    "run's covenant tests and refinancing wall are attached and the "
+                    "registry slots they map to are proposed for sign-off."
+                ),
+            },
+        }
+
+    def _relative_value_effect(self, snapshot, run, by_module, base_build, base_resolved, source_set, deadline):
+        """The market marks the run pinned at its gate, re-read from the store
+        and digest-verified, attached with their time alignment against the
+        base model's latest reported period and the run's analysis date."""
+        pinned = (run.get("plan") or {}).get("loan_universe")
+        if not isinstance(pinned, dict):
+            raise ModelInputError(
+                "no market-marks workbook is pinned to the accepted run",
+                code="RELATIVE_VALUE_MARKET_MARKS_REQUIRED",
+            )
+        record = self.store.loan_universe(pinned.get("id"))
+        if (
+            record is None
+            or record.get("case_id") != snapshot["case_id"]
+            or record.get("source_id") != pinned.get("source_id")
+            or record.get("source_id") not in (source_set.get("source_ids") or [])
+            or universe_digest(record) != pinned.get("universe_digest")
+            or not isinstance(record.get("rows"), list)
+        ):
+            raise ModelInputError("pinned market marks do not match the store record")
+        calculations: list[dict[str, Any]] = []
+        consumed: list[str] = []
+        for module_id in ("CP-3", "CP-1C"):
+            artifact = by_module.get(module_id)
+            if artifact is None:
+                continue
+            consumed.append(module_id)
+            calculations.extend(self._validated_calculations(artifact, module_id))
+        rows = [
+            {field: row.get(field) for field in MARKET_MARK_FIELDS}
+            for row in record["rows"]
+            if isinstance(row, dict)
+        ]
+        workbook_date = record.get("workbook_date")
+        latest_end = _latest_reported_period_end(base_resolved["markdown"].get("CP-1") or "")
+        analysis_date = str(run.get("created_at") or "")[:10]
+        if not isinstance(workbook_date, str) or not workbook_date:
+            status = "WORKBOOK_DATE_UNAVAILABLE"
+        elif analysis_date and workbook_date > analysis_date:
+            status = "POSTDATES_ANALYSIS"
+        elif latest_end and workbook_date < latest_end:
+            status = "PRECEDES_LATEST_REPORTED_PERIOD"
+        else:
+            status = "ALIGNED"
+        limitations = self._calculation_limitations(by_module, tuple(consumed))
+        if status != "ALIGNED":
+            limitations.append({"module_id": "CP-3", "limitation": {"code": f"MARKET_MARKS_{status}"}})
+        return {
+            "calculations": calculations,
+            "limitations": limitations,
+            "market_marks_source_id": record["source_id"],
+            "sections": {
+                "treatment": "BASE_MODEL_REUSED_WITH_MARKET_MARKS_ATTACHED",
+                "market_marks": {
+                    "universe_id": record["id"],
+                    "universe_digest": record["universe_digest"],
+                    "source_id": record["source_id"],
+                    "source_sha256": record["source_sha256"],
+                    "template_version": record["template_version"],
+                    "importer_version": record["importer_version"],
+                    "workbook_date": workbook_date,
+                    "row_count": len(rows),
+                    "authority": "SUPPLIED_MARKET_MARKS",
+                    "rows": rows,
+                },
+                "time_alignment": {
+                    "workbook_date": workbook_date,
+                    "latest_reported_period_end": latest_end,
+                    "analysis_date": analysis_date or None,
+                    "status": status,
+                },
+                "scope": (
+                    "The prior Full Credit model is reused unchanged; the supplied "
+                    "market marks are attached with their alignment to the model's "
+                    "latest reported period and the run's analysis date."
+                ),
+            },
+        }
+
+    def _deep_research_effect(self, snapshot, run, by_module, base_build, base_resolved, source_set, deadline):
+        """Deep Research declares no numeric effect; with a Full Credit model in
+        the case it revalidates that model (recomputed and compared above) and
+        binds the approved research scope to the record."""
+        cp_dr = self._require_artifact(by_module, "CP-DR")
+        research = run.get("research") or {}
+        return {
+            "calculations": [],
+            "limitations": self._calculation_limitations(by_module, ("CP-DR",)),
+            "sections": {
+                "treatment": "BASE_MODEL_REVALIDATED_NO_NUMERIC_EFFECT",
+                "numeric_effect": "NONE",
+                "base_model_revalidated": True,
+                "research": {
+                    "brief_digest": research.get("brief_digest"),
+                    "approved_plan_hash": research.get("approved_plan_hash"),
+                    "cp_dr_artifact_id": cp_dr["id"],
+                    "cp_dr_artifact_digest": cp_dr["digest"],
+                },
+                "scope": (
+                    "Deep Research changes no model period, assumption or output; "
+                    "the prior Full Credit model is revalidated and left unchanged."
+                ),
+            },
         }
 
     def readiness(self, case_id: str) -> dict[str, Any]:
@@ -911,14 +1455,11 @@ class ModelService:
             # behind an alarming, detail-less callout. Both details are written
             # here, never taken from the exception: the messages raised below
             # interpolate bundle paths and table ids.
-            if getattr(exc, "code", None) == "ACCEPTED_FULL_CREDIT_REQUIRED":
+            code = getattr(exc, "code", None)
+            if code in PRECONDITION_DETAILS:
+                detail = getattr(exc, "detail", None) or PRECONDITION_DETAILS[code]
                 return {"status": "NOT_READY", "module_id": "CP-MODEL", "snapshot_id": snapshot["id"],
-                        "blockers": [{"code": "ACCEPTED_FULL_CREDIT_REQUIRED",
-                                      "detail": WRONG_PATHWAY_AUTHORITY_DETAIL}]}
-            if getattr(exc, "code", None) == "DISTRESSED_BASE_MODEL_REQUIRED":
-                return {"status": "NOT_READY", "module_id": "CP-MODEL", "snapshot_id": snapshot["id"],
-                        "blockers": [{"code": "DISTRESSED_BASE_MODEL_REQUIRED",
-                                      "detail": DISTRESSED_BASE_MODEL_DETAIL}]}
+                        "blockers": [{"code": code, "detail": detail}]}
             return {"status": "CANONICAL_MODEL_INPUTS_INVALID", "module_id": "CP-MODEL",
                     "snapshot_id": snapshot["id"],
                     "blockers": [{"code": "CANONICAL_MODEL_INPUTS_INVALID",
@@ -960,10 +1501,13 @@ class ModelService:
         try:
             resolved = self._resolve_snapshot(snapshot)
         except (ModelInputError, ValueError) as exc:
-            if getattr(exc, "code", None) == "ACCEPTED_FULL_CREDIT_REQUIRED":
+            code = getattr(exc, "code", None)
+            if code == "ACCEPTED_FULL_CREDIT_REQUIRED":
                 raise ValueError("MODEL_NOT_READY: accept a completed Full Credit run first") from exc
-            if getattr(exc, "code", None) == "DISTRESSED_BASE_MODEL_REQUIRED":
+            if code == "DISTRESSED_BASE_MODEL_REQUIRED":
                 raise ValueError("DISTRESSED_BASE_MODEL_REQUIRED") from exc
+            if code in PRECONDITION_DETAILS:
+                raise ValueError(f"MODEL_NOT_READY: {code}") from exc
             raise ValueError("MODEL_BUILD_INVALID: canonical model inputs are invalid") from exc
         registry = self.bundle.assumption_registry
         identity = {
@@ -1104,6 +1648,12 @@ class ModelService:
             result.append(row)
         return result
 
+    def recover_builds(self) -> int:
+        """Worker startup recovery: requeue the builds a predecessor claimed and
+        never finished. A hard kill skips run_pending's FAILED fallback, so
+        without this a claimed row stayed BUILDING forever (SIM-008)."""
+        return self.builds.requeue_building_builds()
+
     def run_build_for_tests(self, build_id: str) -> dict[str, Any]:
         build = self.builds.get_build(build_id)
         if build is None:
@@ -1156,9 +1706,11 @@ class ModelService:
         model, calculations = self._calculate(build, None, deadline)
         serialized = self.bundle.serialize_workbook(model, calculations)
         self._check_deadline(deadline)
+        payload = serialized["payload"]
+        payload["source_lineage"] = copy.deepcopy(resolved["source_lineage"])
         result = {
-            "payload": serialized["payload"],
-            "payload_digest": digest(serialized["payload"]),
+            "payload": payload,
+            "payload_digest": digest(payload),
             "qa": serialized["qa"],
         }
         rows = self._apply_evolution(build["id"], _assumption_rows(model))
@@ -1199,6 +1751,14 @@ class ModelService:
             expected_live_source_ids=self._pinned_source_ids(build),
             status="READY", payload=result["payload"], payload_digest=result["payload_digest"],
             qa=result["qa"], error=None, completed_at=now_iso(), **identity,
+            # Audit lineage rides the same transaction as the READY transition:
+            # the build, its snapshot, its run and the digest of the payload
+            # that carries the source lineage and any pathway effect.
+            audit=lambda conn: self.store._audit(
+                conn, "model.build_ready", build.get("created_by") or "system",
+                case_id=build["case_id"], build_id=build_id, snapshot_id=build.get("snapshot_id"),
+                run_id=build.get("accepted_run_id"), sha256=result["payload_digest"],
+            ),
         )
         if changed:
             return
@@ -1346,9 +1906,9 @@ class ModelService:
         model, calculations = self._calculate(build, rows, deadline)
         normalized = _with_default_context(self._apply_evolution(build["id"], _assumption_rows(model)), defaults)
         outputs = _annual_outputs(calculations)
-        worksheet = _with_pathway_effects(
+        worksheet = _with_audit_tabs(
             self.bundle.serialize_workbook(model, calculations)["payload"],
-            (build.get("payload") or {}).get("pathway_effects") or [],
+            build.get("payload") or {},
         )
         baseline = parent["outputs"] if parent is not None else default_outputs
         envelope = {
@@ -1869,11 +2429,10 @@ class ModelService:
         with tempfile.TemporaryDirectory(prefix="caos-model-export-") as temporary:
             output = Path(temporary) / "model.xlsx"
             self.bundle.render_workbook(model, calculations, output)
-            effects = (build.get("payload") or {}).get("pathway_effects") or []
             tabs = (
                 signed_worksheet["tabs"]
                 if signed_worksheet is not None
-                else ([_pathway_effect_tab(effects)] if effects else [])
+                else _audit_tabs(build.get("payload") or {})
             )
             _materialize_workbook_tabs(output, tabs)
             if signed_worksheet is not None:
@@ -2019,6 +2578,115 @@ class ModelService:
     def tamper_build_identity_for_tests(self, build_id: str, field: str) -> None:
         assert field in {"input_fingerprint", "payload_digest", "registry_digest", "snapshot_id", "assumptions_digest", "outputs_digest"}
         self.builds.update_build(build_id, **{field: "0" * 64})
+
+
+def _fiscal_year(period_id: str) -> str | None:
+    match = _ANNUAL_PERIOD.match(period_id)
+    return match.group(1) if match else None
+
+
+def _forecast_variance(period_updates: list[dict[str, Any]], base_outputs: dict[str, Any]) -> list[dict[str, Any]]:
+    """Reported minus forecast for every reported annual period the base model
+    forecasts, per case and metric. Both operands are finite by construction;
+    a zero forecast leaves the ratio null with a named gap (invariant 7)."""
+    rows: list[dict[str, Any]] = []
+    for update in period_updates:
+        fiscal_year = _fiscal_year(update["period_id"])
+        for case in ("BASE", "DOWNSIDE"):
+            column = f"{case}::FY{fiscal_year}" if fiscal_year else None
+            forecast_values = base_outputs.get(case, {}).get(column) if column else None
+            for reported_key, output_id in VARIANCE_METRICS:
+                reported = update["reported"].get(reported_key)
+                forecast = forecast_values.get(output_id) if isinstance(forecast_values, dict) else None
+                row: dict[str, Any] = {
+                    "period_id": update["period_id"],
+                    "case": case,
+                    "metric_id": output_id,
+                    "reported_metric": reported_key,
+                    "reported": reported,
+                    "forecast": forecast,
+                    "variance": None,
+                    "variance_ratio": None,
+                    "gap_code": None,
+                    "reported_authority": "REPORTED_ACTUAL",
+                    "forecast_authority": "ANALYST_FORECAST",
+                }
+                if forecast_values is None:
+                    row["gap_code"] = "FORECAST_PERIOD_NOT_MODELLED"
+                elif reported is None:
+                    row["gap_code"] = "ACTUAL_NOT_DISCLOSED"
+                elif forecast is None:
+                    row["gap_code"] = "FORECAST_NOT_CALCULABLE"
+                else:
+                    actual, expected = Decimal(reported), Decimal(forecast)
+                    if not actual.is_finite() or not expected.is_finite():
+                        raise ModelInputError("non-finite forecast variance operand")
+                    row["variance"] = format(actual - expected, "f")
+                    if expected == 0:
+                        row["gap_code"] = "ZERO_FORECAST_DENOMINATOR"
+                    else:
+                        row["variance_ratio"] = format((actual - expected) / expected, "f")
+                rows.append(row)
+    return rows
+
+
+def _covenant_slot(test: dict[str, Any]) -> str | None:
+    # ponytail: name-based slot mapping over the one covenant slot the registry
+    # declares; a registry-declared test→slot table if the methodology adds one.
+    if test.get("test_type") == "max-ratio" and "leverage" in str(test.get("test") or "").casefold():
+        return "covenant.max_total_leverage"
+    return None
+
+
+def _covenant_assumption_updates(
+    covenant_updates: list[dict[str, Any]], defaults: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """The base registry rows a documentary covenant test would update, as
+    proposals: the base value and status stay visible beside the documentary
+    threshold, and adoption is the analyst's preview → sign-off."""
+    updates: list[dict[str, Any]] = []
+    for test in covenant_updates:
+        slot = _covenant_slot(test)
+        base_rows = [row for row in defaults if row["assumption_id"] == slot] if slot else []
+        if not base_rows or test.get("threshold") is None:
+            updates.append({
+                "test": test.get("test"),
+                "assumption_id": slot,
+                "gap_code": "COVENANT_THRESHOLD_NOT_DISCLOSED" if base_rows else "UNMAPPED_COVENANT_TEST",
+                "treatment": "NO_ASSUMPTION_UPDATE",
+                "authority": "DOCUMENTARY_COVENANT_TERMS",
+            })
+            continue
+        for row in base_rows:
+            # The pinned engine lets a preview change a READY value, never a
+            # status: a slot the accepted CP-2G handoff left UNAVAILABLE can
+            # only become READY through a Full Credit re-run that sources it.
+            updates.append({
+                "test": test.get("test"),
+                "assumption_id": slot,
+                "case": row["case"],
+                "period_id": row["period_id"],
+                "unit": row["unit"],
+                "base_value": row["value"],
+                "base_status": row["status"],
+                "base_gap_code": row["gap_code"],
+                "proposed_value": test["threshold"],
+                "authority": "DOCUMENTARY_COVENANT_TERMS",
+                "treatment": (
+                    "PROPOSED_FOR_SIGN_OFF" if row["status"] == "READY"
+                    else "PROPOSED_REQUIRES_FULL_CREDIT_HANDOFF"
+                ),
+            })
+    return updates
+
+
+def _latest_reported_period_end(cp1_markdown: str) -> str | None:
+    ends = [
+        row.get("end_date", "")
+        for row in _table_rows(cp1_markdown, "cp1.model_period_register")
+        if re.fullmatch(r"\d{4}-\d{2}-\d{2}", row.get("end_date", "") or "")
+    ]
+    return max(ends) if ends else None
 
 
 def _remember(cache: dict[str, Any], key: str, value: Any) -> Any:

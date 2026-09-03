@@ -122,20 +122,14 @@ docker run --rm -v "$drill_volume:/vault:ro" alpine:3.20@sha256:d9e853e87e55526f
 compose exec -T db createdb -U caos "$drill_db"
 db_created=1
 age -d -i "$identity" "$dump_path" | compose exec -T db pg_restore --exit-on-error --no-owner --no-acl -U caos -d "$drill_db"
-# Schema note: these assertions verify the CURRENT store. They previously named
-# caos_state and model_build_jobs, which belong to the PREDECESSOR schema — the
-# drill was never updated when the store migrated, so it could not pass against
-# a backup of this system.
-#
-# The deliverable tables are deliberately NOT asserted. DeliverableService is
-# constructed lazily inside a request handler, so a live database that has never
-# served that surface simply does not have them, and requiring one rejects a
-# perfectly good backup — observed on a real deployment: 20 tables, no
-# deliverable_frozen. Checking them conditionally is not worth it either:
-# PL/pgSQL plans the whole IF expression, so even a guarded reference to an
-# absent table fails at parse time, and the dynamic SQL that would avoid that
-# does not belong inside a shell-embedded one-liner.
-compose exec -T db psql -v ON_ERROR_STOP=1 -U caos -d "$drill_db" -c "DO \$\$ BEGIN IF to_regclass('public.cases') IS NULL OR to_regclass('public.sources') IS NULL OR to_regclass('public.source_sets') IS NULL OR to_regclass('public.audit_events') IS NULL OR to_regclass('public.runs') IS NULL OR to_regclass('public.run_artifacts') IS NULL OR to_regclass('public.run_events') IS NULL OR to_regclass('public.model_builds') IS NULL OR to_regclass('public.model_revisions') IS NULL THEN RAISE EXCEPTION 'required restored tables are missing'; END IF; IF EXISTS (SELECT 1 FROM model_builds WHERE status = 'READY' AND (json_typeof(payload) IS DISTINCT FROM 'object' OR payload_digest IS NULL OR payload_digest !~ '^[0-9a-f]{64}\$')) THEN RAISE EXCEPTION 'restored model build metadata is invalid'; END IF; IF EXISTS (SELECT 1 FROM model_builds WHERE export #>> '{status}' = 'READY' AND (export #>> '{vault_key}' IS NULL OR export #>> '{vault_key}' !~ '^models/[A-Za-z0-9_-]+/[A-Za-z0-9_-]+/[0-9a-f]{64}\\.xlsx\$' OR export #>> '{sha256}' !~ '^[0-9a-f]{64}\$' OR export #>> '{size}' !~ '^[0-9]+\$')) THEN RAISE EXCEPTION 'restored model export metadata is invalid'; END IF; IF EXISTS (SELECT 1 FROM run_artifacts WHERE digest !~ '^[0-9a-f]{64}\$') THEN RAISE EXCEPTION 'restored run artifact digests are malformed'; END IF; END \$\$;"
+# Schema note: these assertions verify the CURRENT store, and since Task 12a the
+# store creates its whole schema at startup (DomainStore.from_url constructs the
+# model and deliverable stores), so every table below exists in any database a
+# booted CAOS ever wrote — a fresh deployment included. The previous version
+# required the lazily created model tables and told operators a good backup of
+# an unused deployment was unrestorable (RESTORE-DRILL-2026-08-30 F1).
+# caos/tests/test_deploy_topology.py pins this list to the startup schema.
+compose exec -T db psql -v ON_ERROR_STOP=1 -U caos -d "$drill_db" -c "DO \$\$ BEGIN IF to_regclass('public.cases') IS NULL OR to_regclass('public.sources') IS NULL OR to_regclass('public.source_sets') IS NULL OR to_regclass('public.audit_events') IS NULL OR to_regclass('public.runs') IS NULL OR to_regclass('public.run_artifacts') IS NULL OR to_regclass('public.run_events') IS NULL OR to_regclass('public.model_builds') IS NULL OR to_regclass('public.model_revisions') IS NULL OR to_regclass('public.model_revision_heads') IS NULL OR to_regclass('public.deliverable_revisions') IS NULL OR to_regclass('public.deliverable_frozen') IS NULL OR to_regclass('public.deliverable_opinions') IS NULL OR to_regclass('public.deliverable_freeze_jobs') IS NULL OR to_regclass('public.deliverable_filing_receipts') IS NULL OR to_regclass('public.audit_chain_heads') IS NULL THEN RAISE EXCEPTION 'required restored tables are missing'; END IF; IF EXISTS (SELECT 1 FROM model_builds WHERE status = 'READY' AND (json_typeof(payload) IS DISTINCT FROM 'object' OR payload_digest IS NULL OR payload_digest !~ '^[0-9a-f]{64}\$')) THEN RAISE EXCEPTION 'restored model build metadata is invalid'; END IF; IF EXISTS (SELECT 1 FROM model_builds WHERE export #>> '{status}' = 'READY' AND (export #>> '{vault_key}' IS NULL OR export #>> '{vault_key}' !~ '^models/[A-Za-z0-9_-]+/[A-Za-z0-9_-]+/[0-9a-f]{64}\\.xlsx\$' OR export #>> '{sha256}' !~ '^[0-9a-f]{64}\$' OR export #>> '{size}' !~ '^[0-9]+\$')) THEN RAISE EXCEPTION 'restored model export metadata is invalid'; END IF; IF EXISTS (SELECT 1 FROM run_artifacts WHERE digest !~ '^[0-9a-f]{64}\$') THEN RAISE EXCEPTION 'restored run artifact digests are malformed'; END IF; END \$\$;"
 model_payloads=$(compose exec -T db psql -Atq -F '|' -v ON_ERROR_STOP=1 -U caos -d "$drill_db" -c "SELECT payload_digest, payload FROM model_builds WHERE status='READY' ORDER BY id;")
 # `run --rm`, not `exec`: the drill must work when the app service is STOPPED,
 # which is exactly when it is most needed — a restore rehearsal during a

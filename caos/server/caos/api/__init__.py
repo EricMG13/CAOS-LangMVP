@@ -15,6 +15,7 @@ from typing import Any, AsyncIterator
 from fastapi import Body, FastAPI, HTTPException, Request, Response
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+from sqlalchemy.exc import OperationalError
 from starlette.datastructures import MutableHeaders
 from starlette.middleware.gzip import DEFAULT_EXCLUDED_CONTENT_TYPES, GZipMiddleware
 
@@ -26,12 +27,14 @@ from ..artifacts.loan_universe import (
 )
 from ..config import Settings
 from ..contracts import (
+    ApproveResearchPlanRequest,
     BoundaryText,
     CreateCaseRequest,
     DeliverableDraftRequest,
     FileDeliverableRequest,
     FreezeDeliverableRequest,
     LoanUniverseImportRequest,
+    MemberRequest,
     ModelPreviewRequest,
     ModelRebasePreviewRequest,
     ModelScenarioRequest,
@@ -40,6 +43,7 @@ from ..contracts import (
     NoteRequest,
     OneWaySensitivityRequest,
     RequestDeliverableChangesRequest,
+    SignOpinionRequest,
     StartRunRequest,
     finite_or_none,
 )
@@ -55,6 +59,17 @@ RUNTIME_KEYS = (
 )
 _SOURCE_BLOCK_KEYS = ("block_id", "text", "locator", "confidence", "untrusted_data", "extractor_version")
 _RUN_NODE_KEYS = ("id", "run_id", "case_id", "module_id", "stage", "dependencies", "status", "attempt", "artifact_id", "error")
+_RESEARCH_KEYS = (
+    "phase", "brief", "brief_digest", "proposed_plan_hash", "approved_plan_hash",
+    "approved_by", "approved_at", "proposed_plan",
+)
+# Preflight refusals that mean "this instance cannot execute agents right now",
+# served as 503 so a probe stops routing rather than reading a body.
+_PROVIDER_PREFLIGHT_CODES = frozenset({
+    "AGENT_EXECUTION_DISABLED", "AGENT_PROVIDER_UNAVAILABLE",
+    "AGENT_QUALIFICATION_MISSING", "AGENT_QUALIFICATION_EXPIRED",
+    "AGENT_PROVIDER_UNQUALIFIED", "AGENT_IDENTITY_MISMATCH",
+})
 _ATTEMPT_KEYS = (
     "run_id", "module_id", "kind", "provider_identity", "request_digest", "response_digest",
     "provider_request_id", "observed_model", "observed_provider_version", "input_tokens",
@@ -311,8 +326,20 @@ def create_app(*, settings: Settings, store: DomainStore, engine: Any) -> FastAP
         ]
         return JSONResponse(status_code=422, content={"detail": detail})
 
+    @app.exception_handler(OperationalError)
+    async def store_unavailable(request: Request, exc: OperationalError) -> JSONResponse:
+        # SIM-010: a database that cannot be reached before a write is a typed
+        # 503 the caller can act on, never a bare 500. Every governed write is
+        # one transaction, so nothing partial was committed; the driver's
+        # message (host names, statement text) never reaches the wire.
+        return JSONResponse(status_code=503, content={"detail": {"code": "STORE_UNAVAILABLE"}})
+
     def identity(request: Request):
         return identity_from_request(request, settings)
+
+    from ..intake.service import MAX_INTAKE_FILES, IntakeRefused, IntakeService
+
+    intake_service = IntakeService(store=store, engine=engine, settings=settings)
 
     @app.get("/api/health", response_model=wire.HealthResponse)
     def health(response: Response) -> dict[str, Any]:
@@ -344,6 +371,13 @@ def create_app(*, settings: Settings, store: DomainStore, engine: Any) -> FastAP
 
         current = store.current_source_set(case["id"])
         fit = pathway_fit(store, case["id"])
+        # Derived from runtime truth (the cut, the compiled route, the registry,
+        # the provider binding), never a literal: an instance that cannot start
+        # a Deep Research run says so with the reason (Task 7).
+        research_available, research_reason = (
+            engine.deep_research_availability() if engine is not None
+            else (False, "The run engine is not attached to this instance.")
+        )
         return {
             **case,
             "source_count": len(current["source_ids"]) if current else 0,
@@ -351,9 +385,10 @@ def create_app(*, settings: Settings, store: DomainStore, engine: Any) -> FastAP
             # against. A pathway added there lights up in the workbench with no
             # second list to keep in step.
             "available_pathways": sorted(MVP_PATHWAYS),
-            "deep_research_available": False,
-            "deep_research_unavailable_reason": "Deep Research is disabled for this deployment.",
+            "deep_research_available": research_available,
+            "deep_research_unavailable_reason": research_reason,
             "pathway_fit": {"fit": fit["fit"], "message": fit["message"]},
+            "latest_intake_id": (store.latest_intake(case["id"]) or {}).get("id"),
         }
 
     @app.post("/api/cases", status_code=201, response_model=wire.CaseDetailResponse)
@@ -407,6 +442,55 @@ def create_app(*, settings: Settings, store: DomainStore, engine: Any) -> FastAP
             saved = await ingest_upload(store, Vault(settings), case_id, who.subject,
                                         upload, max_bytes=settings.max_source_bytes)
         return _wire_source(saved, source_set=saved["source_set"])
+
+    # -- document-first intake (Task 8) ----------------------------------------
+
+    _INTAKE_RECORD_KEYS = ("suggestions", "route", "coverage", "documents")
+
+    def _wire_intake(intake: dict[str, Any]) -> dict[str, Any]:
+        case = store.get_case(intake["case_id"])
+        if case is None:
+            raise HTTPException(status_code=404, detail="case not found")
+        run = engine.get_run(intake["run_id"]) if engine is not None and intake.get("run_id") else None
+        return {
+            "intake_id": intake["id"],
+            "case_id": intake["case_id"],
+            "status": intake["status"],
+            "created_at": intake["created_at"],
+            "case": _wire_case(case),
+            "run": _wire_run(run) if run is not None else None,
+            **{key: intake["record"][key] for key in _INTAKE_RECORD_KEYS},
+            "refusal": intake.get("refusal"),
+        }
+
+    @app.post("/api/intake", status_code=201, response_model=wire.IntakeResponse,
+              response_model_exclude_unset=True, responses={200: {"model": wire.IntakeResponse}})
+    async def submit_intake(request: Request, response: Response) -> dict[str, Any]:
+        """One strict multipart transaction: `files` (one or more) and an
+        optional `case_id`. Admission stays in prepare_upload; the service
+        orchestrates the domain services and never another route."""
+        who = identity(request)
+        require_role(who, "ANALYST", "APPROVER", "ADMIN")
+        async with request.form(max_files=MAX_INTAKE_FILES + 24, max_fields=8) as form:
+            uploads = [item for item in form.getlist("files") if not isinstance(item, str)]
+            raw_case_id = form.get("case_id")
+            case_id = str(raw_case_id).strip() if isinstance(raw_case_id, str) and raw_case_id.strip() else None
+            if case_id is not None:
+                require_case(store, case_id, who, write=True)
+            try:
+                record, created = await intake_service.submit(actor=who.subject, uploads=uploads, case_id=case_id)
+            except IntakeRefused as exc:
+                raise HTTPException(status_code=422, detail=exc.detail()) from exc
+        response.status_code = 201 if created else 200
+        return _wire_intake(record)
+
+    @app.get("/api/cases/{case_id}/intake", response_model=wire.IntakeResponse, response_model_exclude_unset=True)
+    def latest_intake(case_id: str, request: Request) -> dict[str, Any]:
+        require_case(store, case_id, identity(request))
+        record = store.latest_intake(case_id)
+        if record is None:
+            raise HTTPException(status_code=404, detail="intake not found")
+        return _wire_intake(record)
 
     def visible_source(case_id: str, source_id: str, request: Request) -> dict[str, Any]:
         require_case(store, case_id, identity(request))
@@ -568,7 +652,13 @@ def create_app(*, settings: Settings, store: DomainStore, engine: Any) -> FastAP
         generation = _generation_state(run)
         if generation is not None:
             projected["canonical_generation"] = generation
+        research = run.get("research")
+        if research is not None:
+            projected["research"] = _wire_research(research)
         return projected
+
+    def _wire_research(research: dict[str, Any]) -> dict[str, Any]:
+        return {key: research.get(key) for key in _RESEARCH_KEYS}
 
     @app.post("/api/cases/{case_id}/runs", status_code=201,
               response_model=wire.CanonicalRunResponse, response_model_exclude_unset=True)
@@ -579,6 +669,9 @@ def create_app(*, settings: Settings, store: DomainStore, engine: Any) -> FastAP
             run = await engine.start_run(
                 case_id=case_id, pathway=body.pathway, depth=body.depth.value,
                 actor=who.subject, focus_questions=list(body.focus_questions),
+                research_brief=(
+                    body.research_brief.model_dump(mode="json") if body.research_brief is not None else None
+                ),
             )
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
@@ -586,11 +679,7 @@ def create_app(*, settings: Settings, store: DomainStore, engine: Any) -> FastAP
             code = getattr(exc, "code", "RUN_START_FAILED")
             if code == "ADMISSION_BUSY":
                 status = 409
-            elif code in {
-                "AGENT_EXECUTION_DISABLED", "AGENT_PROVIDER_UNAVAILABLE",
-                "AGENT_QUALIFICATION_MISSING", "AGENT_QUALIFICATION_EXPIRED",
-                "AGENT_PROVIDER_UNQUALIFIED", "AGENT_IDENTITY_MISMATCH",
-            }:
+            elif code in _PROVIDER_PREFLIGHT_CODES:
                 status = 503
             else:
                 status = 422
@@ -658,6 +747,34 @@ def create_app(*, settings: Settings, store: DomainStore, engine: Any) -> FastAP
     async def resume_run(run_id: str, request: Request) -> dict[str, Any]:
         visible_run(run_id, identity(request), write=True)
         return _wire_run(await engine.resume(run_id))
+
+    # -- Deep Research plan approval (Task 7; invariant 5) ------------------------
+
+    @app.get("/api/runs/{run_id}/research-plan", response_model=wire.ResearchStateResponse)
+    def research_plan(run_id: str, request: Request) -> dict[str, Any]:
+        run = visible_run(run_id, identity(request))
+        if run.get("research") is None:
+            raise HTTPException(status_code=404, detail="research plan not found")
+        return _wire_research(run["research"])
+
+    @app.post("/api/runs/{run_id}/research-plan/approve",
+              response_model=wire.CanonicalRunResponse, response_model_exclude_unset=True)
+    async def approve_research_plan(
+        run_id: str, request: Request, body: ApproveResearchPlanRequest = Body(...),
+    ) -> dict[str, Any]:
+        who = identity(request)
+        run = visible_run(run_id, who, write=True)
+        if run.get("research") is None:
+            raise HTTPException(status_code=404, detail="research plan not found")
+        try:
+            run = await engine.approve_research_plan(run_id, plan_hash=body.plan_hash, actor=who.subject)
+        except RuntimeError as exc:
+            code = getattr(exc, "code", "RESEARCH_PLAN_NOT_PENDING")
+            if code == "RUN_NOT_FOUND":
+                raise HTTPException(status_code=404, detail="run not found") from exc
+            status = 503 if code in _PROVIDER_PREFLIGHT_CODES else 409
+            raise HTTPException(status_code=status, detail={"code": code}) from exc
+        return _wire_run(run)
 
     @app.post("/api/runs/{run_id}/upgrade", response_model=wire.CanonicalRunResponse, response_model_exclude_unset=True)
     async def upgrade_run(run_id: str, request: Request) -> dict[str, Any]:
@@ -1013,6 +1130,21 @@ def create_app(*, settings: Settings, store: DomainStore, engine: Any) -> FastAP
         visible_revision(case_id, revision_id, request)
         return model_download_response(case_id, revision_id)
 
+    # -- case membership (Task 10: approver provisioning) ----------------------
+
+    @app.post("/api/cases/{case_id}/members", status_code=201, response_model=wire.CaseDetailResponse)
+    def add_case_member(case_id: str, request: Request, body: MemberRequest = Body(...)) -> dict[str, Any]:
+        """One governed mutation provisions a distinct approver. The store owns
+        the rule: the actor must hold case ADMIN/APPROVER standing or the current
+        global ADMIN role; non-members never learn the case exists."""
+        # Stored case APPROVER/ADMIN standing plus a current global writer role,
+        # exactly like filing: a current global ADMIN never escalates a stored
+        # READER or ANALYST on this case (run_sec_audit pins the reader half).
+        who = require_case_approver(case_id, request)
+        if not store.add_member(case_id, who.subject, body.subject, body.role.value, actor_role=None):
+            raise HTTPException(status_code=403, detail="case approver or admin authority required")
+        return _wire_case(store.get_case(case_id))  # type: ignore[arg-type]
+
     # -- deliverables --------------------------------------------------------
 
     _deliverables: dict[str, Any] = {}
@@ -1062,6 +1194,8 @@ def create_app(*, settings: Settings, store: DomainStore, engine: Any) -> FastAP
             "input_fingerprint": record["input_fingerprint"],
             "payload": record["payload"],
             "exports": {fmt: {"format": fmt, **meta} for fmt, meta in (record["exports"] or {}).items()},
+            "opinion_id": record.get("opinion_id"),
+            "signed_by": record.get("signed_by"),
         }
 
     def _dl_workspace(service: Any, case_id: str, pathway: str) -> dict[str, Any]:
@@ -1072,6 +1206,8 @@ def create_app(*, settings: Settings, store: DomainStore, engine: Any) -> FastAP
             "history": [_wire_dl_revision(item, case_id, pathway) for item in service.revision_history(case_id, pathway)],
             "frozen_history": [_wire_dl_frozen(item) for item in workspace["frozen"]],
             "model_eligibility": service.model_eligibility(case_id),
+            "opinion": workspace["opinion"],
+            "pending_freezes": workspace["pending_freezes"],
         }
 
     def require_case_approver(case_id: str, request: Request) -> Any:
@@ -1091,7 +1227,7 @@ def create_app(*, settings: Settings, store: DomainStore, engine: Any) -> FastAP
 
     def deliverable_error(exc: ValueError) -> HTTPException:
         from ..deliverables.service import ResumeNotApplied
-        from ..storage.deliverables import DeliverableVersionConflict
+        from ..storage.deliverables import DeliverableVersionConflict, OpinionHeadConflict
 
         if isinstance(exc, ResumeNotApplied):
             return HTTPException(status_code=409, detail={
@@ -1101,8 +1237,17 @@ def create_app(*, settings: Settings, store: DomainStore, engine: Any) -> FastAP
             return HTTPException(status_code=409, detail={
                 "code": "DELIVERABLE_VERSION_CONFLICT", "current": exc.current,
             })
+        if isinstance(exc, OpinionHeadConflict):
+            return HTTPException(status_code=409, detail={"code": "OPINION_HEAD_CONFLICT", "current": exc.current})
         code = str(exc).split(":", 1)[0]
-        status = 404 if "NOT_FOUND" in code else 409 if ("STALE" in code or "CONFLICT" in code or "CHANGED" in code or "INTEGRITY" in code) else 422
+        if "NOT_FOUND" in code:
+            status = 404
+        elif "NOT_INDEPENDENT" in code or "REVOKED" in code:
+            status = 403
+        elif any(token in code for token in ("STALE", "CONFLICT", "CHANGED", "INTEGRITY", "SIGNOFF")):
+            status = 409
+        else:
+            status = 422
         return HTTPException(status_code=status, detail={"code": code})
 
     @app.get("/api/cases/{case_id}/deliverables/{pathway}/draft",
@@ -1144,16 +1289,49 @@ def create_app(*, settings: Settings, store: DomainStore, engine: Any) -> FastAP
             raise HTTPException(status_code=404, detail="revision not found")
         return _wire_dl_revision(revision, case_id, revision["pathway"])
 
-    @app.post("/api/cases/{case_id}/deliverables/{pathway}/freeze", status_code=201,
-              response_model=wire.FrozenDeliverableResponse)
-    def freeze_deliverable(case_id: str, pathway: str, request: Request,
-                           body: FreezeDeliverableRequest = Body(...)) -> dict[str, Any]:
+    @app.post("/api/cases/{case_id}/deliverables/{pathway}/opinion", status_code=201,
+              response_model=wire.OpinionResponse)
+    def sign_deliverable_opinion(case_id: str, pathway: str, request: Request,
+                                 body: SignOpinionRequest = Body(...)) -> dict[str, Any]:
         who = identity(request)
         require_case(store, case_id, who, write=True)
         try:
-            return _wire_dl_frozen(deliverables().freeze(case_id, body, actor=who.subject))
+            return deliverables().sign_opinion(case_id, pathway, body, actor=who.subject)
         except ValueError as exc:
             raise deliverable_error(exc) from exc
+
+    @app.post("/api/cases/{case_id}/deliverables/{pathway}/freeze", status_code=202,
+              response_model=wire.FreezeJobResponse)
+    def freeze_deliverable(case_id: str, pathway: str, request: Request,
+                           body: FreezeDeliverableRequest = Body(...)) -> dict[str, Any]:
+        """Validates and queues the freeze; the worker publishes every export
+        and writes the frozen record, which then appears in `frozen_history`."""
+        who = identity(request)
+        require_case(store, case_id, who, write=True)
+        try:
+            return deliverables().freeze(case_id, body, actor=who.subject)
+        except ValueError as exc:
+            raise deliverable_error(exc) from exc
+
+    @app.get("/api/cases/{case_id}/deliverables/freeze-jobs/{job_id}", response_model=wire.FreezeJobResponse)
+    def get_freeze_job(case_id: str, job_id: str, request: Request) -> dict[str, Any]:
+        require_case(store, case_id, identity(request))
+        job = deliverables().freeze_job(case_id, job_id)
+        if job is None:
+            raise HTTPException(status_code=404, detail="freeze job not found")
+        return job
+
+    @app.get("/api/cases/{case_id}/deliverables/by-id/{deliverable_id}/receipt",
+             response_model=wire.FilingReceiptResponse)
+    def get_filing_receipt(case_id: str, deliverable_id: str, request: Request) -> dict[str, Any]:
+        require_case(store, case_id, identity(request))
+        try:
+            receipt = deliverables().filing_receipt(case_id, deliverable_id)
+        except ValueError as exc:
+            raise deliverable_error(exc) from exc
+        if receipt is None:
+            raise HTTPException(status_code=404, detail="filing receipt not found")
+        return receipt
 
     @app.post("/api/cases/{case_id}/deliverables/by-id/{deliverable_id}/approve",
               response_model=wire.FrozenDeliverableResponse)
@@ -1185,19 +1363,47 @@ def create_app(*, settings: Settings, store: DomainStore, engine: Any) -> FastAP
     def export_deliverable(case_id: str, deliverable_id: str, format_name: str, request: Request):
         from fastapi.responses import Response as _Response
 
-        require_case(store, case_id, identity(request))
+        who = identity(request)
+        require_case(store, case_id, who)
         service = deliverables()
         record = service.frozen_record(case_id, deliverable_id)
         if record is None:
             raise HTTPException(status_code=404, detail="deliverable not found")
-        if record["status"] != "FILED":
+        if record["status"] not in {"FILED", "SUPERSEDED"} or record["filed_by"] is None:
             raise HTTPException(status_code=409, detail={"code": "DELIVERABLE_NOT_FILED"})
         try:
             content, sha256 = service.export(deliverable_id, format_name)
         except ValueError as exc:
             raise deliverable_error(exc) from exc
+        # AUD-009: a served download is audited; a refused one above is only logged.
+        service.record_export_download(case_id, deliverable_id, format_name, actor=who.subject)
         return _Response(content=content, media_type="application/octet-stream",
                          headers={"cache-control": "no-store", "x-caos-sha256": sha256})
+
+    # -- audit package (Task 10): case-scoped, offline-verifiable ------------
+
+    @app.get("/api/cases/{case_id}/audit-package")
+    def export_audit_package(case_id: str, request: Request):
+        """The case's audit package as a zip (binary, OpenAPI-exempt like the
+        other downloads). Everything inside is host-owned metadata, digests and
+        the exact filed bytes; nothing is a secret, a prompt or source text."""
+        from fastapi.responses import Response as _Response
+
+        from ..audit.package import build_case_package, package_digest
+        from ..storage.store import now_iso
+
+        who = identity(request)
+        require_case(store, case_id, who)
+        content = build_case_package(
+            store=store, vault_dir=settings.storage_dir, case_id=case_id,
+            methodology_build_id=engine.bundle.build_id if engine is not None else None,
+            generated_by=who.subject, generated_at=now_iso(),
+        )
+        sha256 = package_digest(content)
+        store.audit_event("audit.package_exported", who.subject, case_id=case_id, sha256=sha256)
+        return _Response(content=content, media_type="application/zip",
+                         headers={"cache-control": "no-store", "x-caos-sha256": sha256,
+                                  "content-disposition": f'attachment; filename="audit-package-{case_id}.zip"'})
 
     # -- OpenAPI: named component schemas for the whole declared contract ----
 

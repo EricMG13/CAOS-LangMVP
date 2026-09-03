@@ -7,7 +7,7 @@ import EvidenceChip from "./EvidenceChip";
 import ModelBuilder from "./model/ModelBuilder";
 import ReportStudio from "./report/ReportStudio";
 import { EmptyBlock, EmptyPanel, IdentityValue, LoadState, MutationReceipt, StateBlock, StateNote, Unavailable } from "./states";
-import { api as request, firstErrorMessage, isUnavailableRoute, type ArtifactRecord, type CaseRecord, type LoanFinding, type LoanRow, type LoanUniverseResponse, type ResearchPlan, type RunRecord, type SourceRecord } from "../lib/api";
+import { ApiRequestError, api as request, firstErrorMessage, isIntakeRefusal, isUnavailableRoute, type ArtifactRecord, type CaseRecord, type IntakeRecord, type IntakeRefusal, type LoanFinding, type LoanRow, type LoanUniverseResponse, type ResearchPlan, type RunRecord, type SourceRecord } from "../lib/api";
 import { displayValue, flattenValue, markdownBlocks, normalizeEvidenceRefs, type NormalizedEvidenceRef } from "../lib/artifactReader";
 import { initialAuthorityState, matchesAuthority, requestContext, workspaceAuthorityReducer, type AuthorityEvent } from "../lib/workspaceAuthority";
 
@@ -89,6 +89,7 @@ export default function Workspace({ destination, children }: { destination?: Des
   // failure. This default also covers Model Builder and Report Studio, which
   // compute `role !== "READER"` from this same value.
   const [role, setRole] = useState("READER");
+  const [subject, setSubject] = useState("");
   const [roleResolved, setRoleResolved] = useState(false);
   const [authority, setAuthority] = useState<SnapshotView | null>(null);
   const [drawer, setDrawer] = useState<DrawerState | null>(null);
@@ -106,6 +107,14 @@ export default function Workspace({ destination, children }: { destination?: Des
   const caseRefresh = useRef(0);
   const runRefresh = useRef(0);
   const runCreation = useRef(0);
+  // Document-first intake: the durable record for the selected case (refresh and
+  // restart read it back), the typed refusal of the last submission, and a local
+  // monotonic fence. The reducer cannot fence an intake that starts with no case —
+  // a null-case context matches every other null-case state — so the counter is
+  // load-bearing, not redundant (lib/workspaceAuthority.ts).
+  const [intake, setIntake] = useState<IntakeRecord | null>(null);
+  const [intakeRefusal, setIntakeRefusal] = useState<IntakeRefusal | null>(null);
+  const intakeRequest = useRef(0);
   const routeAuthorityRef = useRef("");
   const modelDraftDirtyRef = useRef(false);
   const reportDraftDirtyRef = useRef(false);
@@ -314,6 +323,7 @@ export default function Workspace({ destination, children }: { destination?: Des
     setRun(null);
     setRunError("");
     setError("");
+    setIntakeRefusal(null);
   }, [cases, dispatchAuthority]);
 
   const selectCase = useCallback((nextCaseId: string, availableCases = cases, trigger?: HTMLElement | null) => {
@@ -528,8 +538,9 @@ export default function Workspace({ destination, children }: { destination?: Des
     document.addEventListener("click", guardDraftNavigation, true);
     window.addEventListener("popstate", guardBrowserHistory, true);
     window.addEventListener("beforeunload", guardUnload);
-    void request<{ role: string }>("/api/me", {}, controller.signal).then((who) => {
+    void request<{ role: string; subject: string }>("/api/me", {}, controller.signal).then((who) => {
       setRole(["ANALYST", "APPROVER", "ADMIN"].includes(who.role) ? who.role : "READER");
+      setSubject(typeof who.subject === "string" ? who.subject : "");
       setRoleResolved(true);
     }).catch((caught) => {
       if (!(caught instanceof DOMException && caught.name === "AbortError")) {
@@ -736,6 +747,82 @@ export default function Workspace({ destination, children }: { destination?: Des
     }
   };
 
+  // `targetCaseId` is the analyst's explicit choice to add to the selected credit;
+  // without it the server resolves or creates the case from the issuer the documents
+  // name (the register auto-selects a first case, which must never bind a pack).
+  const submitIntake = async (files: File[], targetCaseId: string | null) => {
+    if (!files.length) return;
+    setError(""); setNotice(""); setIntakeRefusal(null);
+    const context = requestContext(authorityRef.current);
+    const requestId = ++intakeRequest.current;
+    // One FormData, no Content-Type: the browser sets the multipart boundary (lib/api.ts).
+    const form = new FormData();
+    files.forEach((file) => form.append("files", file));
+    if (targetCaseId) form.append("case_id", targetCaseId);
+    setPendingAction("intake");
+    try {
+      const created = await request<IntakeRecord>("/api/intake", { method: "POST", body: form });
+      if (requestId !== intakeRequest.current || !matchesAuthority(authorityRef.current, context)) return;
+      if (created.case.id !== created.case_id || (created.run && created.run.case_id !== created.case_id)) {
+        setError("Intake response does not bind its run to its case.");
+        dispatchAuthority({ type: "requestFailed", context, scope: "intake" });
+        return;
+      }
+      casesRequest.current += 1;
+      setCases((previous) => [created.case, ...previous.filter((item) => item.id !== created.case.id)]);
+      dispatchAuthority({ type: "requestSucceeded", context, scope: "intake" });
+      if (created.case_id !== context.caseId) {
+        // A created or resolved case: adopt it through the reducer (case, then its
+        // current execution) exactly as a register selection would.
+        commitCaseSelection(created.case_id, [created.case]);
+      } else if (created.run) {
+        dispatchAuthority({ type: "selectRun", caseId: created.case_id, runId: created.run.id });
+      }
+      if (created.run) setRun(created.run);
+      setIntake(created);
+      setNotice(created.status === "started"
+        ? `${created.documents.length} document${created.documents.length === 1 ? "" : "s"} admitted. ${humanizeCode(created.route.pathway)} at ${created.route.depth} depth selected by host classification. Execution started.`
+        : created.status === "clarification"
+          ? "Documents admitted. One clarification is needed before analysis can start."
+          : "Documents admitted. Execution could not start on this instance.");
+    } catch (caught) {
+      if (requestId !== intakeRequest.current || !matchesAuthority(authorityRef.current, context)) return;
+      if (caught instanceof ApiRequestError && isIntakeRefusal(caught.detail)) setIntakeRefusal(caught.detail);
+      else setError(firstErrorMessage(caught, "Unable to analyze documents"));
+      dispatchAuthority({ type: "requestFailed", context, scope: "intake" });
+    } finally {
+      if (matchesAuthority(authorityRef.current, context)) setPendingAction("");
+    }
+  };
+
+  // The latest intake for the selected case: read once per case selection while the
+  // Cases page is showing, so a refresh, a reconnect or a case switch shows exactly
+  // the durable record. Not keyed on the authority generation on purpose — every
+  // reducer event bumps it, and one more GET per event on every route would push the
+  // browser gates into the per-subject request ceiling. A submission sets the record
+  // from its own response; the live run prop keeps the review state current.
+  const latestIntakeId = selectedCase?.latest_intake_id || "";
+  useEffect(() => {
+    // Read only when the case wire names an intake (never a 404 probe) and the
+    // record is not already the one on screen.
+    if (!hydrated || !caseId || active !== "Cases" || !latestIntakeId) return;
+    if (intake && intake.case_id === caseId && intake.intake_id === latestIntakeId) return;
+    const context = requestContext(authorityRef.current);
+    const controller = new AbortController();
+    void (async () => {
+      try {
+        const latest = await request<IntakeRecord>(`/api/cases/${caseId}/intake`, {}, controller.signal);
+        if (matchesAuthority(authorityRef.current, context)) setIntake(latest);
+      } catch (caught) {
+        if (controller.signal.aborted || !matchesAuthority(authorityRef.current, context)) return;
+        if (isUnavailableRoute(caught)) setIntake(null);
+      }
+    })();
+    return () => controller.abort();
+    // `intake` is compared, not depended on: a submission sets it directly.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [caseId, hydrated, active, latestIntakeId]);
+
   const startRun = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault(); if (!caseId) return; setError(""); setNotice("");
     const form = new FormData(event.currentTarget);
@@ -913,14 +1000,14 @@ export default function Workspace({ destination, children }: { destination?: Des
   const renderDestination = () => {
     if (!selectedCase && active !== "Cases" && active !== "Admin Studio") return <EmptyPanel text="Create or select a case before entering an analytical workspace." action={{ label: "Open Cases", href: "/cases/" }} />;
     switch (active) {
-      case "Cases": return <CasesView writeAccess={writeAccess} cases={cases} casesLoading={casesLoading} selectedCase={selectedCase} caseId={caseId} createCase={createCase} pendingAction={pendingAction} />;
+      case "Cases": return <CasesView writeAccess={writeAccess} cases={cases} casesLoading={casesLoading} selectedCase={selectedCase} caseId={caseId} createCase={createCase} pendingAction={pendingAction} intake={intake} intakeRefusal={intakeRefusal} run={run} submitIntake={submitIntake} />;
       case "Sources": return <SourcesView writeAccess={writeAccess} selectedCase={selectedCase} artifactId={routeArtifactId} sourceId={routeSourceId} upload={upload} pendingAction={pendingAction} onOpenEvidence={(evidenceId, source) => setDrawer({ kind: "evidence", evidenceId, source })} />;
       case "Run Console": return <RunConsole writeAccess={writeAccess} caseId={caseId} selectedCase={selectedCase} run={run} runLoading={runLoading} runError={runError} startRun={startRun} acceptRun={acceptRun} acceptedSnapshotId={acceptedRunSnapshotId} visibleSnapshotId={authority?.accepted?.id || ""} switchRequired={authority?.switch_required === true} approveResearchPlan={approveResearchPlan} approvalUnavailable={approvalUnavailable} pendingAction={pendingAction} resumeSlot={resumeSlot} />;
       case "Deep-Dive": return <DeepDive writeAccess={writeAccess} selectedCase={selectedCase} question={routeQuestion} caseId={caseId} run={run} onSwitchSnapshot={switchSnapshot} />;
       case "RV Screener": return <RVView key={caseId} writeAccess={writeAccess} caseId={caseId} />;
       case "Command Center": return <CommandView caseId={caseId} question={routeQuestion} />;
       case "Model Builder": return <ModelBuilder caseId={caseId} role={role} onDraftStateChange={onModelDraftStateChange} />;
-      case "Report Studio": return <ReportStudio key={caseId} caseId={caseId} role={role} selectedCase={selectedCase} onDraftStateChange={onReportDraftStateChange} requestDraftDiscard={requestDraftDiscard} />;
+      case "Report Studio": return <ReportStudio key={caseId} caseId={caseId} role={role} subject={subject} selectedCase={selectedCase} onDraftStateChange={onReportDraftStateChange} requestDraftDiscard={requestDraftDiscard} />;
       case "Admin Studio": return <AdminView />;
     }
   };
@@ -951,7 +1038,7 @@ export default function Workspace({ destination, children }: { destination?: Des
   </>;
 }
 
-function CasesView({ writeAccess, cases, casesLoading, selectedCase, caseId, createCase, pendingAction }: { writeAccess: WriteAccess; cases: CaseRecord[]; casesLoading: boolean; selectedCase: CaseRecord | null; caseId: string; createCase: (event: FormEvent<HTMLFormElement>) => void; pendingAction: string }) {
+function CasesView({ writeAccess, cases, casesLoading, selectedCase, caseId, createCase, pendingAction, intake, intakeRefusal, run, submitIntake }: { writeAccess: WriteAccess; cases: CaseRecord[]; casesLoading: boolean; selectedCase: CaseRecord | null; caseId: string; createCase: (event: FormEvent<HTMLFormElement>) => void; pendingAction: string; intake: IntakeRecord | null; intakeRefusal: IntakeRefusal | null; run: RunRecord | null; submitIntake: (files: File[], targetCaseId: string | null) => void }) {
   const [search, setSearch] = useState("");
   const [snapshotFilter, setSnapshotFilter] = useState<"all" | "accepted" | "unaccepted">("all");
   const visibleCases = useMemo(() => cases.filter((item) => {
@@ -962,6 +1049,7 @@ function CasesView({ writeAccess, cases, casesLoading, selectedCase, caseId, cre
   }), [cases, search, snapshotFilter]);
   const resetFilters = () => { setSearch(""); setSnapshotFilter("all"); };
   return <div className="grid cases-layout">
+    <IntakePanel writeAccess={writeAccess} selectedCase={selectedCase} caseId={caseId} pendingAction={pendingAction} intake={intake} refusal={intakeRefusal} run={run} submitIntake={submitIntake} />
     <section className="panel cases-register"><div className="panel-header"><h2>Monitored credits</h2><span className="panel-meta">{casesLoading ? "Loading…" : `${visibleCases.length} of ${cases.length}`}</span></div><div className="worklist-toolbar"><div className="field"><label htmlFor="case-search">Search credits</label><input id="case-search" type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Issuer, case, or sector" /></div><div className="field"><label htmlFor="case-snapshot-filter">Authority</label><select id="case-snapshot-filter" value={snapshotFilter} onChange={(event) => setSnapshotFilter(event.target.value as "all" | "accepted" | "unaccepted")}><option value="all">All credits</option><option value="accepted">Accepted authority</option><option value="unaccepted">No accepted authority</option></select></div></div><div className="panel-body table-wrap" tabIndex={0} role="region" aria-label="Monitored credit register"><table><thead><tr><th scope="col">Credit</th><th scope="col">Case</th><th scope="col">Evidence</th><th scope="col">Authority</th><th scope="col">Action</th></tr></thead><tbody>{visibleCases.map((item) => <tr aria-current={caseId === item.id ? "true" : undefined} className={caseId === item.id ? "selected-row" : undefined} key={item.id}><td><strong>{item.issuer}</strong><div className="muted">{item.sector}</div></td><td>{item.name}</td><td className="num">{item.source_count == null ? "Unavailable" : `${item.source_count} source${item.source_count === 1 ? "" : "s"}`}</td><td>{item.accepted_snapshot_id ? <span className="status success">Accepted</span> : <span className="status warning">Not accepted</span>}</td><td><Link className="button small primary" href={withQuery("/command-center", { case: item.id })}>Open credit</Link></td></tr>)}</tbody></table>{!visibleCases.length && (cases.length ? <EmptyBlock><p>No credits match this search and filter.</p><button className="button primary" type="button" onClick={resetFilters}>Reset filters</button></EmptyBlock> : <LoadState loading={casesLoading} empty="No credits yet. Create the first case to establish the context boundary." />)}</div></section>
     <section className="panel cases-create"><div className="panel-header"><h2>Create case</h2></div><div className="panel-body">{writeAccess === "yes" ? <form onSubmit={createCase}><div className="field"><label htmlFor="case-name">Case name</label><input id="case-name" name="name" autoComplete="off" required placeholder="Q3 credit review…" /></div><div className="field"><label htmlFor="issuer">Issuer</label><input id="issuer" name="issuer" autoComplete="organization" required placeholder="Issuer legal name…" /></div><div className="field"><label htmlFor="sector">Sector</label><input id="sector" name="sector" autoComplete="off" placeholder="Business services…" /></div><button className={`button ${selectedCase ? "" : "primary"}`} type="submit" disabled={pendingAction === "create-case"}>{pendingAction === "create-case" ? "Creating…" : "Create case"}</button></form> : <WriteBlocked access={writeAccess} action="case creation" />}</div></section>
     {/* Fit truth: render the served fit when the wire carries one; claim NEEDS_SOURCE
@@ -970,6 +1058,87 @@ function CasesView({ writeAccess, cases, casesLoading, selectedCase, caseId, cre
         is only for a deployment whose build predates it. */}
     <section className="panel cases-fit"><div className="panel-header"><h2>Pathway fit</h2></div><div className="panel-body">{selectedCase ? selectedCase.pathway_fit ? <><span className={`status ${selectedCase.pathway_fit.fit === "READY" ? "success" : "warning"}`}>{humanizeCode(selectedCase.pathway_fit.fit)}</span><p>{selectedCase.pathway_fit.message}</p></> : selectedCase.source_count === 0 ? <><span className="status warning">NEEDS SOURCE</span><p>Upload a source to see fit.</p></> : <p className="muted">Fit unavailable. Pathway fit is not served by this deployment.</p> : <div className="empty">Select a case to inspect pathway fit.</div>}</div></section>
     <section className="context-strip portfolio-contract-notice span-12" aria-labelledby="portfolio-contract-title"><strong id="portfolio-contract-title">Portfolio ordering is not yet governed.</strong><p>The register is unranked until the server supplies threshold distance, freshness, and material-change scores.</p></section>
+  </div>;
+}
+
+// The document-first entry surface (Task 8; ETR-B01). A real multi-file input behind
+// its label is the keyboard path; the region accepts a drop. The browser sends files
+// and nothing else — issuer, label, document types, periods, dispositions and the
+// route come back as host classification, shown as machine suggestions, and the run
+// console stays the one home for progress and acceptance.
+function IntakePanel({ writeAccess, selectedCase, caseId, pendingAction, intake, refusal, run, submitIntake }: { writeAccess: WriteAccess; selectedCase: CaseRecord | null; caseId: string; pendingAction: string; intake: IntakeRecord | null; refusal: IntakeRefusal | null; run: RunRecord | null; submitIntake: (files: File[], targetCaseId: string | null) => void }) {
+  const [dragging, setDragging] = useState(false);
+  const [chosen, setChosen] = useState(0);
+  // Binding to the selected credit is the analyst's explicit choice: the register
+  // auto-selects a first case, and a pack for another issuer must not be refused
+  // against it. Unbound, the server resolves or creates the case from the issuer.
+  const [bindCase, setBindCase] = useState(false);
+  const busy = pendingAction === "intake";
+  const targetCaseId = bindCase && selectedCase ? selectedCase.id : null;
+  const onSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const input = event.currentTarget.elements.namedItem("files") as HTMLInputElement | null;
+    const files = Array.from(input?.files ?? []);
+    if (!files.length) return;
+    submitIntake(files, targetCaseId);
+    event.currentTarget.reset(); setChosen(0); setBindCase(false);
+  };
+  const onDrop = (event: React.DragEvent<HTMLDivElement>) => {
+    event.preventDefault(); setDragging(false);
+    if (busy) return;
+    const files = Array.from(event.dataTransfer.files);
+    if (files.length) submitIntake(files, targetCaseId);
+  };
+  const meta = busy ? "Analyzing…" : intake ? `Last intake ${formatDate(intake.created_at)}` : "Creates or resolves the credit from the documents";
+  return <section className="panel cases-intake" aria-labelledby="intake-heading">
+    <div className="panel-header"><h2 id="intake-heading">Analyze documents</h2><span className="panel-meta">{meta}</span></div>
+    <div className="panel-body flow">
+      {writeAccess === "yes" ? <form className="intake-form" onSubmit={onSubmit} aria-describedby="intake-hint">
+        <div className={`dropzone${dragging ? " is-dragging" : ""}`} onDragEnter={(event) => { event.preventDefault(); setDragging(true); }} onDragOver={(event) => { event.preventDefault(); if (!dragging) setDragging(true); }} onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDragging(false); }} onDrop={onDrop}>
+          <label htmlFor="intake-files"><strong>Drop documents here, or choose files</strong><span className="muted">Annual and quarterly reports, earnings releases, guidance, credit agreements, amendments, restructuring instruments, a CP-3 loan-universe workbook or a research brief file. PDF, XLSX, JSON, TXT, Markdown, CSV.</span></label>
+          <input id="intake-files" name="files" type="file" multiple accept=".pdf,.xlsx,.json,.txt,.md,.csv" disabled={busy} onChange={(event) => setChosen(event.currentTarget.files?.length ?? 0)} />
+          <p className="muted" id="intake-hint">No case form: the issuer, the case and the route are derived from the documents and shown for review. An issuer you already cover resolves to its case.</p>
+        </div>
+        {selectedCase ? <div className="field intake-bind"><label htmlFor="intake-bind-case"><input id="intake-bind-case" type="checkbox" checked={bindCase} disabled={busy} onChange={(event) => setBindCase(event.currentTarget.checked)} /> Add to {selectedCase.issuer} / {selectedCase.name} (a pack naming another issuer is refused)</label></div> : null}
+        <div className="row-actions"><button className="button primary" type="submit" disabled={busy || !chosen}>{busy ? "Analyzing…" : chosen ? `Analyze ${chosen} document${chosen === 1 ? "" : "s"}` : "Analyze documents"}</button></div>
+      </form> : <WriteBlocked access={writeAccess} action="document intake" />}
+      {busy && <p className="status running" role="status" aria-live="polite">Admitting, classifying and routing the documents…</p>}
+      {refusal && <StateBlock tone="critical" live="alert" title="Documents not admitted" body={<><span className="mono">{refusal.code}</span> — {refusal.message}</>}>
+        <p>{refusal.next_action}</p>
+        {refusal.findings.length ? <ul className="change-list">{refusal.findings.map((finding, index) => <li key={`${finding.filename}-${index}`}><span className="mono">{finding.filename}</span> — {finding.detail}{finding.status ? ` (${finding.status})` : ""}</li>)}</ul> : null}
+      </StateBlock>}
+      {intake && intake.case_id === caseId ? <IntakeEvidence intake={intake} run={run} caseId={caseId} /> : null}
+    </div>
+  </section>;
+}
+
+function IntakeEvidence({ intake, run, caseId }: { intake: IntakeRecord; run: RunRecord | null; caseId: string }) {
+  const liveRun = run && intake.run && run.id === intake.run.id ? run : intake.run;
+  const consoleHref = withQuery("/run-console", { case: caseId, run: liveRun?.id });
+  const dispositionTone = (value: string) => value === "used" ? "success" : value === "insufficient" || value === "conflicting" ? "critical" : "warning";
+  return <div className="flow intake-evidence" aria-labelledby="intake-evidence-heading">
+    <h3 id="intake-evidence-heading" className="meta-label">Host classification — machine suggestions for review</h3>
+    <dl className="state-facts intake-facts">
+      <dt>Issuer</dt><dd>{intake.suggestions.issuer} <span className="muted">({intake.suggestions.issuer_confidence} confidence)</span></dd>
+      <dt>Route</dt><dd>{humanizeCode(intake.route.pathway)} · {intake.route.depth} depth <span className="muted">selected by host classification</span></dd>
+      <dt>Why this route</dt><dd>{intake.route.reason}</dd>
+      <dt>Period coverage</dt><dd>{[...intake.coverage.fiscal_years.map((year) => `FY${year}`), ...intake.coverage.quarters].join(", ") || "No dated period detected"}{intake.coverage.gaps.length ? <span className="muted"> · gaps {intake.coverage.gaps.join(", ")}</span> : null}</dd>
+    </dl>
+    <div className="table-wrap" role="region" aria-label="Source disposition manifest" tabIndex={0}>
+      <table className="intake-manifest"><thead><tr><th scope="col">Document</th><th scope="col">Type</th><th scope="col">Period</th><th scope="col">Disposition</th><th scope="col">Reason</th></tr></thead>
+        <tbody>{intake.documents.map((document, index) => <tr key={`${document.sha256}-${index}`}><td className="mono">{document.filename}</td><td>{humanizeCode(document.document_type)}</td><td className="mono">{document.period?.label ?? "—"}</td><td><span className={`status ${dispositionTone(document.disposition)}`}>{humanizeCode(document.disposition)}</span></td><td>{document.reason}</td></tr>)}</tbody></table>
+    </div>
+    {intake.status === "clarification" && intake.refusal ? <StateBlock tone="warning" shape="action" live="status" title="One clarification before analysis" body={<><span className="mono">{intake.refusal.code}</span> — {intake.refusal.message}</>}><p>{intake.refusal.next_action}</p></StateBlock> : null}
+    {intake.status === "execution_unavailable" && intake.refusal ? <StateBlock tone="warning" shape="action" live="status" title="Documents admitted; execution not started" body={<><span className="mono">{intake.refusal.code}</span> — {intake.refusal.message}</>}><p>{intake.refusal.next_action}</p></StateBlock> : null}
+    {intake.status === "started" && liveRun ? (
+      liveRun.status === "succeeded"
+        ? <StateBlock shape="action" title="Analysis complete — review it" body="The route finished on the admitted evidence. Open the run console to inspect every module output and decide whether to accept it; nothing is accepted on your behalf." action={{ label: "Open review", href: consoleHref }} />
+        : liveRun.status === "failed"
+          ? <StateBlock tone="critical" shape="action" live="status" title="Analysis stopped" body={<><span className="mono">{liveRun.error?.code ?? "RUN_FAILED"}</span> — the route ended with a typed refusal. The run console shows which module refused and why.</>} action={{ label: "Open run console", href: consoleHref }} />
+          : liveRun.status === "paused"
+            ? <StateBlock tone="warning" shape="action" live="status" title="Analysis is waiting on you" body={<><span className="mono">{liveRun.error?.code ?? "PAUSED"}</span> — execution paused at a governed gate.</>} action={{ label: "Open run console", href: consoleHref }} />
+            : <StateBlock shape="action" title="Analysis in progress" body={`${liveRun.nodes.filter((node) => node.status === "succeeded").length} of ${liveRun.nodes.length} modules complete. Progress streams from the persisted run events.`} action={{ label: "Follow in run console", href: consoleHref }} />
+    ) : null}
   </div>;
 }
 
@@ -1254,7 +1423,7 @@ function ModuleIdentity({ moduleId }: { moduleId: string }) {
 // is how Run Console injects the full ResearchPlanView; inline surfaces route to it
 // instead, since plan approval is a Run Console responsibility.
 function RunStatus({ writeAccess, caseId, run, runLoading, runError, acceptRun, acceptedSnapshotId, visibleSnapshotId, switchRequired, pendingAction, approvalSlot, resumeSlot }: { writeAccess: WriteAccess; caseId: string; run: RunRecord | null; runLoading: boolean; runError: string; acceptRun: () => void; acceptedSnapshotId: string; visibleSnapshotId: string; switchRequired: boolean; pendingAction: string; approvalSlot: ReactNode; resumeSlot: ReactNode }) {
-  if (!run) return <LoadState loading={runLoading} error={runError} empty="No current execution. Select a purpose and depth to create an immutable plan." />;
+  if (!run) return <LoadState loading={runLoading} error={runError} empty="No current execution. Drop documents on Cases to start analysis, or compile a route here." />;
   const complete = run.nodes.filter((node) => node.status === "succeeded").length;
   const current = (run.status === "queued" || run.status === "running")
     ? run.nodes.find((node) => node.status === "running") || run.nodes.find((node) => node.status === "pending")
@@ -1357,12 +1526,12 @@ function RunConsole({ writeAccess, caseId, selectedCase, run, runLoading, runErr
     </section>
     <section className="panel span-8">
       <div className="panel-header"><h2>Execution route</h2><RunStatusBadge run={run} /></div>
-      <div className="panel-body flow"><RunStatus writeAccess={writeAccess} caseId={caseId} run={run} runLoading={runLoading} runError={runError} acceptRun={acceptRun} acceptedSnapshotId={acceptedSnapshotId} visibleSnapshotId={visibleSnapshotId} switchRequired={switchRequired} pendingAction={pendingAction} resumeSlot={resumeSlot} approvalSlot={approvalPlan && approvalHash ? <ResearchPlanView plan={approvalPlan} planHash={approvalHash} approving={pendingAction === "approve-research-plan"} approvalUnavailable={approvalUnavailable} onApprove={approveResearchPlan} /> : <StateBlock tone="warning" live="status" code="PLAN_APPROVAL_REQUIRED" body="The persisted approval plan is unavailable; approval remains blocked." />} /></div>
+      <div className="panel-body flow"><RunStatus writeAccess={writeAccess} caseId={caseId} run={run} runLoading={runLoading} runError={runError} acceptRun={acceptRun} acceptedSnapshotId={acceptedSnapshotId} visibleSnapshotId={visibleSnapshotId} switchRequired={switchRequired} pendingAction={pendingAction} resumeSlot={resumeSlot} approvalSlot={approvalPlan && approvalHash ? <ResearchPlanView plan={approvalPlan} planHash={approvalHash} approving={pendingAction === "approve-research-plan"} approvalUnavailable={approvalUnavailable} writeAccess={writeAccess} onApprove={approveResearchPlan} /> :<StateBlock tone="warning" live="status" code="PLAN_APPROVAL_REQUIRED" body="The persisted approval plan is unavailable; approval remains blocked." />} /></div>
     </section>
   </div>;
 }
 
-function ResearchPlanView({ plan, planHash, approving, approvalUnavailable, onApprove }: { plan: ResearchPlan; planHash: string; approving: boolean; approvalUnavailable: boolean; onApprove: (planHash: string) => void }) {
+function ResearchPlanView({ plan, planHash, approving, approvalUnavailable, writeAccess, onApprove }: { plan: ResearchPlan; planHash: string; approving: boolean; approvalUnavailable: boolean; writeAccess: WriteAccess; onApprove: (planHash: string) => void }) {
   const scalar = (value: string | number | null | undefined) => value === "" || value == null ? <span className="muted">None</span> : value;
   return <section className="research-plan" role="region" aria-labelledby="research-plan-heading">
     <h3 id="research-plan-heading">Proposed research plan</h3>
@@ -1394,7 +1563,9 @@ function ResearchPlanView({ plan, planHash, approving, approvalUnavailable, onAp
     </li>)}</ol> : <p className="muted">Empty</p>}
     {approvalUnavailable
       ? <Unavailable title="Research plan approval" context="The plan above stays readable; execution remains paused on this run." />
-      : <button className="button primary" type="button" disabled={approving} onClick={() => onApprove(planHash)}>{approving ? "Approving…" : "Approve research plan"}</button>}
+      : writeAccess === "yes"
+        ? <button className="button primary" type="button" disabled={approving} onClick={() => onApprove(planHash)}>{approving ? "Approving…" : "Approve research plan"}</button>
+        : <WriteBlocked access={writeAccess} action="approving the research plan" />}
   </section>;
 }
 

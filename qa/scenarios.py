@@ -401,7 +401,7 @@ def scenario_model_readiness(case_id: str) -> None:
     check("the wrong pathway reads as NOT_READY, not as invalid inputs",
           body["status"] == "NOT_READY", f"status={body['status']} blockers={json.dumps(body['blockers'])}")
     check("the blocker names the pathway the analyst must run",
-          [blocker["code"] for blocker in body["blockers"]] == ["ACCEPTED_FULL_CREDIT_REQUIRED"],
+          [blocker["code"] for blocker in body["blockers"]] == ["PRIOR_FULL_CREDIT_MODEL_REQUIRED"],
           json.dumps(body["blockers"]))
     check("the blocker carries the detail the callout renders",
           all(blocker.get("detail") for blocker in body["blockers"]), json.dumps(body["blockers"]))

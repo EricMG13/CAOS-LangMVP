@@ -14,6 +14,7 @@ from pathlib import Path
 from run import build, serve
 
 from caos.config import Settings
+from caos.instance_lock import checkpoint_lock
 
 
 def main() -> None:
@@ -22,7 +23,10 @@ def main() -> None:
         raise RuntimeError("dev.py requires ENVIRONMENT=development")
     app, engine = build(settings, Path(os.getenv("CAOS_DATA_DIR", ".dev-data")).resolve())
     try:
-        serve(app, engine, host="127.0.0.1", port=settings.port)
+        # Same single-instance guard as run.py: SQLite development has no
+        # advisory lock, so the checkpoint-location lock is the only one here.
+        with checkpoint_lock(engine.checkpoint_path):
+            serve(app, engine, host="127.0.0.1", port=settings.port)
     except BaseException:
         try:
             engine.store.close()

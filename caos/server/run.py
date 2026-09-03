@@ -18,6 +18,7 @@ from fastapi import FastAPI
 from caos.api import create_app
 from caos.config import Settings
 from caos.engine.runtime import Engine
+from caos.instance_lock import checkpoint_lock
 from caos.observability import configure_logging
 from caos.storage.store import DomainStore
 
@@ -171,7 +172,11 @@ def main() -> None:
     app, engine = build(settings, data)
     serve_owns_async_resources = False
     try:
-        with engine.store.single_instance("app"):
+        # Two guards, one instance: the OS lock over the checkpoint location
+        # (the file a second engine would corrupt) and the PostgreSQL advisory
+        # lock for the app role. Both are held before recovery runs or a
+        # socket is bound; a second instance fails here, typed, serving nothing.
+        with checkpoint_lock(engine.checkpoint_path), engine.store.single_instance("app"):
             serve_owns_async_resources = True
             serve(app, engine, host=os.getenv("HOST", "0.0.0.0"), port=settings.port)
     except BaseException:

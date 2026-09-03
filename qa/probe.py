@@ -148,17 +148,30 @@ def main() -> None:
     # The criterion is agreement, not a fixed list: whatever the case wire offers
     # must start, and nothing else may. That is what drifted (F-1) — the menu held
     # its own copy of the cut.
-    offered = set(client.get(f"/api/cases/{probe_case}", headers=head("ANALYST")).json()["available_pathways"])
+    case_wire = client.get(f"/api/cases/{probe_case}", headers=head("ANALYST")).json()
+    offered = set(case_wire["available_pathways"])
     outcomes = {}
+    # Deep Research runs at full depth only and needs a brief; every other
+    # pathway is probed at screen depth. Availability is derived server-side.
+    research_brief = {
+        "research_question": "How resilient is liquidity through the next refinancing?",
+        "decision_context": "Probe of the deployment's research route.",
+        "as_of_date": "2026-01-01", "time_horizon": "12 months",
+        "must_answer": [], "exclusions": [],
+    }
     for pathway in ("FULL_CREDIT", "EARNINGS_UPDATE", "COVENANT_REFINANCING",
                     "RELATIVE_VALUE", "DISTRESSED_RESTRUCTURING", "DEEP_RESEARCH"):
-        response = client.post(f"/api/cases/{probe_case}/runs",
-                               json={"pathway": pathway, "depth": "screen"},
+        body = ({"pathway": pathway, "depth": "full", "research_brief": research_brief}
+                if pathway == "DEEP_RESEARCH" else {"pathway": pathway, "depth": "screen"})
+        response = client.post(f"/api/cases/{probe_case}/runs", json=body,
                                headers=head("ANALYST"), timeout=60)
         outcomes[pathway] = response.status_code
+    startable = {pathway for pathway in offered if pathway != "DEEP_RESEARCH"}
+    if case_wire.get("deep_research_available") is True:
+        startable.add("DEEP_RESEARCH")
     check("AC-RUN-5 offered pathways are exactly the startable ones",
-          all((code == 201) is (pathway in offered) for pathway, code in outcomes.items()),
-          f"offered={sorted(offered)} outcomes={outcomes}")
+          all((code == 201) is (pathway in startable) for pathway, code in outcomes.items()),
+          f"offered={sorted(offered)} deep_research_available={case_wire.get('deep_research_available')} outcomes={outcomes}")
 
     print("\n== security headers ==")
     page = client.get("/cases/")

@@ -16,8 +16,10 @@ import os
 import sys
 import time
 from pathlib import Path
+from typing import Any
 
 from caos.config import Settings
+from caos.deliverables.service import DeliverableService
 from caos.engine.runtime import Engine
 from caos.models.service import ModelService
 from caos.observability import configure_logging, log_event
@@ -32,9 +34,12 @@ def _failure(exc: Exception) -> str:
     return type(exc).__name__
 
 
-def run_pending(service: ModelService) -> int:
-    """One poll pass: execute every QUEUED build, then every QUEUED export.
-    A crash in one item finalizes that item FAILED and never kills the loop."""
+def run_pending(service: ModelService, deliverables: Any = None) -> int:
+    """One poll pass: execute every QUEUED build, then every QUEUED export, then
+    every QUEUED deliverable freeze (Task 10: the frozen record is written here,
+    after every export is published and read back). A crash in one item
+    finalizes that item FAILED and never kills the loop."""
+    processed = deliverables.run_pending_freezes() if deliverables is not None else 0
     work = service.builds.queued_work()
     for build_id in work["builds"]:
         # The identity this pass is dispatching. A re-point can requeue the row
@@ -63,7 +68,7 @@ def run_pending(service: ModelService) -> int:
                 service.builds.update_build(target_id, expected_export_status="QUEUED", export=EXPORT_FAILED)
             else:
                 service.builds.update_revision_export(target_id, EXPORT_FAILED, expected_export_status="QUEUED")
-    return len(work["builds"]) + len(work["exports"])
+    return len(work["builds"]) + len(work["exports"]) + processed
 
 
 def main() -> None:
@@ -80,11 +85,24 @@ def main() -> None:
         # checkpoint file is never opened.
         engine = Engine.create(settings=settings, store=store, checkpoint_path=data / "checkpoints.db")
         service = ModelService(store=store, vault_dir=settings.storage_dir, engine=engine)
+        deliverables = DeliverableService(store=store, vault_dir=settings.storage_dir, engine=engine, models=service)
         poll_seconds = float(os.getenv("WORKER_POLL_SECONDS", "2"))
         once = "--once" in sys.argv[1:]
         with store.single_instance("worker"):
+            # Startup recovery: a freeze this worker's predecessor claimed and
+            # never finished is requeued; renders are deterministic and
+            # publication is hash-addressed, so re-rendering is safe.
+            recovered = deliverables.recover_freeze_jobs()
+            if recovered:
+                log_event("worker.freeze_jobs_recovered", count=recovered)
+            # Same rule for builds: a claim the dead predecessor never finished
+            # is requeued, so a hard kill mid-calculation leaves one retryable
+            # job, never a row stuck BUILDING with no executor (SIM-008).
+            recovered_builds = service.recover_builds()
+            if recovered_builds:
+                log_event("worker.builds_recovered", count=recovered_builds)
             while True:
-                processed = run_pending(service)
+                processed = run_pending(service, deliverables)
                 if once:
                     print({"processed": processed})
                     break

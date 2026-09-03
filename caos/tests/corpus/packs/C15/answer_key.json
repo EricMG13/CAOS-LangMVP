@@ -1,0 +1,97 @@
+{
+  "schema_version": "caos.answer-key.v1",
+  "pack_id": "C15",
+  "version": "1.0.0",
+  "authored_by": "Claude Fable 5.1 (ER-G6 implementer)",
+  "status": "draft-host-control",
+  "intake": null,
+  "expected_facts": [],
+  "conflicts": [],
+  "forbidden_conclusions": [],
+  "cells": {
+    "FULL_CREDIT/full": {
+      "outcome": "ingest",
+      "proves_pathway": false,
+      "refusal_code": null,
+      "model_effect": null,
+      "readiness": null,
+      "max_latency_seconds": 900,
+      "prerequisite": null,
+      "host_control": null,
+      "after_run": null
+    }
+  },
+  "ingest_steps": [
+    {
+      "filename": "polyglot.pdf",
+      "via": "sources",
+      "expect": {
+        "status": 422,
+        "detail_contains": "invalid PDF source"
+      }
+    },
+    {
+      "filename": "bomb.xlsx",
+      "via": "sources",
+      "expect": {
+        "status": 422,
+        "detail_contains": "archive"
+      }
+    },
+    {
+      "filename": "traversal.xlsx",
+      "via": "sources",
+      "expect": {
+        "status": 422,
+        "detail_contains": "archive path traversal"
+      }
+    },
+    {
+      "filename": "duplicate-members.xlsx",
+      "via": "sources",
+      "expect": {
+        "status": 422
+      }
+    },
+    {
+      "filename": "archive.zip",
+      "via": "sources",
+      "expect": {
+        "status": 415,
+        "detail_contains": "unsupported source type"
+      }
+    },
+    {
+      "filename": "corrupt.xlsx",
+      "via": "sources",
+      "expect": {
+        "status": 422,
+        "detail_contains": "invalid archive"
+      }
+    },
+    {
+      "filename": "eicar.txt",
+      "via": "sources",
+      "expect": {
+        "status": 422,
+        "detail_contains": "malware detected"
+      }
+    },
+    {
+      "files": [
+        "polyglot.pdf",
+        "bomb.xlsx",
+        "traversal.xlsx",
+        "duplicate-members.xlsx",
+        "archive.zip",
+        "corrupt.xlsx",
+        "eicar.txt"
+      ],
+      "via": "intake",
+      "expect": {
+        "status": 422,
+        "code": "INTAKE_ADMISSION_REFUSED"
+      }
+    }
+  ]
+}

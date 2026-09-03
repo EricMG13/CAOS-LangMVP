@@ -74,7 +74,7 @@ test("freeze remains a reserved approval sequence with complete blockers and gov
   const end = studio.indexOf('</section>', start);
   const approval = studio.slice(start, end);
   assert.ok(start >= 0, "missing freeze approval panel");
-  for (const label of ["Write access", "Exact saved revision", "Current model selection", "Required model availability"]) {
+  for (const label of ["Write access", "Exact saved revision", "Current model selection", "Required model availability", "Current opinion sign-off"]) {
     assert.match(approval, new RegExp(label));
   }
   assert.match(approval, /withQuery\("\/model-builder", \{ case: caseId \}\)/);
@@ -192,4 +192,45 @@ test("every optional-block insertion re-sorts into template order", () => {
   const appends = studio.match(/markChanged\(\s*\[\.\.\.blocks,/g) ?? [];
   assert.equal(appends.length, 0, "an insertion appends without re-sorting into template order");
   assert.equal((studio.match(/inTemplateOrder\(\[\.\.\.blocks,/g) ?? []).length, 2);
+});
+
+
+test("the opinion is signed on the exact saved revision with an expected-head CAS and every statement required", () => {
+  assert.match(studio, /deliverables\/\$\{pathway\}\/opinion/);
+  assert.match(studio, /expected_head_opinion_id: workspace\.opinion\?\.head\?\.opinion_id \?\? null/);
+  assert.match(studio, /draft_digest: current\.digest, expected_head_opinion_id/);
+  assert.match(studio, /opinionForm\.opinion\.trim\(\) \|\| !opinionForm\.limitations\.trim\(\) \|\| !opinionForm\.material_overrides\.trim\(\) \|\| !opinionForm\.rationale\.trim\(\)/);
+  assert.match(studio, /data-opinion-form/);
+  assert.match(studio, /Material overrides \(write “None” explicitly\)/);
+  assert.match(studio, /!workspace\.opinion\?\.current\) return;/, "freeze refuses client-side without a current sign-off");
+});
+
+test("freeze is a worker job the studio tracks to a server-served frozen record", () => {
+  assert.match(studio, /reportRequest<FreezeJob>\(`\/api\/cases\/\$\{caseId\}\/deliverables\/\$\{pathway\}\/freeze`/);
+  assert.match(studio, /deliverables\/freeze-jobs\/\$\{job\.job_id\}/);
+  assert.match(studio, /freezeJobIsPending\(tracked\.status\)/);
+  assert.match(studio, /const next = await reportRequest<WorkspaceResponse>\(`\/api\/cases\/\$\{caseId\}\/deliverables\/\$\{pathway\}\/draft`\);\n        if \(!lifecycleIsCurrent\(token\)\) return;\n        setWorkspace\(next\);/);
+  assert.match(studio, /data-freeze-job/);
+  assert.match(studio, /disabled=\{!freezeReady \|\| lifecycleBusy \|\| Boolean\(pendingFreeze\)\}/);
+  assert.doesNotMatch(studio, /frozen_history: \[\.\.\.value\.frozen_history\.filter\(\(item\) => item\.id !== frozen\.id\), frozen\]/, "the studio never fabricates a frozen record from the freeze response");
+});
+
+test("separation of duties and the detached receipt are explicit in the frozen review", () => {
+  assert.match(studio, /canFileFrozen\(role, subject, \{ signed_by: selectedFrozen\.signed_by, frozen_by: selectedFrozen\.frozen_by \}\)/);
+  assert.match(studio, /data-separation-of-duties/);
+  assert.match(studio, /selectedFrozen\.status === "FROZEN" && canFileSelected \? <div className="approval-panel">/);
+  assert.match(studio, /deliverables\/by-id\/\$\{frozen\.id\}\/receipt/);
+  assert.match(studio, /data-filing-receipt/);
+  assert.match(studio, /the frozen bytes never name an approver/);
+  assert.match(studio, /publication=\{selectedFrozen\?\.payload\.publication \?\? null\}/);
+  assert.match(document, /publication \? publication\.pages : groupDocumentPages\(sections\)/);
+  assert.match(document, /rd-wm/);
+  assert.match(document, /rd-masthead-facts/);
+});
+
+test("approver provisioning is one governed mutation available to a case admin", () => {
+  assert.match(studio, /`\/api\/cases\/\$\{caseId\}\/members`/);
+  assert.match(studio, /canProvision \? <form className="opinion-form" data-member-form/);
+  assert.match(studio, /canApprove && \["APPROVER", "ADMIN"\]\.includes\(selectedCase\?\.members\?\.\[subject\] \?\? ""\)/);
+  assert.match(studio, /<option value="APPROVER">APPROVER<\/option><option value="ADMIN">ADMIN<\/option>/);
 });

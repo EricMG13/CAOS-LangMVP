@@ -95,11 +95,59 @@ Standing rules that back them:
   (`interrupt_after=["gate"]`) so the immutable plan returns immediately. The
   serving entrypoint calls `engine.enable_auto_continue()` to schedule the rest
   on its loop; tests keep explicit control with `engine.wait(run_id)`. Never
-  drive one run from two event loops.
+  drive one run from two event loops. A module registered with
+  `plan_approval=True` (CP-DR) parks its run on a second digest-bound
+  interrupt, `PLAN_APPROVAL_REQUIRED`, before any reuse or provider call:
+  `engine/research.py` proposes the plan from the pinned run plan, the brief
+  and the upstream artifacts, `RunStore.propose_research_plan` persists it with
+  its `sha256:` hash, and `Engine.approve_research_plan` is the expected-hash
+  compare-and-swap that lets `wait()` re-enter the node (invariant 5,
+  DECISIONS §14.16).
+- Every pathway declares one model effect (DECISIONS §14.18). Full Credit
+  builds the complete model from the six canonical artifacts; Earnings Update,
+  Covenant & Refinancing, Relative Value, Distressed and Deep Research resolve
+  through `models/service.py::_resolve_overlay_snapshot` — the nearest
+  validated Full Credit ancestor, its build re-verified by recomputation, the
+  accepted run's calculation records re-executed, one `pathway_effects` entry
+  on a byte-identical copy of the base tabs under the overlay's own input
+  fingerprint. Every build carries `source_lineage` (one row per pinned
+  source: intake disposition, consumers, citing artifacts, model tables,
+  binding); a `used` relevant document bound to nothing is
+  `MODEL_SOURCE_LINEAGE_INCOMPLETE` and never READY. Readiness answers
+  `FULL_DEPTH_REQUIRED`, `PRIOR_FULL_CREDIT_MODEL_REQUIRED`,
+  `DEEP_RESEARCH_NO_NUMERIC_EFFECT` and `RELATIVE_VALUE_MARKET_MARKS_REQUIRED`
+  as NOT_READY preconditions; the READY transition audits `model.build_ready`
+  in its own transaction.
 - Run progress reaches the UI as graph events: `GET /api/runs/{id}/events` is a
   thin SSE tail of `run_events` (Last-Event-ID resume; stream closes once a
   terminal run is fully delivered). The frontend never reads event payloads —
   event names trigger a RunRecord refetch.
+- Publication (DECISIONS §14.19, Task 10). The analyst signs an opinion on the
+  exact saved revision (`POST …/deliverables/{pathway}/opinion`, append-only
+  `deliverable_opinions`, expected-head CAS); freeze refuses without a current
+  sign-off and refuses an `ANALYST_JUDGMENT` narrative that states an uncited
+  figure. `POST …/freeze` renders nothing: it queues a
+  `deliverable_freeze_jobs` row and `worker.py` renders md/pdf/xlsx from the
+  frozen payload's `publication` document, publishes hash-addressed, reads
+  each export back verified, and only then writes the FROZEN record — so a
+  local freeze completes only with `python caos/server/worker.py` running
+  beside `dev.py`, exactly like model builds. Filing refuses the opinion
+  signer and the freeze actor (`APPROVER_NOT_INDEPENDENT`) and writes an
+  immutable detached receipt (`GET …/by-id/{id}/receipt`); the approved bytes
+  always read `PENDING APPROVAL`. `POST /api/cases/{id}/members` provisions a
+  distinct approver (stored case APPROVER/ADMIN standing plus a current global
+  writer role). The audit log is append-only and hash-chained per case
+  (`audit_chain_heads` lock row; `store.audit_chain`/`verify_audit_chain`);
+  `GET /api/cases/{id}/audit-package` serves the case package and
+  `caos/server/caos/audit/verify_package.py` verifies it with the standard
+  library alone, re-rendering the Markdown export from the frozen payload.
+  `caos/publishing/markdown.py` is copied verbatim into the verifier and a
+  test pins the copy; change them together. PDF text is shaped from the
+  vendored DejaVu bundle (`caos/server/caos/publishing/fonts/`, digests in
+  `renderers.FONT_BUNDLE`, hermetic fontconfig, hinting off) and never from
+  the host's "sans"; the cross-format goldens pin page counts under that
+  bundle, so a renderer change is reviewed by regenerating them
+  (`CAOS_REGENERATE_GOLDENS=1`) after inspecting every page and sheet.
 - `observability.py` — structured JSON logs on stdout (stdlib only). Seven log
   points and no debug channel: run/node transitions (all of them via
   `RunStore._emit`), typed refusals, provider call start/finish, budget
@@ -144,6 +192,15 @@ engine, the bundle, or the routes.
   Deep-Dive reads accepted artifacts; neither renders the compile form or the
   accept control. Run progress, compilation and acceptance stay in
   `/run-console/`.
+- The golden journey is document-first (Task 8, DECISIONS §14.17): the Cases
+  page's `.cases-intake` panel posts files and nothing else to
+  `POST /api/intake`; the server creates or resolves the case, admits every
+  file or none in one transaction, classifies the evidence, selects the route
+  and starts the run. Issuer, label, document types, periods, dispositions and
+  the route are served as labelled machine suggestions and never taken from
+  the browser or from document instructions. The create-case and compile
+  forms remain as advanced controls; a completed intake run is opened for
+  review in the run console and is never accepted on the analyst's behalf.
 - Visual language is established: dark institutional terminal, semantic color
   only, motion only for live state. `DESIGN.md` and `.impeccable.md` govern;
   inherit, don't reinvent.
@@ -200,6 +257,30 @@ engine, the bundle, or the routes.
   classifies every document and runs every executable route. CI and nightly
   hard-fail when a required fixture cannot be acquired and cache only a complete
   fetch.
+- Qualification corpus and harness (Task 11, DECISIONS §14.20): every pack
+  C01–C22 is a versioned manifest plus an attested answer key under
+  `caos/tests/corpus/packs/<id>/` (`manifests.py` validates and resolves bytes;
+  `synthetic.py` regenerates C02–C16, digest-checked; C20–C22 are external
+  under `$CAOS_CORPUS_EXTERNAL_DIR`). `caos/tests/corpus/qualify.py` runs the
+  matrix (`plan`, `cell`, `matrix`, `verdict`, `pin`): one cell per fresh
+  process, scored by `scoring.py`, bound to provider identity, corpus digest,
+  build, date, expiry and reviewer; a host-control binding reads
+  ORCHESTRATION_PROOF, never QUALIFIED. Run it keyless:
+  `ANTHROPIC_API_KEY= CAOS_PROVIDER= caos/server/.venv314/bin/python
+  caos/tests/corpus/qualify.py matrix --binding host_control --packs C03
+  --reviewer <name>`. A fixture or key change is re-pinned with `pin`; the
+  tool refuses to re-sign an analyst-approved key. The protected
+  `.github/workflows/enterprise-qualification.yml` runs the live matrix on
+  dispatch. `docs/QUALITY_QUALIFICATION.csv` maps MOD-001–MOD-025 to the
+  harness, the runtime or an external input.
+- PostgreSQL target (Task 12a): `caos/tests/test_postgres_races.py` and the
+  real-database tests in `test_single_instance.py` run only with
+  `CAOS_TEST_POSTGRES_URL` set to a role that may `CREATE DATABASE` (every test
+  makes and drops its own database); `CAOS_REQUIRE_POSTGRES=1` turns a missing
+  URL into a failure, which is how CI's `postgres` job runs them against the
+  digest-pinned container. Locally, point the URL at the QA container.
+  Failure simulations SIM-001–SIM-030 map to retained tests in
+  `docs/SIMULATION_LEDGER.csv`, pinned by `caos/tests/test_simulation_ledger.py`.
 - Lint: `ruff check --config ruff.toml caos/server caos/tests --exclude
   caos/server/caos/methodology/vendor`.
 - Dependencies: `caos/server/pyproject.toml` is the single source of truth.
@@ -219,18 +300,34 @@ engine, the bundle, or the routes.
 ## Known gaps (honest ledger)
 
 - Admin Studio remains an explicit unavailable capability (`/admin/audit`,
-  `/admin/bundle`), as does deep-research plan approval
-  (`/runs/{id}/research-plan/approve`). Worksheet reads, one-way sensitivity,
-  tornado, revision rebase preview, and build/revision export and download
-  routes are served and must not be re-added to this gap list.
+  `/admin/bundle`). Worksheet reads, one-way sensitivity, tornado, revision
+  rebase preview, build/revision export and download, and the Deep Research
+  plan routes (`GET /runs/{id}/research-plan`,
+  `POST /runs/{id}/research-plan/approve`, Task 7) are served and must not be
+  re-added to this gap list. `deep_research_available` on the case wire is
+  derived from the engine (cut, compiled route, registry, provider binding),
+  never a literal.
+- Deep Research is qualified by host control only. The corpus test runs
+  `DEEP_RESEARCH` at full depth on the Carnival pack with a fixture brief and
+  proves the brief, the approval gate and the route complete; it proves nothing
+  about any research question. The question-specific C22 pack and live-model
+  qualification remain external inputs (BLOCKED EXTERNAL in
+  `.superpowers/sdd/enterprise-task-7-report.md`).
 - The governed builder and canonical deliverable implementation exists, but its
   deterministic/scripted development proof does not qualify live analysis.
   Enterprise qualification across all six pathways remains open.
 - The encrypted Postgres/vault backup streams and restore checks were exercised
-  with real `age`, PostgreSQL, and Docker-volume data on 2026-08-30. The
-  `backup.sh` Compose wrapper, lock directory, manifest bookkeeping, scheduled
-  off-host transfer, rotation, and retention were not exercised and remain
-  deployment gates.
+  with real `age`, PostgreSQL, and Docker-volume data on 2026-08-30; the three
+  defects that drill found (`caos/deploy/RESTORE-DRILL-2026-08-30.md` F1–F3)
+  were repaired in Task 12a and have regression tests in
+  `caos/tests/test_deploy_topology.py`: the store creates its whole schema at
+  startup (so the drill's table check holds for a fresh deployment),
+  `backup.sh` resolves the vault volume from the app container's `/vault`
+  mount or `CAOS_VAULT_VOLUME` and never fails silently, and it pauses the
+  app and worker containers for the whole capture so the dump and the vault
+  archive share one snapshot point (`checkpoints.db-shm` excluded). The
+  scheduled off-host transfer, rotation, and retention were not exercised and
+  remain deployment gates.
 - The Dockerfile installs `libreoffice-calc` and its 167 apt dependencies
   unversioned. This is an **accepted** gap, not an oversight, and the reason is
   narrower than it looks: apt is not unauthenticated. The `InRelease` file is
@@ -252,10 +349,20 @@ engine, the bundle, or the routes.
   decision owner, not a documentation chore.
 - Exports have no claim at all — two workers would both render the same export.
   Only the failure fallback is CAS-bound. Harmless today (single worker,
-  content-addressed output), wrong under a second worker.
+  content-addressed output, and a second worker is refused at startup), wrong
+  under a second worker. Build claims are CAS-bound and, since Task 12a, a
+  `BUILDING` row a dead worker left behind is requeued at the next worker
+  start (`ModelService.recover_builds`), like `RENDERING` freeze jobs.
 - `RequestCeilings` counts in-process, so its ceilings are per app instance.
   That matches the single-instance deployment the SQLite checkpoints already
-  force; scaling out means moving them to a shared store first.
+  force; scaling out means moving them to a shared store first. The instance
+  ceiling is enforced, not assumed (Task 12a): `run.py` and `dev.py` take an
+  exclusive `flock` on `checkpoints.db.lock` beside the checkpoint database
+  (`caos/instance_lock.py`) before recovery runs or a socket is bound, so a
+  second app over the same data directory exits `INSTANCE_ALREADY_RUNNING`;
+  the PostgreSQL role advisory locks (`store.single_instance`) stay beside
+  it, Compose declares `deploy.replicas: 1` for `app` and `worker`, and
+  `caos/deploy/ENVIRONMENT_MANIFEST.md` records the ceiling.
 - The gzip exclusion for XLSX only covers the model-build download, the sole
   route setting that media type. The deliverable export serves md/pdf/xlsx
   alike as `application/octet-stream`, so its already-compressed formats are
@@ -264,13 +371,24 @@ engine, the bundle, or the routes.
 - Run checkpoints are SQLite on the data volume even under a Postgres domain
   store (`run.py` notes this); the postgres checkpoint saver is pinned in
   requirements but not wired in the engine. Single app instance only.
-- Source-set version allocation now locks the case row before it reads the
+- Source-set version allocation locks the case row before it reads the
   current version (`storage/store.py::_next_source_set`), so two concurrent
-  ingests into one case cannot both mint the same version. The lock is a no-op
-  on SQLite and **has not been exercised against a live PostgreSQL** — only the
-  emitted clause is pinned. Locking the set row instead would not work:
-  `ORDER BY version DESC LIMIT 1 FOR UPDATE` re-reads the same unchanged row
-  and still computes N+1.
+  ingests into one case cannot both mint the same version. Locking the set row
+  instead would not work: `ORDER BY version DESC LIMIT 1 FOR UPDATE` re-reads
+  the same unchanged row and still computes N+1. Since Task 12a this and every
+  other governed race is proven on two independent PostgreSQL connections in
+  `caos/tests/test_postgres_races.py` (CI job `postgres` against the pinned
+  container; locally `CAOS_TEST_POSTGRES_URL=postgresql+psycopg://…` against
+  the QA container). That target repaired six read-then-write races the
+  process locks could not order across connections — event `seq`, the budget
+  ledger, duplicate withdrawal, assumption-vs-withdrawal, and the model,
+  opinion, draft, freeze and publication heads (`store.lock_case`, a
+  transaction-scoped case advisory lock) — and found that the Task 10
+  deliverable DDL could not be created through psycopg at all. The
+  process-wide locks remain the SQLite mechanism only; SQLite thread races
+  and compiled `FOR UPDATE` checks are never PostgreSQL proof
+  (`SPEC_RECONCILIATION.md`, "Two-connection PostgreSQL races";
+  `docs/DECISIONS.md` §14.21).
 - The OpenRouter binding is development-only and meters by estimate, not by
   count. `engine/openrouter.py` is a second provider-port adapter selected by
   `build_provider` only in development when it is the sole configured key.
@@ -310,15 +428,60 @@ engine, the bundle, or the routes.
   would pass while scanning nothing. The step now asserts bandit's JSON report
   carries no parse errors and covers the server, so a naive version bump fails
   loudly instead of silently.
-- Loan-workbook cell text is not `BoundaryText`. `artifacts/loan_universe.py::_text`
-  strips and bounds at 32 KB but does not run the control-byte / bidi-override /
-  NFC checks, so a borrower name carrying U+202E rides the CP-3 artifact and the
-  API response into a rendered deliverable. It cannot mint two lineages —
-  `universe_digest` is content-addressed over exactly the stored bytes and
-  `instrument_key` is the uppercased FIGI/Bloomberg id — so this is a render
-  defect, not an identity one. Closing it changes what the importer accepts
-  (rejected rows become structured findings), which is a wire-visible contract
-  change; `SPEC_RECONCILIATION.md` carries the analysis.
+- Loan-workbook cell text is `BoundaryText` at the importer since Task 9:
+  `artifacts/loan_universe.py::_text` runs `validate_boundary_text` after the
+  32 KB bound, and a failing cell is the structured finding
+  `RV_CELL_TEXT_INVALID` (the workbook is REJECTED). This is the one seam every
+  path shares — the CP-3 artifact, the Relative Value model effect and every
+  renderer read the stored rows.
+- Deliverables for Earnings Update and Covenant & Refinancing still bind the
+  prior Full Credit base build (`PRIOR_FULL_CREDIT_BASE`), not the overlay
+  build that carries their pathway effect; Relative Value and Deep Research
+  deliverables bind no overlay either. The effects ride the overlay builds'
+  payloads and exports today; rendering them in published outputs is Task 10.
+- Cross-intake restatement is not recorded by intake: a restated annual dropped
+  into a case whose original came from an earlier intake is admitted as `used`
+  without marking the original `superseded` (`intake/service.py::
+  _apply_dispositions` groups the current pack only). The model's lineage then
+  binds both by citation. Supersession across intakes is a follow-up.
+- Earnings Update and Covenant & Refinancing deliverables bind the prior Full
+  Credit base build (DECISIONS §14.18), so their pathway effects reach the
+  overlay build and the model export but not the published deliverable; the
+  Distressed overlay does render. Binding those two pathways' deliverables to
+  their overlay builds is a model-authority change that existing tests pin
+  (`test_live_incremental_pathway_publishes_against_a_validated_prior_full_credit_model`)
+  and stays open after Task 10.
+- The deliverable export route still serves md/pdf/xlsx as
+  `application/octet-stream` (a wire-visible decision, unchanged in Task 10);
+  the audit package is `application/zip`, which the gzip middleware already
+  excludes.
+- The audit chain has no external anchor beyond the audit package manifest:
+  an actor who can drop the database triggers and rewrite every row after a
+  point can re-chain the tail. Detect that by comparing a retained package's
+  `audit/head.json` with the live head; an HMAC key or an external timestamp
+  anchor is the upgrade path.
+- Freezing renders the PDF with pango-view page by page (each page embeds its
+  own font subsets), so a filed PDF is roughly 90–150 KB per page and a freeze
+  costs two to ten seconds of worker time; the deliverable spec files take
+  about seven minutes for that reason. A single multi-page pango render or a
+  shared font subset is the upgrade path.
+- PDF text in scripts the vendored DejaVu bundle does not cover (CJK, Arabic,
+  Indic, …) is shaped by the host's fallback fonts — `fonts-noto-cjk` in the
+  image, whatever a developer Mac has. Every span carries an absolute line
+  height, so pagination does not move with the fallback face, but glyph
+  shapes and advances in those scripts follow the host. Vendoring a CJK face
+  (16 MB and up per weight) is the upgrade path if those scripts become
+  routine.
+- Live qualification has not run. The harness, the manifests and the draft
+  answer keys exist; the provider credential, every analyst-scope approval,
+  the licensed marks (C20), the Lumen stressed pack (C21) and the research
+  pack (C22) are external inputs listed as BLOCKED EXTERNAL in
+  `.superpowers/sdd/enterprise-task-11-report.md`. Until they exist every
+  `verdict --binding live` is UNQUALIFIED by construction.
+- The loan-universe importer opens workbooks `data_only`, so a formula cell
+  has no cached value and reads as blank; a formula in an optional numeric
+  column imports silently (C08 records this as observed behaviour, not a
+  refusal). Refusing formula cells outright is a product decision left open.
 - Blocks live in one JSON column on the source row, so `read_evidence` parses
   every block of a source on each call. Measured at the ceiling: a 10 MB source
   costs 17 ms per read, so a run's ~80 reads cost about 1.4 s. Fine at current

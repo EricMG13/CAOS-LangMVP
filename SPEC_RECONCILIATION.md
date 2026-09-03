@@ -67,9 +67,12 @@ commit_and_checkpoint (atomic+retryable via reuse-first CAS); snapshot_acceptanc
 → runs::acceptance_is_idempotent…together; run_public_shape_includes_ordered_nodes_and_events →
 runs::event_log + http_contracts run family; loan_universe_versions_supersede_reject_withdraw +
 postgres_loan_import_and_withdrawal_serialize → loan_universe (4 tests, both orders + injected interleaving);
-postgres_assumption_creation_and_withdrawal_serialize → p2:store sequential halves + DEFERRED (D3) for the
-two-connection staging; postgres_two_connection_uniqueness_and_claim_races → p2 dedup unique index
-(ingest half), thesis half EXCLUDED (E1), two-connection staging DEFERRED (D3);
+postgres_assumption_creation_and_withdrawal_serialize → p2:store sequential halves + the two-connection
+PostgreSQL proof `test_postgres_races.py::test_assumption_creation_and_withdrawal_serialize` (D3 closed
+2026-09-03); postgres_two_connection_uniqueness_and_claim_races → p2 dedup unique index (ingest half),
+thesis half EXCLUDED (E1), two-connection PostgreSQL proof `test_postgres_races.py::
+test_duplicate_upload_race_admits_one_active_source_and_one_set_version` + `::test_model_build_claim_race_
+has_one_executor` (D3 closed 2026-09-03);
 publication_versions_conflict_without_partial_append → EXCLUDED (E1).
 
 Model rows (13): all → model_builder per its ROW MAPPING block (result validation matrix, bounded
@@ -152,9 +155,60 @@ vault digest recheck, case scoping, withdrawal deactivation, CP-3 binding).
 - **D2 — finalization deadline under a fake clock** (2 rows): the never-commit-past-ceiling /
   commit-inside-deadline pair needs the store finalize transaction's deadline parameter; lands with the
   phase-3 store finalize. The single-terminal and rollback halves are already spec'd (runs crash-gap tests).
-- **D3 — two-real-connections Postgres staging** (residual halves of 2 rows): the guarantees are spec'd
-  via both sequential orders + injected interleaving; the two-connection Postgres variant runs in the
-  both-dialects CI lane once the store has a Postgres test target (container available locally).
+- **D3 — two-real-connections Postgres staging** (residual halves of 2 rows): CLOSED 2026-09-03 (Task 12a).
+  `caos/tests/test_postgres_races.py` is the PostgreSQL test target: every test opens two SQLAlchemy engines
+  over a database created for it, parks each connection mid-transaction at a named statement so both
+  writers pass their pre-reads before either commits, and asserts one winner, a typed loser and an intact
+  audit chain. It runs in CI against the digest-pinned `postgres:17-alpine` service (`ci.yml` job
+  `postgres`, `CAOS_REQUIRE_POSTGRES=1` so a missing URL fails rather than skips) and locally against the
+  QA container. The SQLite thread races and the compiled `FOR UPDATE` check in `test_store.py` stay as
+  fast mechanism tests and are not PostgreSQL proof. See "Two-connection PostgreSQL races" below.
+
+## Two-connection PostgreSQL races (2026-09-03, enterprise Task 12a; ETR-B07)
+
+`caos/tests/test_postgres_races.py` (27 tests, marker `postgres`) is the behavioural proof that the
+database, not a process lock, serialises every governed race Phase 5 of `ENTERPRISE_READINESS_PLAN.md`
+names. Each row below is one test on two independent connections (two engines, two backend PIDs) with the
+interleaving forced by parking one connection at the named statement. "Before" is what the same test
+observed on the store as it stood at `ca6c33e`; every "before" defect was repaired in the store and the
+repair is what the test now proves.
+
+| Race | Test | Before (on `ca6c33e`) | After |
+| --- | --- | --- | --- |
+| Duplicate upload (SIM-013) | `test_duplicate_upload_race_admits_one_active_source_and_one_set_version` | one active source, typed loser (partial unique index) | unchanged |
+| Identical intake packs | `test_concurrent_identical_intake_packs_admit_one_pack` | one pack admitted, typed loser | unchanged |
+| Source-set version allocation | `test_concurrent_distinct_uploads_allocate_monotonic_source_set_versions` | versions 1 and 2 (case-row `FOR UPDATE`, previously pinned only as compiled SQL) | unchanged, now proven |
+| Upload/withdrawal interleave (SIM-014) | `test_upload_and_withdrawal_interleave_yield_monotonic_history_under_both_orders` | monotonic history under both orders | unchanged |
+| Duplicate withdrawal | `test_duplicate_withdrawal_race_withdraws_once` | **two set versions, two `source.withdrawn` audit rows** | conditional `UPDATE … WHERE withdrawn = FALSE`; the loser gets None |
+| Assumption vs withdrawal (D3) | `test_assumption_creation_and_withdrawal_serialize[withdrawal]` | **assumption READY citing a withdrawn source** | cited rows read `FOR SHARE`; the withdrawal waits and stales it, or the save refuses `EVIDENCE_SOURCE_WITHDRAWN` |
+| Loan-universe import vs withdrawal (D3) | `test_loan_universe_import_and_withdrawal_serialize` | no active universe outlives its source | unchanged |
+| Event sequence (invariant 6) | `test_event_sequence_allocation_serializes_two_writers_on_one_run` | **raw primary-key violation on `(run_id, seq)`** | run row `FOR UPDATE` before `max(seq)+1`; every run-table writer takes the run row first |
+| Budget reserve (invariant 8) | `test_budget_reserve_race_has_one_reservation_and_one_typed_refusal` | **both reserved; in-flight digest overwritten, `used` lost** | `run_budgets` row `FOR UPDATE`; loser `AGENT_BUDGET_EXCEEDED` |
+| Budget reconcile | `test_budget_reconcile_race_applies_the_true_up_exactly_once` | **true-up applied twice** | loser `AGENT_AUTHORITY_MISMATCH` |
+| Budget charge | `test_budget_charge_race_refuses_the_ceiling_before_overspend` | **lost update** | loser `AGENT_BUDGET_EXCEEDED`, `used` exact |
+| Run acceptance (SIM-007, SIM-012) | `test_snapshot_acceptance_race_moves_the_case_and_run_pointers_once` | one winner, `SNAPSHOT_AUTHORITY_CHANGED` | unchanged |
+| Build claim (SIM-015) | `test_model_build_claim_race_has_one_executor` | one executor | unchanged |
+| Build queue | `test_model_queue_race_is_idempotent_with_one_attributed_winner` | idempotent | unchanged |
+| Model sign-off (SIM-016) | `test_model_sign_off_race_has_one_revision_and_one_typed_conflict[False/True]` | **raw IntegrityError on the revision number** | case advisory lock (`store.lock_case`); loser `ModelRevisionConflict` naming the winner |
+| Opinion sign-off | `test_opinion_sign_off_race_leaves_one_head` | **two opinion rows, two heads** | case advisory lock; loser `OpinionHeadConflict` |
+| Draft save | `test_draft_save_race_conflict_carries_the_committed_head` | typed conflict carrying a stale head | case advisory lock; the conflict carries the committed head |
+| Freeze request | `test_freeze_request_race_converges_on_one_job` | **raw IntegrityError on the freeze thread** | case advisory lock; both return one job |
+| Freeze claim (SIM-015) | `test_freeze_claim_race_has_one_renderer` | one renderer | unchanged |
+| Frozen publication | `test_publish_frozen_race_converges_on_one_record_and_one_thread` | **raw IntegrityError on the deliverable id** | case advisory lock; one record, one thread |
+| Filing (SIM-017) | `test_filing_race_files_once_with_one_receipt` | one FILED, one receipt | unchanged |
+| Disconnect after ack (SIM-011) | `test_disconnect_after_an_acknowledged_write_is_resolved_by_idempotent_retry` | — | retry converges on the committed state |
+
+Two further PostgreSQL facts the target surfaced, both repaired: the Task 10 deliverable-store DDL
+(`RAISE EXCEPTION '… % …'`) could not be created through psycopg at all, so `DeliverableStore` failed to
+construct on PostgreSQL (now executed through `sa.text`, which escapes the placeholder); and the model and
+deliverable tables were created lazily, so a fresh deployment's schema depended on usage history (now
+created by `DomainStore.from_url`, which also turns a DDL defect into a refusal to boot).
+
+The mechanism split is deliberate and stays: the process-wide locks (`_AUTHORITY_MUTATION_LOCK`, the
+`ModelStore`/`DeliverableStore` `_WRITE_LOCK`) remain the SQLite serialisation for the development store,
+where `lock_case` and `FOR UPDATE` are no-ops; PostgreSQL relies on the row locks, the transaction-scoped
+case advisory lock and the unique constraints. Neither the SQLite thread races nor the compiled-clause
+checks are PostgreSQL proof; only this module is.
 
 ## Invariant-to-test table + suite reconciliation (2026-08-27, phase 6)
 
@@ -180,12 +234,12 @@ docstrings, DECISIONS.md §§6/2/12, code comments); no other enumeration exists
 | 2 | Every `read_evidence` is validated at the host boundary (case, pin, withdrawal, block identity) and fails closed with a typed refusal, no text returned | `spec/test_evidence_spec.py::test_read_outside_pinned_source_set_fails_closed` | green (fixture glue repaired with user sign-off 2026-08-27) |
 | 3 | The host owns identity: provider-claimed frontmatter never survives; checkpointed digests are expectations re-verified against the store, never authority | `spec/test_modules_spec.py::test_host_owns_identity_and_discards_provider_frontmatter` | green |
 | 4 | Methodology authority is the verified vendored bundle — integrity checked on the bytes at use; a run pinned to one build never executes under another. The bundle may be edited in-tree only under a dated `DECISIONS.md` entry (§14.11, §14.13 for build `237bf4bc…`); its whole-tree pin therefore moves with each such change and is a consistency check, not independent evidence that the tree is unmodified | `spec/test_modules_spec.py::test_vendored_bundle_is_the_approved_unmodified_release` (pin — see caveat) + `…::test_verify_at_use_rejects_bytes_that_mismatch_the_pinned_manifest` (the load-bearing byte check) + `test_bundle.py::test_rehashed_calculator_cannot_retain_the_prior_build_identity` (build pin: `…::test_run_pins_build_id_and_refuses_execution_under_a_different_bundle`) | green |
-| 5 | Every gate where execution waits on a human is a digest-bound interrupt; approval binds the exact reviewed content | `spec/test_deliverables_spec.py::test_approval_binds_exact_preview_digest_and_fingerprint_mismatch_leaves_frozen_retryable` | green |
-| 6 | Execution is durable and exactly-once: resume from last checkpoint, never restart; a crash in the commit gap yields one artifact, one charge, one terminal | `spec/test_runs_spec.py::test_worker_killed_mid_run_resumes_from_last_checkpoint_not_restart` (crash gap: `…::test_crash_between_store_commit_and_checkpoint_write_yields_one_artifact_one_charge`) | green |
+| 5 | Every gate where execution waits on a human is a digest-bound interrupt; approval binds the exact reviewed content | `spec/test_deliverables_spec.py::test_approval_binds_exact_preview_digest_and_fingerprint_mismatch_leaves_frozen_retryable` (filing gate) + `spec/test_publication_spec.py::test_opinion_signoff_is_an_append_only_expected_head_cas_bound_to_the_exact_revision` (opinion sign-off: expected-head CAS, single actor, Task 10) + `…::test_freeze_requires_a_current_opinion_and_refuses_a_stale_one` + `…::test_the_opinion_signer_and_the_freeze_actor_cannot_file_their_own_output` (separation of duties at the filing CAS) + `…::test_concurrent_filers_yield_one_receipt_and_one_typed_loser` + `spec/test_research_spec.py::test_plan_approval_is_an_expected_hash_compare_and_swap` (Deep Research plan gate: wrong hash refused, exact hash consumed once, `…::test_execution_refuses_an_approval_that_no_longer_matches_the_plan_that_would_execute` for the re-entry continuity check, `…::test_resume_cannot_bypass_the_approval_gate`) | green |
+| 6 | Execution is durable and exactly-once: resume from last checkpoint, never restart; a crash in the commit gap yields one artifact, one charge, one terminal | `spec/test_runs_spec.py::test_worker_killed_mid_run_resumes_from_last_checkpoint_not_restart` (crash gap: `…::test_crash_between_store_commit_and_checkpoint_write_yields_one_artifact_one_charge`; research gate across restart: `spec/test_research_spec.py::test_brief_plan_and_approval_survive_restart_and_resume_only_the_approved_plan`) | green |
 | 7 | Model calculation is pure and finite — non-finite values and zero denominators refused, forecast values driver-sourced | `spec/test_model_builder_spec.py::test_finite_guards_reject_non_finite_and_zero_denominators` | green |
 | 8 | Budgets fail closed — every ceiling refuses before overspend; no provider call without a reservation; unresolved inflight fails the resumed run | `spec/test_budget_spec.py::test_each_ceiling_refuses_the_next_operation_before_overspend` | green |
 | 9 | Module output survives only as the strict canonical envelope — bounded schema, undeclared fields refused, citations only from delivered evidence | `spec/test_modules_spec.py::test_canonical_output_schema_is_strict_and_bounded` | green |
-| 10 | A run's route is static — node set and edges are a pure function of (pathway, depth); replay from the same pins is equivalent by the same path | `spec/test_runs_spec.py::test_node_set_and_edges_are_a_pure_function_of_pathway_and_depth` (purity) + `…::test_compiled_route_matches_its_pinned_golden` (one pinned digest per cell, so a catalog edit that moves a node or edge fails until DECISIONS records it) (replay: `…::test_replay_from_same_pinned_sources_and_build_is_equivalent_by_the_same_path`, which compares every payload key except the run-identity chain, not constants) | green |
+| 10 | A run's route is static — node set and edges are a pure function of (pathway, depth); replay from the same pins is equivalent by the same path | `spec/test_runs_spec.py::test_node_set_and_edges_are_a_pure_function_of_pathway_and_depth` (purity) + `…::test_compiled_route_matches_its_pinned_golden` (one pinned digest per cell, so a catalog edit that moves a node or edge fails until DECISIONS records it) (replay: `…::test_replay_from_same_pinned_sources_and_build_is_equivalent_by_the_same_path`, which compares every payload key except the run-identity chain, not constants; a Deep Research brief selects nothing about the route and replays to the same plan digest and workstreams: `spec/test_research_spec.py::test_replay_from_the_same_pins_and_brief_proposes_the_same_plan_by_the_same_path`) | green |
 
 ### CONTRACTUAL-row reconciliation (229 rows)
 
@@ -209,8 +263,8 @@ on an over-ceiling charge before `finalize_success` — success never commits pa
 ceiling. Verified: the pre-change runtime fails exactly the wrapper-coverage, final-validation,
 and never-lands tests.
 
-D3 (residual Postgres two-connection halves of 2 rows) remains deferred on its original reason —
-no Postgres test target exists in CI yet; flagged for the phase-6 gate since this is the last phase.
+D3 (residual Postgres two-connection halves of 2 rows) was deferred here on its original reason — no
+Postgres test target existed in CI. It closed on 2026-09-03 with the target described under D3 above.
 
 ## Prompt-injection behaviour suite (2026-08-31)
 
@@ -692,3 +746,67 @@ calculators must run each through `run_methodology_calculation`
   (`caos/tests/test_runtime_calculations.py`: limitation, retry-as-repair,
   core-terminal), never `SOURCE_EVIDENCE_INSUFFICIENT`, which stays the
   provider-declared source gate's code (`test_sparse_or_legally_incomplete_pack_returns_a_typed_refusal`).
+
+## Source-complete modelling (2026-09-02, Task 9, ETR-B12)
+
+`caos/tests/spec/test_source_complete_modelling_spec.py` drives the
+document-first journey (`POST /api/intake` → run → accept → build) with an
+answer-keyed provider double at the ordinary provider port (identity
+`answer_key_fixture`, never `host_control`; no `run_scripted_for_tests`). The
+answer key is the pack: the annual report is the canonical data source, the
+quarterly reaches the CP-1B snapshot table, guidance is the forecast-driver
+authority, a restated annual supersedes the original and moves the FY2025
+margin, a press clipping is never requested. `test_corpus_pathways.py` runs the
+same lineage and model-effect assertions over the thirty-document Carnival
+pack on every startable route (`CORPUS_FULL=1`).
+
+### CALC-001–020 → retained tests
+
+| Check | Test |
+| --- | --- |
+| CALC-001 input validation incl. relevance-manifest membership | `test_full_credit_build_binds_every_relevant_document_to_the_model_or_the_analysis`; `test_a_used_document_that_nothing_consumed_is_a_typed_incomplete_model_never_ready`; `test_model_builder_spec::test_golden_cp_model_fixtures_pass_vendor_validation` |
+| CALC-002 refuse when an unconditional stable table is absent | `test_model_builder_spec::test_cp_model_rejects_hidden_stable_tables`; `test_removing_the_annual_report_refuses_at_the_source_gate` |
+| CALC-003 unavailable optional assumptions stay null with a named gap | `test_model_builder_spec::test_allowed_unavailable_liquidity_degrades_to_named_nulls_not_zeros`; `test_removing_the_forecast_source_is_a_typed_model_refusal_never_a_default` |
+| CALC-004 NaN, infinity, invalid decimal text, zero denominators, out-of-bound | `test_model_builder_spec::test_finite_guards_reject_non_finite_and_zero_denominators`, `::test_assumption_inputs_fail_closed_on_unit_nonfinite_and_bounds`, `::test_zero_denominators_yield_none_metrics_and_nonfinite_cp1_fails_validation` |
+| CALC-005 derived quarter / YTD / FY / LTM / pro-forma / base / downside | `test_derived_periods_follow_the_governed_formulas_and_never_overwrite_a_reported_one` |
+| CALC-006 a derived period never overwrites a reported one | the same test, plus `test_every_pathway_overlays_its_declared_effect_on_the_full_credit_model` (overlay tabs byte-identical to the base) |
+| CALC-007 identical outputs from identical inputs | `test_model_builder_spec::test_accepted_full_credit_queues_and_builds_an_idempotent_content_addressed_model`; `test_an_irrelevant_document_changes_no_result_and_is_never_silently_discarded` |
+| CALC-008 workbook formulas match the engine | `test_model_builder_spec::test_workbook_pins_registry_identity_and_cell_expectations_match_engine` |
+| CALC-009 every workbook formula accounted for | `test_model_builder_spec::test_workbook_pins_registry_identity_and_cell_expectations_match_engine`, `::test_worksheet_serialization_requires_no_external_binaries` |
+| CALC-010 first breach recorded consistently | `test_model_builder_spec::test_first_breach_identity_family_sign_and_committee_visibility` |
+| CALC-011 scenario / sensitivity / preview / rebase transient until sign-off | `test_model_builder_spec::test_preview_and_signoff_share_exact_calculation_and_previews_persist_nothing`, `::test_scenario_and_one_way_are_transient_with_registry_guardrails`, `::test_newer_accepted_build_stales_revisions_and_rebase_preview_is_transient` |
+| CALC-012 hard bounds one below, at, one above | `test_hard_bounds_apply_one_value_below_at_and_above_each_boundary` (six cells) |
+| CALC-013 preview bound to build, registry, assumptions, draft, output | `test_model_builder_spec::test_preview_and_signoff_share_exact_calculation_and_previews_persist_nothing`, `::test_http_preview_signoff_history_and_stale_head_conflict` |
+| CALC-014 stale preview / build / source set / registry / assumptions refused | `test_model_builder_spec::test_sign_off_validates_exact_current_build_identity`, `::test_sign_off_against_superseded_build_reports_current_build_identity`, `::test_warmed_model_caches_cannot_outlive_withdrawn_source_authority` |
+| CALC-015 signed revision + audit committed atomically by CAS | `test_model_builder_spec::test_sign_off_cas_is_append_only_with_separate_head_and_monotonic_order`, `::test_two_concurrent_sign_offs_have_one_atomic_winner` |
+| CALC-016 immutable revision history | `test_model_builder_spec::test_signed_revision_database_guard_refuses_every_immutable_mutation_and_delete`, `::test_signed_revision_immutability_ddl_covers_sqlite_and_postgres` |
+| CALC-017 rebase only compatible assumptions | `test_model_builder_spec::test_rebase_reports_source_context_drift_and_unmapped_assumptions` |
+| CALC-018 export the exact signed revision, digest verified | `test_model_builder_spec::test_signed_export_is_runtime_pinned_hash_verified_and_never_demotes`, `::test_revision_download_rejects_another_revisions_valid_export_manifest` |
+| CALC-019 concurrent build / preview / sign-off / export idempotent or conflicting | `test_model_builder_spec::test_concurrent_queue_is_idempotent_and_attributes_the_winner`, `::test_sign_off_serializes_with_a_concurrent_newer_build_completion`, `::test_calculations_share_one_aggregate_deadline_without_persistence` |
+| CALC-020 reproduce a signed model from retained inputs, engine, registry | `test_distressed_model_overlay::test_distressed_recomputes_calculation_outputs_before_model_use`; `test_an_overlay_effect_is_rebuilt_from_the_records_it_names_and_refuses_a_forged_one`; `test_model_builder_spec::test_validated_build_rejects_tampered_publishing_identity` |
+
+### Metamorphic cases
+
+| Change | Answer-keyed effect asserted |
+| --- | --- |
+| Remove the annual report | run refused `SOURCE_EVIDENCE_INSUFFICIENT` (provider-declared gate), no snapshot, readiness `ACCEPTED_FULL_CREDIT_REQUIRED`, no build |
+| Remove the quarterly report | READY; outputs and assumption values identical; fingerprint differs; CP-1B input differs; quarterly lineage row absent |
+| Remove the forecast source | run succeeds; the CP-2G driver is `UNAVAILABLE / MANAGEMENT_GUIDANCE_UNAVAILABLE`; readiness `CANONICAL_MODEL_INPUTS_INVALID`; no build — never a default |
+| Add an irrelevant document (same case) | READY; model tabs, outputs, assumptions and QA identical; fingerprint differs; manifest row `other/used` with reason; lineage `NOT_REQUIRED`, never discarded |
+| Add a restatement | original `SUPERSEDED`, restated `MODEL_INPUT`; outputs and assumptions differ; margin 0.22 sourced to the guidance document |
+| Add a conflict (same name, different bytes) | `INTAKE_SOURCE_CONFLICT` 422; nothing admitted; `intake.refused` audit |
+| Withdraw a bound source | readiness `CANONICAL_MODEL_INPUTS_INVALID`; registry read refused; `source.withdrawn` audit; re-run refused at the source gate |
+| Corrupt a bound source (store blocks) | readiness `CANONICAL_MODEL_INPUTS_INVALID`; registry read refused |
+
+### Anti-vacuity ledger
+
+- The lineage oracle is reached: `test_a_used_document_that_nothing_consumed…`
+  makes the double skip one relevant document and asserts the typed
+  `MODEL_SOURCE_LINEAGE_INCOMPLETE` naming that source id, with no build row.
+- The overlay record check is reached: `test_an_overlay_effect_is_rebuilt…`
+  forges a CP-4 output digest and asserts acceptance refuses (`RUN_NOT_READY`).
+- Every delivered block must be cited (`validate_citations`), so "unused"
+  means "never requested": the double's `unread_kinds` is the only way a
+  document stays uncited, and the corpus double reads every document once.
+- The provider identity is `answer_key_fixture`, `qualification_status`
+  `unqualified`; nothing here is live-model qualification.

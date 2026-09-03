@@ -65,6 +65,10 @@ export type CaseRecord = {
   issuer: string;
   sector: string;
   source_count?: number;
+  // Stored case standing per subject (ANALYST | APPROVER | ADMIN | READER):
+  // Report Studio reads it to decide whether the viewer may provision an
+  // approver (Task 10); the server enforces the same rule.
+  members?: Record<string, string>;
   accepted_snapshot_id?: string | null;
   pathway_fit?: { fit: string; message: string };
   current_execution_id?: string | null;
@@ -73,6 +77,9 @@ export type CaseRecord = {
   available_pathways?: string[];
   deep_research_available?: boolean;
   deep_research_unavailable_reason?: string | null;
+  // The case's latest document-first intake; the Cases page reads the record
+  // only when this names one, never by probing for a 404.
+  latest_intake_id?: string | null;
 };
 
 export type Workflow = {

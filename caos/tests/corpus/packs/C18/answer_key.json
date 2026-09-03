@@ -1,0 +1,155 @@
+{
+  "schema_version": "caos.answer-key.v1",
+  "pack_id": "C18",
+  "version": "1.0.0",
+  "authored_by": "Claude Fable 5.1 (ER-G6 implementer)",
+  "status": "draft-host-control",
+  "intake": {
+    "status": "refused",
+    "route": null,
+    "dispositions": {},
+    "refusal_code": "INTAKE_ISSUER_AMBIGUOUS",
+    "note": "The document-first intake refuses the whole 30-document pack: the annual-report PDFs' text layer splits the cover name as 'CARNIV AL CORPORATION & PLC' and the half-year report's cover reads 'RELEASE OF CARNIVAL CORPORATION & PLC', so the host sees three issuers (INTAKE_ISSUER_AMBIGUOUS). The harness scores that refusal and admits the pack through the advanced create-case and source routes. Follow-up recorded in enterprise-task-11-report.md."
+  },
+  "expected_facts": [
+    {
+      "id": "F1",
+      "statement": "Q3 2025 total revenues versus Q3 2024",
+      "value": "8,153",
+      "unit": "USD millions",
+      "period": "FY2025-Q3",
+      "source": "CCL_2025_Q3_10Q.pdf",
+      "match": [
+        "8,153"
+      ],
+      "required": true,
+      "cells": null
+    },
+    {
+      "id": "F2",
+      "statement": "Nine-month 2025 net income",
+      "value": "2,338",
+      "unit": "USD millions",
+      "period": "FY2025-Q3",
+      "source": "CCL_2025_Q3_10Q.pdf",
+      "match": [
+        "2,338"
+      ],
+      "required": true,
+      "cells": null
+    },
+    {
+      "id": "F3",
+      "statement": "Full-year 2025 revenues (Q4 release)",
+      "value": "26.6",
+      "unit": "USD billions",
+      "period": "FY2025",
+      "source": "CCL_2025_Q4_earnings_guidance.pdf",
+      "match": [
+        "$26.6 billion"
+      ],
+      "required": true,
+      "cells": null
+    },
+    {
+      "id": "F4",
+      "statement": "2026 outlook: net yields in constant currency",
+      "value": "2.5",
+      "unit": "percent",
+      "period": "FY2026",
+      "source": "CCL_2025_Q4_earnings_guidance.pdf",
+      "match": [
+        "approximately 2.5 percent"
+      ],
+      "required": true,
+      "cells": null
+    },
+    {
+      "id": "F5",
+      "statement": "2026 outlook: adjusted net income growth",
+      "value": "12",
+      "unit": "percent",
+      "period": "FY2026",
+      "source": "CCL_2025_Q4_earnings_guidance.pdf",
+      "match": [
+        "approximately 12 percent"
+      ],
+      "required": true,
+      "cells": null
+    },
+    {
+      "id": "F6",
+      "statement": "FY2025 total revenues",
+      "value": "26,622",
+      "unit": "USD millions",
+      "period": "FY2025",
+      "source": "CCL_2025_form_10K.pdf",
+      "match": [
+        "26,622"
+      ],
+      "required": true,
+      "cells": null
+    }
+  ],
+  "conflicts": [],
+  "forbidden_conclusions": [
+    {
+      "id": "X1",
+      "description": "No covenant breach or event of default is evidenced in the pack",
+      "match": [
+        "covenant breach",
+        "event of default has occurred",
+        "in default"
+      ]
+    },
+    {
+      "id": "X2",
+      "description": "No going-concern doubt is evidenced",
+      "match": [
+        "going concern doubt",
+        "substantial doubt about"
+      ]
+    },
+    {
+      "id": "X3",
+      "description": "Refinancing risk is not zero; the pack shows a maturity wall",
+      "match": [
+        "no refinancing risk"
+      ]
+    }
+  ],
+  "cells": {
+    "EARNINGS_UPDATE/screen": {
+      "outcome": "succeeded",
+      "proves_pathway": true,
+      "refusal_code": null,
+      "model_effect": "FULL_DEPTH_REQUIRED",
+      "readiness": "NOT_READY",
+      "max_latency_seconds": 900,
+      "prerequisite": null,
+      "host_control": {
+        "model_fixtures": false,
+        "calculators": "fixtures",
+        "source_gate": "pass",
+        "gaps": []
+      },
+      "after_run": null
+    },
+    "EARNINGS_UPDATE/full": {
+      "outcome": "succeeded",
+      "proves_pathway": true,
+      "refusal_code": null,
+      "model_effect": "EARNINGS_PERIOD_FORECAST_VARIANCE",
+      "readiness": "READY_TO_BUILD",
+      "max_latency_seconds": 900,
+      "prerequisite": "FULL_CREDIT/full",
+      "host_control": {
+        "model_fixtures": true,
+        "calculators": "fixtures",
+        "source_gate": "pass",
+        "gaps": []
+      },
+      "after_run": null
+    }
+  }
+}
