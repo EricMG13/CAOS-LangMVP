@@ -43,7 +43,6 @@ jobs:
       OPENROUTER_API_KEY: ""
       CAOS_PROVIDER: ""
       AGENT_EXECUTION_ENABLED: "true"
-      CAOS_CORPUS_EXTERNAL_DIR: ${{ runner.temp }}/corpus-external
       CAOS_QUALIFICATION_REVIEWER: ${{ inputs.reviewer }}
       CAOS_BUILD_COMMIT: ${{ github.sha }}
     steps:
@@ -84,6 +83,10 @@ jobs:
         env:
           CORPUS_EXTERNAL_ARCHIVE_B64: ${{ secrets.CORPUS_EXTERNAL_ARCHIVE_B64 }}
         run: |
+          # The runner context is not available in job-level env; export the
+          # location from the shell for every later step.
+          CAOS_CORPUS_EXTERNAL_DIR="$RUNNER_TEMP/corpus-external"
+          echo "CAOS_CORPUS_EXTERNAL_DIR=$CAOS_CORPUS_EXTERNAL_DIR" >> "$GITHUB_ENV"
           mkdir -p "$CAOS_CORPUS_EXTERNAL_DIR"
           if [ -n "$CORPUS_EXTERNAL_ARCHIVE_B64" ]; then
             printf '%s' "$CORPUS_EXTERNAL_ARCHIVE_B64" | base64 -d > "$RUNNER_TEMP/corpus-external.tar"
@@ -109,4 +112,6 @@ jobs:
           name: qualification-evidence-${{ github.sha }}
           path: ${{ runner.temp }}/qualification-evidence
           if-no-files-found: error
-          retention-days: 400
+          # The repository's artifact retention ceiling; the evidence directory
+          # itself is the durable copy, retained under the candidate identity.
+          retention-days: 90

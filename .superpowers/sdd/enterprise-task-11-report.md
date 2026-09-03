@@ -306,3 +306,22 @@ two pre-existing duplicate keys (outside the lint scope).
   under F601 when the file is linted directly; `docs/` is outside the
   repository's lint scope, so the release lint is unaffected. Left as found.
 
+## CI follow-up (2026-09-03, after the draft PR)
+
+- **3.12 leg red on one test.** `test_external_packs_are_unpinned_and_fail_closed`
+  resolved C20's borrowed Carnival rows before its own unpinned row; the 3.12
+  leg carries no corpus (by CI design), so it hit `CORPUS_BYTES_MISSING`
+  instead of `CORPUS_BYTES_UNACQUIRED` (`1 failed, 1090 passed, 6 skipped`).
+  Resolved in the harness, not by gating the test: `resolve_documents` now
+  refuses any unpinned digest across the whole pack before it reads a byte —
+  an unpinned digest is a fact about the manifest, and the external input the
+  pack lacks names itself on every machine. The test pins that order by
+  patching `Path.read_bytes` to raise. Harness module: `18 passed` on 3.14.6
+  and on the 3.13.15 venv.
+- **The workflow file was invalid to GitHub.** The push produced a jobless
+  failed run and `gh workflow list` showed the file path instead of the
+  workflow name: `${{ runner.temp }}` is not available in job-level `env`.
+  The external-pack location is now exported from the staging step's shell
+  (`$GITHUB_ENV`), and `retention-days` is 90 (the repository ceiling; the
+  evidence directory is the durable copy). Verified after the push by
+  `gh workflow list` showing "Enterprise qualification".

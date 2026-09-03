@@ -284,11 +284,7 @@ def _resolve_owned(owner: dict[str, Any]) -> list[ResolvedDocument]:
     resolved: list[ResolvedDocument] = []
     for row in rows:
         pinned = row["sha256"]
-        if pinned is None:
-            raise CorpusError(
-                "CORPUS_BYTES_UNACQUIRED",
-                f"{pack_id}/{row['filename']}: no pinned digest — BLOCKED EXTERNAL, owner {source['owner']}, needs {source['artifact']}",
-            )
+        _require_pinned(owner, row)
         if source["source"] == "synthetic":
             content, media_type = generated[row["filename"]]
         else:
@@ -312,15 +308,34 @@ def _resolve_owned(owner: dict[str, Any]) -> list[ResolvedDocument]:
     return resolved
 
 
+def _require_pinned(owner: dict[str, Any], row: dict[str, Any]) -> None:
+    if row["sha256"] is None:
+        source = owner["bytes"]
+        raise CorpusError(
+            "CORPUS_BYTES_UNACQUIRED",
+            f"{owner['pack_id']}/{row['filename']}: no pinned digest — BLOCKED EXTERNAL, "
+            f"owner {source['owner']}, needs {source['artifact']}",
+        )
+
+
 def resolve_documents(manifest: dict[str, Any]) -> list[ResolvedDocument]:
     """Every byte of the pack (borrowed rows first), digest-verified. Raises a
     typed CorpusError when a byte is unacquired, missing, or does not match
-    its pin — never skips."""
-    resolved: list[ResolvedDocument] = []
+    its pin — never skips. An unpinned digest is a fact about the manifest, so
+    it is refused before any byte is read: the external input the pack still
+    lacks names itself whether or not the borrowed pack's bytes are present on
+    this machine (the 3.12 CI leg carries no corpus)."""
+    owners: list[dict[str, Any]] = []
     if manifest["documents_from"] is not None:
-        resolved.extend(_resolve_owned(load_manifest(manifest["documents_from"])))
+        owners.append(load_manifest(manifest["documents_from"]))
     if manifest["documents"]:
-        resolved.extend(_resolve_owned(manifest))
+        owners.append(manifest)
+    for owner in owners:
+        for row in owner["documents"]:
+            _require_pinned(owner, row)
+    resolved: list[ResolvedDocument] = []
+    for owner in owners:
+        resolved.extend(_resolve_owned(owner))
     return resolved
 
 

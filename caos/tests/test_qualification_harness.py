@@ -87,6 +87,13 @@ def test_synthetic_packs_reproduce_their_pinned_digests():
 
 def test_external_packs_are_unpinned_and_fail_closed(monkeypatch):
     monkeypatch.delenv(M.EXTERNAL_ENV, raising=False)
+
+    def no_byte_may_be_read(self):
+        raise AssertionError(f"resolve_documents read {self} before refusing the unpinned digest")
+
+    # The unpinned digest is refused before any byte is read, so the code is the
+    # same on a machine without the Carnival corpus (the 3.12 CI leg) as with it.
+    monkeypatch.setattr(Path, "read_bytes", no_byte_may_be_read)
     for pack_id in ("C20", "C21", "C22"):
         manifest = M.load_manifest(pack_id)
         assert manifest["bytes"]["source"] == "external" and manifest["bytes"]["owner"]
