@@ -511,10 +511,19 @@ class Engine:
                     task.cancel()
                 local.append(task)
                 continue
-            if not self._owner_loop_runnable(owner, loop):
+            if not self._owner_loop_runnable(owner, loop) and not task.done():
                 raise RuntimeError("cannot close a task without a runnable owner loop")
+            if task.done():
+                continue
             if cancel:
-                owner.call_soon_threadsafe(task.cancel)
+                try:
+                    owner.call_soon_threadsafe(task.cancel)
+                except RuntimeError:
+                    # The owner loop closed underneath us. That is only a failure
+                    # if the task is still pending; a finished task is drained.
+                    if task.done():
+                        continue
+                    raise
             bridge: concurrent.futures.Future[None] = concurrent.futures.Future()
             waiter_ref: concurrent.futures.Future[asyncio.Task[None]] = concurrent.futures.Future()
 
@@ -545,8 +554,25 @@ class Engine:
 
                 waiter.add_done_callback(finish_waiter)
 
-            owner.call_soon_threadsafe(wait_on_owner)
+            # Cancelling above is frequently what ends the owner loop, so from here
+            # on "the loop is gone" and "the task finished" are the same event seen
+            # from two threads. A finished task is a drained task: reporting that as
+            # a failure aborts aclose() before it closes the savers, which strands
+            # aiosqlite's non-daemon threads and leaves the process unable to exit.
+            try:
+                owner.call_soon_threadsafe(wait_on_owner)
+            except RuntimeError:
+                if task.done():
+                    continue
+                raise
             if not self._owner_loop_runnable(owner, loop):
+                if task.done():
+                    if waiter_ref.done() and not waiter_ref.cancelled():
+                        try:
+                            owner.call_soon_threadsafe(waiter_ref.result().cancel)
+                        except BaseException:
+                            pass
+                    continue
                 if waiter_ref.done() and not waiter_ref.cancelled():
                     try:
                         owner.call_soon_threadsafe(waiter_ref.result().cancel)

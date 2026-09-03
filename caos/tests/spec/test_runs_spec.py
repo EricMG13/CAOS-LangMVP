@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import asyncio
 import sqlite3
-import sys
 import threading
 from contextlib import closing
 from pathlib import Path
@@ -287,24 +286,18 @@ async def test_same_loop_continuation_timeout_is_retryable(tmp_path, settings, s
     await engine.aclose()
 
 
-# Quarantined on 3.12 only — issue #42. `_drain_tasks` asks `_owner_loop_runnable`
-# whether a foreign owner loop is usable and then uses it, and the two are not
-# atomic: a loop that answers yes can be stopping by the time it is used, which
-# raises "cannot close a task without a runnable owner loop". That check reads
-# CPython private asyncio internals (`_thread_id`, `_stopping`), whose timing is
-# not stable across versions, which is why only the 3.12 leg lands in the window
-# — production ships 3.14 and that leg has never failed this.
+# Was quarantined on 3.12 as issue #42, with the marker's own instruction being to
+# "delete this marker with the fix, not before". This is that fix
+# (`Engine._drain_tasks`), so the marker is gone.
 #
-# `xfail` rather than `skip`, and non-strict on purpose: the test still runs and
-# still reports on 3.12, so an XPASS keeps showing the ~50% rate instead of
-# hiding it. It just stops blocking CI. Delete this marker with the fix, not
-# before — the 3.12 leg is the only thing checking that private-attribute
-# probing holds on more than one interpreter.
-@pytest.mark.xfail(
-    sys.version_info < (3, 13),
-    reason="issue #42: foreign-loop drain races the owner loop's stopping state on 3.12",
-    strict=False,
-)
+# Two corrections to what the quarantine recorded. The race is not really about
+# `_owner_loop_runnable` reading unstable private internals: the cancel that
+# `_drain_tasks` itself issues is what ends the owner loop, so "the loop is gone"
+# and "the task finished" are one event seen from two threads, and a finished task
+# is a drained task. And it was not 3.12-only — the marker is gated
+# `sys.version_info < (3, 13)` and the same failure took main's 3.14 leg on
+# 2026-09-02 at 23:27 (run 33692531216, Task 9), where the marker does not apply.
+# That is why quarantining could not have held.
 async def test_engine_close_drains_foreign_loop_continuation(tmp_path, settings, store):
     from caos.engine.runtime import Engine
 

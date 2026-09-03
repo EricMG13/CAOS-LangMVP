@@ -12,7 +12,18 @@ jobs:
   regression:
     name: Nightly — backend and frontend regression
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # Was 30, which the suite has outgrown. This job runs CORPUS_FULL=1 —
+    # every corpus document classified and every executable route — which is
+    # strictly more than ci.yml's subset, and that subset alone took 24m42s and
+    # 31m28s on the two server legs of run 33649802750. On top of that it lints,
+    # runs the frontend suite, builds the static export, installs Playwright and
+    # drives the workbench journey and the accessibility sweep. The last green
+    # nightly (run 33618906258) finished in 14m25s, but that was before the
+    # enterprise-readiness merge took the suite from 655 to 946 tests.
+    # 90 is deliberately loose: nightly is scheduled, so a generous ceiling
+    # costs nothing, and a cap that is too tight is the exact failure being
+    # fixed here.
+    timeout-minutes: 90
     env:
       ANTHROPIC_API_KEY: ""
       GEMINI_API_KEY: ""
@@ -103,6 +114,8 @@ jobs:
   operational:
     name: Nightly — deployment and methodology checks
     runs-on: ubuntu-latest
+    # Dominated by the full-history gitleaks scan, which grows with the repo.
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

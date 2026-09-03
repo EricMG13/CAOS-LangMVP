@@ -224,6 +224,7 @@ function WorksheetSurface({ payload }: { payload: WorksheetPayload }) {
 
 function ForecastScrubber({
   value,
+  generation,
   mixed = false,
   disabled,
   label,
@@ -233,6 +234,7 @@ function ForecastScrubber({
   onCommit,
 }: {
   value: string;
+  generation: number;
   mixed?: boolean;
   disabled: boolean;
   label: string;
@@ -243,6 +245,24 @@ function ForecastScrubber({
 }) {
   const [input, setInput] = useState(value);
   const inputRef = useRef(value);
+  // This used to be a remount: the caller put `draftGeneration` in the React key,
+  // so every draft generation destroyed and rebuilt every scrubber purely to push
+  // a new `value` past `useState`'s mount-only initializer. That remount is what
+  // steals focus mid-journey -- it drops the focused input, focus falls to
+  // <body>, and the workspace repair effect then restores some *other*,
+  // remembered control (see .superpowers/sdd/loops/focus-race-findings.md).
+  // Syncing here keeps the identical reset semantics -- a new generation OR a new
+  // authoritative value resets the field -- while the DOM node, and therefore
+  // focus, survives. Assigning during render is React's documented way to adjust
+  // state when props change; it re-renders before committing, so no flash.
+  const [syncedGeneration, setSyncedGeneration] = useState(generation);
+  if (syncedGeneration !== generation) {
+    setSyncedGeneration(generation);
+    setInput(value);
+  }
+  // `update` keeps the mirror in step for every user edit; this covers the one
+  // path that does not go through it, the generation sync above.
+  useEffect(() => { inputRef.current = input; }, [input]);
   const drag = useRef<{ x: number; value: number } | null>(null);
   const update = (next: string) => { inputRef.current = next; setInput(next); };
   const commit = (next = inputRef.current) => {
@@ -747,7 +767,7 @@ export default function ModelBuilder({
           if (!rows.length) return null;
           const scope = assumptionScope(draft, definition.assumption_id, selectedCase, "ALL");
           const step = Number(definition.sensitivity_default.step);
-          return <fieldset className={styles.driver} key={`${definition.assumption_id}:${selectedCase}`}><legend><span>{definition.label}</span><small>{definition.unit}</small></legend><div className={styles.forecastValues}><label><span>All forecast years</span><ForecastScrubber key={`${definition.assumption_id}:${selectedCase}:ALL:${draftGeneration}`} value={scope.value} mixed={scope.mixed} label={`${definition.label}, all forecast years, ${selectedCase}`} minimum={Number(definition.hard_min)} maximum={Number(definition.hard_max)} step={step} disabled={!canWrite || !scope.editable} onCommit={(value) => editAssumption(definition, selectedCase, "ALL", value)} /></label>{rows.map((row) => <label key={assumptionKey(row)}><span>{row.period_id}</span><ForecastScrubber key={`${assumptionKey(row)}:${draftGeneration}`} value={row.value === null ? "" : String(row.value)} label={`${definition.label}, ${row.period_id}, ${selectedCase}`} minimum={Number(definition.hard_min)} maximum={Number(definition.hard_max)} step={step} disabled={!canWrite || row.status !== "READY"} onCommit={(value) => editAssumption(definition, selectedCase, row.period_id, value)} />{row.status !== "READY" ? <small>{humanizeCode(row.gap_code || row.status)}</small> : <small>App {formatModelValue(row.default_value)}</small>}</label>)}</div></fieldset>;
+          return <fieldset className={styles.driver} key={`${definition.assumption_id}:${selectedCase}`}><legend><span>{definition.label}</span><small>{definition.unit}</small></legend><div className={styles.forecastValues}><label><span>All forecast years</span><ForecastScrubber key={`${definition.assumption_id}:${selectedCase}:ALL`} generation={draftGeneration} value={scope.value} mixed={scope.mixed} label={`${definition.label}, all forecast years, ${selectedCase}`} minimum={Number(definition.hard_min)} maximum={Number(definition.hard_max)} step={step} disabled={!canWrite || !scope.editable} onCommit={(value) => editAssumption(definition, selectedCase, "ALL", value)} /></label>{rows.map((row) => <label key={assumptionKey(row)}><span>{row.period_id}</span><ForecastScrubber key={assumptionKey(row)} generation={draftGeneration} value={row.value === null ? "" : String(row.value)} label={`${definition.label}, ${row.period_id}, ${selectedCase}`} minimum={Number(definition.hard_min)} maximum={Number(definition.hard_max)} step={step} disabled={!canWrite || row.status !== "READY"} onCommit={(value) => editAssumption(definition, selectedCase, row.period_id, value)} />{row.status !== "READY" ? <small>{humanizeCode(row.gap_code || row.status)}</small> : <small>App {formatModelValue(row.default_value)}</small>}</label>)}</div></fieldset>;
         })}</div>
         {!canWrite ? <p className="callout">Reader mode: the model and forecast assumptions remain readable. Changes, recalculation, tornado refresh, and saving are unavailable.</p> : null}
       </aside>
