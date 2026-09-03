@@ -543,3 +543,5 @@ gates finish):
 - The instrumented smoke copies used for the focus diagnosis were deleted;
   the recorder for CSP violations and inline-style insertions stays in the
   smoke because it turned an opaque console line into a named source.
+
+Draft pull request: https://github.com/EricMG13/CAOS-LangMVP/pull/55 (branch `claude/er-task-12b-perimeter`, commit `259318b` plus this URL commit).
