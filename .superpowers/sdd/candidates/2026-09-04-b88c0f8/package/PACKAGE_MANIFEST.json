@@ -1,0 +1,1489 @@
+{
+ "assembled_at": "2026-09-04T15:28:28.375910+00:00",
+ "assembled_by": "Claude Fable 5.1 (ER-G10, Task 13 second half)",
+ "assembly_defects": [],
+ "blockers": [
+  {
+   "blocker": "ETR-B01",
+   "closing_evidence": [
+    "junit-module:caos.tests.spec.test_intake_spec",
+    "artifact:gates/browser/browser-gates.txt"
+   ],
+   "note": "documents-only intake proven by the retained intake suite (30) and the three-engine journey; live-model qualification of the journey needs ER-L3",
+   "state": "CLOSED under host control; live half OPEN"
+  },
+  {
+   "blocker": "ETR-B02",
+   "closing_evidence": [
+    "junit-module:caos.tests.test_provider_identity",
+    "artifact:MANIFEST.json"
+   ],
+   "note": "one environment-wide qualified binding, no picker; the candidate manifest records the sole binding and production refuses an unqualified or ambiguous one",
+   "state": "CLOSED"
+  },
+  {
+   "blocker": "ETR-B03",
+   "closing_evidence": [
+    "junit-module:caos.tests.test_openrouter_provider"
+   ],
+   "note": "OpenRouter/GLM is a development-only binding refused in production; not in the enterprise profile",
+   "state": "CLOSED (excluded)"
+  },
+  {
+   "blocker": "ETR-B04",
+   "closing_evidence": [
+    "junit-module:caos.tests.test_provider_identity"
+   ],
+   "note": "the actual provider identity rides every attempt, artifact, snapshot and audit row (Task 5B); AUD-003 notes the attempt-row fields not yet asserted",
+   "state": "CLOSED"
+  },
+  {
+   "blocker": "ETR-B05",
+   "closing_evidence": [
+    "artifact:gates/corpus-full.txt",
+    "artifact:gates/qualification/host-control-verdict.txt"
+   ],
+   "note": "the real-issuer corpus is digest-pinned and run under host control (35 passed); the final live matrix has no retained cell and the analyst-approved keys are external",
+   "state": "OPEN"
+  },
+  {
+   "blocker": "ETR-B06",
+   "closing_evidence": [
+    "artifact:gates/scans/scan-manifest.json",
+    "junit-module:caos.tests.test_workflow_security",
+    "junit-module:caos.tests.test_recorded_review"
+   ],
+   "note": "recorded read-only review and pinned workflows; scans rerun on the frozen images",
+   "state": "CLOSED"
+  },
+  {
+   "blocker": "ETR-B07",
+   "closing_evidence": [
+    "junit-module:caos.tests.test_postgres_races"
+   ],
+   "note": "27 two-connection races passed against the pinned PostgreSQL container on the candidate",
+   "state": "CLOSED"
+  },
+  {
+   "blocker": "ETR-B08",
+   "closing_evidence": [
+    "artifact:package/inventory/openapi.json",
+    "artifact:package/inventory/route-inventory.json",
+    "artifact:gates/sec-audit.txt"
+   ],
+   "note": "the release gate is OpenAPI discovery (run_sec_audit, 59 routes) plus the a11y route sweep; production-inventory.mjs is not a gate",
+   "state": "CLOSED"
+  },
+  {
+   "blocker": "ETR-B09",
+   "closing_evidence": [
+    "junit-module:caos.tests.test_openrouter_provider"
+   ],
+   "note": "OpenRouter excluded from the enterprise profile; shape proof required before any later admission",
+   "state": "CLOSED (excluded)"
+  },
+  {
+   "blocker": "ETR-B10",
+   "closing_evidence": [
+    "junit-module:caos.tests.test_single_instance",
+    "artifact:gates/sim-evidence.json",
+    "artifact:gates/stack/stack-gates.txt"
+   ],
+   "note": "instance lock, Compose replicas 1, SIM-001\u2013030 and the on-image second-instance refusal all rerun on the candidate",
+   "state": "CLOSED"
+  },
+  {
+   "blocker": "ETR-B11",
+   "closing_evidence": [
+    "artifact:gates/qualification/host-control-verdict.txt"
+   ],
+   "note": "Distressed and Deep Research execute under host control; live qualification and the C21/C22 packs are external",
+   "state": "OPEN"
+  },
+  {
+   "blocker": "ETR-B12",
+   "closing_evidence": [
+    "junit-module:caos.tests.spec.test_source_complete_modelling_spec",
+    "artifact:gates/corpus-full.txt"
+   ],
+   "note": "lineage oracle and metamorphic cases retained; every pathway's effect needs live qualification and the licensed marks pack",
+   "state": "CLOSED under host control; live half OPEN"
+  },
+  {
+   "blocker": "ETR-B13",
+   "closing_evidence": [
+    "artifact:reviews/REV-006.md"
+   ],
+   "note": "benchmark set not pinned; REV-006 outstanding",
+   "state": "OPEN"
+  }
+ ],
+ "candidate_id": "2026-09-04-b88c0f8",
+ "checks": {
+  "blocked_external": [
+   {
+    "check_id": "MOD-011",
+    "owner": "independent credit analysts (benchmark conclusions for C17/C21/C22)"
+   },
+   {
+    "check_id": "MOD-012",
+    "owner": "independent credit analysts (benchmark conclusions for C17/C21/C22)"
+   },
+   {
+    "check_id": "ANA-003",
+    "owner": "credit analysts / design owner (REV-001)"
+   },
+   {
+    "check_id": "ANA-004",
+    "owner": "credit analysts / design owner (REV-001)"
+   },
+   {
+    "check_id": "ANA-008",
+    "owner": "credit analysts / design owner (REV-001)"
+   },
+   {
+    "check_id": "ANA-013",
+    "owner": "credit analysts / model risk (analyst-scope answer-key approval; REV-003)"
+   },
+   {
+    "check_id": "PUB-018",
+    "owner": "credit analysts / design owner (REV-006)"
+   },
+   {
+    "check_id": "PUB-026",
+    "owner": "credit analysts / design owner (REV-006)"
+   },
+   {
+    "check_id": "AUD-018",
+    "owner": "independent audit reviewer (REV-012)"
+   },
+   {
+    "check_id": "AUD-019",
+    "owner": "independent audit reviewer (REV-012)"
+   },
+   {
+    "check_id": "IAM-016",
+    "owner": "enterprise identity owner (OIDC issuer, client, one account per role)"
+   },
+   {
+    "check_id": "SEC-022",
+    "owner": "provider account owner (provider-side extraction signal)"
+   },
+   {
+    "check_id": "SEC-023",
+    "owner": "provider account owner / model risk (data-use policy, qualification record)"
+   },
+   {
+    "check_id": "SEC-024",
+    "owner": "provider account owner (settings outside the tree)"
+   },
+   {
+    "check_id": "SEC-025",
+    "owner": "enterprise network owner (egress allowlist proof)"
+   },
+   {
+    "check_id": "SEC-028",
+    "owner": "security (authorized penetration test on the frozen images)"
+   },
+   {
+    "check_id": "WEB-013",
+    "owner": "enterprise identity owner (session expiry at the oauth2-proxy edge)"
+   }
+  ],
+  "by_family": {
+   "ANA": {
+    "BLOCKED EXTERNAL": 4,
+    "OPEN": 5,
+    "PASS": 4,
+    "PROVED HOST CONTROL": 7
+   },
+   "AUD": {
+    "BLOCKED EXTERNAL": 2,
+    "OPEN": 11,
+    "PASS": 7
+   },
+   "CALC": {
+    "PASS": 20
+   },
+   "EVD": {
+    "OPEN": 5,
+    "PASS": 11,
+    "PROVED HOST CONTROL": 4
+   },
+   "IAM": {
+    "BLOCKED EXTERNAL": 1,
+    "PASS": 19
+   },
+   "MOD": {
+    "BLOCKED EXTERNAL": 2,
+    "PASS": 7,
+    "PROVED HOST CONTROL": 16
+   },
+   "PERF": {
+    "FAIL": 1,
+    "OPEN": 6,
+    "PASS": 7,
+    "PROVED HOST CONTROL": 1
+   },
+   "PUB": {
+    "BLOCKED EXTERNAL": 2,
+    "OPEN": 7,
+    "PASS": 21
+   },
+   "REV": {
+    "OPEN": 15
+   },
+   "RUN": {
+    "OPEN": 3,
+    "PASS": 27
+   },
+   "SEC": {
+    "BLOCKED EXTERNAL": 5,
+    "PASS": 25
+   },
+   "SIM": {
+    "PASS": 30
+   },
+   "SRC": {
+    "OPEN": 11,
+    "PASS": 19
+   },
+   "UX": {
+    "OPEN": 3,
+    "PASS": 16,
+    "PROVED HOST CONTROL": 1
+   },
+   "WEB": {
+    "BLOCKED EXTERNAL": 1,
+    "OPEN": 5,
+    "PASS": 9
+   }
+  },
+  "file": "package/checks.csv",
+  "open": [
+   {
+    "check_id": "UX-012",
+    "owner": "decision owner (new candidate)"
+   },
+   {
+    "check_id": "UX-018",
+    "owner": "REV-010 accessibility reviewer"
+   },
+   {
+    "check_id": "UX-019",
+    "owner": "REV-010 accessibility reviewer"
+   },
+   {
+    "check_id": "SRC-001",
+    "owner": "decision owner (new candidate)"
+   },
+   {
+    "check_id": "SRC-002",
+    "owner": "decision owner (new candidate)"
+   },
+   {
+    "check_id": "SRC-005",
+    "owner": "decision owner (new candidate)"
+   },
+   {
+    "check_id": "SRC-008",
+    "owner": "decision owner (new candidate)"
+   },
+   {
+    "check_id": "SRC-009",
+    "owner": "decision owner (new candidate)"
+   },
+   {
+    "check_id": "SRC-010",
+    "owner": "decision owner (new candidate)"
+   },
+   {
+    "check_id": "SRC-011",
+    "owner": "decision owner (new candidate)"
+   },
+   {
+    "check_id": "SRC-013",
+    "owner": "decision owner (new candidate)"
+   },
+   {
+    "check_id": "SRC-017",
+    "owner": "decision owner (new candidate)"
+   },
+   {
+    "check_id": "SRC-020",
+    "owner": "decision owner (new candidate)"
+   },
+   {
+    "check_id": "SRC-024",
+    "owner": "decision owner (new candidate)"
+   },
+   {
+    "check_id": "EVD-007",
+    "owner": "engine owner (engine/evidence.py) with the decision owner"
+   },
+   {
+    "check_id": "EVD-013",
+    "owner": "engine test owner (spec/test_modules_spec.py or test_evidence_spec.py)"
+   },
+   {
+    "check_id": "EVD-017",
+    "owner": "methodology owner with the decision owner (vocabulary in CONTEXT.md)"
+   },
+   {
+    "check_id": "EVD-018",
+    "owner": "audit/publishing owner (caos/server/caos/audit/verify_package.py)"
+   },
+   {
+    "check_id": "EVD-020",
+    "owner": "engine/storage owner (engine/evidence.py on_read, storage/runs.py)"
+   },
+   {
+    "check_id": "RUN-006",
+    "owner": "engine/storage owner with the decision owner"
+   },
+   {
+    "check_id": "RUN-024",
+    "owner": "engine owner (Engine.upgrade) with the decision owner"
+   },
+   {
+    "check_id": "RUN-025",
+    "owner": "engine test owner (spec/test_runs_spec.py)"
+   },
+   {
+    "check_id": "ANA-007",
+    "owner": "enterprise test owner / design owner"
+   },
+   {
+    "check_id": "ANA-011",
+    "owner": "enterprise test owner / model risk (corpus pack + model-builder test)"
+   },
+   {
+    "check_id": "ANA-012",
+    "owner": "enterprise test owner / model risk (corpus pack + model-builder test)"
+   },
+   {
+    "check_id": "ANA-014",
+    "owner": "enterprise test owner"
+   },
+   {
+    "check_id": "ANA-016",
+    "owner": "enterprise test owner"
+   },
+   {
+    "check_id": "PUB-008",
+    "owner": "enterprise test owner"
+   },
+   {
+    "check_id": "PUB-009",
+    "owner": "enterprise test owner / design owner"
+   },
+   {
+    "check_id": "PUB-015",
+    "owner": "enterprise test owner / design owner"
+   },
+   {
+    "check_id": "PUB-017",
+    "owner": "enterprise test owner (renderer and frontend injection tests)"
+   },
+   {
+    "check_id": "PUB-024",
+    "owner": "enterprise test owner"
+   },
+   {
+    "check_id": "PUB-029",
+    "owner": "design owner / enterprise test owner"
+   },
+   {
+    "check_id": "PUB-030",
+    "owner": "decision owner (golden journeys on the frozen stack); independent reviewer (REV-012)"
+   },
+   {
+    "check_id": "AUD-001",
+    "owner": "application team (intake/store audit vocabulary)"
+   },
+   {
+    "check_id": "AUD-002",
+    "owner": "application team (pinned-plan assertion for profile/selection)"
+   },
+   {
+    "check_id": "AUD-003",
+    "owner": "application team (attempt-row assertions)"
+   },
+   {
+    "check_id": "AUD-004",
+    "owner": "application team (engine/evidence per-read ledger)"
+   },
+   {
+    "check_id": "AUD-007",
+    "owner": "application team (snapshot switch audit assertion)"
+   },
+   {
+    "check_id": "AUD-008",
+    "owner": "decision owner (audit of transient previews, scenarios and rebases)"
+   },
+   {
+    "check_id": "AUD-009",
+    "owner": "application team (change-request audit assertion)"
+   },
+   {
+    "check_id": "AUD-010",
+    "owner": "application team (event attribution model)"
+   },
+   {
+    "check_id": "AUD-013",
+    "owner": "application team (store: audit referential validation)"
+   },
+   {
+    "check_id": "AUD-017",
+    "owner": "decision owner (golden journeys on the frozen stack)"
+   },
+   {
+    "check_id": "AUD-020",
+    "owner": "decision owner (release gate)"
+   },
+   {
+    "check_id": "WEB-006",
+    "owner": "REV-010 accessibility reviewer (screen reader, 400% reflow, reduced motion, forced colors, high contrast)"
+   },
+   {
+    "check_id": "WEB-008",
+    "owner": "REV-010 accessibility reviewer"
+   },
+   {
+    "check_id": "WEB-010",
+    "owner": "REV-010 accessibility reviewer / decision owner (dense-table fixture with long values, nulls and large numbers on narrow screens)"
+   },
+   {
+    "check_id": "WEB-014",
+    "owner": "decision owner (run caos/frontend/scripts/draft-history-smoke.mjs against the candidate and retain its report)"
+   },
+   {
+    "check_id": "WEB-015",
+    "owner": "credit analysts / design owner (REV-006 approved screenshots)"
+   },
+   {
+    "check_id": "PERF-006",
+    "owner": "enterprise test owner (REV-015: declared profile vs the 2,000-row manifest ceiling)"
+   },
+   {
+    "check_id": "PERF-009",
+    "owner": "enterprise test owner / decision owner (profile, hardware or a new candidate)"
+   },
+   {
+    "check_id": "PERF-010",
+    "owner": "enterprise test owner (harness measurement of commit-to-delivery latency)"
+   },
+   {
+    "check_id": "PERF-011",
+    "owner": "REV-010 accessibility reviewer / decision owner"
+   },
+   {
+    "check_id": "PERF-013",
+    "owner": "decision owner (the profile drives upload/run/accept/stream/preview only; model, draft, freeze, approve, receipt, download and audit-export cycles need a binding that yields a READY model)"
+   },
+   {
+    "check_id": "PERF-014",
+    "owner": "ER-L4 (post-soak leak check: jobs, permits, handles, connections, orphan rows from the last samples and the final snapshot)"
+   },
+   {
+    "check_id": "PERF-015",
+    "owner": "ER-L4 (post-soak six journeys, authority diff, model hashes, filed bytes, offline reconstruction against the pre-soak baseline)"
+   },
+   {
+    "check_id": "REV-001",
+    "owner": "two independent credit analysts"
+   },
+   {
+    "check_id": "REV-002",
+    "owner": "independent credit analysts (adjudication)"
+   },
+   {
+    "check_id": "REV-003",
+    "owner": "model risk reviewer"
+   },
+   {
+    "check_id": "REV-004",
+    "owner": "security reviewer"
+   },
+   {
+    "check_id": "REV-005",
+    "owner": "external-stakeholder reviewer"
+   },
+   {
+    "check_id": "REV-006",
+    "owner": "design owner / external-stakeholder reviewer (benchmark side-by-side)"
+   },
+   {
+    "check_id": "REV-007",
+    "owner": "security reviewer"
+   },
+   {
+    "check_id": "REV-008",
+    "owner": "security reviewer (AI security)"
+   },
+   {
+    "check_id": "REV-009",
+    "owner": "operations reviewer"
+   },
+   {
+    "check_id": "REV-010",
+    "owner": "accessibility reviewer"
+   },
+   {
+    "check_id": "REV-011",
+    "owner": "operations / enterprise test owner"
+   },
+   {
+    "check_id": "REV-012",
+    "owner": "independent audit reviewer"
+   },
+   {
+    "check_id": "REV-013",
+    "owner": "enterprise test owner"
+   },
+   {
+    "check_id": "REV-014",
+    "owner": "operations reviewer (environment)"
+   },
+   {
+    "check_id": "REV-015",
+    "owner": "enterprise test owner (declared profile adjudication)"
+   }
+  ],
+  "summary": {
+   "BLOCKED EXTERNAL": 17,
+   "FAIL": 1,
+   "OPEN": 71,
+   "PASS": 222,
+   "PROVED HOST CONTROL": 29
+  },
+  "total": 340
+ },
+ "claim": "enterprise-testing candidate for one controlled environment; never a production-readiness claim",
+ "excluded_production_requirements": [
+  "Multi-region or active-active deployment",
+  "Horizontal application scaling",
+  "A multi-worker LangGraph checkpoint implementation",
+  "Formal uptime, recovery-time or recovery-point service-level agreements",
+  "Twenty-four-hour operations, on-call staffing or customer support processes",
+  "Automated production rollout, rollback or tenant migration",
+  "Production data retention schedules or regulatory certification",
+  "Capacity beyond the declared enterprise test profile",
+  "Direct email, portal or data-room distribution to external stakeholders",
+  "Distributed or PostgreSQL LangGraph checkpoints",
+  "User-selectable LLM/provider bindings beyond the first qualified binding",
+  "Raw prompt, chain-of-thought or provider-body retention",
+  "New test frameworks beyond pytest and the installed Playwright library"
+ ],
+ "gates": [
+  {
+   "artifacts": [
+    "package/checks.csv"
+   ],
+   "closes": "every OPEN, FAIL and BLOCKED EXTERNAL row resolved with a retained result on this candidate",
+   "gate": "G0",
+   "name": "Scope and traceability",
+   "result": "340 checks mapped: {'PASS': 222, 'OPEN': 71, 'PROVED HOST CONTROL': 29, 'BLOCKED EXTERNAL': 17, 'FAIL': 1}; open owners named per row in package/checks.csv",
+   "state": "OPEN"
+  },
+  {
+   "artifacts": [
+    "gates/pytest-backend.txt",
+    "gates/pytest-backend-junit.xml",
+    "gates/ruff.txt",
+    "gates/frontend.txt",
+    "gates/frontend-unit.txt",
+    "gates/browser/browser-gates.txt",
+    "gates/browser/a11y-rerun.txt",
+    "gates/scans/images.txt",
+    "gates/deploy-assets.txt"
+   ],
+   "closes": "\u2014",
+   "gate": "G1",
+   "name": "Deterministic automation",
+   "result": "backend 1242 passed, 1 skipped (nightly-only cell); Ruff clean; frontend lint/tsc/unit 123/build exit 0; three engines passed; a11y 75 combinations 0 violations; images 310 bundle files 0 mismatches; deploy assets ok",
+   "state": "GREEN"
+  },
+  {
+   "artifacts": [
+    "gates/corpus-full.txt",
+    "gates/pytest-corpus-full-junit.xml",
+    "gates/qualification/host-control-verdict.txt",
+    "package/loops/live-matrix.md"
+   ],
+   "closes": "ER-L3 with the live credential and analyst-approved answer keys",
+   "gate": "G2",
+   "name": "Evidence integrity",
+   "result": "corpus host control 35 passed (every route, both depths, lineage asserted); host-control matrix 32 pass / 5 BLOCKED EXTERNAL; live half never ran (ER-L3 log has no tick)",
+   "state": "OPEN (host-control half green)"
+  },
+  {
+   "artifacts": [
+    "gates/qualification/host-control-verdict.txt",
+    "package/loops/live-matrix.md"
+   ],
+   "closes": "three retained live passes per required cell, the qualification record, C20\u2013C22 bytes and keys",
+   "gate": "G3",
+   "name": "Model qualification",
+   "result": "ORCHESTRATION_PROOF_INCOMPLETE; no live cell retained; C20/C21/C22 BLOCKED EXTERNAL",
+   "state": "OPEN"
+  },
+  {
+   "artifacts": [
+    "reviews/REV-001.md",
+    "reviews/REV-002.md",
+    "reviews/REV-005.md",
+    "reviews/REV-006.md"
+   ],
+   "closes": "returned reviewer records bound to this candidate's digests",
+   "gate": "G4",
+   "name": "Analyst validation",
+   "result": "REV-001, REV-002, REV-005, REV-006 prepared, not returned",
+   "state": "OPEN"
+  },
+  {
+   "artifacts": [
+    "gates/sec-audit.txt",
+    "gates/scans/scan-manifest.json",
+    "gates/scans/dependency-and-sast.txt",
+    "gates/scans/npm-audit.txt",
+    "gates/scans/gitleaks.txt",
+    "gates/scans/trivy-app-fixable-gate.txt",
+    "gates/scans/trivy-worker-fixable-gate.txt"
+   ],
+   "closes": "penetration test, egress proof, provider account policy, identity edge inputs, security reviews",
+   "gate": "G5",
+   "name": "Security",
+   "result": "route audit 59 routes / 507 cells / 0 failures; pip-audit 57 clean; bandit 21,632 lines; npm audit 0 high/critical; gitleaks 209 commits clean; Trivy fixable HIGH/CRITICAL gate exit 0 on both images; SEC-023/024/025/028 and IAM-016 live half BLOCKED EXTERNAL; REV-004/007/008/014 outstanding",
+   "state": "OPEN (scanner, SAST, dependency, secret, workflow and authorization halves green)"
+  },
+  {
+   "artifacts": [
+    "gates/sim-evidence.json",
+    "gates/sim-evidence-summary.txt",
+    "gates/stack/stack-gates.txt",
+    "gates/stack/backup-manifest.txt"
+   ],
+   "closes": "\u2014",
+   "gate": "G6",
+   "name": "Resilience",
+   "result": "SIM-001\u2013030 30/30 (67 tests, 0 missing); two-connection races 27; instance locks 49; kill-and-recover on the image (health back 11 s, counts unchanged); backup 1 s and restore drill passed; second instance refused",
+   "state": "GREEN"
+  },
+  {
+   "artifacts": [
+    "gates/pytest-backend-junit.xml",
+    "package/golden_journeys.py"
+   ],
+   "closes": "package/golden_journeys.py run against the frozen stack with a binding that yields a READY Full Credit model; artifacts retained under this candidate",
+   "gate": "G7",
+   "name": "Publishing",
+   "result": "opinion, freeze, filing, receipt, export integrity and goldens proven in the retained suite; the six golden journeys through freeze, filing, receipt and offline verification were NOT run on the frozen stack (no Docker daemon in the ER-G10 session; the served binding yields no READY model, so the four model-required pathways stop at a typed MODEL_REQUIRED/authority refusal)",
+   "state": "OPEN (contract half green)"
+  },
+  {
+   "artifacts": [
+    "gates/pytest-backend-junit.xml",
+    "reviews/REV-012.md"
+   ],
+   "closes": "REV-012 on an audit package produced by the golden journeys on the frozen stack",
+   "gate": "G8",
+   "name": "Audit reconstruction",
+   "result": "verify_package.py convicts six tamper classes in-suite; no on-image audit package retained; REV-012 outstanding",
+   "state": "OPEN (verifier proven in-suite)"
+  },
+  {
+   "artifacts": [
+    "gates/stack/stack-gates.txt",
+    "soak/pre-soak-reset-and-journey.txt",
+    "soak/profile/profile.json",
+    "package/loops/soak-watch.md"
+   ],
+   "closes": "REV-014 and the OIDC inputs",
+   "gate": "G9",
+   "name": "Enterprise test deployment",
+   "result": "boots on the frozen images against PostgreSQL; reset to 31 empty tables; subject isolation (leakage [] through the soak); post-reset golden journey passed; findings: clamd OOM-killed 3 h into the soak and not restarted by Compose (uploads fail closed after 03:31Z, REV-014); the identity edge is BLOCKED EXTERNAL",
+   "state": "GREEN with findings"
+  }
+ ],
+ "identity": {
+  "binding": {
+   "live": {
+    "kind": "live (Anthropic, qualified)",
+    "needed": "ANTHROPIC_API_KEY in the protected shell, CAOS_PROVIDER_QUALIFICATION_PATH + DIGEST record, then ER-L3 runs qualify.py cell --binding live per required cell (three cold repetitions)",
+    "owner": "enterprise test owner (credential) and model risk / product (provider, model id, parameters, contractual settings, qualification record)",
+    "status": "BLOCKED EXTERNAL"
+   },
+   "orchestration": {
+    "adapter_version": "caos.answer-keyed.host-control.v1",
+    "identity_digest": "4e3a6e8fbd028475ac4acb81466ecfad1d867697b7bd74d6c8e888e2fd7b3137",
+    "kind": "host_control",
+    "model": "deterministic",
+    "provider_name": "host_control",
+    "qualification_record": "gates/qualification/evidence (qualify.py matrix --binding host_control); verdict is ORCHESTRATION_PROOF by construction and never QUALIFIED",
+    "qualification_status": "host_control"
+   }
+  },
+  "candidate_manifest_sha256": "35ef8ef8c0daeca1df3d34a7551f96e1834940080e94e2ce6db6b2779d8a9788",
+  "commit": "b88c0f8ca11af3200e8bb21daab16d838c64d39f",
+  "corpus_digest": "460e3ad6a64c8f78632862921f4d181f0fcb866160a6aa2f44b8c476d70ae7e3",
+  "images": {
+   "app": "sha256:10ec8aa0798d06c9c9fcbc1d6db95303a02430385cbca0404a3fe422139f532d",
+   "worker": "sha256:526c2d5f3c7a4fd6c09ed4110d3212980b7b752cb721277e7e00468129a9468a"
+  },
+  "methodology_build_id": "237bf4bc56b616b1c679a32c3733a2d9baf580b113758329320478e0226bae9d",
+  "package_commit": null,
+  "tag": "enterprise-candidate-2026-09-04"
+ },
+ "missing_artifacts": [
+  {
+   "item": "Statement, branch and critical-path coverage reports",
+   "owner": "decision owner (a coverage run is a gate addition \u2192 new candidate or a retained run against this tag)",
+   "status": "MISSING"
+  },
+  {
+   "item": "Live model-matrix results (one binding \u00d7 six pathways \u00d7 two depths \u00d7 required packs \u00d7 three cold repetitions)",
+   "owner": "enterprise test owner (credential) / model risk",
+   "status": "MISSING \u2014 ER-L3 never ran a cell"
+  },
+  {
+   "item": "Post-soak comparison, PERF-014 leak check, post-soak three-engine journeys",
+   "owner": "ER-L4 operator (log the clamav restart first)",
+   "status": "MISSING \u2014 owed by ER-L4"
+  },
+  {
+   "item": "Six golden journeys through freeze, filing, receipt and offline verification on the frozen stack",
+   "owner": "decision owner on the machine holding the images",
+   "status": "MISSING on the image; driver rehearsed on a dev server at the commit (report)"
+  },
+  {
+   "item": "Returned reviewer records REV-001\u2013REV-015",
+   "owner": "named reviewers per role (roster external)",
+   "status": "MISSING \u2014 all fifteen OUTSTANDING"
+  },
+  {
+   "item": "Pinned deliverable benchmark, visual goldens per pathway/format, semantic-parity reports, analyst scorecards, adjudications, external-stakeholder review",
+   "owner": "credit analysts / design owner",
+   "status": "MISSING \u2014 benchmark set is an external input; cross-format goldens exist in-suite only"
+  },
+  {
+   "item": "Penetration test report, egress allowlist proof, provider account policy",
+   "owner": "security / network owner / provider account owner",
+   "status": "MISSING \u2014 BLOCKED EXTERNAL"
+  },
+  {
+   "item": "Enterprise test-owner signature over the package digest",
+   "owner": "enterprise test owner",
+   "status": "MISSING"
+  }
+ ],
+ "not_signable_because": [
+  "71 checks OPEN, 1 FAIL, 17 BLOCKED EXTERNAL (package/checks.csv)",
+  "missing artifact: Statement, branch and critical-path coverage reports \u2014 MISSING",
+  "missing artifact: Live model-matrix results (one binding \u00d7 six pathways \u00d7 two depths \u00d7 required packs \u00d7 three cold repetitions) \u2014 MISSING \u2014 ER-L3 never ran a cell",
+  "missing artifact: Post-soak comparison, PERF-014 leak check, post-soak three-engine journeys \u2014 MISSING \u2014 owed by ER-L4",
+  "missing artifact: Six golden journeys through freeze, filing, receipt and offline verification on the frozen stack \u2014 MISSING on the image; driver rehearsed on a dev server at the commit (report)",
+  "missing artifact: Returned reviewer records REV-001\u2013REV-015 \u2014 MISSING \u2014 all fifteen OUTSTANDING",
+  "missing artifact: Pinned deliverable benchmark, visual goldens per pathway/format, semantic-parity reports, analyst scorecards, adjudications, external-stakeholder review \u2014 MISSING \u2014 benchmark set is an external input; cross-format goldens exist in-suite only",
+  "missing artifact: Penetration test report, egress allowlist proof, provider account policy \u2014 MISSING \u2014 BLOCKED EXTERNAL",
+  "missing artifact: Enterprise test-owner signature over the package digest \u2014 MISSING"
+ ],
+ "objects": {
+  "EVIDENCE.md": {
+   "bytes": 5289,
+   "sha256": "319e8c2c8e2bf46813bf411a01612c9678c14d5ce89b63bb8dbe2e2989621e86"
+  },
+  "MANIFEST.json": {
+   "bytes": 21280,
+   "sha256": "35ef8ef8c0daeca1df3d34a7551f96e1834940080e94e2ce6db6b2779d8a9788"
+  },
+  "MANIFEST.sha256": {
+   "bytes": 80,
+   "sha256": "3d50decc89984274836ac7b16117a387d5dfd9f1f1b2fdd02cdaa675ba8274d9"
+  },
+  "gates/browser/a11y-rerun.txt": {
+   "bytes": 334,
+   "sha256": "e9986dd74c5d9377a467c99b2f690bb57f6ef971b3abaf745f2437358707db02"
+  },
+  "gates/browser/browser-gates.txt": {
+   "bytes": 2329,
+   "sha256": "5ef0c99a6e9b5c589632d0a7ee89bb836c3a033753ac26b75226f26923a0afe9"
+  },
+  "gates/browser/smoke-chromium.log": {
+   "bytes": 398,
+   "sha256": "9f1d314c5db2b1a5f719e91d65c18916fbd88b567bfd8511ced9d8e7b9711cb8"
+  },
+  "gates/browser/smoke-firefox.log": {
+   "bytes": 387,
+   "sha256": "2900613fb730b7e967c0f6450162663699790366cbaaf0aa72da9080806eebeb"
+  },
+  "gates/browser/smoke-webkit.log": {
+   "bytes": 382,
+   "sha256": "2d3dc9d7b3b93c7a1bcf28c0f5e746099dccaeb0194e897254151323576cb1cd"
+  },
+  "gates/browser/test-results/chromium/workbench-report.json": {
+   "bytes": 462,
+   "sha256": "33b7c38f4521ad6b43f5099a475579a529d8b621e7e4d34a1c8381e6f7c1953f"
+  },
+  "gates/browser/test-results/firefox/workbench-report.json": {
+   "bytes": 453,
+   "sha256": "ddf37bdb36711ebb4ef3de592a9e76eda9fc9b3d3483e3447902f0eb903fc56b"
+  },
+  "gates/browser/test-results/webkit/workbench-report.json": {
+   "bytes": 450,
+   "sha256": "b624e4bc9b7236ef5a85c552e1a0c43b4b8d996ff4f60767c82b44aa6f122ae9"
+  },
+  "gates/corpus-full.txt": {
+   "bytes": 831,
+   "sha256": "ce5673cb17c5b71bfb5d7e312473b5e146797ef9799eeceb0ff01e9152bc980a"
+  },
+  "gates/deploy-assets.txt": {
+   "bytes": 393,
+   "sha256": "a58981d06225bbcc18dc6698d320061a8de157995600b6bbd48a98b6c0541c92"
+  },
+  "gates/frontend-unit.txt": {
+   "bytes": 18268,
+   "sha256": "73bb7e1c94fb70195f0485d66c8248a9399bc6586fd0e9b25ce3adc80cc53157"
+  },
+  "gates/frontend.txt": {
+   "bytes": 900,
+   "sha256": "2811b89656693b5c05900704bf907db770ae13d0eb884bda92a1b7cd3bb09c04"
+  },
+  "gates/pytest-backend-junit.xml": {
+   "bytes": 187405,
+   "sha256": "7397d1517c36091932d22a3de0981db25958c467740b607afab54e46603e9524"
+  },
+  "gates/pytest-backend.txt": {
+   "bytes": 2362,
+   "sha256": "92b32921559b268b2467444d2a01d9247ef7b8c798331b6380ddd4620e8a79ca"
+  },
+  "gates/pytest-corpus-full-junit.xml": {
+   "bytes": 5694,
+   "sha256": "051d3d6631c9dc70efdbc03b4bf91fc692582edffa350d7015dc2551bb03cdbd"
+  },
+  "gates/qualification/evidence/host_control/C01/COVENANT_REFINANCING-full/rep-1-20260903T234417Z.json": {
+   "bytes": 6910,
+   "sha256": "a3d71b5348300de648e141a44025e5b64865c92d53b1d5e433ee3a5f269d192e"
+  },
+  "gates/qualification/evidence/host_control/C01/COVENANT_REFINANCING-screen/rep-1-20260903T234223Z.json": {
+   "bytes": 6685,
+   "sha256": "c9cd10fbeca0503381851e30e6e3f1ea39f1567464356a7486a0dd7307fbd5a3"
+  },
+  "gates/qualification/evidence/host_control/C01/DEEP_RESEARCH-full/rep-1-20260903T235332Z.json": {
+   "bytes": 6875,
+   "sha256": "5e742832c77f75ebbecd303c52028d94c16ec7eca3663fc31468e3af223cdd72"
+  },
+  "gates/qualification/evidence/host_control/C01/DISTRESSED_RESTRUCTURING-full/rep-1-20260903T235138Z.json": {
+   "bytes": 6914,
+   "sha256": "2bcb323c3b7667a23f051748d1202d748b9e6a46fc5af8bb4dc2ec3f8b810348"
+  },
+  "gates/qualification/evidence/host_control/C01/DISTRESSED_RESTRUCTURING-screen/rep-1-20260903T234944Z.json": {
+   "bytes": 6920,
+   "sha256": "e93235308acd36c8fe786e7370e8376fae404d658a94bffad82a94becd9d6bde"
+  },
+  "gates/qualification/evidence/host_control/C01/EARNINGS_UPDATE-full/rep-1-20260903T234041Z.json": {
+   "bytes": 6895,
+   "sha256": "6cec0861206c0608e216705d778f0a602e5f75046cc3a4ec41cd67be71fa46c9"
+  },
+  "gates/qualification/evidence/host_control/C01/EARNINGS_UPDATE-screen/rep-1-20260903T233847Z.json": {
+   "bytes": 6670,
+   "sha256": "ac507ec0dfd61f5377f6457a757566f9f6f940136c0f8fd27288391b5fde787a"
+  },
+  "gates/qualification/evidence/host_control/C01/FULL_CREDIT-full/rep-1-20260903T233705Z.json": {
+   "bytes": 6805,
+   "sha256": "621f459788433b9fb2fdbcda411b699d48d18e2c7632a6ac2a0e4d8ebee305ea"
+  },
+  "gates/qualification/evidence/host_control/C01/FULL_CREDIT-screen/rep-1-20260903T233518Z.json": {
+   "bytes": 6654,
+   "sha256": "531cb32bd3554855eff1570582b19290351db79f7ad51062000d396910c2fe23"
+  },
+  "gates/qualification/evidence/host_control/C01/RELATIVE_VALUE-full/rep-1-20260903T234751Z.json": {
+   "bytes": 6830,
+   "sha256": "e52a8920fcd2fe9a475bff631c0704440e82421a4ce912becc3b15f96579f360"
+  },
+  "gates/qualification/evidence/host_control/C01/RELATIVE_VALUE-screen/rep-1-20260903T234559Z.json": {
+   "bytes": 6669,
+   "sha256": "4a62c46765a9eb5c6256e0bc0c338988d5f6a865687450b4ff2f2fab8c9a90bd"
+  },
+  "gates/qualification/evidence/host_control/C02/EARNINGS_UPDATE-full/rep-1-20260903T235335Z.json": {
+   "bytes": 6446,
+   "sha256": "32d2059a353a76f3e90e63a548efe7cccb4c1ebd44900bcd2832d6c8c76e52b5"
+  },
+  "gates/qualification/evidence/host_control/C02/FULL_CREDIT-full/rep-1-20260903T235334Z.json": {
+   "bytes": 6265,
+   "sha256": "df4029e24e10cd360c52ed4b367b0307a0ac8533db75a4a22d023d340e5e10da"
+  },
+  "gates/qualification/evidence/host_control/C03/FULL_CREDIT-full/rep-1-20260903T235339Z.json": {
+   "bytes": 7154,
+   "sha256": "f3b95af495acb8bc1b32a49bd70355c7b8682cae14bb8ad48e7ad61caf8c0107"
+  },
+  "gates/qualification/evidence/host_control/C04/FULL_CREDIT-full/rep-1-20260903T235343Z.json": {
+   "bytes": 7033,
+   "sha256": "7b35e1672ddf2d8141f8cbe3f342d16adc8b9890ed3b5efaa1acee26f989c82c"
+  },
+  "gates/qualification/evidence/host_control/C05/FULL_CREDIT-full/rep-1-20260903T235345Z.json": {
+   "bytes": 6619,
+   "sha256": "9cf683183c1b2a62a747cb079438c2ddba060a069277b59d0eea734eaeaa796b"
+  },
+  "gates/qualification/evidence/host_control/C06/FULL_CREDIT-full/rep-1-20260903T235347Z.json": {
+   "bytes": 6529,
+   "sha256": "2b0b9aa8e2e221e22977189d0dda3758f6d189016a3b58f5b51f8032f3c27769"
+  },
+  "gates/qualification/evidence/host_control/C07/FULL_CREDIT-full/rep-1-20260903T235349Z.json": {
+   "bytes": 6558,
+   "sha256": "0941b7784a56e6374d50feef7ca995d96282e3159a8bc196ca5a299dbec56b78"
+  },
+  "gates/qualification/evidence/host_control/C08/RELATIVE_VALUE-full/rep-1-20260903T235349Z.json": {
+   "bytes": 4906,
+   "sha256": "5555ec7a171e2ba20af736f61bfddee1288995ee0a0d01ddc21206ee99eb8a98"
+  },
+  "gates/qualification/evidence/host_control/C09/FULL_CREDIT-full/rep-1-20260903T235354Z.json": {
+   "bytes": 7601,
+   "sha256": "06e38ff48fba92e0b9de7a7fffab8f36aff4f416f5935abf896b5ce4bac28f69"
+  },
+  "gates/qualification/evidence/host_control/C10/RELATIVE_VALUE-full/rep-1-20260903T235355Z.json": {
+   "bytes": 4906,
+   "sha256": "ee1d3816b32c071b69132bacd2c588b37c34a837e9be150981320e89e4a82226"
+  },
+  "gates/qualification/evidence/host_control/C11/COVENANT_REFINANCING-full/rep-1-20260903T235356Z.json": {
+   "bytes": 6613,
+   "sha256": "4979917561f4677e9e95829dcbedc806b6d162a6c827e6b2440d92514e992159"
+  },
+  "gates/qualification/evidence/host_control/C12/FULL_CREDIT-full/rep-1-20260903T235359Z.json": {
+   "bytes": 6330,
+   "sha256": "5ec740d76118ac466ce5f692b351b311af0f93be0fd9686c5aa5d982d287c896"
+  },
+  "gates/qualification/evidence/host_control/C13/FULL_CREDIT-full/rep-1-20260903T235359Z.json": {
+   "bytes": 4897,
+   "sha256": "85586bdf494970663920a8e5ef463ce06cd8ee3a1b851325f67a3a62fdbf0cb7"
+  },
+  "gates/qualification/evidence/host_control/C14/FULL_CREDIT-full/rep-1-20260903T235401Z.json": {
+   "bytes": 6564,
+   "sha256": "6d0124c511095e77b97aed6662e9f458f07f440c7dd7e5096d69af87e5d02096"
+  },
+  "gates/qualification/evidence/host_control/C15/FULL_CREDIT-full/rep-1-20260903T235402Z.json": {
+   "bytes": 4897,
+   "sha256": "310442c2cd53012dbee3cff07a6d0a1a52e856ab5d89438cbc92c4103168ea0b"
+  },
+  "gates/qualification/evidence/host_control/C16/FULL_CREDIT-full/rep-1-20260903T235407Z.json": {
+   "bytes": 7140,
+   "sha256": "f5bee73a31f7c534f4bb34f4db090324faf9a6857cf72f224dbca82334df5357"
+  },
+  "gates/qualification/evidence/host_control/C17/FULL_CREDIT-full/rep-1-20260903T235553Z.json": {
+   "bytes": 6711,
+   "sha256": "fb008f21aff49701699481c9761bffb00ae946cc70832663de994cc7bb18839f"
+  },
+  "gates/qualification/evidence/host_control/C18/EARNINGS_UPDATE-full/rep-1-20260903T235930Z.json": {
+   "bytes": 6784,
+   "sha256": "db43c4e40617d65d4df53a72956041722b7773b74660abe3a54d25532789695b"
+  },
+  "gates/qualification/evidence/host_control/C18/EARNINGS_UPDATE-screen/rep-1-20260903T235734Z.json": {
+   "bytes": 6557,
+   "sha256": "7bf5ece19f558c0935e1d48f8109aa34023ae8d142b27b170e6e48fc36975231"
+  },
+  "gates/qualification/evidence/host_control/C19/COVENANT_REFINANCING-full/rep-1-20260904T000307Z.json": {
+   "bytes": 6797,
+   "sha256": "81b987bde524c1f03eb3a0ed22295833048d9b038b6b1cc0fbc643c64ef5febf"
+  },
+  "gates/qualification/evidence/host_control/C19/COVENANT_REFINANCING-screen/rep-1-20260904T000113Z.json": {
+   "bytes": 6572,
+   "sha256": "14deafb1461cfddc2e498e9570c73049902da8ff9ab757aac8a9f24e26fdc719"
+  },
+  "gates/qualification/evidence/host_control/C20/RELATIVE_VALUE-full/rep-1-20260904T000308Z.json": {
+   "bytes": 1809,
+   "sha256": "3577dd9ea2ddcce827127bf24716b39d4c23e8a6a321358f6cc2129788c4caff"
+  },
+  "gates/qualification/evidence/host_control/C20/RELATIVE_VALUE-screen/rep-1-20260904T000307Z.json": {
+   "bytes": 1815,
+   "sha256": "a06b4d391fdb5973f7d12144a7f53a09fcb8ed96e080ddbbf7d16d8d6540b88d"
+  },
+  "gates/qualification/evidence/host_control/C21/DISTRESSED_RESTRUCTURING-full/rep-1-20260904T000308Z.json": {
+   "bytes": 1839,
+   "sha256": "5325a9e24f6bd927766002d304d89843e6436148e622c0af32c7207a55e9747a"
+  },
+  "gates/qualification/evidence/host_control/C21/DISTRESSED_RESTRUCTURING-screen/rep-1-20260904T000308Z.json": {
+   "bytes": 1845,
+   "sha256": "c082f30852d4237a4a9e17f6dc03fea3c456497b9623b97bc3e0b181fb492fe3"
+  },
+  "gates/qualification/evidence/host_control/C22/DEEP_RESEARCH-full/rep-1-20260904T000308Z.json": {
+   "bytes": 1806,
+   "sha256": "e78ad277befe36edc15c5e7f9617351bc25e5e1f1b2a387731a817de16bc19a9"
+  },
+  "gates/qualification/host-control-matrix.txt": {
+   "bytes": 37233,
+   "sha256": "04c7b5dca18f64718e8e2612d2dd85845e595c429139f977b2c2f06398663726"
+  },
+  "gates/qualification/host-control-verdict.txt": {
+   "bytes": 31928,
+   "sha256": "b082a08973edb4c7d7cddd45cfff358735295069e7b4d0dfc8aec88a386e0544"
+  },
+  "gates/quality-ledger.txt": {
+   "bytes": 119,
+   "sha256": "fafcf53b08a2e4200c0ece09a1862527f9631cc746b1c42651882508a9f4f6a0"
+  },
+  "gates/ruff.txt": {
+   "bytes": 26,
+   "sha256": "c6708ad82872a7ded6180add6ea4ac93e276ddccf10cc1226947aef4e3b48195"
+  },
+  "gates/scans/bandit.json": {
+   "bytes": 20539,
+   "sha256": "396db1c8972051e8071486a077b3b5ebf75ce7502cb13947a7944e5523db4df9"
+  },
+  "gates/scans/dependency-and-sast.txt": {
+   "bytes": 257,
+   "sha256": "d8ac02c2208e6f19671b073edaf51d387b438b8cf9275eb1f8e3957160dd02b8"
+  },
+  "gates/scans/gitleaks.json": {
+   "bytes": 3,
+   "sha256": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570"
+  },
+  "gates/scans/gitleaks.log": {
+   "bytes": 147,
+   "sha256": "e5473d41cdd8a6e1223c8bcc2716759ea4e403ac17d2ba58287b91096eabe030"
+  },
+  "gates/scans/gitleaks.txt": {
+   "bytes": 75,
+   "sha256": "be267e57d2f5f34eada61251ba2de9a67558000f8d1d89c789299064c6e8752a"
+  },
+  "gates/scans/images.txt": {
+   "bytes": 3106,
+   "sha256": "40923eb15cd019d794d4f6ff1e318f6eb4adaa62c781094f9b0ae80225066d36"
+  },
+  "gates/scans/npm-audit.json": {
+   "bytes": 364,
+   "sha256": "19ec4d570300c38a61f51c476e18e48629dc9ea1dfcb66bfaeaf71a43bd381cc"
+  },
+  "gates/scans/npm-audit.txt": {
+   "bytes": 491,
+   "sha256": "a9b4cefee8a8fe62563f3f9eb88dc3796e40f99668af04dc0001eac5a399d9de"
+  },
+  "gates/scans/pip-audit.json": {
+   "bytes": 3354,
+   "sha256": "87ac8de5c34d7dbf3dbbf0dae0dbd4f17e7dea71c1e67f7218db7a5d0948d9a6"
+  },
+  "gates/scans/sbom-app.cdx.json": {
+   "bytes": 331716,
+   "sha256": "51c4475489d64857352e85417ba27760577cd7ccbaaf9fcf0b827d2363ab857e"
+  },
+  "gates/scans/sbom-worker.cdx.json": {
+   "bytes": 673310,
+   "sha256": "62fcd5fb64e68f28307c1bf7755aa22d61c86fa0ef9781b193d345da27b2ecb9"
+  },
+  "gates/scans/scan-manifest.json": {
+   "bytes": 1742,
+   "sha256": "91d149c500f907d06c19136d413cbceb47dadafeab83e588b323f20ab29a3e72"
+  },
+  "gates/scans/trivy-app-fixable-gate.txt": {
+   "bytes": 31168,
+   "sha256": "9fbaadad5f72077c304dfd10fba2fad3bc1a1fa180b5211a187534da92984c19"
+  },
+  "gates/scans/trivy-app.json": {
+   "bytes": 1002991,
+   "sha256": "83e2130018d46f98c381af0261fc3cd1b2871f1d3a7fb02738e6622668244e32"
+  },
+  "gates/scans/trivy-worker-fixable-gate.txt": {
+   "bytes": 31168,
+   "sha256": "53b482aa2d811bc6e08c6d8107440b6f518ce091f70af3362422045099538add"
+  },
+  "gates/scans/trivy-worker.json": {
+   "bytes": 2151148,
+   "sha256": "5edd100c872b4137d14bf71f36b65f4f9bdbc4fd6ba4021e16787cce24bfc896"
+  },
+  "gates/sec-audit.txt": {
+   "bytes": 512,
+   "sha256": "a4fdb88be5eff95103646bc53b11c775b2e75b8887be46916aff438aec1831af"
+  },
+  "gates/sim-evidence-summary.txt": {
+   "bytes": 101,
+   "sha256": "5aa87697a2c40d058b28f9cf709ae01f3ef9f5a7088d70501673c81d41bf8bbf"
+  },
+  "gates/sim-evidence.csv": {
+   "bytes": 9465,
+   "sha256": "ef8c89a151a25113580c57ceffaea17d26880430c14182fa15caf4c6013de7e7"
+  },
+  "gates/sim-evidence.json": {
+   "bytes": 14898,
+   "sha256": "6189295b4cae38f44f58d064b43564dcdbddb5f35f154b19d7d0472e7c328789"
+  },
+  "gates/stack/backup-manifest.txt": {
+   "bytes": 304,
+   "sha256": "35819854a5af98a79b95fbf866719d81bdf0263c34c00125e3a3f60a9b89565b"
+  },
+  "gates/stack/capacity-limits.json": {
+   "bytes": 3459,
+   "sha256": "191bb8f432203aec7cf4be333f370655440c3f5ff564501b150b0cd5b44e3b46"
+  },
+  "gates/stack/stack-gates.txt": {
+   "bytes": 6497,
+   "sha256": "3941b1348360e8f1d5d36adf9e84841da97e5bb77bbb9874bdf1c66345e59e9a"
+  },
+  "package/assemble_package.py": {
+   "bytes": 43877,
+   "sha256": "eaf002b38973d9aa8d7267347ca28019ce60f1a23d0e0e4d6e2563713902deae"
+  },
+  "package/checks.csv": {
+   "bytes": 299539,
+   "sha256": "67aed062976038e8c9b08c54c5704be160640e4a6e6b1e5673df019f52fa982a"
+  },
+  "package/corpus/C01.manifest.json": {
+   "bytes": 20040,
+   "sha256": "64a92913d4ace08d0c7664d12b57f0eed8134d6bad57714eb00db3530fdbd71f"
+  },
+  "package/corpus/C02.manifest.json": {
+   "bytes": 2302,
+   "sha256": "ddb0c41be4824906beaee4798d7963bb0fe43025b2ea4601b89229aa71d0074c"
+  },
+  "package/corpus/C03.manifest.json": {
+   "bytes": 4519,
+   "sha256": "2504d945a3786cb5903da7493faa26da6bebef912ca0958f4b128f4c14989a76"
+  },
+  "package/corpus/C04.manifest.json": {
+   "bytes": 4557,
+   "sha256": "94a126afd0afb10cc9a54dc9983adbc4e27992c67213a1d5ce8018a9d2fe1cc3"
+  },
+  "package/corpus/C05.manifest.json": {
+   "bytes": 2696,
+   "sha256": "67e671cb88dd3179651f397074f78428c6b30f0d9ade574724dbd7c426a873f8"
+  },
+  "package/corpus/C06.manifest.json": {
+   "bytes": 2675,
+   "sha256": "424afb62d2f782c0a2e718468b299b78788449d11144f6b65f3bca3467bc4da2"
+  },
+  "package/corpus/C07.manifest.json": {
+   "bytes": 3124,
+   "sha256": "922ab248dfc9e045fd1d858360e65f0286f799cc0db9c06a3d6bf67540fc21b5"
+  },
+  "package/corpus/C08.manifest.json": {
+   "bytes": 5428,
+   "sha256": "e7354e67827a057c6768f472634eac49e1cbf86f385f934d7fc171189386bb2d"
+  },
+  "package/corpus/C09.manifest.json": {
+   "bytes": 5579,
+   "sha256": "ceefa49e4cf1b1fda85cf90db800d27ed4508160cb17f399531e0a9c7a63228d"
+  },
+  "package/corpus/C10.manifest.json": {
+   "bytes": 3804,
+   "sha256": "57526cf56543bea97c16846479b04583bbf74f1f10bf6f6337091833f8a7a67a"
+  },
+  "package/corpus/C11.manifest.json": {
+   "bytes": 2264,
+   "sha256": "d3148ba3cc9990d3c4525e78a62a4f40c40633ba0fa44891b82fe81ef7e50455"
+  },
+  "package/corpus/C12.manifest.json": {
+   "bytes": 7090,
+   "sha256": "f0a19e268b0dd39804ef68d22724f37f8d2eec1a756ae9478804a5bf8c37c39c"
+  },
+  "package/corpus/C13.manifest.json": {
+   "bytes": 3114,
+   "sha256": "5a9a1adde9c6f24b65d29d13a38cf489ad4b133b1c9b99bdc332d0502cb2a45e"
+  },
+  "package/corpus/C14.manifest.json": {
+   "bytes": 3170,
+   "sha256": "190cd5e493a642368ecd4ca87ae8da72e09fa8ca9d0f5f9465b17b606a4fc12e"
+  },
+  "package/corpus/C15.manifest.json": {
+   "bytes": 4581,
+   "sha256": "7f3a0738332c333a4bd017eccc8a0854f3c9b354739c1f4b0cd2959fa8dfaa1e"
+  },
+  "package/corpus/C16.manifest.json": {
+   "bytes": 4653,
+   "sha256": "cd1ff2166c8931721e8b1f40e19de86f26eb0c798e60d4f2a96b8fd0cbd27151"
+  },
+  "package/corpus/C17.manifest.json": {
+   "bytes": 1369,
+   "sha256": "963c4048dc7ae967d81ed19f185b05eadf698b12a0225b51b8d521e2ff690cb4"
+  },
+  "package/corpus/C18.manifest.json": {
+   "bytes": 1494,
+   "sha256": "2b366726431695499a20182cc5a0ed881ba54c4379e1a0030ea2f17d713ebde4"
+  },
+  "package/corpus/C19.manifest.json": {
+   "bytes": 1441,
+   "sha256": "9ee28b117ae0b1442139c4dc97a505c48ab69313911ced5fd793337657b5fe95"
+  },
+  "package/corpus/C20.manifest.json": {
+   "bytes": 1973,
+   "sha256": "dd350d7f92acf0099e4abff8a6587202b6c840aaa2b4f8dd1be3c3fad138f49c"
+  },
+  "package/corpus/C21.manifest.json": {
+   "bytes": 12862,
+   "sha256": "ef78835f40eafd62434fac6ddcafa4c63b50d5936581b6968409494c0ef02cc4"
+  },
+  "package/corpus/C22.manifest.json": {
+   "bytes": 2268,
+   "sha256": "5b41c4be75974437c82fad51ef1ca7617bde9e8a880ca44ba5ef69db24ac24c6"
+  },
+  "package/corpus/sources.txt": {
+   "bytes": 7296,
+   "sha256": "c0f97f8e26ac7c7bc63df86612d2dc3037e3dfc455db614aed3a1e4246517e55"
+  },
+  "package/golden_journeys.py": {
+   "bytes": 27802,
+   "sha256": "55439ba10779fcd6b6c0eea005191254968d280d9ae0fbf17433d696d809a010"
+  },
+  "package/inventory/openapi.json": {
+   "bytes": 188133,
+   "sha256": "58516663c266d8bf4c3d61cac83a740f5130ecd0b1252c2fe195ecdfa6e6165b"
+  },
+  "package/inventory/route-inventory.json": {
+   "bytes": 5528,
+   "sha256": "33a7091faf6b953d89bb68e46205cf18ec85b36a9c3e088f7b60052ac6073fb8"
+  },
+  "package/ledgers/ENTERPRISE_TESTING_READINESS.md": {
+   "bytes": 65271,
+   "sha256": "dadc221e8f8b462e98e8fd6206655129d0152bd8f095e7bc9e7ea2a3cbc1b1f0"
+  },
+  "package/ledgers/PERIMETER_LEDGER.csv": {
+   "bytes": 40785,
+   "sha256": "4a15f5f69b86b39f882e0a55165e469db8349f17fe58e4661039fd49a610a61d"
+  },
+  "package/ledgers/QUALITY_DEFECTS.csv": {
+   "bytes": 28157,
+   "sha256": "c7506f2cf4ee7022dd7e3c4fce5747b5009b8442d0faa6fa458093f2e888cc02"
+  },
+  "package/ledgers/QUALITY_LEDGER.csv": {
+   "bytes": 119482,
+   "sha256": "bdf788e318bf1919df6b3fd7c1d99f04dcacda5542e4c17a66ff724780a51bdd"
+  },
+  "package/ledgers/QUALITY_QUALIFICATION.csv": {
+   "bytes": 8958,
+   "sha256": "295b0e43aae2517c3af133103028eff7916f68fc37d07de11f4c8da029f8156d"
+  },
+  "package/ledgers/SIMULATION_LEDGER.csv": {
+   "bytes": 21493,
+   "sha256": "c159df84ce57d74bf716c8a4500b26119953a13ba16abf1d43e06e9acdfd23d7"
+  },
+  "package/ledgers/SPEC_RECONCILIATION.md": {
+   "bytes": 70792,
+   "sha256": "7ba6eaa20147c966f9c2e182ba3102cd3767e6610d5f4913754bc5d5e5577690"
+  },
+  "package/loops/focus-race-findings.md": {
+   "bytes": 5136,
+   "sha256": "845b9cea43c02995208bfbdb5997681a51fd2108781fd697b33052b9e6fc3d60"
+  },
+  "package/loops/live-matrix.md": {
+   "bytes": 3175,
+   "sha256": "4ba3cd3a8b23c319870654c5d9d73538aee250922b2daa558603819ce22d5766"
+  },
+  "package/loops/pr-babysit.md": {
+   "bytes": 8346,
+   "sha256": "8835e3ce7c1452fff41a3330b96fc524922ca0787409249b18e467beed82fcdb"
+  },
+  "package/loops/soak-watch.md": {
+   "bytes": 3623,
+   "sha256": "b67de376a5bc39f7bfc3087448984ed34c194237311e47aa66e438d1c321c8ea"
+  },
+  "package/maps/map_ANA_PUB.csv": {
+   "bytes": 58375,
+   "sha256": "cad7f9645dae2659c44c3a49542cf0f14222769b1bb0772e7ddfb06d96f6d816"
+  },
+  "package/maps/map_AUD.csv": {
+   "bytes": 28918,
+   "sha256": "a8f55dadbe1b2a1f72c240c550d4e3a58e2f555ff320fc0c710d26abbae31c1f"
+  },
+  "package/maps/map_CALC.csv": {
+   "bytes": 7909,
+   "sha256": "1e722701151ad9f4093922979ec67e48ea775f57996ddf2857e24865dd0f079e"
+  },
+  "package/maps/map_EVD_RUN.csv": {
+   "bytes": 50508,
+   "sha256": "2d212b66978d84de56ea07b571013f5defd391ede4736dae1c420c17fd14a518"
+  },
+  "package/maps/map_UX_SRC.csv": {
+   "bytes": 46556,
+   "sha256": "dcad96879117e1fa889c8ebaaaa23e36cb73f93e7590b45bee865f0af68cfd23"
+  },
+  "package/verify_evidence_package.py": {
+   "bytes": 6548,
+   "sha256": "0f9100f1e577e10907fc933a414dea6bd3e83907aaeb775795a200036a70184e"
+  },
+  "reviews/REV-001.md": {
+   "bytes": 2091,
+   "sha256": "c3c630739f8a7e64ead4840cb19f3c3dd9472095b3257fb741985ea6f8f360d5"
+  },
+  "reviews/REV-002.md": {
+   "bytes": 1876,
+   "sha256": "81c4bda4265f93c8ad8373e88daf36145632e604b99ff77e25e97d486fbb296c"
+  },
+  "reviews/REV-003.md": {
+   "bytes": 2010,
+   "sha256": "f9daa99d79f5bccb077b6f5b2c0ce782d484788741d16e83589a60da67abdf50"
+  },
+  "reviews/REV-004.md": {
+   "bytes": 1908,
+   "sha256": "10c2eafb959876139467d31af3d7fa28348b08d92f2636213a4fafa2e087548d"
+  },
+  "reviews/REV-005.md": {
+   "bytes": 1870,
+   "sha256": "90e8420545d8782e542cc9e3529b087829207fc829f30f14782745027a582b1a"
+  },
+  "reviews/REV-006.md": {
+   "bytes": 1977,
+   "sha256": "f70336b7daee72b25ca9bc19dd37d382a48b24b68bb6c724c3a97afa4bc4cb1c"
+  },
+  "reviews/REV-007.md": {
+   "bytes": 1920,
+   "sha256": "478ba1a4208445e88b0c9e3f5955d48a5046c2b25c07810e9b7c34fd629c9681"
+  },
+  "reviews/REV-008.md": {
+   "bytes": 1946,
+   "sha256": "d364a4356bf242ecee06576747c810731a12ef321012ff34fac1a15ca3d721c1"
+  },
+  "reviews/REV-009.md": {
+   "bytes": 1913,
+   "sha256": "82cabc601ca91dafe5ab640b2ee798190b4887435679d9ba8fd4c789b1c191ac"
+  },
+  "reviews/REV-010.md": {
+   "bytes": 2009,
+   "sha256": "0efa11e0509d7f1d8f47fd7bda51a970d5c905ffdea460525d384f2e4fb111a6"
+  },
+  "reviews/REV-011.md": {
+   "bytes": 1983,
+   "sha256": "2d80cc3fbec0e2327042993e465bdea0bc11606e786ce739e016b5cce8e85bb3"
+  },
+  "reviews/REV-012.md": {
+   "bytes": 2001,
+   "sha256": "50c93a234708fd66301253c07e713c591e8ea048061efc6894ed309f6f53aea0"
+  },
+  "reviews/REV-013.md": {
+   "bytes": 1949,
+   "sha256": "ac7d19c4cd0b1f963bd78aed0c518dd1ea2af878ca3ecd5e94f629a1cdec8a04"
+  },
+  "reviews/REV-014.md": {
+   "bytes": 1947,
+   "sha256": "249807db2bf4924f5e6c55f8031ebc83eee3e2cdb0f515a723f1b6ddea064955"
+  },
+  "reviews/REV-015.md": {
+   "bytes": 1960,
+   "sha256": "0f7a1fe5bb9d92671fc744caa8bd1e5755ba06fa1eb86fc593ba1258322ed580"
+  },
+  "soak/attempt-1-manifest-ceiling/baseline-pre.json": {
+   "bytes": 148,
+   "sha256": "f75e7f2275eee0ab36267bf07070b7a9ab21702805b21ab891cd4aa9ba010784"
+  },
+  "soak/attempt-1-manifest-ceiling/pre-soak-authority.json": {
+   "bytes": 3617,
+   "sha256": "86542571793b48932098852e751b9cc690c44fcdd143eb40e49a4e7f6af69233"
+  },
+  "soak/attempt-1-manifest-ceiling/pre-soak-journey/chromium/workbench-report.json": {
+   "bytes": 476,
+   "sha256": "9a4e8d184f9a3958377484e10b3d8dbe94a6ccbf0d9d02ec8039a8f86cdd7432"
+  },
+  "soak/attempt-1-manifest-ceiling/pre-soak-reset-and-journey.txt": {
+   "bytes": 528,
+   "sha256": "7196b2366539ede2376cf17a0f22db98a574653f9b3f5a4c7e9ba44c047d690d"
+  },
+  "soak/attempt-1-manifest-ceiling/profile.log": {
+   "bytes": 0,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "soak/attempt-1-manifest-ceiling/profile.pid": {
+   "bytes": 6,
+   "sha256": "9c9b987d192e8a0ae8a6b36cbe05e6d05a31af122afdcd4cce47c412809ec08f"
+  },
+  "soak/attempt-1-manifest-ceiling/profile/samples.jsonl": {
+   "bytes": 13574,
+   "sha256": "406e53c84f1bf6c61058ca34e2d4c6fcf9c8a168dc2664245b195f5890bca36f"
+  },
+  "soak/attempt-1-manifest-ceiling/soak-launch.txt": {
+   "bytes": 991,
+   "sha256": "29add3aa0a6f2c21b83c3b4180c3c379e43fabf291f77c5aaa78b6f6b365817e"
+  },
+  "soak/attempt-1-manifest-ceiling/started-at.txt": {
+   "bytes": 21,
+   "sha256": "7bb70f1a3b90ae066a3feed6a4f264aa140d09889f20a56510411694d485cbc2"
+  },
+  "soak/authority_snapshot.sh": {
+   "bytes": 2906,
+   "sha256": "a3d2fa612343b88dd729f8e4d81955c48ff244d71b8b54e814e735984deaa659"
+  },
+  "soak/baseline-pre.json": {
+   "bytes": 148,
+   "sha256": "cb7237e55ca159a4fd5af8833fb3e91df8810ff1af51e8ec0e00b7d4270cf167"
+  },
+  "soak/pre-soak-authority.json": {
+   "bytes": 3617,
+   "sha256": "81d094b97c6dd0bd06609d289d865aa887e228e8f30202ae7d7b6c1c44f127e3"
+  },
+  "soak/pre-soak-journey/chromium/workbench-report.json": {
+   "bytes": 476,
+   "sha256": "d11f085a992b2bc5547ae437c1d1761520eea8155edbd25525056832211e30b9"
+  },
+  "soak/pre-soak-reset-and-journey.txt": {
+   "bytes": 1076,
+   "sha256": "d0187ece2e89f5498d3263a5366e4af6c0073583476fa223bc0ef53c316bf0fb"
+  },
+  "soak/profile.log": {
+   "bytes": 1631,
+   "sha256": "6de628556d4fab3315445dd01a469ff24ec8a90f995c2b56be0c72d8ebb29044"
+  },
+  "soak/profile.pid": {
+   "bytes": 6,
+   "sha256": "758c08486a4492d2ad064c7668924a9f8fcd385867e42f5f038e387e1fba7fa1"
+  },
+  "soak/profile/profile.json": {
+   "bytes": 2840,
+   "sha256": "e564e96bfb8e24cb9dd01556f546979c4a37f31e13964b22ee2f64a2780fc299"
+  },
+  "soak/profile/samples.jsonl": {
+   "bytes": 1108528,
+   "sha256": "663ef53a5d67dadb98f8c88398d2bca0d38e865d17b72aee9fd11248ffaf75aa"
+  },
+  "soak/soak-launch.txt": {
+   "bytes": 991,
+   "sha256": "602ccdac6bd46676395b494d4f72c212c18e45e2ab7775b3aee0a0b0f10e3b60"
+  },
+  "soak/soak.sh": {
+   "bytes": 3820,
+   "sha256": "931ca6ab9c8449bf5f1bd8224c3cb68a07fe287a84909c6b8c3b259543f19246"
+  },
+  "soak/started-at.txt": {
+   "bytes": 21,
+   "sha256": "cde9fb79dd4a83762ca0eabca027fb80c27d29c2d6c628a9c71af84471394f7d"
+  }
+ },
+ "schema_version": "caos.release-evidence-package.v1",
+ "signable": false,
+ "test_only_limitations": [
+  {
+   "approval": "declared by the standard; test owner signs",
+   "limitation": "One application instance and one background worker (Compose deploy.replicas 1; exclusive checkpoint lock)",
+   "recorded_in": "caos/deploy/ENVIRONMENT_MANIFEST.md; MANIFEST.json topology"
+  },
+  {
+   "approval": "test owner",
+   "limitation": "Run checkpoints are SQLite on the data volume under the PostgreSQL domain store",
+   "recorded_in": "CLAUDE.md known gaps; MANIFEST.json topology"
+  },
+  {
+   "approval": "test owner (live binding and OIDC are BLOCKED EXTERNAL)",
+   "limitation": "The candidate stack ran ENVIRONMENT=development with CAOS_PROVIDER=host_control (orchestration proof, never analysis) and dev-trusted role headers; the oauth2-proxy/caddy identity edge was not started",
+   "recorded_in": "MANIFEST.json binding/topology; soak-watch.md"
+  },
+  {
+   "approval": "decision owner during ER-G9; REV-015 adjudicates",
+   "limitation": "The soak ran the declared profile except 80 documents per case (100 exceeds the 2,000-row manifest ceiling; attempt 1 retained)",
+   "recorded_in": "soak/soak.sh; soak/attempt-1-manifest-ceiling/"
+  },
+  {
+   "approval": "not yet approved \u2014 PERF-013 OPEN",
+   "limitation": "The soak's cycle is upload/run/accept/stream/preview; model, draft, freeze, approve, receipt, download and audit-export cycles were not driven (no READY model under host control)",
+   "recorded_in": "soak/profile/profile.json"
+  },
+  {
+   "approval": "process control until a later candidate lands the fix",
+   "limitation": "No .dockerignore: images must be built before a venv exists in the clone (candidate 1's worker image swept one in; candidate 2's images verified clean)",
+   "recorded_in": "enterprise-task-13-report.md"
+  },
+  {
+   "approval": "not approved \u2014 REV-014 environment finding",
+   "limitation": "clamav container has no memory limit and Compose does not restart it on unhealthy (OOM-killed at 03:31Z during the soak; uploads fail closed afterwards)",
+   "recorded_in": "soak-watch.md; enterprise-task-13-report.md"
+  },
+  {
+   "approval": "test owner (IAM-008 authority rule unchanged)",
+   "limitation": "No HTTP route grants the first case membership; the distinct approver is provisioned by an operator action against the store (qa/seed.py, golden_journeys.py operator_bootstrap)",
+   "recorded_in": "package/golden_journeys.py; qa/INVENTORY.md"
+  }
+ ]
+}

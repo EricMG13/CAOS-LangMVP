@@ -1,0 +1,253 @@
+{
+ "generated_from": "GET /openapi.json served by caos/server/dev.py at commit b88c0f8ca11af3200e8bb21daab16d838c64d39f (route registration is a pure function of the code; the serving environment was the ER-G10 rehearsal dev server, not the frozen image)",
+ "openapi_exempt_binary_or_sse": [
+  "GET /api/runs/{run_id}/events (SSE)",
+  "GET /api/cases/{case_id}/audit-package (zip)",
+  "GET /api/cases/{case_id}/deliverables/by-id/{deliverable_id}/export/{format_name} (octet-stream)",
+  "GET /api/cases/{case_id}/models/{build_id}/download (xlsx)",
+  "GET /api/cases/{case_id}/model-revisions/{revision_id}/download (xlsx)"
+ ],
+ "operations": [
+  {
+   "method": "GET",
+   "path": "/api/cases"
+  },
+  {
+   "method": "POST",
+   "path": "/api/cases"
+  },
+  {
+   "method": "GET",
+   "path": "/api/cases/{case_id}"
+  },
+  {
+   "method": "GET",
+   "path": "/api/cases/{case_id}/artifacts/{artifact_id}"
+  },
+  {
+   "method": "GET",
+   "path": "/api/cases/{case_id}/audit-package"
+  },
+  {
+   "method": "POST",
+   "path": "/api/cases/{case_id}/deliverables/by-id/{deliverable_id}/approve"
+  },
+  {
+   "method": "GET",
+   "path": "/api/cases/{case_id}/deliverables/by-id/{deliverable_id}/export/{format_name}"
+  },
+  {
+   "method": "GET",
+   "path": "/api/cases/{case_id}/deliverables/by-id/{deliverable_id}/receipt"
+  },
+  {
+   "method": "POST",
+   "path": "/api/cases/{case_id}/deliverables/by-id/{deliverable_id}/request-changes"
+  },
+  {
+   "method": "GET",
+   "path": "/api/cases/{case_id}/deliverables/freeze-jobs/{job_id}"
+  },
+  {
+   "method": "GET",
+   "path": "/api/cases/{case_id}/deliverables/revisions/{revision_id}"
+  },
+  {
+   "method": "GET",
+   "path": "/api/cases/{case_id}/deliverables/{pathway}/draft"
+  },
+  {
+   "method": "PUT",
+   "path": "/api/cases/{case_id}/deliverables/{pathway}/draft"
+  },
+  {
+   "method": "POST",
+   "path": "/api/cases/{case_id}/deliverables/{pathway}/freeze"
+  },
+  {
+   "method": "POST",
+   "path": "/api/cases/{case_id}/deliverables/{pathway}/opinion"
+  },
+  {
+   "method": "GET",
+   "path": "/api/cases/{case_id}/intake"
+  },
+  {
+   "method": "GET",
+   "path": "/api/cases/{case_id}/lens"
+  },
+  {
+   "method": "POST",
+   "path": "/api/cases/{case_id}/members"
+  },
+  {
+   "method": "GET",
+   "path": "/api/cases/{case_id}/model"
+  },
+  {
+   "method": "GET",
+   "path": "/api/cases/{case_id}/model-revisions"
+  },
+  {
+   "method": "GET",
+   "path": "/api/cases/{case_id}/model-revisions/export-statuses"
+  },
+  {
+   "method": "POST",
+   "path": "/api/cases/{case_id}/model-revisions/rebase-preview"
+  },
+  {
+   "method": "POST",
+   "path": "/api/cases/{case_id}/model-revisions/sign-off"
+  },
+  {
+   "method": "GET",
+   "path": "/api/cases/{case_id}/model-revisions/{revision_id}/download"
+  },
+  {
+   "method": "POST",
+   "path": "/api/cases/{case_id}/model-revisions/{revision_id}/export"
+  },
+  {
+   "method": "GET",
+   "path": "/api/cases/{case_id}/models"
+  },
+  {
+   "method": "POST",
+   "path": "/api/cases/{case_id}/models"
+  },
+  {
+   "method": "GET",
+   "path": "/api/cases/{case_id}/models/assumption-registry"
+  },
+  {
+   "method": "POST",
+   "path": "/api/cases/{case_id}/models/previews"
+  },
+  {
+   "method": "POST",
+   "path": "/api/cases/{case_id}/models/scenarios"
+  },
+  {
+   "method": "POST",
+   "path": "/api/cases/{case_id}/models/sensitivities/one-way"
+  },
+  {
+   "method": "POST",
+   "path": "/api/cases/{case_id}/models/tornado"
+  },
+  {
+   "method": "GET",
+   "path": "/api/cases/{case_id}/models/{build_id}"
+  },
+  {
+   "method": "GET",
+   "path": "/api/cases/{case_id}/models/{build_id}/download"
+  },
+  {
+   "method": "POST",
+   "path": "/api/cases/{case_id}/models/{build_id}/export"
+  },
+  {
+   "method": "GET",
+   "path": "/api/cases/{case_id}/models/{build_id}/worksheet"
+  },
+  {
+   "method": "GET",
+   "path": "/api/cases/{case_id}/notes"
+  },
+  {
+   "method": "POST",
+   "path": "/api/cases/{case_id}/notes"
+  },
+  {
+   "method": "POST",
+   "path": "/api/cases/{case_id}/notes/{note_id}/promote"
+  },
+  {
+   "method": "POST",
+   "path": "/api/cases/{case_id}/runs"
+  },
+  {
+   "method": "GET",
+   "path": "/api/cases/{case_id}/rv"
+  },
+  {
+   "method": "POST",
+   "path": "/api/cases/{case_id}/rv"
+  },
+  {
+   "method": "POST",
+   "path": "/api/cases/{case_id}/rv/loan-universes"
+  },
+  {
+   "method": "GET",
+   "path": "/api/cases/{case_id}/rv/loan-universes/active"
+  },
+  {
+   "method": "GET",
+   "path": "/api/cases/{case_id}/snapshot"
+  },
+  {
+   "method": "POST",
+   "path": "/api/cases/{case_id}/snapshot/switch"
+  },
+  {
+   "method": "GET",
+   "path": "/api/cases/{case_id}/sources"
+  },
+  {
+   "method": "POST",
+   "path": "/api/cases/{case_id}/sources"
+  },
+  {
+   "method": "GET",
+   "path": "/api/cases/{case_id}/sources/{source_id}"
+  },
+  {
+   "method": "POST",
+   "path": "/api/cases/{case_id}/sources/{source_id}/withdraw"
+  },
+  {
+   "method": "GET",
+   "path": "/api/health"
+  },
+  {
+   "method": "POST",
+   "path": "/api/intake"
+  },
+  {
+   "method": "GET",
+   "path": "/api/me"
+  },
+  {
+   "method": "GET",
+   "path": "/api/runs/{run_id}"
+  },
+  {
+   "method": "POST",
+   "path": "/api/runs/{run_id}/accept"
+  },
+  {
+   "method": "GET",
+   "path": "/api/runs/{run_id}/events"
+  },
+  {
+   "method": "GET",
+   "path": "/api/runs/{run_id}/research-plan"
+  },
+  {
+   "method": "POST",
+   "path": "/api/runs/{run_id}/research-plan/approve"
+  },
+  {
+   "method": "POST",
+   "path": "/api/runs/{run_id}/resume"
+  },
+  {
+   "method": "POST",
+   "path": "/api/runs/{run_id}/upgrade"
+  }
+ ],
+ "ui_destinations_scanned_by_a11y_sweep": 9
+}

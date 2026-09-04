@@ -1,0 +1,45 @@
+# Carnival Corporation leveraged-credit test pack.
+#
+# One line per fixture: <local-name> <sha256> <document-type> <period> <issuer-hosted-url>.
+# The application never fetches these URLs. fetch.sh acquires test bytes; the
+# corpus suite then uploads every byte through the public multipart source API.
+# The 30 documents form one issuer case rather than a collection of unrelated
+# filing examples. Management guidance is carried in earnings materials and
+# the 2023 investor-day presentation. The 2024 Q2 legal package includes
+# executed term-loan agreements and repricing amendments.
+
+# --- FY2025: audited annual, quarterly actuals, guidance and forecasts ------
+CCL_2025_annual_report.pdf e698de2d9fd6356a5c4cc0b2abc50b903669aca166ddc17dcebb46109a35d19d annual_report FY2025 https://www.carnivalcorp.com/wp-content/uploads/2025/03/Carnival-Corporation-plc-2025-Annual-Report.pdf
+CCL_2025_form_10K.pdf dce18829919d84ca999d80a5a5f23492008bafbb6799a5362a17395d9485350d form_10k FY2025 https://www.carnivalcorp.com/wp-content/uploads/2025/03/2025-Form-10-K_MA_final.pdf
+CCL_2025_Q1_10Q.pdf 0588eca5daf04345884d97e3e3ca065d24bccca4187d842d312375ede81f7e71 quarterly_report FY2025-Q1 https://www.carnivalcorp.com/wp-content/uploads/2025/03/2025-1Q-10-Q_MA_Final.pdf
+CCL_2025_Q1_earnings_guidance.pdf a5eee95387dd3e0b3310d493f1bb4abd2de84984b66b48a7b3816e8132b63133 management_guidance FY2025-Q1 https://www.carnivalcorp.com/wp-content/uploads/2025/03/2025-1Q-Earnings-Release-8-K_MA_Final_04012025.pdf
+CCL_2025_Q2_half_year_report.pdf 18db2b94dfccbe18f593bd4e7290af0d835702eb979dadb7a9907b9ff71627f3 quarterly_report FY2025-Q2 https://www.carnivalcorp.com/wp-content/uploads/2025/03/Carnival-PLC-2025-Half-Yearly-Financial-Report-1.pdf
+CCL_2025_Q2_10Q.pdf a60ed004e8a7d30006ba59b3c0976b8176c2a8bc9cbd19b7a250b794267eab87 quarterly_report FY2025-Q2 https://www.carnivalcorp.com/wp-content/uploads/2025/03/2025-2Q-10-Q.pdf
+CCL_2025_Q2_earnings_guidance.pdf 07efd33ddb4a7a29fdf146f42d590bdf12a31552d8b402951aa4e7e746e1831d management_guidance FY2025-Q2 https://www.carnivalcorp.com/wp-content/uploads/2025/03/2025-2Q-Earnings-Release-Final-Draft_MA_Final_06302025.pdf
+CCL_2025_Q3_10Q.pdf 1e909085deea9a22cc6f95beabd6642131308c282b26ad0a4ae2c98c33f65778 quarterly_report FY2025-Q3 https://www.carnivalcorp.com/wp-content/uploads/2025/03/2025-3Q-10-Q-1.pdf
+CCL_2025_Q3_earnings_guidance.pdf 34b931aec5b83f6db71d5c3a4114665271cc0d8c3c9c34d55a247dbf33e0b145 management_guidance FY2025-Q3 https://www.carnivalcorp.com/wp-content/uploads/2025/03/2025-3Q-Earnings-Release-Final-Draft_MA_Final.pdf
+CCL_2025_Q4_earnings_guidance.pdf fd73bd9f5715c80f05df51f37b92bd1f8260f0c6e6bedb6af77c97b57e08a213 management_guidance FY2025-Q4 https://www.carnivalcorp.com/wp-content/uploads/2025/03/2025-4Q-Earnings-Release-Final-Draft_MA_Final.pdf
+CCL_2025_Q4_earnings_presentation_forecast.pdf ef538837b00c4561a8889fed8e0ff41f54fef6ea278e67e88889bbe3788426aa management_forecast FY2025-Q4 https://www.carnivalcorp.com/wp-content/uploads/2025/03/Fourth-Quarter-2025-Earnings-Presentation.pdf
+
+# --- FY2024: comparative periods plus executed loan documentation ---------
+CCL_2024_annual_report.pdf d743e57e74e6043a7c1c3b01d1bc5f97b134ea36ec17b9933cabaaf577d7b35e annual_report FY2024 https://www.carnivalcorp.com/wp-content/uploads/2024/08/Carnival-Corporation-plc-2024-Annual-Report.pdf
+CCL_2024_form_10K.pdf e15747a877c8bd84a5478855ad1da956d8488119a99abc6dd913fa29950e3cbf form_10k FY2024 https://www.carnivalcorp.com/wp-content/uploads/2024/08/2024-Form-10-K_MA_Final.pdf
+CCL_2024_Q1_10Q.pdf 7ed70859fb038d5b1b21b24872b47f987611d6dd8bfac71c4d0ed44fc234a31e quarterly_report FY2024-Q1 https://www.carnivalcorp.com/wp-content/uploads/2024/08/0000815097-24-000035-2.pdf
+CCL_2024_Q1_earnings_guidance.pdf 03c702d5e0baabd32e907b2c3074b9f6456cdfd31043eafe436b3a0fc8972698 management_guidance FY2024-Q1 https://www.carnivalcorp.com/wp-content/uploads/2024/08/2024-1Q-Earnings-Release-8-K-Final-Draft_MA_Final.pdf
+CCL_2024_Q2_10Q_term_loan_agreements.pdf cfa615d35c661d5e80787fbab9d6b03f84fd72a40a637cd0ba80ff8c511eae8c quarterly_legal FY2024-Q2 https://www.carnivalcorporation.com/wp-content/uploads/2024/08/0000815097-24-000057.pdf
+CCL_2024_Q2_earnings_guidance.pdf 71f5fbf3984dc205b7856b2352ebcd892cd2a5562725893dedae4e1fab1b3919 management_guidance FY2024-Q2 https://www.carnivalcorp.com/wp-content/uploads/2024/08/2024-2Q-Earnings-Release-8-K_MA_Final.pdf
+CCL_2024_Q3_10Q.pdf 00c52081038ccab1f664aeaf9c751af0ff1ca279b143636391f0880db4609b95 quarterly_report FY2024-Q3 https://www.carnivalcorp.com/wp-content/uploads/2024/08/2024-3Q-10-Q_MA_Final.pdf
+CCL_2024_Q3_earnings_guidance.pdf 39435afb7977881e2da531b35cb0a8f38717eb3ae14c25150f686c97ca86890b management_guidance FY2024-Q3 https://www.carnivalcorp.com/wp-content/uploads/2024/08/2024-3Q-Earnings-Release-8-K-Final-Draft_MA_Final.pdf
+CCL_2024_Q4_earnings_guidance.pdf a77f39f1899d3c3e3a8bde69297028da4a312c5f6927b20a532297e4a80e47f8 management_guidance FY2024-Q4 https://www.carnivalcorp.com/wp-content/uploads/2024/08/2024-4Q-Earnings-Release-8-K_MA_Final.pdf
+
+# --- FY2023: older comparative periods and management strategy ------------
+CCL_2023_annual_report.pdf 98686a468ec743faab4ff1fdfa93d37978a827a5d2e4f667623662bd7bcea834 annual_report FY2023 https://www.carnivalcorp.com/wp-content/uploads/2024/08/Carnival-Corporation-plc-2023-Annual-Report-1.pdf
+CCL_2023_form_10K.pdf e8eda87fed73e5e31fa89ca21b73befec4329f66f48390e6eb6d788d12aa7ded form_10k FY2023 https://www.carnivalcorp.com/wp-content/uploads/2024/08/2023-Form-10-K-Final-MA_Final-3.pdf
+CCL_2023_investor_day_forecast.pdf a2498633cda45fe99de5dd7ac13fb12cdbb63b684da0991c54ffa11e0c8f4641 management_forecast FY2023-Q4 https://www.carnivalcorp.com/wp-content/uploads/2024/08/Investors-Day-Presentation-June-27-2023.pdf
+CCL_2023_Q1_10Q.pdf 80ae7f9b4a43eed41be5ff349057f3cf0dbb4eeea0fba4fa76bf351cd229c6db quarterly_report FY2023-Q1 https://www.carnivalcorporation.com/wp-content/uploads/2024/08/1Q-2023-10-Q.pdf
+CCL_2023_Q1_business_update_guidance.pdf b754fbfdba908de0c424c197920bf37d96907f7b2015ea67fff566cbfa42948f management_guidance FY2023-Q1 https://www.carnivalcorp.com/wp-content/uploads/2024/08/1Q-2023-Business-Update.pdf
+CCL_2023_Q2_10Q.pdf ee8ffa50b6540dad589f77f80cfc8f022914ea1e437a04742db338d47d03cf43 quarterly_report FY2023-Q2 https://www.carnivalcorp.com/wp-content/uploads/2024/08/2023-2Q-10-Q_MA_Final-1.pdf
+CCL_2023_Q2_earnings_guidance.pdf b11f7a33261273aa0a5ee4ef71ba2b07003177b4ec5661b5fcb5681f22ea8bc5 management_guidance FY2023-Q2 https://www.carnivalcorp.com/wp-content/uploads/2024/08/2023-2Q-Earnings-Release-8-K.pdf
+CCL_2023_Q3_10Q.pdf 2a5374b744994a5ff896a451b440db59df7096034ba439c8696f7a0fd950a9d6 quarterly_report FY2023-Q3 https://www.carnivalcorp.com/wp-content/uploads/2024/08/2023-3Q-10-Q_MA_Final-1.pdf
+CCL_2023_Q3_earnings_guidance.pdf da56f324e8d633a1536e4a63a077f297bdcaa346c78d0bc409b010a19e07c7db management_guidance FY2023-Q3 https://www.carnivalcorp.com/wp-content/uploads/2024/08/2023-3Q-Earnings-Release-8-K-Final-Draft_MA_Final.pdf
+CCL_2023_Q4_earnings_guidance.pdf e0f8a235dd982e450c310250369278c0e0d88a4a3578efb8ea91c4016516d981 management_guidance FY2023-Q4 https://www.carnivalcorp.com/wp-content/uploads/2024/08/2023-4Q-Earnings-Release-8-K-Final.pdf

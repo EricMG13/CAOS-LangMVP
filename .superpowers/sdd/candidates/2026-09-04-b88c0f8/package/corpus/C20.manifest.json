@@ -1,0 +1,53 @@
+{
+  "schema_version": "caos.corpus-pack.v1",
+  "pack_id": "C20",
+  "version": "1.0.0",
+  "title": "Real-issuer Relative Value pack and normalized loan universe",
+  "purpose": "C20: the Carnival pack plus one licensed, time-aligned loan-universe / market-marks workbook in the CP-3 template. The workbook is licensed third-party data: no byte enters git; it is supplied under $CAOS_CORPUS_EXTERNAL_DIR/C20/ and digest-pinned here by its owner.",
+  "kind": "positive",
+  "stage": "run",
+  "issuer": "Carnival Corporation & plc",
+  "licence_class": "licensed-third-party",
+  "provenance": "Issuer documents borrowed from C01; market marks from the licensed data vendor selected by the decision owner",
+  "bytes": {
+    "source": "external",
+    "location": "$CAOS_CORPUS_EXTERNAL_DIR/C20",
+    "owner": "decision owner (market-data licence holder)",
+    "artifact": "one CP-3-template XLSX of loan marks dated within 30 days of the FY2025 balance-sheet date, licence terms permitting test use"
+  },
+  "documents": [
+    {
+      "filename": "CCL_loan_universe_marks.xlsx",
+      "sha256": null,
+      "media_type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      "document_type": "market_marks",
+      "period": "FY2025",
+      "supersession": "current",
+      "provenance": "licensed data vendor (to be named by the licence holder)",
+      "disposition": "used",
+      "analytical_role": "relevant",
+      "reason": "time-aligned loan universe in the CP-3 template; the Relative Value model effect binds it"
+    }
+  ],
+  "documents_from": "C01",
+  "applies_to": [
+    {
+      "pathway": "RELATIVE_VALUE",
+      "depth": "screen",
+      "outcome": "succeeded",
+      "proves_pathway": true
+    },
+    {
+      "pathway": "RELATIVE_VALUE",
+      "depth": "full",
+      "outcome": "succeeded",
+      "proves_pathway": true
+    }
+  ],
+  "answer_key": {
+    "file": "answer_key.json",
+    "version": "1.0.0",
+    "sha256": null,
+    "approvals": []
+  }
+}

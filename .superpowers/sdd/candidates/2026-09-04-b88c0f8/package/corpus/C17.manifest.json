@@ -1,0 +1,41 @@
+{
+  "schema_version": "caos.corpus-pack.v1",
+  "pack_id": "C17",
+  "version": "1.0.0",
+  "title": "Real-issuer Full Credit pack with an independently authored benchmark conclusion",
+  "purpose": "C17: the Carnival pack scored against a Full Credit answer key; the independently authored benchmark conclusion is an analyst input (BLOCKED EXTERNAL) and is compared once supplied.",
+  "kind": "positive",
+  "stage": "run",
+  "issuer": "Carnival Corporation & plc",
+  "licence_class": "issuer-public",
+  "provenance": "Documents borrowed from C01 (sources.txt); benchmark conclusion pending an independent analyst",
+  "bytes": {
+    "source": "fetch",
+    "location": "caos/tests/corpus/documents",
+    "owner": null,
+    "artifact": null
+  },
+  "documents": [],
+  "documents_from": "C01",
+  "applies_to": [
+    {
+      "pathway": "FULL_CREDIT",
+      "depth": "full",
+      "outcome": "succeeded",
+      "proves_pathway": true
+    }
+  ],
+  "answer_key": {
+    "file": "answer_key.json",
+    "version": "1.0.0",
+    "sha256": "85665d3e507dcacc24019f8f3663e632f258e4ddfefe4bcbbd3b8dc11086b416",
+    "approvals": [
+      {
+        "scope": "host_control",
+        "reviewer": "Claude Fable 5.1 (ER-G6 implementer)",
+        "approved_at": "2026-09-03",
+        "note": "host-control attestation of the draft key: orchestration proof only, never analysis"
+      }
+    ]
+  }
+}
