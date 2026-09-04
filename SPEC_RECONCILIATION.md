@@ -850,7 +850,7 @@ signed.** No live matrix cell (the ER-L3 log has no tick; the credential and
 the analyst-approved keys are external); the post-soak comparison, PERF-014
 leak check and post-soak journeys ER-L4 owes; the six golden journeys through
 freeze, filing, receipt and offline verification on the frozen stack (the
-ER-G10 session had no Docker daemon; the driver `package/golden_journeys.py`
+ER-G10 session had no Docker daemon; the driver `qa/golden_journeys.py`
 was rehearsed against a dev server at the commit, where the two model-optional
 pathways completed through `verify_package.py` and the four model-required
 pathways stopped at typed refusals because the served `host_control` binding

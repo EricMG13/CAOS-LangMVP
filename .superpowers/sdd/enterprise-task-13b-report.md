@@ -67,7 +67,7 @@ reviewer records, the ledgers at the package commit and the scripts:
 | `maps/` | the five family maps the check table was built from |
 | `assemble_package.py` | builds all of the above from retained inputs; refuses a `junit:` citation that is not `passed` in the candidate's own junit, an `artifact:` path that does not exist, a PASS without evidence, an OPEN/FAIL/BLOCKED EXTERNAL without an owner |
 | `verify_evidence_package.py` | standard library only; on a copy: every object digest, missing and extra objects, the package digest, every junit citation in `checks.csv`, every gate and blocker artifact, the signable flag |
-| `golden_journeys.py` | the six-pathway HTTP driver (below) |
+| `qa/golden_journeys.py` (repository path, pinned by sha256 under `identity.journey_driver`) | the six-pathway HTTP driver (below); it lives in `qa/` beside `probe.py` and `seed.py` because it is a client of the development stack and sends the dev-trusted role header (see the CI follow-up at the end) |
 
 ### The check map
 
@@ -161,7 +161,7 @@ Research not live-qualified), B13 (benchmark not pinned, REV-006 outstanding).
 image ids that live only on the machine that built them; this session has
 neither. What was done instead, so the run on the stack is one command:
 
-`package/golden_journeys.py` drives, per pathway and over HTTP only: documents
+`qa/golden_journeys.py` drives, per pathway and over HTTP only: documents
 in through `POST /api/intake` → the disposition review from
 `GET /api/cases/{id}/intake` → execution (the Deep Research plan gate approved
 on its exact proposed hash) → `POST /api/runs/{id}/accept` → model readiness,
@@ -247,7 +247,7 @@ ENVIRONMENT=development CAOS_PROVIDER=host_control AGENT_EXECUTION_ENABLED=true 
   CAOS_DATA_DIR=<scratch>/rehearsal/data CAOS_STORAGE_DIR=<scratch>/rehearsal/vault <venv>/bin/python worker.py
 
 # the six journeys (on the frozen stack: --base-url http://127.0.0.1:18300 and the stack's DATABASE_URL)
-python .superpowers/sdd/candidates/2026-09-04-b88c0f8/package/golden_journeys.py \
+python .superpowers/sdd/candidates/2026-09-04-b88c0f8/qa/golden_journeys.py \
   --base-url http://127.0.0.1:18400 --server-path caos/server \
   --database-url sqlite:///<scratch>/rehearsal/data/caos.db --out <scratch>/rehearsal/journeys
 # → FULL_CREDIT/EARNINGS_UPDATE/COVENANT_REFINANCING/DISTRESSED_RESTRUCTURING: typed refusals at the model step
@@ -270,7 +270,7 @@ python3 -I <scratch>/verify-copy/package/verify_evidence_package.py <scratch>/ve
 ## The digest
 
 ```
-c705d5a4cb69cd260d91787f3a34b62ad9f1655b6416167f8b2a151f12b67827  package/PACKAGE_MANIFEST.json+objects
+4a0ff4679b325ad902141e354d13ff58620f6f4fee1b9be3113daa9f496b113b  package/PACKAGE_MANIFEST.json+objects
 ```
 
 163 objects; sha256 over `PACKAGE_MANIFEST.json` followed by `path\0sha256\n`
@@ -286,7 +286,7 @@ owner signs — and the owner should not sign this package: it says so itself.
 | --- | --- | --- |
 | Live qualification matrix (G3, MOD live halves, EVD/ANA/UX PROVED HOST CONTROL rows, ETR-B05/B11) | enterprise test owner (credential), model risk (qualification record), corpus owner and licence holder (C20/C21/C22), independent analysts (answer-key approvals) | ER-L3: three retained passes per required cell bound to `b88c0f8` and the app image id, copied under `gates/qualification/evidence/live/`; then `verdict --binding live` |
 | Post-soak comparison, PERF-014 leak check, post-soak three-engine journeys (PERF-014/015) | ER-L4 operator on the stack machine | log the clamav restart as an operator action; `qa/capacity.py baseline` + `compare` against `soak/baseline-pre.json`; `authority_snapshot.sh` diffed against `soak/pre-soak-authority.json`; three engines against the post-soak stack |
-| Six golden journeys on the frozen stack (G7, G8, PUB-030, AUD-017, PERF-013) | decision owner on the machine holding `sha256:10ec8aa0…`/`sha256:526c2d5f…` | `package/golden_journeys.py --base-url http://127.0.0.1:18300 --database-url <stack DATABASE_URL> --server-path caos/server --out <candidate>/package/journeys`; expect the typed model refusals until G3's binding is served; retain the output under the candidate |
+| Six golden journeys on the frozen stack (G7, G8, PUB-030, AUD-017, PERF-013) | decision owner on the machine holding `sha256:10ec8aa0…`/`sha256:526c2d5f…` | `qa/golden_journeys.py --base-url http://127.0.0.1:18300 --database-url <stack DATABASE_URL> --server-path caos/server --out <candidate>/package/journeys`; expect the typed model refusals until G3's binding is served; retain the output under the candidate |
 | REV-001–REV-015 | the reviewer roster (external) | returned records with identity, date, result, findings and sign-off on this candidate's digests |
 | PERF-009 FAIL; PERF-006 and D-019 (profile vs ceiling) | enterprise test owner / decision owner (REV-015) | a decision on the declared profile, the hardware or the ceiling; a code change is a new candidate |
 | Environment: clamd memory and restart policy (D-017); `.dockerignore` (D-020); first-standing bootstrap (D-021) | operations (REV-014) / decision owner | Compose or build-context changes are a new candidate |
@@ -339,3 +339,24 @@ owner signs — and the owner should not sign this package: it says so itself.
    this report comes from a retained file or a command run in this session;
    the soak figures are quoted from `profile.json` via the ER-G9 record and
    the same file is in the package.
+
+## CI follow-up on the pull request (2026-09-04): the recorded diff review
+
+The first push (`4b36ee8`) failed `Recorded diff review — read-only`
+(`security-review.yml` → `caos/scripts/recorded_review.py`): four `BLOCK
+client-role-trusted` findings, all in the journey driver, because it sends
+the dev-trusted `x-caos-role` header as a client and it sat under
+`.superpowers/…/package/`, a path the rule treats as code outside the client
+harness (`TEST_PATHS` = `caos/tests/`, `caos/frontend/src/`, `qa/`,
+`caos/frontend/scripts/`). The finding is correct on its own terms — the
+rule exists so no server code ever reads that header outside `identity.py` —
+and the right fix is not to widen the scanner or hide the string but to home
+the driver where its kind lives: `qa/golden_journeys.py`, beside `qa/probe.py`
+and `qa/seed.py`, which send the same header. The quality ledger maps `qa/`
+to "the production-configured QA harness for every feature", so no ledger row
+changes. The package no longer contains the file; `PACKAGE_MANIFEST.json`
+pins it by sha256 under `identity.journey_driver`, so the package still binds
+the exact driver. The recorded review was rerun locally on the new diff
+before pushing (result quoted in the commit), and the package was
+reassembled and re-verified, which moved the digest from `c705d5a4…` (the first push) to the value in
+"The digest" above.

@@ -1,5 +1,5 @@
 {
- "assembled_at": "2026-09-04T15:28:28.375910+00:00",
+ "assembled_at": "2026-09-04T15:35:54.549691+00:00",
  "assembled_by": "Claude Fable 5.1 (ER-G10, Task 13 second half)",
  "assembly_defects": [],
  "blockers": [
@@ -672,10 +672,9 @@
   },
   {
    "artifacts": [
-    "gates/pytest-backend-junit.xml",
-    "package/golden_journeys.py"
+    "gates/pytest-backend-junit.xml"
    ],
-   "closes": "package/golden_journeys.py run against the frozen stack with a binding that yields a READY Full Credit model; artifacts retained under this candidate",
+   "closes": "qa/golden_journeys.py (sha256 pinned in identity.journey_driver) run against the frozen stack with a binding that yields a READY Full Credit model; artifacts retained under this candidate",
    "gate": "G7",
    "name": "Publishing",
    "result": "opinion, freeze, filing, receipt, export integrity and goldens proven in the retained suite; the six golden journeys through freeze, filing, receipt and offline verification were NOT run on the frozen stack (no Docker daemon in the ER-G10 session; the served binding yields no READY model, so the four model-required pathways stop at a typed MODEL_REQUIRED/authority refusal)",
@@ -731,6 +730,10 @@
    "app": "sha256:10ec8aa0798d06c9c9fcbc1d6db95303a02430385cbca0404a3fe422139f532d",
    "worker": "sha256:526c2d5f3c7a4fd6c09ed4110d3212980b7b752cb721277e7e00468129a9468a"
   },
+  "journey_driver": {
+   "path": "qa/golden_journeys.py",
+   "sha256": "654549c80692c37b64c1db34875a89281872e613ea179498ab5308d92b5f7cc7"
+  },
   "methodology_build_id": "237bf4bc56b616b1c679a32c3733a2d9baf580b113758329320478e0226bae9d",
   "package_commit": null,
   "tag": "enterprise-candidate-2026-09-04"
@@ -754,7 +757,7 @@
   {
    "item": "Six golden journeys through freeze, filing, receipt and offline verification on the frozen stack",
    "owner": "decision owner on the machine holding the images",
-   "status": "MISSING on the image; driver rehearsed on a dev server at the commit (report)"
+   "status": "MISSING on the image; the driver qa/golden_journeys.py was rehearsed on a dev server at the commit (report)"
   },
   {
    "item": "Returned reviewer records REV-001\u2013REV-015",
@@ -782,7 +785,7 @@
   "missing artifact: Statement, branch and critical-path coverage reports \u2014 MISSING",
   "missing artifact: Live model-matrix results (one binding \u00d7 six pathways \u00d7 two depths \u00d7 required packs \u00d7 three cold repetitions) \u2014 MISSING \u2014 ER-L3 never ran a cell",
   "missing artifact: Post-soak comparison, PERF-014 leak check, post-soak three-engine journeys \u2014 MISSING \u2014 owed by ER-L4",
-  "missing artifact: Six golden journeys through freeze, filing, receipt and offline verification on the frozen stack \u2014 MISSING on the image; driver rehearsed on a dev server at the commit (report)",
+  "missing artifact: Six golden journeys through freeze, filing, receipt and offline verification on the frozen stack \u2014 MISSING on the image; the driver qa/golden_journeys.py was rehearsed on a dev server at the commit (report)",
   "missing artifact: Returned reviewer records REV-001\u2013REV-015 \u2014 MISSING \u2014 all fifteen OUTSTANDING",
   "missing artifact: Pinned deliverable benchmark, visual goldens per pathway/format, semantic-parity reports, analyst scorecards, adjudications, external-stakeholder review \u2014 MISSING \u2014 benchmark set is an external input; cross-format goldens exist in-suite only",
   "missing artifact: Penetration test report, egress allowlist proof, provider account policy \u2014 MISSING \u2014 BLOCKED EXTERNAL",
@@ -790,8 +793,8 @@
  ],
  "objects": {
   "EVIDENCE.md": {
-   "bytes": 5289,
-   "sha256": "319e8c2c8e2bf46813bf411a01612c9678c14d5ce89b63bb8dbe2e2989621e86"
+   "bytes": 5332,
+   "sha256": "b9101738f3482ada41b21ba15eb00af5c3c738168aff700a639bc26d2634fb46"
   },
   "MANIFEST.json": {
    "bytes": 21280,
@@ -1118,8 +1121,8 @@
    "sha256": "3941b1348360e8f1d5d36adf9e84841da97e5bb77bbb9874bdf1c66345e59e9a"
   },
   "package/assemble_package.py": {
-   "bytes": 43877,
-   "sha256": "eaf002b38973d9aa8d7267347ca28019ce60f1a23d0e0e4d6e2563713902deae"
+   "bytes": 44189,
+   "sha256": "24abf2bde679df7216feb174cd96adf3dbce78fd361ef407555f71b94b803f47"
   },
   "package/checks.csv": {
    "bytes": 299539,
@@ -1217,10 +1220,6 @@
    "bytes": 7296,
    "sha256": "c0f97f8e26ac7c7bc63df86612d2dc3037e3dfc455db614aed3a1e4246517e55"
   },
-  "package/golden_journeys.py": {
-   "bytes": 27802,
-   "sha256": "55439ba10779fcd6b6c0eea005191254968d280d9ae0fbf17433d696d809a010"
-  },
   "package/inventory/openapi.json": {
    "bytes": 188133,
    "sha256": "58516663c266d8bf4c3d61cac83a740f5130ecd0b1252c2fe195ecdfa6e6165b"
@@ -1238,8 +1237,8 @@
    "sha256": "4a15f5f69b86b39f882e0a55165e469db8349f17fe58e4661039fd49a610a61d"
   },
   "package/ledgers/QUALITY_DEFECTS.csv": {
-   "bytes": 28157,
-   "sha256": "c7506f2cf4ee7022dd7e3c4fce5747b5009b8442d0faa6fa458093f2e888cc02"
+   "bytes": 28147,
+   "sha256": "24b40672589a290e91c311d63740b8b354f821223a04df2ba44649615ff4bbe3"
   },
   "package/ledgers/QUALITY_LEDGER.csv": {
    "bytes": 119482,
@@ -1254,8 +1253,8 @@
    "sha256": "c159df84ce57d74bf716c8a4500b26119953a13ba16abf1d43e06e9acdfd23d7"
   },
   "package/ledgers/SPEC_RECONCILIATION.md": {
-   "bytes": 70792,
-   "sha256": "7ba6eaa20147c966f9c2e182ba3102cd3767e6610d5f4913754bc5d5e5577690"
+   "bytes": 70787,
+   "sha256": "6645982d62815f8b3b1d83b395d1913ba0ee9ea94750761dc88cd693d3b2362d"
   },
   "package/loops/focus-race-findings.md": {
    "bytes": 5136,
@@ -1483,7 +1482,7 @@
   {
    "approval": "test owner (IAM-008 authority rule unchanged)",
    "limitation": "No HTTP route grants the first case membership; the distinct approver is provisioned by an operator action against the store (qa/seed.py, golden_journeys.py operator_bootstrap)",
-   "recorded_in": "package/golden_journeys.py; qa/INVENTORY.md"
+   "recorded_in": "qa/golden_journeys.py; qa/INVENTORY.md"
   }
  ]
 }

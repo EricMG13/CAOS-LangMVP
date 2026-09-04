@@ -20,6 +20,9 @@ the repository ledgers at the package commit; writes:
                                   missing artifacts, and every object's sha256
   package/PACKAGE.sha256          the package digest (see package_digest below)
 
+The six-pathway journey driver is qa/golden_journeys.py (client harness code,
+like qa/probe.py); the manifest pins it by sha256 under identity.journey_driver.
+
 Nothing here infers a result: a row without a retained artifact is OPEN.
 Standard library only, so the same interpreter that verifies can assemble.
 """
@@ -317,8 +320,8 @@ def gate_table(summary: Counter, open_checks: list[str]) -> list[dict[str, objec
          "artifacts": [g + "sim-evidence.json", g + "sim-evidence-summary.txt", g + "stack/stack-gates.txt", g + "stack/backup-manifest.txt"], "closes": "—"},
         {"gate": "G7", "name": "Publishing", "state": "OPEN (contract half green)",
          "result": "opinion, freeze, filing, receipt, export integrity and goldens proven in the retained suite; the six golden journeys through freeze, filing, receipt and offline verification were NOT run on the frozen stack (no Docker daemon in the ER-G10 session; the served binding yields no READY model, so the four model-required pathways stop at a typed MODEL_REQUIRED/authority refusal)",
-         "artifacts": [g + "pytest-backend-junit.xml", "package/golden_journeys.py"],
-         "closes": "package/golden_journeys.py run against the frozen stack with a binding that yields a READY Full Credit model; artifacts retained under this candidate"},
+         "artifacts": [g + "pytest-backend-junit.xml"],
+         "closes": "qa/golden_journeys.py (sha256 pinned in identity.journey_driver) run against the frozen stack with a binding that yields a READY Full Credit model; artifacts retained under this candidate"},
         {"gate": "G8", "name": "Audit reconstruction", "state": "OPEN (verifier proven in-suite)",
          "result": "verify_package.py convicts six tamper classes in-suite; no on-image audit package retained; REV-012 outstanding",
          "artifacts": [g + "pytest-backend-junit.xml", "reviews/REV-012.md"], "closes": "REV-012 on an audit package produced by the golden journeys on the frozen stack"},
@@ -362,14 +365,14 @@ TEST_ONLY_LIMITATIONS = [
     {"limitation": "The soak's cycle is upload/run/accept/stream/preview; model, draft, freeze, approve, receipt, download and audit-export cycles were not driven (no READY model under host control)", "recorded_in": "soak/profile/profile.json", "approval": "not yet approved — PERF-013 OPEN"},
     {"limitation": "No .dockerignore: images must be built before a venv exists in the clone (candidate 1's worker image swept one in; candidate 2's images verified clean)", "recorded_in": "enterprise-task-13-report.md", "approval": "process control until a later candidate lands the fix"},
     {"limitation": "clamav container has no memory limit and Compose does not restart it on unhealthy (OOM-killed at 03:31Z during the soak; uploads fail closed afterwards)", "recorded_in": "soak-watch.md; enterprise-task-13-report.md", "approval": "not approved — REV-014 environment finding"},
-    {"limitation": "No HTTP route grants the first case membership; the distinct approver is provisioned by an operator action against the store (qa/seed.py, golden_journeys.py operator_bootstrap)", "recorded_in": "package/golden_journeys.py; qa/INVENTORY.md", "approval": "test owner (IAM-008 authority rule unchanged)"},
+    {"limitation": "No HTTP route grants the first case membership; the distinct approver is provisioned by an operator action against the store (qa/seed.py, golden_journeys.py operator_bootstrap)", "recorded_in": "qa/golden_journeys.py; qa/INVENTORY.md", "approval": "test owner (IAM-008 authority rule unchanged)"},
 ]
 
 MISSING_ARTIFACTS = [
     {"item": "Statement, branch and critical-path coverage reports", "status": "MISSING", "owner": "decision owner (a coverage run is a gate addition → new candidate or a retained run against this tag)"},
     {"item": "Live model-matrix results (one binding × six pathways × two depths × required packs × three cold repetitions)", "status": "MISSING — ER-L3 never ran a cell", "owner": "enterprise test owner (credential) / model risk"},
     {"item": "Post-soak comparison, PERF-014 leak check, post-soak three-engine journeys", "status": "MISSING — owed by ER-L4", "owner": "ER-L4 operator (log the clamav restart first)"},
-    {"item": "Six golden journeys through freeze, filing, receipt and offline verification on the frozen stack", "status": "MISSING on the image; driver rehearsed on a dev server at the commit (report)", "owner": "decision owner on the machine holding the images"},
+    {"item": "Six golden journeys through freeze, filing, receipt and offline verification on the frozen stack", "status": "MISSING on the image; the driver qa/golden_journeys.py was rehearsed on a dev server at the commit (report)", "owner": "decision owner on the machine holding the images"},
     {"item": "Returned reviewer records REV-001–REV-015", "status": "MISSING — all fifteen OUTSTANDING", "owner": "named reviewers per role (roster external)"},
     {"item": "Pinned deliverable benchmark, visual goldens per pathway/format, semantic-parity reports, analyst scorecards, adjudications, external-stakeholder review", "status": "MISSING — benchmark set is an external input; cross-format goldens exist in-suite only", "owner": "credit analysts / design owner"},
     {"item": "Penetration test report, egress allowlist proof, provider account policy", "status": "MISSING — BLOCKED EXTERNAL", "owner": "security / network owner / provider account owner"},
@@ -479,6 +482,7 @@ def main(argv: list[str]) -> int:
             "candidate_manifest_sha256": (CANDIDATE / "MANIFEST.sha256").read_text(encoding="utf-8").split()[0],
             "binding": candidate_manifest["binding"],
             "package_commit": argv[1] if len(argv) > 1 else None,
+            "journey_driver": {"path": "qa/golden_journeys.py", "sha256": sha256(REPO / "qa" / "golden_journeys.py")},
         },
         "gates": gates,
         "checks": {"total": len(out_rows), "summary": dict(summary), "by_family": {k: dict(v) for k, v in by_family.items()},

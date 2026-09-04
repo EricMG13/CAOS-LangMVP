@@ -22,10 +22,16 @@ distinct approver is provisioned by an operator action against the store with
 ``--database-url`` (recorded in the journey record as ``operator_bootstrap``)
 or is assumed to exist when ``--approver-preprovisioned`` is given.
 
+It lives in qa/ beside probe.py and seed.py because, like them, it is a client
+of the development stack that sends the dev-trusted role header; the recorded
+diff review (caos/scripts/recorded_review.py) treats qa/ as client harness code.
+The candidate evidence package pins this file by sha256
+(PACKAGE_MANIFEST.json::identity.journey_driver).
+
 Usage:
-  python golden_journeys.py --base-url http://127.0.0.1:18300 \
+  python qa/golden_journeys.py --base-url http://127.0.0.1:18300 \
       --server-path caos/server --database-url postgresql+psycopg://… \
-      --out journeys/ [--pathways FULL_CREDIT,…]
+      --out <candidate>/package/journeys/ [--pathways FULL_CREDIT,…]
 """
 from __future__ import annotations
 
