@@ -1,0 +1,491 @@
+{
+  "binding": {
+    "live": {
+      "kind": "live (Anthropic, qualified)",
+      "needed": "ANTHROPIC_API_KEY in the protected shell, CAOS_PROVIDER_QUALIFICATION_PATH + DIGEST record, then ER-L3 runs qualify.py cell --binding live per required cell (three cold repetitions)",
+      "owner": "enterprise test owner (credential) and model risk / product (provider, model id, parameters, contractual settings, qualification record)",
+      "status": "BLOCKED EXTERNAL"
+    },
+    "orchestration": {
+      "adapter_version": "caos.answer-keyed.host-control.v1",
+      "identity_digest": "4e3a6e8fbd028475ac4acb81466ecfad1d867697b7bd74d6c8e888e2fd7b3137",
+      "kind": "host_control",
+      "model": "deterministic",
+      "provider_name": "host_control",
+      "qualification_record": "gates/qualification/evidence (qualify.py matrix --binding host_control); verdict is ORCHESTRATION_PROOF by construction and never QUALIFIED",
+      "qualification_status": "host_control"
+    }
+  },
+  "candidate_id": "2026-09-03-c4f0270",
+  "claim": "enterprise-testing candidate for one controlled environment; never a production-readiness claim",
+  "corpus": {
+    "corpus_digest": "460e3ad6a64c8f78632862921f4d181f0fcb866160a6aa2f44b8c476d70ae7e3",
+    "documents_present": 30,
+    "external_dir": null,
+    "packs": {
+      "C01": {
+        "answer_key_sha256": "b7bde5089164f8b5a72b61cc33886a5f42fe4fa5a51866220e60a7947c5e9694",
+        "attestation": null,
+        "document_rows": 30,
+        "documents": {
+          "digest_verified": true,
+          "resolved": 30
+        },
+        "kind": "positive",
+        "manifest_sha256": "64a92913d4ace08d0c7664d12b57f0eed8134d6bad57714eb00db3530fdbd71f",
+        "unpinned_documents": [],
+        "version": "1.0.0"
+      },
+      "C02": {
+        "answer_key_sha256": "79f8e23168891ffe29e84d255ed5fece4f2ea5ba40ddfcb14bdf3a49ec6f2093",
+        "attestation": null,
+        "document_rows": 2,
+        "documents": {
+          "digest_verified": true,
+          "resolved": 2
+        },
+        "kind": "negative",
+        "manifest_sha256": "ddb0c41be4824906beaee4798d7963bb0fe43025b2ea4601b89229aa71d0074c",
+        "unpinned_documents": [],
+        "version": "1.0.0"
+      },
+      "C03": {
+        "answer_key_sha256": "f3dbb0e147124201aa2d049b6648df18b1c9b616281f427e9188176f1f6c27ff",
+        "attestation": null,
+        "document_rows": 7,
+        "documents": {
+          "digest_verified": true,
+          "resolved": 7
+        },
+        "kind": "negative",
+        "manifest_sha256": "2504d945a3786cb5903da7493faa26da6bebef912ca0958f4b128f4c14989a76",
+        "unpinned_documents": [],
+        "version": "1.0.0"
+      },
+      "C04": {
+        "answer_key_sha256": "a12302526fbf22cb027545bb8b732cf86a60ca9ff69f68aea5e67460a242b530",
+        "attestation": null,
+        "document_rows": 7,
+        "documents": {
+          "digest_verified": true,
+          "resolved": 7
+        },
+        "kind": "negative",
+        "manifest_sha256": "94a126afd0afb10cc9a54dc9983adbc4e27992c67213a1d5ce8018a9d2fe1cc3",
+        "unpinned_documents": [],
+        "version": "1.0.0"
+      },
+      "C05": {
+        "answer_key_sha256": "29438b30f8ec7202f7e9ffda8b05409a647f51d75c7fbf9c56c0d22c44fbb62d",
+        "attestation": null,
+        "document_rows": 3,
+        "documents": {
+          "digest_verified": true,
+          "resolved": 3
+        },
+        "kind": "negative",
+        "manifest_sha256": "67e671cb88dd3179651f397074f78428c6b30f0d9ade574724dbd7c426a873f8",
+        "unpinned_documents": [],
+        "version": "1.0.0"
+      },
+      "C06": {
+        "answer_key_sha256": "c0739e2e17ca2c10c7fe8fb142722443cf1bcd311c660920183d1f9fc532af18",
+        "attestation": null,
+        "document_rows": 3,
+        "documents": {
+          "digest_verified": true,
+          "resolved": 3
+        },
+        "kind": "negative",
+        "manifest_sha256": "424afb62d2f782c0a2e718468b299b78788449d11144f6b65f3bca3467bc4da2",
+        "unpinned_documents": [],
+        "version": "1.0.0"
+      },
+      "C07": {
+        "answer_key_sha256": "1685a3b71cd5b69cbc205065b4daf0b99e7653d8d258c76a95dad748122983c5",
+        "attestation": null,
+        "document_rows": 4,
+        "documents": {
+          "digest_verified": true,
+          "resolved": 4
+        },
+        "kind": "negative",
+        "manifest_sha256": "922ab248dfc9e045fd1d858360e65f0286f799cc0db9c06a3d6bf67540fc21b5",
+        "unpinned_documents": [],
+        "version": "1.0.0"
+      },
+      "C08": {
+        "answer_key_sha256": "7f82426a5a0a29e475776033135a8a420278473e45cf8c7e853fbebc1722d6d7",
+        "attestation": null,
+        "document_rows": 8,
+        "documents": {
+          "digest_verified": true,
+          "resolved": 8
+        },
+        "kind": "negative",
+        "manifest_sha256": "e7354e67827a057c6768f472634eac49e1cbf86f385f934d7fc171189386bb2d",
+        "unpinned_documents": [],
+        "version": "1.0.0"
+      },
+      "C09": {
+        "answer_key_sha256": "9c1fe57fc68d16cd0dccdb195e02c7af82965365b61d3aef5a7cac68d65d84ae",
+        "attestation": null,
+        "document_rows": 9,
+        "documents": {
+          "digest_verified": true,
+          "resolved": 9
+        },
+        "kind": "negative",
+        "manifest_sha256": "ceefa49e4cf1b1fda85cf90db800d27ed4508160cb17f399531e0a9c7a63228d",
+        "unpinned_documents": [],
+        "version": "1.0.0"
+      },
+      "C10": {
+        "answer_key_sha256": "b6b58ff0040d8c371cdcd8c70fd88529b8d9c8ba53026a99dd293a3e2e975020",
+        "attestation": null,
+        "document_rows": 5,
+        "documents": {
+          "digest_verified": true,
+          "resolved": 5
+        },
+        "kind": "negative",
+        "manifest_sha256": "57526cf56543bea97c16846479b04583bbf74f1f10bf6f6337091833f8a7a67a",
+        "unpinned_documents": [],
+        "version": "1.0.0"
+      },
+      "C11": {
+        "answer_key_sha256": "42b41ff474ca7c52d2ca6d84dcc3eeae8079d1329e41d4f6b4178dd83eee3242",
+        "attestation": null,
+        "document_rows": 2,
+        "documents": {
+          "digest_verified": true,
+          "resolved": 2
+        },
+        "kind": "negative",
+        "manifest_sha256": "d3148ba3cc9990d3c4525e78a62a4f40c40633ba0fa44891b82fe81ef7e50455",
+        "unpinned_documents": [],
+        "version": "1.0.0"
+      },
+      "C12": {
+        "answer_key_sha256": "8575196b9f638464a82c153fe1fe3f6df4382837d4124c62092e2a1a4710d13d",
+        "attestation": null,
+        "document_rows": 12,
+        "documents": {
+          "digest_verified": true,
+          "resolved": 12
+        },
+        "kind": "negative",
+        "manifest_sha256": "f0a19e268b0dd39804ef68d22724f37f8d2eec1a756ae9478804a5bf8c37c39c",
+        "unpinned_documents": [],
+        "version": "1.0.0"
+      },
+      "C13": {
+        "answer_key_sha256": "83ede20f75e4de55b203c4fa2f35a628b952be10cfd2f87ea125e37f348d9fc5",
+        "attestation": null,
+        "document_rows": 4,
+        "documents": {
+          "digest_verified": true,
+          "resolved": 4
+        },
+        "kind": "negative",
+        "manifest_sha256": "5a9a1adde9c6f24b65d29d13a38cf489ad4b133b1c9b99bdc332d0502cb2a45e",
+        "unpinned_documents": [],
+        "version": "1.0.0"
+      },
+      "C14": {
+        "answer_key_sha256": "6da2991f6be0699aac5012d17f1fa9abf4177acacba0785ad07dbdb3d79454b2",
+        "attestation": null,
+        "document_rows": 4,
+        "documents": {
+          "digest_verified": true,
+          "resolved": 4
+        },
+        "kind": "negative",
+        "manifest_sha256": "190cd5e493a642368ecd4ca87ae8da72e09fa8ca9d0f5f9465b17b606a4fc12e",
+        "unpinned_documents": [],
+        "version": "1.0.0"
+      },
+      "C15": {
+        "answer_key_sha256": "ed4f6ed43382dae0f83e5ed1e85aec02b6fa18e5625e449b5f22b87c52c68f3c",
+        "attestation": null,
+        "document_rows": 7,
+        "documents": {
+          "digest_verified": true,
+          "resolved": 7
+        },
+        "kind": "negative",
+        "manifest_sha256": "7f3a0738332c333a4bd017eccc8a0854f3c9b354739c1f4b0cd2959fa8dfaa1e",
+        "unpinned_documents": [],
+        "version": "1.0.0"
+      },
+      "C16": {
+        "answer_key_sha256": "ae02bc976e3c644c8d3d04ccea762dab54d9186381f5c418a3ceca521e58fb7e",
+        "attestation": null,
+        "document_rows": 7,
+        "documents": {
+          "digest_verified": true,
+          "resolved": 7
+        },
+        "kind": "negative",
+        "manifest_sha256": "cd1ff2166c8931721e8b1f40e19de86f26eb0c798e60d4f2a96b8fd0cbd27151",
+        "unpinned_documents": [],
+        "version": "1.0.0"
+      },
+      "C17": {
+        "answer_key_sha256": "85665d3e507dcacc24019f8f3663e632f258e4ddfefe4bcbbd3b8dc11086b416",
+        "attestation": null,
+        "document_rows": 30,
+        "documents": {
+          "digest_verified": true,
+          "resolved": 30
+        },
+        "kind": "positive",
+        "manifest_sha256": "963c4048dc7ae967d81ed19f185b05eadf698b12a0225b51b8d521e2ff690cb4",
+        "unpinned_documents": [],
+        "version": "1.0.0"
+      },
+      "C18": {
+        "answer_key_sha256": "08e130f3a952102d1c4b4c40eae44b2f1364cf79489a7bb5b67c9dc35ba0599a",
+        "attestation": null,
+        "document_rows": 30,
+        "documents": {
+          "digest_verified": true,
+          "resolved": 30
+        },
+        "kind": "positive",
+        "manifest_sha256": "2b366726431695499a20182cc5a0ed881ba54c4379e1a0030ea2f17d713ebde4",
+        "unpinned_documents": [],
+        "version": "1.0.0"
+      },
+      "C19": {
+        "answer_key_sha256": "9ccaff33b9703ea7e631227d45bf44458f3ee1fe67a907435de5ca3a0666e321",
+        "attestation": null,
+        "document_rows": 30,
+        "documents": {
+          "digest_verified": true,
+          "resolved": 30
+        },
+        "kind": "positive",
+        "manifest_sha256": "9ee28b117ae0b1442139c4dc97a505c48ab69313911ced5fd793337657b5fe95",
+        "unpinned_documents": [],
+        "version": "1.0.0"
+      },
+      "C20": {
+        "answer_key_sha256": "3bec96b2671461e633dfe7e1163ea300d90ea576b490f0faa28ec67fd2bedfc5",
+        "attestation": null,
+        "document_rows": 31,
+        "documents": {
+          "blocked": "CORPUS_BYTES_UNACQUIRED: C20/CCL_loan_universe_marks.xlsx: no pinned digest \u2014 BLOCKED EXTERNAL, owner decision owner (market-data licence holder), needs one CP-3-template XLSX of loan marks dated within 30 days of the FY2025 balance-sheet date, licence terms permitting test use",
+          "digest_verified": false,
+          "resolved": 0
+        },
+        "kind": "positive",
+        "manifest_sha256": "dd350d7f92acf0099e4abff8a6587202b6c840aaa2b4f8dd1be3c3fad138f49c",
+        "unpinned_documents": [
+          "CCL_loan_universe_marks.xlsx"
+        ],
+        "version": "1.0.0"
+      },
+      "C21": {
+        "answer_key_sha256": "9d0b3dbd4def2bc5b56abcea84414f64d358463b6cd250f38d75c8d22c79c3e8",
+        "attestation": null,
+        "document_rows": 24,
+        "documents": {
+          "blocked": "CORPUS_BYTES_UNACQUIRED: C21/LUMN_2021_form_10K.pdf: no pinned digest \u2014 BLOCKED EXTERNAL, owner corpus owner (decision owner), needs the 24 listed issuer documents acquired from the named URLs, SHA-256 pinned in this manifest, then moved to bytes.source=fetch",
+          "digest_verified": false,
+          "resolved": 0
+        },
+        "kind": "positive",
+        "manifest_sha256": "ef78835f40eafd62434fac6ddcafa4c63b50d5936581b6968409494c0ef02cc4",
+        "unpinned_documents": [
+          "LUMN_2021_form_10K.pdf",
+          "LUMN_2022_form_10K.pdf",
+          "LUMN_2023_form_10K.pdf",
+          "LUMN_2024_form_10K.pdf",
+          "LUMN_2023_Q1_10Q.pdf",
+          "LUMN_2023_Q2_10Q.pdf",
+          "LUMN_2023_Q3_10Q.pdf",
+          "LUMN_2024_Q1_10Q.pdf",
+          "LUMN_2024_Q2_10Q.pdf",
+          "LUMN_2024_Q3_10Q.pdf",
+          "LUMN_2023_Q4_earnings_release.pdf",
+          "LUMN_2024_Q1_earnings_release.pdf",
+          "LUMN_2024_Q2_earnings_release.pdf",
+          "LUMN_2024_Q3_earnings_release.pdf",
+          "LUMN_2024_Q4_earnings_release.pdf",
+          "LUMN_2023_TSA_announcement.pdf",
+          "LUMN_2024_TSA_completion.pdf",
+          "LUMN_2024_exchange_offers.pdf",
+          "LUMN_2024_exchange_offer_results_8K.pdf",
+          "LUMN_2024_TSA_8K_credit_agreement_exhibits.pdf",
+          "LUMN_2024_Level3_superpriority_indenture_8K.pdf",
+          "LUMN_2024_Qwest_notes_indenture_8K.pdf",
+          "LUMN_2023_investor_day_presentation.pdf",
+          "LUMN_2024_Q4_guidance_presentation.pdf"
+        ],
+        "version": "1.0.0"
+      },
+      "C22": {
+        "answer_key_sha256": "1b45bc73c0d80c6c4d3178c81c123f185fc9af71b510cd6e027cf7230f52d72d",
+        "attestation": null,
+        "document_rows": 2,
+        "documents": {
+          "blocked": "CORPUS_BYTES_UNACQUIRED: C22/research-brief.json: no pinned digest \u2014 BLOCKED EXTERNAL, owner research analyst (decision owner delegate), needs research-brief.json satisfying the brief contract, the evidence documents the question needs, the expected synthesis and forbidden conclusions in the answer key, all digest-pinned",
+          "digest_verified": false,
+          "resolved": 0
+        },
+        "kind": "positive",
+        "manifest_sha256": "5b41c4be75974437c82fad51ef1ca7617bde9e8a880ca44ba5ef69db24ac24c6",
+        "unpinned_documents": [
+          "research-brief.json",
+          "evidence-set.pdf"
+        ],
+        "version": "1.0.0"
+      }
+    },
+    "sources_txt_sha256": "c0f97f8e26ac7c7bc63df86612d2dc3037e3dfc455db614aed3a1e4246517e55"
+  },
+  "dependency_locks": {
+    "caos/frontend/package-lock.json": "2fad805aaf4ffd0e70c26be7d2f077a26c502560179ab0acca6879d157eba76a",
+    "caos/frontend/package.json": "b8fca3a412d05b8638133abf3d5d0ecebbb8fa4127815174d382ee60f417b7ac",
+    "caos/server/pyproject.toml": "836fc0edd0a31ba6b2ca87b3f596fe84f2d36029122043fa7f236586f19aefb7",
+    "caos/server/requirements-dev.txt": "6c4c9e8f5b141545cf2bb641b9f6309d4a5b06b4a08ea32d106f64da97e446a7",
+    "caos/server/requirements-security.txt": "4e42b59b035cd7c05f61f89273272d6292aba2c4252257ab2f805631bb1e913d",
+    "caos/server/requirements.txt": "3c7d7da7f26404062b084fb46b907fb77acc87b32cc75f2aecf80c292fa3b910"
+  },
+  "evidence": {
+    "approved_retention_location": "BLOCKED EXTERNAL: enterprise test owner names the release-package signer and the retention location",
+    "retained_at": ".superpowers/sdd/candidates/2026-09-03-c4f0270/ (repository) plus the local soak directory named in REPORT.md"
+  },
+  "frozen_at": "2026-09-03T20:00:08+00:00",
+  "frozen_by": "Claude Fable 5.1 (ER-G9, Task 13 first half)",
+  "git": {
+    "clean_tree_result": {
+      "candidate_clone_clean": false,
+      "candidate_clone_status_porcelain": "?? caos/server/caos_server.egg-info/",
+      "origin_main": "c4f0270104ad659f7d54dd530b74ba4fd5bb6ccc",
+      "origin_main_equals_commit": true
+    },
+    "commit": "c4f0270104ad659f7d54dd530b74ba4fd5bb6ccc",
+    "commits_in_history": 181,
+    "describe": "enterprise-candidate-2026-09-03",
+    "head_subject": "Enterprise readiness Task 12b: authorization matrix, recorded review, scanner floors, three-engine journey, capacity harness (#55)",
+    "tag": "enterprise-candidate-2026-09-03",
+    "tag_object": "19e3c404205069909fc1c0cb8eb1acdc23141676",
+    "tag_target": "c4f0270104ad659f7d54dd530b74ba4fd5bb6ccc",
+    "tree": "5d65fe2e67a3647d113ab006134c0b19bff8093b"
+  },
+  "image_build": {
+    "built_from": "a fresh clone checked out at the tag (git status --porcelain empty)",
+    "dockerfile_sha256": "8572af3d1097e0b7af40941fcebe537ef7e40494dfebf73db2f4c34af372c3cf",
+    "pinned_base_and_service_images": [
+      "caddy:2.11-alpine@sha256:5f5c8640aae01df9654968d946d8f1a56c497f1dd5c5cda4cf95ab7c14d58648",
+      "clamav/clamav:1.5@sha256:0e85467cb0d6e7d860a45035707741cd5ffc032ffefc6002a3510c75b6d07027",
+      "node:26-slim@sha256:c0753125a3789977aefe869cbebccf70e3cfd7ea84ca48547458f02e4f1d7146",
+      "postgres:17-alpine@sha256:18cfe3ef5e6815560c98237d6216d1e5119702fb0f3894c8785dd58b8bbe5d73",
+      "python:3.14-slim@sha256:cae66f2ef0ec51a9891263eeee7f987dacf0a9879e8aa9353d5606e0530619a5",
+      "quay.io/oauth2-proxy/oauth2-proxy:v7.15.4@sha256:b1b2021fe8f4004573e8d690dec6c7bb29cc44364572cf8510a05bf3a0ae2ded"
+    ],
+    "targets": {
+      "app": "caos/deploy/Dockerfile --target app",
+      "worker": "caos/deploy/Dockerfile --target worker"
+    }
+  },
+  "images": {
+    "app": {
+      "architecture": "arm64",
+      "created": "2026-09-03T20:55:30.261335298+01:00",
+      "image_id": "sha256:cae0ed6b5c55696c44495825552353a4fdd51ff1f63ee6521bf18d89e5bd14fa",
+      "layers": 15,
+      "os": "linux",
+      "reference": "caos-cand-20260903-app:c4f0270",
+      "repo_digests": [
+        "caos-cand-20260903-app@sha256:cae0ed6b5c55696c44495825552353a4fdd51ff1f63ee6521bf18d89e5bd14fa"
+      ],
+      "rootfs_digest": "a4a174396360d8d777448812d0300acd44d007e9f3ae9b4cef2d13f1118430bb",
+      "size_bytes": 181725955
+    },
+    "worker": {
+      "architecture": "arm64",
+      "created": "2026-09-03T20:56:24.211330148+01:00",
+      "image_id": "sha256:61283796a3d6df4987514e1c5a80310a5073c1652b2796d346cc3f8650dfe7a6",
+      "layers": 17,
+      "os": "linux",
+      "reference": "caos-cand-20260903-worker:c4f0270",
+      "repo_digests": [
+        "caos-cand-20260903-worker@sha256:61283796a3d6df4987514e1c5a80310a5073c1652b2796d346cc3f8650dfe7a6"
+      ],
+      "rootfs_digest": "32a204e5cac3ed018b667b16be1d8467acd5c00f54c23dd2315d6db7dc6fbfa5",
+      "size_bytes": 408447112
+    }
+  },
+  "methodology": {
+    "build_id": "237bf4bc56b616b1c679a32c3733a2d9baf580b113758329320478e0226bae9d",
+    "integrity_file_sha256": "76fceb2396cfa05bd674e1a327870a14bdb9eb006bc414d6e3a7ad8bfe5ee3d3",
+    "manifest_digest": "d320bc44ccec402dba3bca1d8cb340de85f68d3f4560e9ac7ba2234e882b6231",
+    "manifest_file_sha256": "e9ada5a377048851416c8f031a91cd5dc521529c0c8a2877aac5a797b1777d6b"
+  },
+  "reviewer_roster": {
+    "needed": "named reviewers per REV-001..REV-015 (two credit analysts, adjudicating analyst, model risk, security, accessibility, external stakeholder, audit, operations, enterprise test owner); records prepared under reviews/",
+    "owner": "enterprise test owner",
+    "status": "BLOCKED EXTERNAL"
+  },
+  "runtime_versions": {
+    "age": "v1.3.2",
+    "docker_compose": "5.2.0",
+    "docker_server": "29.5.2",
+    "gitleaks_image": "ghcr.io/gitleaks/gitleaks:v8.18.4@sha256:75bdb2b2f4db213cde0b8295f13a88d6b333091bbfbf3012a4e083d00d31caba",
+    "host": "Darwin 25.5.0 arm64",
+    "macos": "26.5.1",
+    "node_host": "v24.16.0",
+    "node_image": "node:26-slim (frontend build stage, digest pinned in the Dockerfile)",
+    "npm_host": "11.13.0",
+    "playwright": "1.62.1",
+    "python_candidate_venv": "3.14.6",
+    "python_image": "3.14 (python:3.14-slim, digest pinned in the Dockerfile)",
+    "trivy": "Version: 0.72.0",
+    "uv": "uv 0.12.5 (210d1f678 2026-08-14 aarch64-apple-darwin)"
+  },
+  "sbom": {
+    "app": "gates/scans/sbom-app.cdx.json (CycloneDX, Trivy 0.72.0, bound in gates/scans/scan-manifest.json)",
+    "worker": "gates/scans/sbom-worker.cdx.json"
+  },
+  "schema_version": "caos.candidate-manifest.v1",
+  "topology": {
+    "candidate_stack": {
+      "compose_project": "caos-cand-20260903",
+      "override": "scratch override pins the two image ids, publishes the app on 127.0.0.1:18200, and binds ENVIRONMENT=development + CAOS_PROVIDER=host_control (development-only orchestration binding); db, clamav, volumes, read-only root, cap_drop and tmpfs are the shipped file's",
+      "services_not_started": {
+        "caddy": "not started without the identity edge; the 32 MiB request ceiling stays NOT_EXERCISED (edge-only)",
+        "oauth2-proxy": "BLOCKED EXTERNAL: enterprise OIDC issuer, client id/secret and test accounts (enterprise identity owner)"
+      },
+      "services_started": [
+        "db",
+        "clamav",
+        "app",
+        "worker"
+      ]
+    },
+    "compose_file_sha256": "337b4dddc4b3af4dc7fb189e6b1a1a16a4498fe06df3a8d0f306e329449944a4",
+    "compose_replicas": {
+      "app": 1,
+      "worker": 1
+    },
+    "declared": "one app instance and one worker instance per database and vault volume",
+    "deploy_files_sha256": {
+      "Caddyfile": "55bbd8e54b6b2dc210855d7ebc743b282a3e820247a8e9bc6e945e1ac3e5a34b",
+      "backup.sh": "e883c0a707e06f1b809973497ec1cd92476a0be07021bc9d5281488d94e32e19",
+      "clamd.conf": "43483e8849c53ea079edea3792557df017e8d842b21e4ff896c7b7d5604348ea",
+      "oauth2-proxy.cfg": "7cbc764129516b30876ef7e0bf30628548c72b4ebb1483adfc141192477dfce7",
+      "restore_drill.sh": "26bff8ec13afdc810ad09ec8c69764bca4f0895d52682749b0b2d9f99f2b6b07",
+      "verify_image_resources.py": "31b35018159b96edc90ef9bae168292091686168a65cf5b9ee8c1a0363cb1b55"
+    },
+    "environment_manifest_sha256": "995d81f49d2ce5e2f63364ed5254ced1595a84df14918fa4b064b8063a9acab1"
+  },
+  "workflows_sha256": {
+    "ci.yml": "235bc3a8461279e3f89bcbbe70a7bbfed45353026cf5b11d1ee4e6fdfabe3a6e",
+    "enterprise-qualification.yml": "9c5b6e8d0a81c3e0263a2d708061fbdd1d85608a22c1fed0bb95fc8113909169",
+    "nightly.yml": "75cbf33f39608f4cf989ed3202b71d7cc9524898ff9413e863982b6293b24b78",
+    "security-review.yml": "bf896f6a0e2cc409c75a37d80aaa9cc76f280b90cbeac3e253c3328cd336be7c"
+  }
+}

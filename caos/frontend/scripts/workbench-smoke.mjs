@@ -4,6 +4,8 @@ import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { chromium, firefox, request, webkit } from "playwright";
 
+import { webkitTeardownRejection } from "./webkit-teardown.mjs";
+
 // WEB-002: one Playwright script drives every supported engine. CAOS_BROWSER
 // selects it; every context is traced and, on failure, the trace and a
 // screenshot of every open page land under test-results/<browser>/ beside a
@@ -186,6 +188,25 @@ browser.newContext = async (options) => {
   return context;
 };
 const errors = [];
+// The workspace restores focus on the animation frame AFTER an action settles
+// (Workspace.tsx: useEffect → requestAnimationFrame), so a check that reads
+// document.activeElement the instant the settled UI renders races that frame
+// and loses on a slow runner (CI run 33875704963, WebKit: "compiling a route
+// left focus on <body>"). Every focus-return check therefore waits for the
+// frame, bounded, and names where focus actually is when it never arrives.
+const awaitFocus = (locator, what) => locator.evaluate((element, label) => new Promise((resolve, reject) => {
+  const deadline = performance.now() + 2000;
+  const check = () => {
+    if (document.activeElement === element) return resolve();
+    if (performance.now() > deadline) return reject(new Error(`${label} (on ${document.activeElement?.tagName}[${document.activeElement?.getAttribute?.("aria-label") || document.activeElement?.id || ""}])`));
+    requestAnimationFrame(check);
+  };
+  check();
+}), what);
+// WebKit's "<url> due to access control checks." rejections for fetches still
+// in flight at navigation, kept out of `errors` only with server evidence and
+// retained in the report so nothing is swallowed silently.
+const webkitTeardownRejections = [];
 const externalGoogleFontRequests = [];
 const watchExternalGoogleFonts = (context) => {
   context.on("request", (requestValue) => {
@@ -282,7 +303,25 @@ try {
       }).catch(() => {});
     }
   });
-  page.on("pageerror", (error) => errors.push(error.message));
+  // Every non-document response the page saw, by exact URL, and every request
+  // the browser abandoned without a response: the evidence the WebKit
+  // teardown filter below demands before it drops a page error. Document
+  // loads are excluded so a navigation to /cases/ never vouches for a fetch of
+  // /cases/ that a policy blocked.
+  const responded = new Map();
+  const abandoned = new Set();
+  page.on("response", (response) => {
+    if (response.request().resourceType() !== "document") responded.set(response.url(), response.status());
+  });
+  page.on("requestfailed", (request) => abandoned.add(request.url()));
+  page.on("pageerror", (error) => {
+    const teardown = webkitTeardownRejection(error.message, { browserName, baseURL, responded, abandoned });
+    if (teardown) {
+      webkitTeardownRejections.push(teardown);
+      return;
+    }
+    errors.push(error.message);
+  });
   // Firefox logs no console line for an HTTP error, so the controlled 503 is
   // observed on the response itself; the console filter above still swallows
   // Chromium's and WebKit's "Failed to load resource" line for it.
@@ -500,9 +539,7 @@ try {
   await palette.getByRole("combobox", { name: "Search cases, workflows or evidence IDs" }).fill("secret issuer");
   await palette.getByText("No matches").waitFor();
   await page.keyboard.press("Escape");
-  await assert.doesNotReject(() => paletteTrigger.evaluate((element) => {
-    if (document.activeElement !== element) throw new Error("focus did not return to the palette trigger");
-  }));
+  await awaitFocus(paletteTrigger, "focus did not return to the palette trigger");
 
   // --- Document-first intake (Task 8; UX-001 to UX-020) ------------------------------
   // The golden journey asks for nothing but files: no case form, no pathway, no
@@ -711,12 +748,9 @@ try {
   await page.getByRole("heading", { name: "Proposed research plan" }).waitFor();
   // A governed action disables its own control while the request is in flight, and a
   // disabled element hands focus to <body> — which strands the keyboard and throws a
-  // screen reader to the top of the document (WCAG 2.4.3). Workspace repairs that
-  // once the action settles; these two assertions are what fail if the repair goes.
-  await assert.doesNotReject(() => page.getByRole("button", { name: "Compile and run" }).evaluate((element) => {
-    if (document.activeElement === document.body) throw new Error("compiling a route left focus on <body>");
-    if (document.activeElement !== element) throw new Error(`focus settled on ${document.activeElement?.tagName} instead of the compile control`);
-  }), "compile did not restore focus to its own control");
+  // screen reader to the top of the document (WCAG 2.4.3). Workspace repairs that on
+  // the frame after the action settles; this wait is what fails if the repair goes.
+  await awaitFocus(page.getByRole("button", { name: "Compile and run" }), "compile did not restore focus to its own control");
   // WCAG 4.1.3: the outcome of a governed write reaches assistive tech or it reaches
   // nobody — the DOM simply changing is not a status message.
   await page.getByRole("status").getByText("Route compiled. Execution started.", { exact: true }).waitFor();
@@ -929,21 +963,11 @@ try {
   // workspace's own restore); Chromium and Firefox also restore it natively on
   // close, WebKit does not, so the check waits for the frame rather than
   // reading focus the instant the dialog is hidden.
-  await acceptTrigger.evaluate((element) => new Promise((resolve, reject) => {
-    const deadline = performance.now() + 2000;
-    const check = () => {
-      if (document.activeElement === element) return resolve();
-      if (performance.now() > deadline) return reject(new Error(`focus did not return to the accept trigger (on ${document.activeElement?.tagName}[${document.activeElement?.getAttribute?.("aria-label") || document.activeElement?.id || ""}])`));
-      requestAnimationFrame(check);
-    };
-    check();
-  }));
+  await awaitFocus(acceptTrigger, "focus did not return to the accept trigger");
   await acceptTrigger.click();
   await acceptDialog.getByRole("button", { name: "Cancel" }).click();
   await acceptDialog.waitFor({ state: "hidden" });
-  await assert.doesNotReject(() => acceptTrigger.evaluate((element) => {
-    if (document.activeElement !== element) throw new Error("cancel did not return focus to the accept trigger");
-  }));
+  await awaitFocus(acceptTrigger, "cancel did not return focus to the accept trigger");
   await acceptTrigger.click();
   await acceptDialog.getByText(nextRun.id, { exact: true }).waitFor();
   await acceptDialog.getByRole("button", { name: "Accept analytical snapshot" }).click();
@@ -2300,6 +2324,7 @@ function report(outcome) {
     duration_ms: Date.now() - startedAt,
     timing: pageTiming,
     console_errors: errors,
+    webkit_teardown_rejections: webkitTeardownRejections,
     ...outcome,
   };
   if (outcome.status === "passed") {

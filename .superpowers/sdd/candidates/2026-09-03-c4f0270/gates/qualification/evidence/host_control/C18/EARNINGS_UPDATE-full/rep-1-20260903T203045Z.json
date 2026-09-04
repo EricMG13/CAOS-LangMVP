@@ -1,0 +1,241 @@
+{
+  "binding": {
+    "adapter_version": "caos.answer-keyed.host-control.v1",
+    "identity_digest": "4e3a6e8fbd028475ac4acb81466ecfad1d867697b7bd74d6c8e888e2fd7b3137",
+    "model": "deterministic",
+    "parameter_context_digest": "358e4ecee6ab8bcb3e2a7aac127223bfd0abe93fe2acbdd7acc7269d680eb3c2",
+    "provider_name": "host_control",
+    "provider_version": null,
+    "qualification_expires_at": null,
+    "qualification_record_digest": null,
+    "qualification_record_id": null,
+    "qualification_status": "host_control"
+  },
+  "binding_kind": "host_control",
+  "binding_view": {
+    "commit": "c4f0270104ad659f7d54dd530b74ba4fd5bb6ccc",
+    "corpus_digest": "460e3ad6a64c8f78632862921f4d181f0fcb866160a6aa2f44b8c476d70ae7e3",
+    "identity_digest": "4e3a6e8fbd028475ac4acb81466ecfad1d867697b7bd74d6c8e888e2fd7b3137",
+    "methodology_build_id": "237bf4bc56b616b1c679a32c3733a2d9baf580b113758329320478e0226bae9d",
+    "methodology_manifest_digest": "d320bc44ccec402dba3bca1d8cb340de85f68d3f4560e9ac7ba2234e882b6231",
+    "policy_digest": "986e65236178128abeca0168c914c177310b15290e40fe89fb9c0b3f9b998f3f"
+  },
+  "blocked_code": null,
+  "blocked_detail": null,
+  "build": {
+    "commit": "c4f0270104ad659f7d54dd530b74ba4fd5bb6ccc",
+    "image_digest": "sha256:cae0ed6b5c55696c44495825552353a4fdd51ff1f63ee6521bf18d89e5bd14fa",
+    "methodology_build_id": "237bf4bc56b616b1c679a32c3733a2d9baf580b113758329320478e0226bae9d",
+    "methodology_manifest_digest": "d320bc44ccec402dba3bca1d8cb340de85f68d3f4560e9ac7ba2234e882b6231",
+    "python": "3.14.6"
+  },
+  "cell_id": "EARNINGS_UPDATE/full",
+  "cell_key": "C18/EARNINGS_UPDATE/full",
+  "corpus": {
+    "answer_key_digest": "08e130f3a952102d1c4b4c40eae44b2f1364cf79489a7bb5b67c9dc35ba0599a",
+    "answer_key_version": "1.0.0",
+    "approval": {
+      "approved_at": "2026-09-03",
+      "note": "host-control attestation of the draft key: orchestration proof only, never analysis",
+      "reviewer": "Claude Fable 5.1 (ER-G6 implementer)",
+      "scope": "host_control"
+    },
+    "corpus_digest": "460e3ad6a64c8f78632862921f4d181f0fcb866160a6aa2f44b8c476d70ae7e3",
+    "manifest_digest": "2b366726431695499a20182cc5a0ed881ba54c4379e1a0030ea2f17d713ebde4",
+    "pack_version": "1.0.0"
+  },
+  "date": "2026-09-03T20:28:44Z",
+  "depth": "full",
+  "expires_at": "2026-12-02T20:28:44Z",
+  "kind": "positive",
+  "pack_id": "C18",
+  "pathway": "EARNINGS_UPDATE",
+  "policy": {
+    "averaging": false,
+    "host_control_is_qualification": false,
+    "live_repetitions": 3,
+    "refusal_proves_pathway": false,
+    "review_days": 90,
+    "schema_version": "caos.qualification-policy.v1"
+  },
+  "proves_pathway": true,
+  "repetition": 1,
+  "result_id": "3d3c743e15011b4c836979f9ba4ccf635d13d35664cfe41f081447947f56d5c9",
+  "reviewer": "Claude Fable 5.1 (ER-G9, orchestration proof only)",
+  "run": {
+    "budget_used": {
+      "active_minutes": 0.009558380620243652,
+      "evidence_bytes": 164737,
+      "evidence_reads": 33,
+      "input_tokens": 41000,
+      "output_tokens": 2950,
+      "provider_retries": 0,
+      "repairs": 0,
+      "turns": 41
+    },
+    "error_code": null,
+    "latency_seconds": 1.461,
+    "provider_calls": 114,
+    "run_id": "run-f6495dd36514451c8c3f",
+    "status": "succeeded"
+  },
+  "schema_version": "caos.qualification-result.v1",
+  "scores": {
+    "dimensions": {
+      "after_run": {
+        "applicable": false,
+        "detail": {},
+        "pass": true,
+        "score": null
+      },
+      "budget": {
+        "applicable": true,
+        "detail": {
+          "budget_refusal": null,
+          "limits": {
+            "active_minutes": 15,
+            "evidence_bytes": 5242880,
+            "evidence_reads": 60,
+            "input_tokens": 500000,
+            "output_tokens": 156000,
+            "provider_retries": 1,
+            "repairs": 1,
+            "turns": 69
+          },
+          "over": [],
+          "used": {
+            "active_minutes": 0.009558380620243652,
+            "evidence_bytes": 164737,
+            "evidence_reads": 33,
+            "input_tokens": 41000,
+            "output_tokens": 2950,
+            "provider_retries": 0,
+            "repairs": 0,
+            "turns": 41
+          }
+        },
+        "pass": true,
+        "score": null
+      },
+      "citations": {
+        "applicable": true,
+        "detail": {
+          "invalid": [],
+          "total": 36
+        },
+        "pass": true,
+        "score": 1.0
+      },
+      "conflicts": {
+        "applicable": false,
+        "detail": {},
+        "pass": true,
+        "score": null
+      },
+      "document_use": {
+        "applicable": true,
+        "detail": {
+          "dispositions": {},
+          "problems": [],
+          "route": null
+        },
+        "pass": true,
+        "score": 1.0
+      },
+      "facts": {
+        "applicable": true,
+        "detail": {
+          "linked": [
+            "F1",
+            "F2",
+            "F3",
+            "F4",
+            "F5",
+            "F6"
+          ],
+          "missing": [],
+          "required_failed": [],
+          "stated_uncited": []
+        },
+        "pass": true,
+        "score": 1.0
+      },
+      "ingest": {
+        "applicable": false,
+        "detail": {},
+        "pass": true,
+        "score": null
+      },
+      "injection": {
+        "applicable": false,
+        "detail": {},
+        "pass": true,
+        "score": null
+      },
+      "latency": {
+        "applicable": true,
+        "detail": {
+          "limit": 900.0,
+          "seconds": 1.461
+        },
+        "pass": true,
+        "score": null
+      },
+      "model_effect": {
+        "applicable": true,
+        "detail": {
+          "build_error": null,
+          "build_status": "READY",
+          "effects": [
+            "EARNINGS_PERIOD_FORECAST_VARIANCE"
+          ],
+          "expected": "EARNINGS_PERIOD_FORECAST_VARIANCE",
+          "status": "READY_TO_BUILD"
+        },
+        "pass": true,
+        "score": 1.0
+      },
+      "outcome": {
+        "applicable": true,
+        "detail": {
+          "error_code": null,
+          "route_static": true,
+          "status": "succeeded"
+        },
+        "pass": true,
+        "score": 1.0
+      },
+      "refusal": {
+        "applicable": false,
+        "detail": {
+          "expected": null,
+          "observed": null
+        },
+        "pass": true,
+        "score": null
+      },
+      "unsupported_claims": {
+        "applicable": true,
+        "detail": {
+          "exempt_modules": [
+            "CP-1",
+            "CP-1A",
+            "CP-1B",
+            "CP-2",
+            "CP-2A",
+            "CP-2G"
+          ],
+          "forbidden": [],
+          "numbers_checked": 5,
+          "untraceable": []
+        },
+        "pass": true,
+        "score": 1.0
+      }
+    },
+    "failed_dimensions": [],
+    "pass": true
+  },
+  "stage": "run",
+  "verdict": "pass"
+}

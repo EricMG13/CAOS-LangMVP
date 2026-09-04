@@ -1,0 +1,145 @@
+{
+  "schema_version": "caos.capacity-limits.v1",
+  "url": "http://127.0.0.1:18300",
+  "edge_url": null,
+  "recorded_at": "2026-09-04T00:01:09+00:00",
+  "declared": {
+    "subjects": 25,
+    "jobs": 20,
+    "streams": 4,
+    "previews": 2,
+    "rpm": 300,
+    "cases": 100,
+    "documents": 100,
+    "source_bytes": 26214400,
+    "request_bytes": 33554432,
+    "intake_files": 40,
+    "manifest_rows": 2000
+  },
+  "limits": [
+    {
+      "limit": "requests per subject per minute",
+      "declared": 300,
+      "below_and_at": {
+        "sent": 300,
+        "admitted": 300,
+        "refused": 0
+      },
+      "above": {
+        "sent": 30,
+        "refused": 25,
+        "note": "the bucket refills at declared/60 per second, so a few of the 30 may be admitted"
+      },
+      "other_subject": 200,
+      "verdict": "PASS"
+    },
+    {
+      "limit": "event streams per subject",
+      "declared": 4,
+      "below_and_at": [
+        200,
+        200,
+        200,
+        200
+      ],
+      "above": 429,
+      "other_subject": 200,
+      "after_release": 200,
+      "verdict": "PASS"
+    },
+    {
+      "limit": "model previews per subject",
+      "declared": 2,
+      "observed_statuses": [
+        422,
+        422,
+        429
+      ],
+      "proof": "caos/tests/spec/test_limits_spec.py::test_preview_ceiling_at_and_above_is_per_subject_and_returned",
+      "verdict": "PASS"
+    },
+    {
+      "limit": "active jobs per instance",
+      "declared": 20,
+      "sent": 25,
+      "admitted": 20,
+      "refused_typed": 5,
+      "other_statuses": [],
+      "burst_seconds": 0.65,
+      "admitted_runs_reached_a_terminal_state": 20,
+      "refusal": {
+        "code": "ADMISSION_BUSY"
+      },
+      "verdict": "PASS",
+      "note": "admitted may be below the declared ceiling when a run finished inside the burst window"
+    },
+    {
+      "limit": "source bytes",
+      "declared": 26214400,
+      "below": {
+        "bytes": 1024,
+        "status": 201,
+        "detail": null
+      },
+      "at": {
+        "bytes": 26214400,
+        "status": 201,
+        "detail": null
+      },
+      "above": {
+        "bytes": 26214401,
+        "status": 413,
+        "detail": "source exceeds upload limit"
+      },
+      "verdict": "PASS"
+    },
+    {
+      "limit": "request bytes",
+      "declared": 33554432,
+      "verdict": "NOT_EXERCISED",
+      "note": "the request-body ceiling is the edge's (Caddy max_size); pass --edge-url to probe it"
+    },
+    {
+      "limit": "documents per intake",
+      "declared": 40,
+      "below": {
+        "files": 39,
+        "status": 201,
+        "code": null
+      },
+      "at": {
+        "files": 40,
+        "status": 201,
+        "code": null
+      },
+      "above": {
+        "files": 41,
+        "status": 422,
+        "code": "INTAKE_TOO_MANY_FILES"
+      },
+      "cases_created": 2,
+      "verdict": "PASS",
+      "note": "at and below may still refuse typed for another reason (issuer ambiguity, clarification); only the file-count code is asserted"
+    },
+    {
+      "limit": "manifest rows per run",
+      "declared": 2000,
+      "at": {
+        "rows": 2000,
+        "start_status": 201,
+        "run_status": "succeeded",
+        "error": null
+      },
+      "above": {
+        "rows": 2002,
+        "start_status": 201,
+        "run_status": "failed",
+        "error": {
+          "code": "AGENT_BUDGET_EXCEEDED",
+          "module_id": "CP-PARSE"
+        }
+      },
+      "verdict": "PASS"
+    }
+  ]
+}

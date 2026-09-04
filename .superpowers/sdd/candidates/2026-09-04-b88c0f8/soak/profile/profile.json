@@ -1,0 +1,141 @@
+{
+  "schema_version": "caos.capacity-profile.v1",
+  "url": "http://127.0.0.1:18300",
+  "declared": {
+    "subjects": 25,
+    "jobs": 20,
+    "streams": 4,
+    "previews": 2,
+    "rpm": 300,
+    "cases": 100,
+    "documents": 100,
+    "source_bytes": 26214400,
+    "request_bytes": 33554432,
+    "intake_files": 40,
+    "manifest_rows": 2000
+  },
+  "requested": {
+    "subjects": 25,
+    "jobs": 20,
+    "streams": 4,
+    "previews": 2,
+    "rpm": 300,
+    "cases": 100,
+    "documents": 80,
+    "duration": 28800.0
+  },
+  "seed_seconds": 71.1,
+  "cases_seeded": 100,
+  "latency": {
+    "upload": {
+      "count": 8000,
+      "p50_ms": 27.0,
+      "p95_ms": 55.3,
+      "max_ms": 4854.5,
+      "statuses": {
+        "201": 8000
+      }
+    },
+    "list_cases": {
+      "count": 281945,
+      "p50_ms": 560.7,
+      "p95_ms": 1282.3,
+      "max_ms": 120006.4,
+      "statuses": {
+        "200": 281941,
+        "ReadTimeout": 3,
+        "ReadError": 1
+      }
+    },
+    "stream_open": {
+      "count": 94203,
+      "p50_ms": 165.6,
+      "p95_ms": 650.5,
+      "max_ms": 39453.6,
+      "statuses": {
+        "200": 94202,
+        "ReadTimeout": 1
+      }
+    },
+    "list_sources": {
+      "count": 281935,
+      "p50_ms": 614.2,
+      "p95_ms": 1413.2,
+      "max_ms": 120005.8,
+      "statuses": {
+        "200": 281929,
+        "ReadTimeout": 3,
+        "ReadError": 3
+      }
+    },
+    "case_detail": {
+      "count": 281922,
+      "p50_ms": 489.3,
+      "p95_ms": 1204.2,
+      "max_ms": 120005.5,
+      "statuses": {
+        "200": 281919,
+        "ReadTimeout": 3
+      }
+    },
+    "start_run": {
+      "count": 6982,
+      "p50_ms": 30973.3,
+      "p95_ms": 39470.9,
+      "max_ms": 80121.5,
+      "statuses": {
+        "201": 6291,
+        "ReadError": 1,
+        "409": 690
+      }
+    },
+    "preview": {
+      "count": 33832,
+      "p50_ms": 326.7,
+      "p95_ms": 912.8,
+      "max_ms": 120006.8,
+      "statuses": {
+        "422": 33826,
+        "ReadError": 3,
+        "ReadTimeout": 3
+      }
+    },
+    "run:succeeded": {
+      "count": 6291,
+      "p50_ms": 0.0,
+      "p95_ms": 0.0,
+      "max_ms": 1.3,
+      "statuses": {
+        "ok": 6291
+      }
+    },
+    "accept": {
+      "count": 6291,
+      "p50_ms": 1131.0,
+      "p95_ms": 2228.6,
+      "max_ms": 4104.2,
+      "statuses": {
+        "200": 6291
+      }
+    },
+    "leakage_check": {
+      "count": 4,
+      "p50_ms": 0.0,
+      "p95_ms": 0.0,
+      "max_ms": 0.0,
+      "statuses": {
+        "ReadError": 2,
+        "ReadTimeout": 2
+      }
+    }
+  },
+  "leakage": [],
+  "restarts": [
+    "2026-09-04T02:20:43+00:00",
+    "2026-09-04T04:21:19+00:00",
+    "2026-09-04T06:22:01+00:00"
+  ],
+  "samples": 631,
+  "recorded_at": "2026-09-04T08:21:23+00:00",
+  "claim": "enterprise test profile measurement only; not a production capacity or availability figure"
+}

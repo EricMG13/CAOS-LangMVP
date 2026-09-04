@@ -1,0 +1,19 @@
+## a11y rerun on the empty stack (quiet machine): node scripts/a11y-axe.mjs
+a11y exit 0
+{"routes":9,"viewports":6,"combinations":75,"pendingPlanFixture":true,"readyModelFixture":true,"readyReportFixture":true,"states":["empty","populated","review","filed","loading","error","refusal"],"modelBuilderAxeChecks":12,"modelBuilderKeyboardTabChecks":3,"reportStudioAxeChecks":3,"reportStudioKeyboardTabChecks":3,"violations":0}
+
+## chromium: CAOS_BROWSER=chromium node scripts/workbench-smoke.mjs
+chromium exit 0 in 143 s
+{"browser":"chromium","timing":{"domContentLoaded":62.300000071525574,"firstContentfulPaint":148},"budgetEnforced":true,"caseRequests":1}
+{"browser":"chromium","browser_version":"151.0.7922.34","status":"passed","duration_ms":142177,"results":"/Users/ericguei/Claude/Projects/CAOS-LangMVP/.claude/worktrees/open-session-bcaed2/.superpowers/sdd/candidates/2026-09-03-c4f0270/gates/browser/test-results/chromium"}
+{'browser': 'chromium', 'browser_version': '151.0.7922.34', 'status': 'passed', 'duration_ms': 142177, 'console_errors': [], 'failed_step': None, 'failure': None}
+## firefox: CAOS_BROWSER=firefox node scripts/workbench-smoke.mjs
+firefox exit 0 in 151 s
+{"browser":"firefox","timing":{"domContentLoaded":194,"firstContentfulPaint":250},"budgetEnforced":false,"caseRequests":1}
+{"browser":"firefox","browser_version":"153.0","status":"passed","duration_ms":150146,"results":"/Users/ericguei/Claude/Projects/CAOS-LangMVP/.claude/worktrees/open-session-bcaed2/.superpowers/sdd/candidates/2026-09-03-c4f0270/gates/browser/test-results/firefox"}
+{'browser': 'firefox', 'browser_version': '153.0', 'status': 'passed', 'duration_ms': 150146, 'console_errors': [], 'failed_step': None, 'failure': None}
+## webkit: CAOS_BROWSER=webkit node scripts/workbench-smoke.mjs
+webkit exit 0 in 151 s
+{"browser":"webkit","timing":{"domContentLoaded":46,"firstContentfulPaint":141},"budgetEnforced":false,"caseRequests":1}
+{"browser":"webkit","browser_version":"26.5","status":"passed","duration_ms":151520,"results":"/Users/ericguei/Claude/Projects/CAOS-LangMVP/.claude/worktrees/open-session-bcaed2/.superpowers/sdd/candidates/2026-09-03-c4f0270/gates/browser/test-results/webkit"}
+{'browser': 'webkit', 'browser_version': '26.5', 'status': 'passed', 'duration_ms': 151520, 'console_errors': [], 'failed_step': None, 'failure': None}

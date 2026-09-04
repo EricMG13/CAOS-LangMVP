@@ -268,7 +268,15 @@ engine, the bundle, or the routes.
   `test_perimeter_ledger.py`) maps IAM/SEC/WEB/PERF to their mechanism.
   `qa/capacity.py limits` runs the ceilings over HTTP against a host-control
   server; `profile`, `baseline` and `compare` are candidate-only harnesses
-  and never a capacity or availability claim.
+  and never a capacity or availability claim. The profile drives subjects at
+  the declared 300/min, so the application's typed 429s are expected traffic:
+  every driver, holder and sampler thread backs off and retries through
+  `admitted()` and records a failure under `driver_error` instead of dying
+  (`caos/tests/test_capacity_harness.py`; defects D-013–D-015 from the first
+  candidate's soak). Candidate evidence is committed under
+  `.superpowers/sdd/candidates/<id>/` and is excluded from the quality-ledger
+  file scan (`docs/quality_ledger_coverage.py`) because it is evidence about
+  the product, not the product.
 - Real-issuer corpus (`caos/tests/test_corpus_pathways.py`, marker
   `corpus_run`): one 30-document Carnival Corporation leveraged-credit case,
   acquired from the issuer's investor-relations site and pinned by SHA-256 in
@@ -532,7 +540,17 @@ engine, the bundle, or the routes.
   the "flaky" CI focus failure the Task 10 report left open. Under WebKit the
   smoke presses `Alt+Tab` to reach links, drops the CSP line for the
   automation-inserted `<style>body {}</style>`, and does not assert the
-  route-intercepted download (Chromium and Firefox prove it).
+  route-intercepted download (Chromium and Firefox prove it). WebKit also
+  rejects a same-origin fetch still in flight at navigation with a
+  `TypeError` worded `<url> due to access control checks.`, which Next's
+  unawaited prefetches turn into a page error on a slow runner; the smoke
+  drops that page error only with evidence (WebKit, same origin, and that
+  exact URL answered 2xx/3xx on this page or abandoned without a response
+  while its path had been answered — `scripts/webkit-teardown.mjs`, D-016)
+  and retains every dropped entry in the report. Every focus-return check in
+  the smoke waits for the frame the workspace restores focus on
+  (`awaitFocus`); an instant read of `document.activeElement` races that
+  frame on a slow runner.
 - Blocks live in one JSON column on the source row, so `read_evidence` parses
   every block of a source on each call. Measured at the ceiling: a 10 MB source
   costs 17 ms per read, so a run's ~80 reads cost about 1.4 s. Fine at current

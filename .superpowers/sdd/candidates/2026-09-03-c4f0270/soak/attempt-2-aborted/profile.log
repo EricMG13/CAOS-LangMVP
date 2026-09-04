@@ -1,0 +1,533 @@
+Exception in thread Thread-1 (job_driver):
+Traceback (most recent call last):
+  File "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/threading.py", line 1082, in _bootstrap_inner
+    self._context.run(self.run)
+    ~~~~~~~~~~~~~~~~~^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/threading.py", line 1024, in run
+    self._target(*self._args, **self._kwargs)
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/claude-501/-Users-ericguei-Claude-Projects-CAOS-LangMVP--claude-worktrees-open-session-bcaed2/1ac947a6-0861-46c7-bffc-6efc48b0173a/scratchpad/candidate/qa/capacity.py", line 480, in job_driver
+    run = wait_terminal(http, who[subject], response.json()["id"])
+  File "/private/tmp/claude-501/-Users-ericguei-Claude-Projects-CAOS-LangMVP--claude-worktrees-open-session-bcaed2/1ac947a6-0861-46c7-bffc-6efc48b0173a/scratchpad/candidate/qa/capacity.py", line 180, in wait_terminal
+    raise RuntimeError(f"run {run_id} unreadable for this subject: {response.status_code} {response.text[:120]}")
+RuntimeError: run run-d3b29299865e4092a76e unreadable for this subject: 429 {"detail":"request rate ceiling reached"}
+Exception in thread Thread-19 (job_driver):
+Traceback (most recent call last):
+  File "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/threading.py", line 1082, in _bootstrap_inner
+    self._context.run(self.run)
+    ~~~~~~~~~~~~~~~~~^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/threading.py", line 1024, in run
+    self._target(*self._args, **self._kwargs)
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/claude-501/-Users-ericguei-Claude-Projects-CAOS-LangMVP--claude-worktrees-open-session-bcaed2/1ac947a6-0861-46c7-bffc-6efc48b0173a/scratchpad/candidate/qa/capacity.py", line 480, in job_driver
+    run = wait_terminal(http, who[subject], response.json()["id"])
+  File "/private/tmp/claude-501/-Users-ericguei-Claude-Projects-CAOS-LangMVP--claude-worktrees-open-session-bcaed2/1ac947a6-0861-46c7-bffc-6efc48b0173a/scratchpad/candidate/qa/capacity.py", line 180, in wait_terminal
+    raise RuntimeError(f"run {run_id} unreadable for this subject: {response.status_code} {response.text[:120]}")
+RuntimeError: run run-440a67bf14fe4260a372 unreadable for this subject: 429 {"detail":"request rate ceiling reached"}
+Exception in thread Thread-9 (job_driver):
+Traceback (most recent call last):
+  File "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/threading.py", line 1082, in _bootstrap_inner
+    self._context.run(self.run)
+    ~~~~~~~~~~~~~~~~~^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/threading.py", line 1024, in run
+    self._target(*self._args, **self._kwargs)
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/claude-501/-Users-ericguei-Claude-Projects-CAOS-LangMVP--claude-worktrees-open-session-bcaed2/1ac947a6-0861-46c7-bffc-6efc48b0173a/scratchpad/candidate/qa/capacity.py", line 480, in job_driver
+    run = wait_terminal(http, who[subject], response.json()["id"])
+  File "/private/tmp/claude-501/-Users-ericguei-Claude-Projects-CAOS-LangMVP--claude-worktrees-open-session-bcaed2/1ac947a6-0861-46c7-bffc-6efc48b0173a/scratchpad/candidate/qa/capacity.py", line 180, in wait_terminal
+    raise RuntimeError(f"run {run_id} unreadable for this subject: {response.status_code} {response.text[:120]}")
+RuntimeError: run run-71b8f9fc297e48aab14a unreadable for this subject: 429 {"detail":"request rate ceiling reached"}
+Exception in thread Thread-13 (job_driver):
+Traceback (most recent call last):
+  File "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/threading.py", line 1082, in _bootstrap_inner
+    self._context.run(self.run)
+    ~~~~~~~~~~~~~~~~~^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/threading.py", line 1024, in run
+    self._target(*self._args, **self._kwargs)
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/claude-501/-Users-ericguei-Claude-Projects-CAOS-LangMVP--claude-worktrees-open-session-bcaed2/1ac947a6-0861-46c7-bffc-6efc48b0173a/scratchpad/candidate/qa/capacity.py", line 480, in job_driver
+    run = wait_terminal(http, who[subject], response.json()["id"])
+  File "/private/tmp/claude-501/-Users-ericguei-Claude-Projects-CAOS-LangMVP--claude-worktrees-open-session-bcaed2/1ac947a6-0861-46c7-bffc-6efc48b0173a/scratchpad/candidate/qa/capacity.py", line 180, in wait_terminal
+    raise RuntimeError(f"run {run_id} unreadable for this subject: {response.status_code} {response.text[:120]}")
+RuntimeError: run run-bbf297562b7d4c37a761 unreadable for this subject: 429 {"detail":"request rate ceiling reached"}
+Exception in thread Thread-15 (job_driver):
+Traceback (most recent call last):
+  File "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/threading.py", line 1082, in _bootstrap_inner
+    self._context.run(self.run)
+    ~~~~~~~~~~~~~~~~~^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/threading.py", line 1024, in run
+    self._target(*self._args, **self._kwargs)
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/claude-501/-Users-ericguei-Claude-Projects-CAOS-LangMVP--claude-worktrees-open-session-bcaed2/1ac947a6-0861-46c7-bffc-6efc48b0173a/scratchpad/candidate/qa/capacity.py", line 480, in job_driver
+    run = wait_terminal(http, who[subject], response.json()["id"])
+  File "/private/tmp/claude-501/-Users-ericguei-Claude-Projects-CAOS-LangMVP--claude-worktrees-open-session-bcaed2/1ac947a6-0861-46c7-bffc-6efc48b0173a/scratchpad/candidate/qa/capacity.py", line 180, in wait_terminal
+    raise RuntimeError(f"run {run_id} unreadable for this subject: {response.status_code} {response.text[:120]}")
+RuntimeError: run run-7aff2b8b60a5434896de unreadable for this subject: 429 {"detail":"request rate ceiling reached"}
+Exception in thread Thread-16 (job_driver):
+Traceback (most recent call last):
+  File "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/threading.py", line 1082, in _bootstrap_inner
+    self._context.run(self.run)
+    ~~~~~~~~~~~~~~~~~^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/threading.py", line 1024, in run
+    self._target(*self._args, **self._kwargs)
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/claude-501/-Users-ericguei-Claude-Projects-CAOS-LangMVP--claude-worktrees-open-session-bcaed2/1ac947a6-0861-46c7-bffc-6efc48b0173a/scratchpad/candidate/qa/capacity.py", line 480, in job_driver
+    run = wait_terminal(http, who[subject], response.json()["id"])
+  File "/private/tmp/claude-501/-Users-ericguei-Claude-Projects-CAOS-LangMVP--claude-worktrees-open-session-bcaed2/1ac947a6-0861-46c7-bffc-6efc48b0173a/scratchpad/candidate/qa/capacity.py", line 180, in wait_terminal
+    raise RuntimeError(f"run {run_id} unreadable for this subject: {response.status_code} {response.text[:120]}")
+RuntimeError: run run-4eac97fdd024476fa79d unreadable for this subject: 429 {"detail":"request rate ceiling reached"}
+Exception in thread Thread-7 (job_driver):
+Traceback (most recent call last):
+  File "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/threading.py", line 1082, in _bootstrap_inner
+    self._context.run(self.run)
+    ~~~~~~~~~~~~~~~~~^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/threading.py", line 1024, in run
+    self._target(*self._args, **self._kwargs)
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/claude-501/-Users-ericguei-Claude-Projects-CAOS-LangMVP--claude-worktrees-open-session-bcaed2/1ac947a6-0861-46c7-bffc-6efc48b0173a/scratchpad/candidate/qa/capacity.py", line 480, in job_driver
+    run = wait_terminal(http, who[subject], response.json()["id"])
+  File "/private/tmp/claude-501/-Users-ericguei-Claude-Projects-CAOS-LangMVP--claude-worktrees-open-session-bcaed2/1ac947a6-0861-46c7-bffc-6efc48b0173a/scratchpad/candidate/qa/capacity.py", line 180, in wait_terminal
+    raise RuntimeError(f"run {run_id} unreadable for this subject: {response.status_code} {response.text[:120]}")
+RuntimeError: run run-9c6e7bfe6cd946e692a5 unreadable for this subject: 429 {"detail":"request rate ceiling reached"}
+Exception in thread Thread-146 (sampler):
+Traceback (most recent call last):
+  File "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/threading.py", line 1082, in _bootstrap_inner
+    self._context.run(self.run)
+    ~~~~~~~~~~~~~~~~~^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/threading.py", line 1024, in run
+    self._target(*self._args, **self._kwargs)
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/claude-501/-Users-ericguei-Claude-Projects-CAOS-LangMVP--claude-worktrees-open-session-bcaed2/1ac947a6-0861-46c7-bffc-6efc48b0173a/scratchpad/candidate/qa/capacity.py", line 547, in sampler
+    leakage_check()
+    ~~~~~~~~~~~~~^^
+  File "/private/tmp/claude-501/-Users-ericguei-Claude-Projects-CAOS-LangMVP--claude-worktrees-open-session-bcaed2/1ac947a6-0861-46c7-bffc-6efc48b0173a/scratchpad/candidate/qa/capacity.py", line 461, in leakage_check
+    listed = {case["id"] for case in http.get("/api/cases", headers=who[subject]).json()}
+              ~~~~^^^^^^
+TypeError: string indices must be integers, not 'str'
+Exception in thread Thread-3 (job_driver):
+Traceback (most recent call last):
+  File "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/threading.py", line 1082, in _bootstrap_inner
+    self._context.run(self.run)
+    ~~~~~~~~~~~~~~~~~^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/threading.py", line 1024, in run
+    self._target(*self._args, **self._kwargs)
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/claude-501/-Users-ericguei-Claude-Projects-CAOS-LangMVP--claude-worktrees-open-session-bcaed2/1ac947a6-0861-46c7-bffc-6efc48b0173a/scratchpad/candidate/qa/capacity.py", line 480, in job_driver
+    run = wait_terminal(http, who[subject], response.json()["id"])
+  File "/private/tmp/claude-501/-Users-ericguei-Claude-Projects-CAOS-LangMVP--claude-worktrees-open-session-bcaed2/1ac947a6-0861-46c7-bffc-6efc48b0173a/scratchpad/candidate/qa/capacity.py", line 180, in wait_terminal
+    raise RuntimeError(f"run {run_id} unreadable for this subject: {response.status_code} {response.text[:120]}")
+RuntimeError: run run-1a3c1c87e1654af398d9 unreadable for this subject: 429 {"detail":"request rate ceiling reached"}
+Exception in thread Thread-4 (job_driver):
+Traceback (most recent call last):
+  File "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/threading.py", line 1082, in _bootstrap_inner
+    self._context.run(self.run)
+    ~~~~~~~~~~~~~~~~~^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/threading.py", line 1024, in run
+    self._target(*self._args, **self._kwargs)
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/claude-501/-Users-ericguei-Claude-Projects-CAOS-LangMVP--claude-worktrees-open-session-bcaed2/1ac947a6-0861-46c7-bffc-6efc48b0173a/scratchpad/candidate/qa/capacity.py", line 480, in job_driver
+    run = wait_terminal(http, who[subject], response.json()["id"])
+  File "/private/tmp/claude-501/-Users-ericguei-Claude-Projects-CAOS-LangMVP--claude-worktrees-open-session-bcaed2/1ac947a6-0861-46c7-bffc-6efc48b0173a/scratchpad/candidate/qa/capacity.py", line 180, in wait_terminal
+    raise RuntimeError(f"run {run_id} unreadable for this subject: {response.status_code} {response.text[:120]}")
+RuntimeError: run run-a3051fb8778740e2a839 unreadable for this subject: 429 {"detail":"request rate ceiling reached"}
+Exception in thread Thread-62 (stream_holder):
+Traceback (most recent call last):
+  File "/private/tmp/claude-501/-Users-ericguei-Claude-Projects-CAOS-LangMVP--claude-worktrees-open-session-bcaed2/1ac947a6-0861-46c7-bffc-6efc48b0173a/scratchpad/candidate/caos/server/.venv314/lib/python3.14/site-packages/httpx/_transports/default.py", line 101, in map_httpcore_exceptions
+    yield
+  File "/private/tmp/claude-501/-Users-ericguei-Claude-Projects-CAOS-LangMVP--claude-worktrees-open-session-bcaed2/1ac947a6-0861-46c7-bffc-6efc48b0173a/scratchpad/candidate/caos/server/.venv314/lib/python3.14/site-packages/httpx/_transports/default.py", line 250, in handle_request
+    resp = self._pool.handle_request(req)
+  File "/private/tmp/claude-501/-Users-ericguei-Claude-Projects-CAOS-LangMVP--claude-worktrees-open-session-bcaed2/1ac947a6-0861-46c7-bffc-6efc48b0173a/scratchpad/candidate/caos/server/.venv314/lib/python3.14/site-packages/httpcore/_sync/connection_pool.py", line 256, in handle_request
+    raise exc from None
+  File "/private/tmp/claude-501/-Users-ericguei-Claude-Projects-CAOS-LangMVP--claude-worktrees-open-session-bcaed2/1ac947a6-0861-46c7-bffc-6efc48b0173a/scratchpad/candidate/caos/server/.venv314/lib/python3.14/site-packages/httpcore/_sync/connection_pool.py", line 236, in handle_request
+    response = connection.handle_request(
+        pool_request.request
+    )
+  File "/private/tmp/claude-501/-Users-ericguei-Claude-Projects-CAOS-LangMVP--claude-worktrees-open-session-bcaed2/1ac947a6-0861-46c7-bffc-6efc48b0173a/scratchpad/candidate/caos/server/.venv314/lib/python3.14/site-packages/httpcore/_sync/connection.py", line 103, in handle_request
+    return self._connection.handle_request(request)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^
+  File "/private/tmp/claude-501/-Users-ericguei-Claude-Projects-CAOS-LangMVP--claude-worktrees-open-session-bcaed2/1ac947a6-0861-46c7-bffc-6efc48b0173a/scratchpad/candidate/caos/server/.venv314/lib/python3.14/site-packages/httpcore/_sync/http11.py", line 136, in handle_request
+    raise exc
+  File "/private/tmp/claude-501/-Users-ericguei-Claude-Projects-CAOS-LangMVP--claude-worktrees-open-session-bcaed2/1ac947a6-0861-46c7-bffc-6efc48b0173a/scratchpad/candidate/caos/server/.venv314/lib/python3.14/site-packages/httpcore/_sync/http11.py", line 106, in handle_request
+    ) = self._receive_response_headers(**kwargs)
+        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^
+  File "/private/tmp/claude-501/-Users-ericguei-Claude-Projects-CAOS-LangMVP--claude-worktrees-open-session-bcaed2/1ac947a6-0861-46c7-bffc-6efc48b0173a/scratchpad/candidate/caos/server/.venv314/lib/python3.14/site-packages/httpcore/_sync/http11.py", line 177, in _receive_response_headers
+    event = self._receive_event(timeout=timeout)
+  File "/private/tmp/claude-501/-Users-ericguei-Claude-Projects-CAOS-LangMVP--claude-worktrees-open-session-bcaed2/1ac947a6-0861-46c7-bffc-6efc48b0173a/scratchpad/candidate/caos/server/.venv314/lib/python3.14/site-packages/httpcore/_sync/http11.py", line 217, in _receive_event
+    data = self._network_stream.read(
+        self.READ_NUM_BYTES, timeout=timeout
+    )
+  File "/private/tmp/claude-501/-Users-ericguei-Claude-Projects-CAOS-LangMVP--claude-worktrees-open-session-bcaed2/1ac947a6-0861-46c7-bffc-6efc48b0173a/scratchpad/candidate/caos/server/.venv314/lib/python3.14/site-packages/httpcore/_backends/sync.py", line 126, in read
+    with map_exceptions(exc_map):
+         ~~~~~~~~~~~~~~^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/contextlib.py", line 162, in __exit__
+    self.gen.throw(value)
+    ~~~~~~~~~~~~~~^^^^^^^
+  File "/private/tmp/claude-501/-Users-ericguei-Claude-Projects-CAOS-LangMVP--claude-worktrees-open-session-bcaed2/1ac947a6-0861-46c7-bffc-6efc48b0173a/scratchpad/candidate/caos/server/.venv314/lib/python3.14/site-packages/httpcore/_exceptions.py", line 14, in map_exceptions
+    raise to_exc(exc) from exc
+httpcore.ReadTimeout: timed out
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/threading.py", line 1082, in _bootstrap_inner
+    self._context.run(self.run)
+    ~~~~~~~~~~~~~~~~~^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/threading.py", line 1024, in run
+    self._target(*self._args, **self._kwargs)
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/claude-501/-Users-ericguei-Claude-Projects-CAOS-LangMVP--claude-worktrees-open-session-bcaed2/1ac947a6-0861-46c7-bffc-6efc48b0173a/scratchpad/candidate/qa/capacity.py", line 492, in stream_holder
+    case = http.get(f"/api/cases/{cases[0]}", headers=who[subject]).json()
+           ~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/claude-501/-Users-ericguei-Claude-Projects-CAOS-LangMVP--claude-worktrees-open-session-bcaed2/1ac947a6-0861-46c7-bffc-6efc48b0173a/scratchpad/candidate/caos/server/.venv314/lib/python3.14/site-packages/httpx/_client.py", line 1053, in get
+    return self.request(
+           ~~~~~~~~~~~~^
+        "GET",
+        ^^^^^^
+    ...<7 lines>...
+        extensions=extensions,
+        ^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/private/tmp/claude-501/-Users-ericguei-Claude-Projects-CAOS-LangMVP--claude-worktrees-open-session-bcaed2/1ac947a6-0861-46c7-bffc-6efc48b0173a/scratchpad/candidate/caos/server/.venv314/lib/python3.14/site-packages/httpx/_client.py", line 825, in request
+    return self.send(request, auth=auth, follow_redirects=follow_redirects)
+           ~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/claude-501/-Users-ericguei-Claude-Projects-CAOS-LangMVP--claude-worktrees-open-session-bcaed2/1ac947a6-0861-46c7-bffc-6efc48b0173a/scratchpad/candidate/caos/server/.venv314/lib/python3.14/site-packages/httpx/_client.py", line 914, in send
+    response = self._send_handling_auth(
+        request,
+    ...<2 lines>...
+        history=[],
+    )
+  File "/private/tmp/claude-501/-Users-ericguei-Claude-Projects-CAOS-LangMVP--claude-worktrees-open-session-bcaed2/1ac947a6-0861-46c7-bffc-6efc48b0173a/scratchpad/candidate/caos/server/.venv314/lib/python3.14/site-packages/httpx/_client.py", line 942, in _send_handling_auth
+    response = self._send_handling_redirects(
+        request,
+        follow_redirects=follow_redirects,
+        history=history,
+    )
+  File "/private/tmp/claude-501/-Users-ericguei-Claude-Projects-CAOS-LangMVP--claude-worktrees-open-session-bcaed2/1ac947a6-0861-46c7-bffc-6efc48b0173a/scratchpad/candidate/caos/server/.venv314/lib/python3.14/site-packages/httpx/_client.py", line 979, in _send_handling_redirects
+    response = self._send_single_request(request)
+  File "/private/tmp/claude-501/-Users-ericguei-Claude-Projects-CAOS-LangMVP--claude-worktrees-open-session-bcaed2/1ac947a6-0861-46c7-bffc-6efc48b0173a/scratchpad/candidate/caos/server/.venv314/lib/python3.14/site-packages/httpx/_client.py", line 1014, in _send_single_request
+    response = transport.handle_request(request)
+  File "/private/tmp/claude-501/-Users-ericguei-Claude-Projects-CAOS-LangMVP--claude-worktrees-open-session-bcaed2/1ac947a6-0861-46c7-bffc-6efc48b0173a/scratchpad/candidate/caos/server/.venv314/lib/python3.14/site-packages/httpx/_transports/default.py", line 249, in handle_request
+    with map_httpcore_exceptions():
+         ~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/contextlib.py", line 162, in __exit__
+    self.gen.throw(value)
+    ~~~~~~~~~~~~~~^^^^^^^
+  File "/private/tmp/claude-501/-Users-ericguei-Claude-Projects-CAOS-LangMVP--claude-worktrees-open-session-bcaed2/1ac947a6-0861-46c7-bffc-6efc48b0173a/scratchpad/candidate/caos/server/.venv314/lib/python3.14/site-packages/httpx/_transports/default.py", line 118, in map_httpcore_exceptions
+    raise mapped_exc(message) from exc
+httpx.ReadTimeout: timed out
+Exception in thread Thread-8 (job_driver):
+Exception in thread Thread-18 (job_driver):
+Traceback (most recent call last):
+Traceback (most recent call last):
+  File "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/threading.py", line 1082, in _bootstrap_inner
+    self._context.run(self.run)
+    ~~~~~~~~~~~~~~~~~^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/threading.py", line 1024, in run
+    self._target(*self._args, **self._kwargs)
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/claude-501/-Users-ericguei-Claude-Projects-CAOS-LangMVP--claude-worktrees-open-session-bcaed2/1ac947a6-0861-46c7-bffc-6efc48b0173a/scratchpad/candidate/qa/capacity.py", line 480, in job_driver
+    run = wait_terminal(http, who[subject], response.json()["id"])
+  File "/private/tmp/claude-501/-Users-ericguei-Claude-Projects-CAOS-LangMVP--claude-worktrees-open-session-bcaed2/1ac947a6-0861-46c7-bffc-6efc48b0173a/scratchpad/candidate/qa/capacity.py", line 180, in wait_terminal
+    raise RuntimeError(f"run {run_id} unreadable for this subject: {response.status_code} {response.text[:120]}")
+RuntimeError: run run-874c5cccb4c94920b073 unreadable for this subject: 429 {"detail":"request rate ceiling reached"}
+  File "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/threading.py", line 1082, in _bootstrap_inner
+    self._context.run(self.run)
+    ~~~~~~~~~~~~~~~~~^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/threading.py", line 1024, in run
+    self._target(*self._args, **self._kwargs)
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/claude-501/-Users-ericguei-Claude-Projects-CAOS-LangMVP--claude-worktrees-open-session-bcaed2/1ac947a6-0861-46c7-bffc-6efc48b0173a/scratchpad/candidate/qa/capacity.py", line 480, in job_driver
+    run = wait_terminal(http, who[subject], response.json()["id"])
+  File "/private/tmp/claude-501/-Users-ericguei-Claude-Projects-CAOS-LangMVP--claude-worktrees-open-session-bcaed2/1ac947a6-0861-46c7-bffc-6efc48b0173a/scratchpad/candidate/qa/capacity.py", line 180, in wait_terminal
+    raise RuntimeError(f"run {run_id} unreadable for this subject: {response.status_code} {response.text[:120]}")
+RuntimeError: run run-827bb28cfd9446fea165 unreadable for this subject: 429 {"detail":"request rate ceiling reached"}
+Exception in thread Thread-2 (job_driver):
+Traceback (most recent call last):
+  File "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/threading.py", line 1082, in _bootstrap_inner
+    self._context.run(self.run)
+    ~~~~~~~~~~~~~~~~~^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/threading.py", line 1024, in run
+    self._target(*self._args, **self._kwargs)
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/claude-501/-Users-ericguei-Claude-Projects-CAOS-LangMVP--claude-worktrees-open-session-bcaed2/1ac947a6-0861-46c7-bffc-6efc48b0173a/scratchpad/candidate/qa/capacity.py", line 480, in job_driver
+    run = wait_terminal(http, who[subject], response.json()["id"])
+  File "/private/tmp/claude-501/-Users-ericguei-Claude-Projects-CAOS-LangMVP--claude-worktrees-open-session-bcaed2/1ac947a6-0861-46c7-bffc-6efc48b0173a/scratchpad/candidate/qa/capacity.py", line 180, in wait_terminal
+    raise RuntimeError(f"run {run_id} unreadable for this subject: {response.status_code} {response.text[:120]}")
+RuntimeError: run run-5a5c53b47f534ff0b701 unreadable for this subject: 429 {"detail":"request rate ceiling reached"}
+Exception in thread Thread-11 (job_driver):
+Traceback (most recent call last):
+  File "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/threading.py", line 1082, in _bootstrap_inner
+    self._context.run(self.run)
+    ~~~~~~~~~~~~~~~~~^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/threading.py", line 1024, in run
+    self._target(*self._args, **self._kwargs)
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/claude-501/-Users-ericguei-Claude-Projects-CAOS-LangMVP--claude-worktrees-open-session-bcaed2/1ac947a6-0861-46c7-bffc-6efc48b0173a/scratchpad/candidate/qa/capacity.py", line 480, in job_driver
+    run = wait_terminal(http, who[subject], response.json()["id"])
+  File "/private/tmp/claude-501/-Users-ericguei-Claude-Projects-CAOS-LangMVP--claude-worktrees-open-session-bcaed2/1ac947a6-0861-46c7-bffc-6efc48b0173a/scratchpad/candidate/qa/capacity.py", line 180, in wait_terminal
+    raise RuntimeError(f"run {run_id} unreadable for this subject: {response.status_code} {response.text[:120]}")
+RuntimeError: run run-c11149a0d71f4c1688ad unreadable for this subject: 429 {"detail":"request rate ceiling reached"}
+Exception in thread Thread-10 (job_driver):
+Traceback (most recent call last):
+  File "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/threading.py", line 1082, in _bootstrap_inner
+    self._context.run(self.run)
+    ~~~~~~~~~~~~~~~~~^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/threading.py", line 1024, in run
+    self._target(*self._args, **self._kwargs)
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/claude-501/-Users-ericguei-Claude-Projects-CAOS-LangMVP--claude-worktrees-open-session-bcaed2/1ac947a6-0861-46c7-bffc-6efc48b0173a/scratchpad/candidate/qa/capacity.py", line 480, in job_driver
+    run = wait_terminal(http, who[subject], response.json()["id"])
+  File "/private/tmp/claude-501/-Users-ericguei-Claude-Projects-CAOS-LangMVP--claude-worktrees-open-session-bcaed2/1ac947a6-0861-46c7-bffc-6efc48b0173a/scratchpad/candidate/qa/capacity.py", line 180, in wait_terminal
+    raise RuntimeError(f"run {run_id} unreadable for this subject: {response.status_code} {response.text[:120]}")
+RuntimeError: run run-029c1869ba604bb9ab3d unreadable for this subject: 429 {"detail":"request rate ceiling reached"}
+Exception in thread Thread-17 (job_driver):
+Traceback (most recent call last):
+  File "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/threading.py", line 1082, in _bootstrap_inner
+    self._context.run(self.run)
+    ~~~~~~~~~~~~~~~~~^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/threading.py", line 1024, in run
+    self._target(*self._args, **self._kwargs)
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/claude-501/-Users-ericguei-Claude-Projects-CAOS-LangMVP--claude-worktrees-open-session-bcaed2/1ac947a6-0861-46c7-bffc-6efc48b0173a/scratchpad/candidate/qa/capacity.py", line 480, in job_driver
+    run = wait_terminal(http, who[subject], response.json()["id"])
+  File "/private/tmp/claude-501/-Users-ericguei-Claude-Projects-CAOS-LangMVP--claude-worktrees-open-session-bcaed2/1ac947a6-0861-46c7-bffc-6efc48b0173a/scratchpad/candidate/qa/capacity.py", line 180, in wait_terminal
+    raise RuntimeError(f"run {run_id} unreadable for this subject: {response.status_code} {response.text[:120]}")
+RuntimeError: run run-1736c131816c4ae9baf5 unreadable for this subject: 429 {"detail":"request rate ceiling reached"}
+Exception in thread Thread-12 (job_driver):
+Traceback (most recent call last):
+  File "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/threading.py", line 1082, in _bootstrap_inner
+    self._context.run(self.run)
+    ~~~~~~~~~~~~~~~~~^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/threading.py", line 1024, in run
+    self._target(*self._args, **self._kwargs)
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/claude-501/-Users-ericguei-Claude-Projects-CAOS-LangMVP--claude-worktrees-open-session-bcaed2/1ac947a6-0861-46c7-bffc-6efc48b0173a/scratchpad/candidate/qa/capacity.py", line 480, in job_driver
+    run = wait_terminal(http, who[subject], response.json()["id"])
+  File "/private/tmp/claude-501/-Users-ericguei-Claude-Projects-CAOS-LangMVP--claude-worktrees-open-session-bcaed2/1ac947a6-0861-46c7-bffc-6efc48b0173a/scratchpad/candidate/qa/capacity.py", line 180, in wait_terminal
+    raise RuntimeError(f"run {run_id} unreadable for this subject: {response.status_code} {response.text[:120]}")
+RuntimeError: run run-ca2e29edbf8c43908070 unreadable for this subject: 429 {"detail":"request rate ceiling reached"}
+Exception in thread Thread-6 (job_driver):
+Traceback (most recent call last):
+  File "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/threading.py", line 1082, in _bootstrap_inner
+    self._context.run(self.run)
+    ~~~~~~~~~~~~~~~~~^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/threading.py", line 1024, in run
+    self._target(*self._args, **self._kwargs)
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/claude-501/-Users-ericguei-Claude-Projects-CAOS-LangMVP--claude-worktrees-open-session-bcaed2/1ac947a6-0861-46c7-bffc-6efc48b0173a/scratchpad/candidate/qa/capacity.py", line 480, in job_driver
+    run = wait_terminal(http, who[subject], response.json()["id"])
+  File "/private/tmp/claude-501/-Users-ericguei-Claude-Projects-CAOS-LangMVP--claude-worktrees-open-session-bcaed2/1ac947a6-0861-46c7-bffc-6efc48b0173a/scratchpad/candidate/qa/capacity.py", line 180, in wait_terminal
+    raise RuntimeError(f"run {run_id} unreadable for this subject: {response.status_code} {response.text[:120]}")
+RuntimeError: run run-7bd3a8c6e0fc49088cd1 unreadable for this subject: 429 {"detail":"request rate ceiling reached"}
+Exception in thread Thread-45 (stream_holder):
+Traceback (most recent call last):
+  File "/private/tmp/claude-501/-Users-ericguei-Claude-Projects-CAOS-LangMVP--claude-worktrees-open-session-bcaed2/1ac947a6-0861-46c7-bffc-6efc48b0173a/scratchpad/candidate/caos/server/.venv314/lib/python3.14/site-packages/httpx/_transports/default.py", line 101, in map_httpcore_exceptions
+    yield
+  File "/private/tmp/claude-501/-Users-ericguei-Claude-Projects-CAOS-LangMVP--claude-worktrees-open-session-bcaed2/1ac947a6-0861-46c7-bffc-6efc48b0173a/scratchpad/candidate/caos/server/.venv314/lib/python3.14/site-packages/httpx/_transports/default.py", line 250, in handle_request
+    resp = self._pool.handle_request(req)
+  File "/private/tmp/claude-501/-Users-ericguei-Claude-Projects-CAOS-LangMVP--claude-worktrees-open-session-bcaed2/1ac947a6-0861-46c7-bffc-6efc48b0173a/scratchpad/candidate/caos/server/.venv314/lib/python3.14/site-packages/httpcore/_sync/connection_pool.py", line 256, in handle_request
+    raise exc from None
+  File "/private/tmp/claude-501/-Users-ericguei-Claude-Projects-CAOS-LangMVP--claude-worktrees-open-session-bcaed2/1ac947a6-0861-46c7-bffc-6efc48b0173a/scratchpad/candidate/caos/server/.venv314/lib/python3.14/site-packages/httpcore/_sync/connection_pool.py", line 236, in handle_request
+    response = connection.handle_request(
+        pool_request.request
+    )
+  File "/private/tmp/claude-501/-Users-ericguei-Claude-Projects-CAOS-LangMVP--claude-worktrees-open-session-bcaed2/1ac947a6-0861-46c7-bffc-6efc48b0173a/scratchpad/candidate/caos/server/.venv314/lib/python3.14/site-packages/httpcore/_sync/connection.py", line 103, in handle_request
+    return self._connection.handle_request(request)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^
+  File "/private/tmp/claude-501/-Users-ericguei-Claude-Projects-CAOS-LangMVP--claude-worktrees-open-session-bcaed2/1ac947a6-0861-46c7-bffc-6efc48b0173a/scratchpad/candidate/caos/server/.venv314/lib/python3.14/site-packages/httpcore/_sync/http11.py", line 136, in handle_request
+    raise exc
+  File "/private/tmp/claude-501/-Users-ericguei-Claude-Projects-CAOS-LangMVP--claude-worktrees-open-session-bcaed2/1ac947a6-0861-46c7-bffc-6efc48b0173a/scratchpad/candidate/caos/server/.venv314/lib/python3.14/site-packages/httpcore/_sync/http11.py", line 106, in handle_request
+    ) = self._receive_response_headers(**kwargs)
+        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^
+  File "/private/tmp/claude-501/-Users-ericguei-Claude-Projects-CAOS-LangMVP--claude-worktrees-open-session-bcaed2/1ac947a6-0861-46c7-bffc-6efc48b0173a/scratchpad/candidate/caos/server/.venv314/lib/python3.14/site-packages/httpcore/_sync/http11.py", line 177, in _receive_response_headers
+    event = self._receive_event(timeout=timeout)
+  File "/private/tmp/claude-501/-Users-ericguei-Claude-Projects-CAOS-LangMVP--claude-worktrees-open-session-bcaed2/1ac947a6-0861-46c7-bffc-6efc48b0173a/scratchpad/candidate/caos/server/.venv314/lib/python3.14/site-packages/httpcore/_sync/http11.py", line 217, in _receive_event
+    data = self._network_stream.read(
+        self.READ_NUM_BYTES, timeout=timeout
+    )
+  File "/private/tmp/claude-501/-Users-ericguei-Claude-Projects-CAOS-LangMVP--claude-worktrees-open-session-bcaed2/1ac947a6-0861-46c7-bffc-6efc48b0173a/scratchpad/candidate/caos/server/.venv314/lib/python3.14/site-packages/httpcore/_backends/sync.py", line 126, in read
+    with map_exceptions(exc_map):
+         ~~~~~~~~~~~~~~^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/contextlib.py", line 162, in __exit__
+    self.gen.throw(value)
+    ~~~~~~~~~~~~~~^^^^^^^
+  File "/private/tmp/claude-501/-Users-ericguei-Claude-Projects-CAOS-LangMVP--claude-worktrees-open-session-bcaed2/1ac947a6-0861-46c7-bffc-6efc48b0173a/scratchpad/candidate/caos/server/.venv314/lib/python3.14/site-packages/httpcore/_exceptions.py", line 14, in map_exceptions
+    raise to_exc(exc) from exc
+httpcore.ReadTimeout: timed out
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/threading.py", line 1082, in _bootstrap_inner
+    self._context.run(self.run)
+    ~~~~~~~~~~~~~~~~~^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/threading.py", line 1024, in run
+    self._target(*self._args, **self._kwargs)
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/claude-501/-Users-ericguei-Claude-Projects-CAOS-LangMVP--claude-worktrees-open-session-bcaed2/1ac947a6-0861-46c7-bffc-6efc48b0173a/scratchpad/candidate/qa/capacity.py", line 492, in stream_holder
+    case = http.get(f"/api/cases/{cases[0]}", headers=who[subject]).json()
+           ~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/claude-501/-Users-ericguei-Claude-Projects-CAOS-LangMVP--claude-worktrees-open-session-bcaed2/1ac947a6-0861-46c7-bffc-6efc48b0173a/scratchpad/candidate/caos/server/.venv314/lib/python3.14/site-packages/httpx/_client.py", line 1053, in get
+    return self.request(
+           ~~~~~~~~~~~~^
+        "GET",
+        ^^^^^^
+    ...<7 lines>...
+        extensions=extensions,
+        ^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/private/tmp/claude-501/-Users-ericguei-Claude-Projects-CAOS-LangMVP--claude-worktrees-open-session-bcaed2/1ac947a6-0861-46c7-bffc-6efc48b0173a/scratchpad/candidate/caos/server/.venv314/lib/python3.14/site-packages/httpx/_client.py", line 825, in request
+    return self.send(request, auth=auth, follow_redirects=follow_redirects)
+           ~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/claude-501/-Users-ericguei-Claude-Projects-CAOS-LangMVP--claude-worktrees-open-session-bcaed2/1ac947a6-0861-46c7-bffc-6efc48b0173a/scratchpad/candidate/caos/server/.venv314/lib/python3.14/site-packages/httpx/_client.py", line 914, in send
+    response = self._send_handling_auth(
+        request,
+    ...<2 lines>...
+        history=[],
+    )
+  File "/private/tmp/claude-501/-Users-ericguei-Claude-Projects-CAOS-LangMVP--claude-worktrees-open-session-bcaed2/1ac947a6-0861-46c7-bffc-6efc48b0173a/scratchpad/candidate/caos/server/.venv314/lib/python3.14/site-packages/httpx/_client.py", line 942, in _send_handling_auth
+    response = self._send_handling_redirects(
+        request,
+        follow_redirects=follow_redirects,
+        history=history,
+    )
+  File "/private/tmp/claude-501/-Users-ericguei-Claude-Projects-CAOS-LangMVP--claude-worktrees-open-session-bcaed2/1ac947a6-0861-46c7-bffc-6efc48b0173a/scratchpad/candidate/caos/server/.venv314/lib/python3.14/site-packages/httpx/_client.py", line 979, in _send_handling_redirects
+    response = self._send_single_request(request)
+  File "/private/tmp/claude-501/-Users-ericguei-Claude-Projects-CAOS-LangMVP--claude-worktrees-open-session-bcaed2/1ac947a6-0861-46c7-bffc-6efc48b0173a/scratchpad/candidate/caos/server/.venv314/lib/python3.14/site-packages/httpx/_client.py", line 1014, in _send_single_request
+    response = transport.handle_request(request)
+  File "/private/tmp/claude-501/-Users-ericguei-Claude-Projects-CAOS-LangMVP--claude-worktrees-open-session-bcaed2/1ac947a6-0861-46c7-bffc-6efc48b0173a/scratchpad/candidate/caos/server/.venv314/lib/python3.14/site-packages/httpx/_transports/default.py", line 249, in handle_request
+    with map_httpcore_exceptions():
+         ~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/contextlib.py", line 162, in __exit__
+    self.gen.throw(value)
+    ~~~~~~~~~~~~~~^^^^^^^
+  File "/private/tmp/claude-501/-Users-ericguei-Claude-Projects-CAOS-LangMVP--claude-worktrees-open-session-bcaed2/1ac947a6-0861-46c7-bffc-6efc48b0173a/scratchpad/candidate/caos/server/.venv314/lib/python3.14/site-packages/httpx/_transports/default.py", line 118, in map_httpcore_exceptions
+    raise mapped_exc(message) from exc
+httpx.ReadTimeout: timed out
+Exception in thread Thread-5 (job_driver):
+Traceback (most recent call last):
+  File "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/threading.py", line 1082, in _bootstrap_inner
+    self._context.run(self.run)
+    ~~~~~~~~~~~~~~~~~^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/threading.py", line 1024, in run
+    self._target(*self._args, **self._kwargs)
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/claude-501/-Users-ericguei-Claude-Projects-CAOS-LangMVP--claude-worktrees-open-session-bcaed2/1ac947a6-0861-46c7-bffc-6efc48b0173a/scratchpad/candidate/qa/capacity.py", line 480, in job_driver
+    run = wait_terminal(http, who[subject], response.json()["id"])
+  File "/private/tmp/claude-501/-Users-ericguei-Claude-Projects-CAOS-LangMVP--claude-worktrees-open-session-bcaed2/1ac947a6-0861-46c7-bffc-6efc48b0173a/scratchpad/candidate/qa/capacity.py", line 180, in wait_terminal
+    raise RuntimeError(f"run {run_id} unreadable for this subject: {response.status_code} {response.text[:120]}")
+RuntimeError: run run-e32508d0a89d4ea9b807 unreadable for this subject: 429 {"detail":"request rate ceiling reached"}
+Exception in thread Thread-14 (job_driver):
+Traceback (most recent call last):
+  File "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/threading.py", line 1082, in _bootstrap_inner
+    self._context.run(self.run)
+    ~~~~~~~~~~~~~~~~~^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/threading.py", line 1024, in run
+    self._target(*self._args, **self._kwargs)
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/claude-501/-Users-ericguei-Claude-Projects-CAOS-LangMVP--claude-worktrees-open-session-bcaed2/1ac947a6-0861-46c7-bffc-6efc48b0173a/scratchpad/candidate/qa/capacity.py", line 480, in job_driver
+    run = wait_terminal(http, who[subject], response.json()["id"])
+  File "/private/tmp/claude-501/-Users-ericguei-Claude-Projects-CAOS-LangMVP--claude-worktrees-open-session-bcaed2/1ac947a6-0861-46c7-bffc-6efc48b0173a/scratchpad/candidate/qa/capacity.py", line 180, in wait_terminal
+    raise RuntimeError(f"run {run_id} unreadable for this subject: {response.status_code} {response.text[:120]}")
+RuntimeError: run run-c62d263076074effbec9 unreadable for this subject: 429 {"detail":"request rate ceiling reached"}
+Exception in thread Thread-20 (job_driver):
+Traceback (most recent call last):
+  File "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/threading.py", line 1082, in _bootstrap_inner
+    self._context.run(self.run)
+    ~~~~~~~~~~~~~~~~~^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/threading.py", line 1024, in run
+    self._target(*self._args, **self._kwargs)
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/claude-501/-Users-ericguei-Claude-Projects-CAOS-LangMVP--claude-worktrees-open-session-bcaed2/1ac947a6-0861-46c7-bffc-6efc48b0173a/scratchpad/candidate/qa/capacity.py", line 480, in job_driver
+    run = wait_terminal(http, who[subject], response.json()["id"])
+  File "/private/tmp/claude-501/-Users-ericguei-Claude-Projects-CAOS-LangMVP--claude-worktrees-open-session-bcaed2/1ac947a6-0861-46c7-bffc-6efc48b0173a/scratchpad/candidate/qa/capacity.py", line 180, in wait_terminal
+    raise RuntimeError(f"run {run_id} unreadable for this subject: {response.status_code} {response.text[:120]}")
+RuntimeError: run run-e2f037f44f3b4062b3ec unreadable for this subject: 429 {"detail":"request rate ceiling reached"}
+Exception in thread Thread-47 (stream_holder):
+Traceback (most recent call last):
+  File "/private/tmp/claude-501/-Users-ericguei-Claude-Projects-CAOS-LangMVP--claude-worktrees-open-session-bcaed2/1ac947a6-0861-46c7-bffc-6efc48b0173a/scratchpad/candidate/caos/server/.venv314/lib/python3.14/site-packages/httpx/_transports/default.py", line 101, in map_httpcore_exceptions
+    yield
+  File "/private/tmp/claude-501/-Users-ericguei-Claude-Projects-CAOS-LangMVP--claude-worktrees-open-session-bcaed2/1ac947a6-0861-46c7-bffc-6efc48b0173a/scratchpad/candidate/caos/server/.venv314/lib/python3.14/site-packages/httpx/_transports/default.py", line 250, in handle_request
+    resp = self._pool.handle_request(req)
+  File "/private/tmp/claude-501/-Users-ericguei-Claude-Projects-CAOS-LangMVP--claude-worktrees-open-session-bcaed2/1ac947a6-0861-46c7-bffc-6efc48b0173a/scratchpad/candidate/caos/server/.venv314/lib/python3.14/site-packages/httpcore/_sync/connection_pool.py", line 256, in handle_request
+    raise exc from None
+  File "/private/tmp/claude-501/-Users-ericguei-Claude-Projects-CAOS-LangMVP--claude-worktrees-open-session-bcaed2/1ac947a6-0861-46c7-bffc-6efc48b0173a/scratchpad/candidate/caos/server/.venv314/lib/python3.14/site-packages/httpcore/_sync/connection_pool.py", line 236, in handle_request
+    response = connection.handle_request(
+        pool_request.request
+    )
+  File "/private/tmp/claude-501/-Users-ericguei-Claude-Projects-CAOS-LangMVP--claude-worktrees-open-session-bcaed2/1ac947a6-0861-46c7-bffc-6efc48b0173a/scratchpad/candidate/caos/server/.venv314/lib/python3.14/site-packages/httpcore/_sync/connection.py", line 103, in handle_request
+    return self._connection.handle_request(request)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^
+  File "/private/tmp/claude-501/-Users-ericguei-Claude-Projects-CAOS-LangMVP--claude-worktrees-open-session-bcaed2/1ac947a6-0861-46c7-bffc-6efc48b0173a/scratchpad/candidate/caos/server/.venv314/lib/python3.14/site-packages/httpcore/_sync/http11.py", line 136, in handle_request
+    raise exc
+  File "/private/tmp/claude-501/-Users-ericguei-Claude-Projects-CAOS-LangMVP--claude-worktrees-open-session-bcaed2/1ac947a6-0861-46c7-bffc-6efc48b0173a/scratchpad/candidate/caos/server/.venv314/lib/python3.14/site-packages/httpcore/_sync/http11.py", line 106, in handle_request
+    ) = self._receive_response_headers(**kwargs)
+        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^
+  File "/private/tmp/claude-501/-Users-ericguei-Claude-Projects-CAOS-LangMVP--claude-worktrees-open-session-bcaed2/1ac947a6-0861-46c7-bffc-6efc48b0173a/scratchpad/candidate/caos/server/.venv314/lib/python3.14/site-packages/httpcore/_sync/http11.py", line 177, in _receive_response_headers
+    event = self._receive_event(timeout=timeout)
+  File "/private/tmp/claude-501/-Users-ericguei-Claude-Projects-CAOS-LangMVP--claude-worktrees-open-session-bcaed2/1ac947a6-0861-46c7-bffc-6efc48b0173a/scratchpad/candidate/caos/server/.venv314/lib/python3.14/site-packages/httpcore/_sync/http11.py", line 217, in _receive_event
+    data = self._network_stream.read(
+        self.READ_NUM_BYTES, timeout=timeout
+    )
+  File "/private/tmp/claude-501/-Users-ericguei-Claude-Projects-CAOS-LangMVP--claude-worktrees-open-session-bcaed2/1ac947a6-0861-46c7-bffc-6efc48b0173a/scratchpad/candidate/caos/server/.venv314/lib/python3.14/site-packages/httpcore/_backends/sync.py", line 126, in read
+    with map_exceptions(exc_map):
+         ~~~~~~~~~~~~~~^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/contextlib.py", line 162, in __exit__
+    self.gen.throw(value)
+    ~~~~~~~~~~~~~~^^^^^^^
+  File "/private/tmp/claude-501/-Users-ericguei-Claude-Projects-CAOS-LangMVP--claude-worktrees-open-session-bcaed2/1ac947a6-0861-46c7-bffc-6efc48b0173a/scratchpad/candidate/caos/server/.venv314/lib/python3.14/site-packages/httpcore/_exceptions.py", line 14, in map_exceptions
+    raise to_exc(exc) from exc
+httpcore.ReadTimeout: timed out
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/threading.py", line 1082, in _bootstrap_inner
+    self._context.run(self.run)
+    ~~~~~~~~~~~~~~~~~^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/threading.py", line 1024, in run
+    self._target(*self._args, **self._kwargs)
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/claude-501/-Users-ericguei-Claude-Projects-CAOS-LangMVP--claude-worktrees-open-session-bcaed2/1ac947a6-0861-46c7-bffc-6efc48b0173a/scratchpad/candidate/qa/capacity.py", line 492, in stream_holder
+    case = http.get(f"/api/cases/{cases[0]}", headers=who[subject]).json()
+           ~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/claude-501/-Users-ericguei-Claude-Projects-CAOS-LangMVP--claude-worktrees-open-session-bcaed2/1ac947a6-0861-46c7-bffc-6efc48b0173a/scratchpad/candidate/caos/server/.venv314/lib/python3.14/site-packages/httpx/_client.py", line 1053, in get
+    return self.request(
+           ~~~~~~~~~~~~^
+        "GET",
+        ^^^^^^
+    ...<7 lines>...
+        extensions=extensions,
+        ^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/private/tmp/claude-501/-Users-ericguei-Claude-Projects-CAOS-LangMVP--claude-worktrees-open-session-bcaed2/1ac947a6-0861-46c7-bffc-6efc48b0173a/scratchpad/candidate/caos/server/.venv314/lib/python3.14/site-packages/httpx/_client.py", line 825, in request
+    return self.send(request, auth=auth, follow_redirects=follow_redirects)
+           ~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/claude-501/-Users-ericguei-Claude-Projects-CAOS-LangMVP--claude-worktrees-open-session-bcaed2/1ac947a6-0861-46c7-bffc-6efc48b0173a/scratchpad/candidate/caos/server/.venv314/lib/python3.14/site-packages/httpx/_client.py", line 914, in send
+    response = self._send_handling_auth(
+        request,
+    ...<2 lines>...
+        history=[],
+    )
+  File "/private/tmp/claude-501/-Users-ericguei-Claude-Projects-CAOS-LangMVP--claude-worktrees-open-session-bcaed2/1ac947a6-0861-46c7-bffc-6efc48b0173a/scratchpad/candidate/caos/server/.venv314/lib/python3.14/site-packages/httpx/_client.py", line 942, in _send_handling_auth
+    response = self._send_handling_redirects(
+        request,
+        follow_redirects=follow_redirects,
+        history=history,
+    )
+  File "/private/tmp/claude-501/-Users-ericguei-Claude-Projects-CAOS-LangMVP--claude-worktrees-open-session-bcaed2/1ac947a6-0861-46c7-bffc-6efc48b0173a/scratchpad/candidate/caos/server/.venv314/lib/python3.14/site-packages/httpx/_client.py", line 979, in _send_handling_redirects
+    response = self._send_single_request(request)
+  File "/private/tmp/claude-501/-Users-ericguei-Claude-Projects-CAOS-LangMVP--claude-worktrees-open-session-bcaed2/1ac947a6-0861-46c7-bffc-6efc48b0173a/scratchpad/candidate/caos/server/.venv314/lib/python3.14/site-packages/httpx/_client.py", line 1014, in _send_single_request
+    response = transport.handle_request(request)
+  File "/private/tmp/claude-501/-Users-ericguei-Claude-Projects-CAOS-LangMVP--claude-worktrees-open-session-bcaed2/1ac947a6-0861-46c7-bffc-6efc48b0173a/scratchpad/candidate/caos/server/.venv314/lib/python3.14/site-packages/httpx/_transports/default.py", line 249, in handle_request
+    with map_httpcore_exceptions():
+         ~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/contextlib.py", line 162, in __exit__
+    self.gen.throw(value)
+    ~~~~~~~~~~~~~~^^^^^^^
+  File "/private/tmp/claude-501/-Users-ericguei-Claude-Projects-CAOS-LangMVP--claude-worktrees-open-session-bcaed2/1ac947a6-0861-46c7-bffc-6efc48b0173a/scratchpad/candidate/caos/server/.venv314/lib/python3.14/site-packages/httpx/_transports/default.py", line 118, in map_httpcore_exceptions
+    raise mapped_exc(message) from exc
+httpx.ReadTimeout: timed out

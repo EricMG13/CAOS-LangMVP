@@ -1,0 +1,2 @@
+{"browser":"chromium","timing":{"domContentLoaded":60.5,"firstContentfulPaint":152},"budgetEnforced":true,"caseRequests":1}
+{"browser":"chromium","browser_version":"151.0.7922.34","status":"passed","duration_ms":136640,"results":"/Users/ericguei/Claude/Projects/CAOS-LangMVP/.claude/worktrees/open-session-bcaed2/.superpowers/sdd/candidates/2026-09-04-b88c0f8/gates/browser/test-results/chromium"}

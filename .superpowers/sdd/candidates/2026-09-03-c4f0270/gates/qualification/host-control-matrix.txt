@@ -1,0 +1,1460 @@
+C01/FULL_CREDIT/screen rep 1: exit 0
+C01/FULL_CREDIT/full rep 1: exit 0
+C01/EARNINGS_UPDATE/screen rep 1: exit 0
+C01/EARNINGS_UPDATE/full rep 1: exit 0
+C01/COVENANT_REFINANCING/screen rep 1: exit 0
+C01/COVENANT_REFINANCING/full rep 1: exit 0
+C01/RELATIVE_VALUE/screen rep 1: exit 0
+C01/RELATIVE_VALUE/full rep 1: exit 0
+C01/DISTRESSED_RESTRUCTURING/screen rep 1: exit 0
+C01/DISTRESSED_RESTRUCTURING/full rep 1: exit 0
+C01/DEEP_RESEARCH/full rep 1: exit 0
+C02/FULL_CREDIT/full rep 1: exit 0
+C02/EARNINGS_UPDATE/full rep 1: exit 0
+C03/FULL_CREDIT/full rep 1: exit 0
+C04/FULL_CREDIT/full rep 1: exit 0
+C05/FULL_CREDIT/full rep 1: exit 0
+C06/FULL_CREDIT/full rep 1: exit 0
+C07/FULL_CREDIT/full rep 1: exit 0
+C08/RELATIVE_VALUE/full rep 1: exit 0
+C09/FULL_CREDIT/full rep 1: exit 0
+C10/RELATIVE_VALUE/full rep 1: exit 0
+C11/COVENANT_REFINANCING/full rep 1: exit 0
+C12/FULL_CREDIT/full rep 1: exit 0
+C13/FULL_CREDIT/full rep 1: exit 0
+C14/FULL_CREDIT/full rep 1: exit 0
+C15/FULL_CREDIT/full rep 1: exit 0
+C16/FULL_CREDIT/full rep 1: exit 0
+C17/FULL_CREDIT/full rep 1: exit 0
+C18/EARNINGS_UPDATE/screen rep 1: exit 0
+C18/EARNINGS_UPDATE/full rep 1: exit 0
+C19/COVENANT_REFINANCING/screen rep 1: exit 0
+C19/COVENANT_REFINANCING/full rep 1: exit 0
+C20/RELATIVE_VALUE/screen rep 1: exit 2
+{
+  "blocked_code": "ANSWER_KEY_UNSIGNED",
+  "blocked_detail": "C20: the answer key carries no attestation",
+  "cell": "C20/RELATIVE_VALUE/screen",
+  "failed_dimensions": null,
+  "repetition": 1,
+  "result": "/Users/ericguei/Claude/Projects/CAOS-LangMVP/.claude/worktrees/open-session-bcaed2/.superpowers/sdd/candidates/2026-09-03-c4f0270/gates/qualification/evidence/host_control/C20/RELATIVE_VALUE-screen/rep-1-20260903T203428Z.json",
+  "run": null,
+  "verdict": "blocked"
+}
+
+
+C20/RELATIVE_VALUE/full rep 1: exit 2
+{
+  "blocked_code": "ANSWER_KEY_UNSIGNED",
+  "blocked_detail": "C20: the answer key carries no attestation",
+  "cell": "C20/RELATIVE_VALUE/full",
+  "failed_dimensions": null,
+  "repetition": 1,
+  "result": "/Users/ericguei/Claude/Projects/CAOS-LangMVP/.claude/worktrees/open-session-bcaed2/.superpowers/sdd/candidates/2026-09-03-c4f0270/gates/qualification/evidence/host_control/C20/RELATIVE_VALUE-full/rep-1-20260903T203428Z.json",
+  "run": null,
+  "verdict": "blocked"
+}
+
+
+C21/DISTRESSED_RESTRUCTURING/screen rep 1: exit 2
+{
+  "blocked_code": "ANSWER_KEY_UNSIGNED",
+  "blocked_detail": "C21: the answer key carries no attestation",
+  "cell": "C21/DISTRESSED_RESTRUCTURING/screen",
+  "failed_dimensions": null,
+  "repetition": 1,
+  "result": "/Users/ericguei/Claude/Projects/CAOS-LangMVP/.claude/worktrees/open-session-bcaed2/.superpowers/sdd/candidates/2026-09-03-c4f0270/gates/qualification/evidence/host_control/C21/DISTRESSED_RESTRUCTURING-screen/rep-1-20260903T203429Z.json",
+  "run": null,
+  "verdict": "blocked"
+}
+
+
+C21/DISTRESSED_RESTRUCTURING/full rep 1: exit 2
+{
+  "blocked_code": "ANSWER_KEY_UNSIGNED",
+  "blocked_detail": "C21: the answer key carries no attestation",
+  "cell": "C21/DISTRESSED_RESTRUCTURING/full",
+  "failed_dimensions": null,
+  "repetition": 1,
+  "result": "/Users/ericguei/Claude/Projects/CAOS-LangMVP/.claude/worktrees/open-session-bcaed2/.superpowers/sdd/candidates/2026-09-03-c4f0270/gates/qualification/evidence/host_control/C21/DISTRESSED_RESTRUCTURING-full/rep-1-20260903T203429Z.json",
+  "run": null,
+  "verdict": "blocked"
+}
+
+
+C22/DEEP_RESEARCH/full rep 1: exit 2
+{
+  "blocked_code": "ANSWER_KEY_UNSIGNED",
+  "blocked_detail": "C22: the answer key carries no attestation",
+  "cell": "C22/DEEP_RESEARCH/full",
+  "failed_dimensions": null,
+  "repetition": 1,
+  "result": "/Users/ericguei/Claude/Projects/CAOS-LangMVP/.claude/worktrees/open-session-bcaed2/.superpowers/sdd/candidates/2026-09-03-c4f0270/gates/qualification/evidence/host_control/C22/DEEP_RESEARCH-full/rep-1-20260903T203429Z.json",
+  "run": null,
+  "verdict": "blocked"
+}
+
+
+{
+  "binding_kind": "host_control",
+  "blocked_external": [
+    {
+      "answer_key_scopes": [
+        "host_control"
+      ],
+      "bytes": {
+        "artifact": null,
+        "location": "caos/tests/corpus/documents",
+        "owner": null,
+        "source": "fetch"
+      },
+      "needs": [
+        "an analyst-scope approval on the answer key (reviewer, date, digest)"
+      ],
+      "pack_id": "C01",
+      "unpinned_documents": []
+    },
+    {
+      "answer_key_scopes": [
+        "host_control"
+      ],
+      "bytes": {
+        "artifact": null,
+        "location": "caos/tests/corpus/synthetic.py",
+        "owner": null,
+        "source": "synthetic"
+      },
+      "needs": [
+        "an analyst-scope approval on the answer key (reviewer, date, digest)"
+      ],
+      "pack_id": "C02",
+      "unpinned_documents": []
+    },
+    {
+      "answer_key_scopes": [
+        "host_control"
+      ],
+      "bytes": {
+        "artifact": null,
+        "location": "caos/tests/corpus/synthetic.py",
+        "owner": null,
+        "source": "synthetic"
+      },
+      "needs": [
+        "an analyst-scope approval on the answer key (reviewer, date, digest)"
+      ],
+      "pack_id": "C03",
+      "unpinned_documents": []
+    },
+    {
+      "answer_key_scopes": [
+        "host_control"
+      ],
+      "bytes": {
+        "artifact": null,
+        "location": "caos/tests/corpus/synthetic.py",
+        "owner": null,
+        "source": "synthetic"
+      },
+      "needs": [
+        "an analyst-scope approval on the answer key (reviewer, date, digest)"
+      ],
+      "pack_id": "C04",
+      "unpinned_documents": []
+    },
+    {
+      "answer_key_scopes": [
+        "host_control"
+      ],
+      "bytes": {
+        "artifact": null,
+        "location": "caos/tests/corpus/synthetic.py",
+        "owner": null,
+        "source": "synthetic"
+      },
+      "needs": [
+        "an analyst-scope approval on the answer key (reviewer, date, digest)"
+      ],
+      "pack_id": "C05",
+      "unpinned_documents": []
+    },
+    {
+      "answer_key_scopes": [
+        "host_control"
+      ],
+      "bytes": {
+        "artifact": null,
+        "location": "caos/tests/corpus/synthetic.py",
+        "owner": null,
+        "source": "synthetic"
+      },
+      "needs": [
+        "an analyst-scope approval on the answer key (reviewer, date, digest)"
+      ],
+      "pack_id": "C06",
+      "unpinned_documents": []
+    },
+    {
+      "answer_key_scopes": [
+        "host_control"
+      ],
+      "bytes": {
+        "artifact": null,
+        "location": "caos/tests/corpus/synthetic.py",
+        "owner": null,
+        "source": "synthetic"
+      },
+      "needs": [
+        "an analyst-scope approval on the answer key (reviewer, date, digest)"
+      ],
+      "pack_id": "C07",
+      "unpinned_documents": []
+    },
+    {
+      "answer_key_scopes": [
+        "host_control"
+      ],
+      "bytes": {
+        "artifact": null,
+        "location": "caos/tests/corpus/synthetic.py",
+        "owner": null,
+        "source": "synthetic"
+      },
+      "needs": [
+        "an analyst-scope approval on the answer key (reviewer, date, digest)"
+      ],
+      "pack_id": "C08",
+      "unpinned_documents": []
+    },
+    {
+      "answer_key_scopes": [
+        "host_control"
+      ],
+      "bytes": {
+        "artifact": null,
+        "location": "caos/tests/corpus/synthetic.py",
+        "owner": null,
+        "source": "synthetic"
+      },
+      "needs": [
+        "an analyst-scope approval on the answer key (reviewer, date, digest)"
+      ],
+      "pack_id": "C09",
+      "unpinned_documents": []
+    },
+    {
+      "answer_key_scopes": [
+        "host_control"
+      ],
+      "bytes": {
+        "artifact": null,
+        "location": "caos/tests/corpus/synthetic.py",
+        "owner": null,
+        "source": "synthetic"
+      },
+      "needs": [
+        "an analyst-scope approval on the answer key (reviewer, date, digest)"
+      ],
+      "pack_id": "C10",
+      "unpinned_documents": []
+    },
+    {
+      "answer_key_scopes": [
+        "host_control"
+      ],
+      "bytes": {
+        "artifact": null,
+        "location": "caos/tests/corpus/synthetic.py",
+        "owner": null,
+        "source": "synthetic"
+      },
+      "needs": [
+        "an analyst-scope approval on the answer key (reviewer, date, digest)"
+      ],
+      "pack_id": "C11",
+      "unpinned_documents": []
+    },
+    {
+      "answer_key_scopes": [
+        "host_control"
+      ],
+      "bytes": {
+        "artifact": null,
+        "location": "caos/tests/corpus/synthetic.py",
+        "owner": null,
+        "source": "synthetic"
+      },
+      "needs": [
+        "an analyst-scope approval on the answer key (reviewer, date, digest)"
+      ],
+      "pack_id": "C12",
+      "unpinned_documents": []
+    },
+    {
+      "answer_key_scopes": [
+        "host_control"
+      ],
+      "bytes": {
+        "artifact": null,
+        "location": "caos/tests/corpus/synthetic.py",
+        "owner": null,
+        "source": "synthetic"
+      },
+      "needs": [
+        "an analyst-scope approval on the answer key (reviewer, date, digest)"
+      ],
+      "pack_id": "C13",
+      "unpinned_documents": []
+    },
+    {
+      "answer_key_scopes": [
+        "host_control"
+      ],
+      "bytes": {
+        "artifact": null,
+        "location": "caos/tests/corpus/synthetic.py",
+        "owner": null,
+        "source": "synthetic"
+      },
+      "needs": [
+        "an analyst-scope approval on the answer key (reviewer, date, digest)"
+      ],
+      "pack_id": "C14",
+      "unpinned_documents": []
+    },
+    {
+      "answer_key_scopes": [
+        "host_control"
+      ],
+      "bytes": {
+        "artifact": null,
+        "location": "caos/tests/corpus/synthetic.py",
+        "owner": null,
+        "source": "synthetic"
+      },
+      "needs": [
+        "an analyst-scope approval on the answer key (reviewer, date, digest)"
+      ],
+      "pack_id": "C15",
+      "unpinned_documents": []
+    },
+    {
+      "answer_key_scopes": [
+        "host_control"
+      ],
+      "bytes": {
+        "artifact": null,
+        "location": "caos/tests/corpus/synthetic.py",
+        "owner": null,
+        "source": "synthetic"
+      },
+      "needs": [
+        "an analyst-scope approval on the answer key (reviewer, date, digest)"
+      ],
+      "pack_id": "C16",
+      "unpinned_documents": []
+    },
+    {
+      "answer_key_scopes": [
+        "host_control"
+      ],
+      "bytes": {
+        "artifact": null,
+        "location": "caos/tests/corpus/documents",
+        "owner": null,
+        "source": "fetch"
+      },
+      "needs": [
+        "an analyst-scope approval on the answer key (reviewer, date, digest)"
+      ],
+      "pack_id": "C17",
+      "unpinned_documents": []
+    },
+    {
+      "answer_key_scopes": [
+        "host_control"
+      ],
+      "bytes": {
+        "artifact": null,
+        "location": "caos/tests/corpus/documents",
+        "owner": null,
+        "source": "fetch"
+      },
+      "needs": [
+        "an analyst-scope approval on the answer key (reviewer, date, digest)"
+      ],
+      "pack_id": "C18",
+      "unpinned_documents": []
+    },
+    {
+      "answer_key_scopes": [
+        "host_control"
+      ],
+      "bytes": {
+        "artifact": null,
+        "location": "caos/tests/corpus/documents",
+        "owner": null,
+        "source": "fetch"
+      },
+      "needs": [
+        "an analyst-scope approval on the answer key (reviewer, date, digest)"
+      ],
+      "pack_id": "C19",
+      "unpinned_documents": []
+    },
+    {
+      "answer_key_scopes": [],
+      "bytes": {
+        "artifact": "one CP-3-template XLSX of loan marks dated within 30 days of the FY2025 balance-sheet date, licence terms permitting test use",
+        "location": "$CAOS_CORPUS_EXTERNAL_DIR/C20",
+        "owner": "decision owner (market-data licence holder)",
+        "source": "external"
+      },
+      "needs": [
+        "1 document(s) acquired, digest-pinned and placed under $CAOS_CORPUS_EXTERNAL_DIR/C20/",
+        "an analyst-scope approval on the answer key (reviewer, date, digest)"
+      ],
+      "pack_id": "C20",
+      "unpinned_documents": [
+        "CCL_loan_universe_marks.xlsx"
+      ]
+    },
+    {
+      "answer_key_scopes": [],
+      "bytes": {
+        "artifact": "the 24 listed issuer documents acquired from the named URLs, SHA-256 pinned in this manifest, then moved to bytes.source=fetch",
+        "location": "$CAOS_CORPUS_EXTERNAL_DIR/C21",
+        "owner": "corpus owner (decision owner)",
+        "source": "external"
+      },
+      "needs": [
+        "24 document(s) acquired, digest-pinned and placed under $CAOS_CORPUS_EXTERNAL_DIR/C21/",
+        "an analyst-scope approval on the answer key (reviewer, date, digest)"
+      ],
+      "pack_id": "C21",
+      "unpinned_documents": [
+        "LUMN_2021_form_10K.pdf",
+        "LUMN_2022_form_10K.pdf",
+        "LUMN_2023_form_10K.pdf",
+        "LUMN_2024_form_10K.pdf",
+        "LUMN_2023_Q1_10Q.pdf",
+        "LUMN_2023_Q2_10Q.pdf",
+        "LUMN_2023_Q3_10Q.pdf",
+        "LUMN_2024_Q1_10Q.pdf",
+        "LUMN_2024_Q2_10Q.pdf",
+        "LUMN_2024_Q3_10Q.pdf",
+        "LUMN_2023_Q4_earnings_release.pdf",
+        "LUMN_2024_Q1_earnings_release.pdf",
+        "LUMN_2024_Q2_earnings_release.pdf",
+        "LUMN_2024_Q3_earnings_release.pdf",
+        "LUMN_2024_Q4_earnings_release.pdf",
+        "LUMN_2023_TSA_announcement.pdf",
+        "LUMN_2024_TSA_completion.pdf",
+        "LUMN_2024_exchange_offers.pdf",
+        "LUMN_2024_exchange_offer_results_8K.pdf",
+        "LUMN_2024_TSA_8K_credit_agreement_exhibits.pdf",
+        "LUMN_2024_Level3_superpriority_indenture_8K.pdf",
+        "LUMN_2024_Qwest_notes_indenture_8K.pdf",
+        "LUMN_2023_investor_day_presentation.pdf",
+        "LUMN_2024_Q4_guidance_presentation.pdf"
+      ]
+    },
+    {
+      "answer_key_scopes": [],
+      "bytes": {
+        "artifact": "research-brief.json satisfying the brief contract, the evidence documents the question needs, the expected synthesis and forbidden conclusions in the answer key, all digest-pinned",
+        "location": "$CAOS_CORPUS_EXTERNAL_DIR/C22",
+        "owner": "research analyst (decision owner delegate)",
+        "source": "external"
+      },
+      "needs": [
+        "2 document(s) acquired, digest-pinned and placed under $CAOS_CORPUS_EXTERNAL_DIR/C22/",
+        "an analyst-scope approval on the answer key (reviewer, date, digest)"
+      ],
+      "pack_id": "C22",
+      "unpinned_documents": [
+        "research-brief.json",
+        "evidence-set.pdf"
+      ]
+    }
+  ],
+  "blocking": [
+    {
+      "blocked": [
+        "ANSWER_KEY_UNSIGNED"
+      ],
+      "bytes": "external",
+      "cell_key": "C20/RELATIVE_VALUE/screen",
+      "depth": "screen",
+      "fails": 0,
+      "kind": "positive",
+      "needed": 1,
+      "outcome": "succeeded",
+      "pack_id": "C20",
+      "passes": 0,
+      "pathway": "RELATIVE_VALUE",
+      "proves_pathway": true,
+      "stage": "run",
+      "status": "blocked_external"
+    },
+    {
+      "blocked": [
+        "ANSWER_KEY_UNSIGNED"
+      ],
+      "bytes": "external",
+      "cell_key": "C20/RELATIVE_VALUE/full",
+      "depth": "full",
+      "fails": 0,
+      "kind": "positive",
+      "needed": 1,
+      "outcome": "succeeded",
+      "pack_id": "C20",
+      "passes": 0,
+      "pathway": "RELATIVE_VALUE",
+      "proves_pathway": true,
+      "stage": "run",
+      "status": "blocked_external"
+    },
+    {
+      "blocked": [
+        "ANSWER_KEY_UNSIGNED"
+      ],
+      "bytes": "external",
+      "cell_key": "C21/DISTRESSED_RESTRUCTURING/screen",
+      "depth": "screen",
+      "fails": 0,
+      "kind": "positive",
+      "needed": 1,
+      "outcome": "succeeded",
+      "pack_id": "C21",
+      "passes": 0,
+      "pathway": "DISTRESSED_RESTRUCTURING",
+      "proves_pathway": true,
+      "stage": "run",
+      "status": "blocked_external"
+    },
+    {
+      "blocked": [
+        "ANSWER_KEY_UNSIGNED"
+      ],
+      "bytes": "external",
+      "cell_key": "C21/DISTRESSED_RESTRUCTURING/full",
+      "depth": "full",
+      "fails": 0,
+      "kind": "positive",
+      "needed": 1,
+      "outcome": "succeeded",
+      "pack_id": "C21",
+      "passes": 0,
+      "pathway": "DISTRESSED_RESTRUCTURING",
+      "proves_pathway": true,
+      "stage": "run",
+      "status": "blocked_external"
+    },
+    {
+      "blocked": [
+        "ANSWER_KEY_UNSIGNED"
+      ],
+      "bytes": "external",
+      "cell_key": "C22/DEEP_RESEARCH/full",
+      "depth": "full",
+      "fails": 0,
+      "kind": "positive",
+      "needed": 1,
+      "outcome": "succeeded",
+      "pack_id": "C22",
+      "passes": 0,
+      "pathway": "DEEP_RESEARCH",
+      "proves_pathway": true,
+      "stage": "run",
+      "status": "blocked_external"
+    }
+  ],
+  "cell_exit_codes": {
+    "C01/COVENANT_REFINANCING/full#1": 0,
+    "C01/COVENANT_REFINANCING/screen#1": 0,
+    "C01/DEEP_RESEARCH/full#1": 0,
+    "C01/DISTRESSED_RESTRUCTURING/full#1": 0,
+    "C01/DISTRESSED_RESTRUCTURING/screen#1": 0,
+    "C01/EARNINGS_UPDATE/full#1": 0,
+    "C01/EARNINGS_UPDATE/screen#1": 0,
+    "C01/FULL_CREDIT/full#1": 0,
+    "C01/FULL_CREDIT/screen#1": 0,
+    "C01/RELATIVE_VALUE/full#1": 0,
+    "C01/RELATIVE_VALUE/screen#1": 0,
+    "C02/EARNINGS_UPDATE/full#1": 0,
+    "C02/FULL_CREDIT/full#1": 0,
+    "C03/FULL_CREDIT/full#1": 0,
+    "C04/FULL_CREDIT/full#1": 0,
+    "C05/FULL_CREDIT/full#1": 0,
+    "C06/FULL_CREDIT/full#1": 0,
+    "C07/FULL_CREDIT/full#1": 0,
+    "C08/RELATIVE_VALUE/full#1": 0,
+    "C09/FULL_CREDIT/full#1": 0,
+    "C10/RELATIVE_VALUE/full#1": 0,
+    "C11/COVENANT_REFINANCING/full#1": 0,
+    "C12/FULL_CREDIT/full#1": 0,
+    "C13/FULL_CREDIT/full#1": 0,
+    "C14/FULL_CREDIT/full#1": 0,
+    "C15/FULL_CREDIT/full#1": 0,
+    "C16/FULL_CREDIT/full#1": 0,
+    "C17/FULL_CREDIT/full#1": 0,
+    "C18/EARNINGS_UPDATE/full#1": 0,
+    "C18/EARNINGS_UPDATE/screen#1": 0,
+    "C19/COVENANT_REFINANCING/full#1": 0,
+    "C19/COVENANT_REFINANCING/screen#1": 0,
+    "C20/RELATIVE_VALUE/full#1": 2,
+    "C20/RELATIVE_VALUE/screen#1": 2,
+    "C21/DISTRESSED_RESTRUCTURING/full#1": 2,
+    "C21/DISTRESSED_RESTRUCTURING/screen#1": 2,
+    "C22/DEEP_RESEARCH/full#1": 2
+  },
+  "cells": [
+    {
+      "blocked": [],
+      "bytes": "fetch",
+      "cell_key": "C01/FULL_CREDIT/screen",
+      "depth": "screen",
+      "fails": 0,
+      "kind": "positive",
+      "needed": 1,
+      "outcome": "succeeded",
+      "pack_id": "C01",
+      "passes": 1,
+      "pathway": "FULL_CREDIT",
+      "proves_pathway": true,
+      "stage": "run",
+      "status": "passed"
+    },
+    {
+      "blocked": [],
+      "bytes": "fetch",
+      "cell_key": "C01/FULL_CREDIT/full",
+      "depth": "full",
+      "fails": 0,
+      "kind": "positive",
+      "needed": 1,
+      "outcome": "succeeded",
+      "pack_id": "C01",
+      "passes": 1,
+      "pathway": "FULL_CREDIT",
+      "proves_pathway": true,
+      "stage": "run",
+      "status": "passed"
+    },
+    {
+      "blocked": [],
+      "bytes": "fetch",
+      "cell_key": "C01/EARNINGS_UPDATE/screen",
+      "depth": "screen",
+      "fails": 0,
+      "kind": "positive",
+      "needed": 1,
+      "outcome": "succeeded",
+      "pack_id": "C01",
+      "passes": 1,
+      "pathway": "EARNINGS_UPDATE",
+      "proves_pathway": false,
+      "stage": "run",
+      "status": "passed"
+    },
+    {
+      "blocked": [],
+      "bytes": "fetch",
+      "cell_key": "C01/EARNINGS_UPDATE/full",
+      "depth": "full",
+      "fails": 0,
+      "kind": "positive",
+      "needed": 1,
+      "outcome": "succeeded",
+      "pack_id": "C01",
+      "passes": 1,
+      "pathway": "EARNINGS_UPDATE",
+      "proves_pathway": false,
+      "stage": "run",
+      "status": "passed"
+    },
+    {
+      "blocked": [],
+      "bytes": "fetch",
+      "cell_key": "C01/COVENANT_REFINANCING/screen",
+      "depth": "screen",
+      "fails": 0,
+      "kind": "positive",
+      "needed": 1,
+      "outcome": "succeeded",
+      "pack_id": "C01",
+      "passes": 1,
+      "pathway": "COVENANT_REFINANCING",
+      "proves_pathway": false,
+      "stage": "run",
+      "status": "passed"
+    },
+    {
+      "blocked": [],
+      "bytes": "fetch",
+      "cell_key": "C01/COVENANT_REFINANCING/full",
+      "depth": "full",
+      "fails": 0,
+      "kind": "positive",
+      "needed": 1,
+      "outcome": "succeeded",
+      "pack_id": "C01",
+      "passes": 1,
+      "pathway": "COVENANT_REFINANCING",
+      "proves_pathway": false,
+      "stage": "run",
+      "status": "passed"
+    },
+    {
+      "blocked": [],
+      "bytes": "fetch",
+      "cell_key": "C01/RELATIVE_VALUE/screen",
+      "depth": "screen",
+      "fails": 0,
+      "kind": "positive",
+      "needed": 1,
+      "outcome": "succeeded",
+      "pack_id": "C01",
+      "passes": 1,
+      "pathway": "RELATIVE_VALUE",
+      "proves_pathway": false,
+      "stage": "run",
+      "status": "passed"
+    },
+    {
+      "blocked": [],
+      "bytes": "fetch",
+      "cell_key": "C01/RELATIVE_VALUE/full",
+      "depth": "full",
+      "fails": 0,
+      "kind": "positive",
+      "needed": 1,
+      "outcome": "succeeded",
+      "pack_id": "C01",
+      "passes": 1,
+      "pathway": "RELATIVE_VALUE",
+      "proves_pathway": false,
+      "stage": "run",
+      "status": "passed"
+    },
+    {
+      "blocked": [],
+      "bytes": "fetch",
+      "cell_key": "C01/DISTRESSED_RESTRUCTURING/screen",
+      "depth": "screen",
+      "fails": 0,
+      "kind": "positive",
+      "needed": 1,
+      "outcome": "succeeded",
+      "pack_id": "C01",
+      "passes": 1,
+      "pathway": "DISTRESSED_RESTRUCTURING",
+      "proves_pathway": false,
+      "stage": "run",
+      "status": "passed"
+    },
+    {
+      "blocked": [],
+      "bytes": "fetch",
+      "cell_key": "C01/DISTRESSED_RESTRUCTURING/full",
+      "depth": "full",
+      "fails": 0,
+      "kind": "positive",
+      "needed": 1,
+      "outcome": "succeeded",
+      "pack_id": "C01",
+      "passes": 1,
+      "pathway": "DISTRESSED_RESTRUCTURING",
+      "proves_pathway": false,
+      "stage": "run",
+      "status": "passed"
+    },
+    {
+      "blocked": [],
+      "bytes": "fetch",
+      "cell_key": "C01/DEEP_RESEARCH/full",
+      "depth": "full",
+      "fails": 0,
+      "kind": "positive",
+      "needed": 1,
+      "outcome": "succeeded",
+      "pack_id": "C01",
+      "passes": 1,
+      "pathway": "DEEP_RESEARCH",
+      "proves_pathway": false,
+      "stage": "run",
+      "status": "passed"
+    },
+    {
+      "blocked": [],
+      "bytes": "synthetic",
+      "cell_key": "C02/FULL_CREDIT/full",
+      "depth": "full",
+      "fails": 0,
+      "kind": "negative",
+      "needed": 1,
+      "outcome": "refused",
+      "pack_id": "C02",
+      "passes": 1,
+      "pathway": "FULL_CREDIT",
+      "proves_pathway": false,
+      "stage": "run",
+      "status": "passed"
+    },
+    {
+      "blocked": [],
+      "bytes": "synthetic",
+      "cell_key": "C02/EARNINGS_UPDATE/full",
+      "depth": "full",
+      "fails": 0,
+      "kind": "negative",
+      "needed": 1,
+      "outcome": "refused",
+      "pack_id": "C02",
+      "passes": 1,
+      "pathway": "EARNINGS_UPDATE",
+      "proves_pathway": false,
+      "stage": "run",
+      "status": "passed"
+    },
+    {
+      "blocked": [],
+      "bytes": "synthetic",
+      "cell_key": "C03/FULL_CREDIT/full",
+      "depth": "full",
+      "fails": 0,
+      "kind": "negative",
+      "needed": 1,
+      "outcome": "succeeded",
+      "pack_id": "C03",
+      "passes": 1,
+      "pathway": "FULL_CREDIT",
+      "proves_pathway": false,
+      "stage": "run",
+      "status": "passed"
+    },
+    {
+      "blocked": [],
+      "bytes": "synthetic",
+      "cell_key": "C04/FULL_CREDIT/full",
+      "depth": "full",
+      "fails": 0,
+      "kind": "negative",
+      "needed": 1,
+      "outcome": "succeeded",
+      "pack_id": "C04",
+      "passes": 1,
+      "pathway": "FULL_CREDIT",
+      "proves_pathway": false,
+      "stage": "run",
+      "status": "passed"
+    },
+    {
+      "blocked": [],
+      "bytes": "synthetic",
+      "cell_key": "C05/FULL_CREDIT/full",
+      "depth": "full",
+      "fails": 0,
+      "kind": "negative",
+      "needed": 1,
+      "outcome": "succeeded",
+      "pack_id": "C05",
+      "passes": 1,
+      "pathway": "FULL_CREDIT",
+      "proves_pathway": false,
+      "stage": "run",
+      "status": "passed"
+    },
+    {
+      "blocked": [],
+      "bytes": "synthetic",
+      "cell_key": "C06/FULL_CREDIT/full",
+      "depth": "full",
+      "fails": 0,
+      "kind": "negative",
+      "needed": 1,
+      "outcome": "succeeded",
+      "pack_id": "C06",
+      "passes": 1,
+      "pathway": "FULL_CREDIT",
+      "proves_pathway": false,
+      "stage": "run",
+      "status": "passed"
+    },
+    {
+      "blocked": [],
+      "bytes": "synthetic",
+      "cell_key": "C07/FULL_CREDIT/full",
+      "depth": "full",
+      "fails": 0,
+      "kind": "negative",
+      "needed": 1,
+      "outcome": "succeeded",
+      "pack_id": "C07",
+      "passes": 1,
+      "pathway": "FULL_CREDIT",
+      "proves_pathway": false,
+      "stage": "run",
+      "status": "passed"
+    },
+    {
+      "blocked": [],
+      "bytes": "synthetic",
+      "cell_key": "C08/RELATIVE_VALUE/full",
+      "depth": "full",
+      "fails": 0,
+      "kind": "negative",
+      "needed": 1,
+      "outcome": "ingest",
+      "pack_id": "C08",
+      "passes": 1,
+      "pathway": "RELATIVE_VALUE",
+      "proves_pathway": false,
+      "stage": "ingest",
+      "status": "passed"
+    },
+    {
+      "blocked": [],
+      "bytes": "synthetic",
+      "cell_key": "C09/FULL_CREDIT/full",
+      "depth": "full",
+      "fails": 0,
+      "kind": "negative",
+      "needed": 1,
+      "outcome": "succeeded",
+      "pack_id": "C09",
+      "passes": 1,
+      "pathway": "FULL_CREDIT",
+      "proves_pathway": false,
+      "stage": "run",
+      "status": "passed"
+    },
+    {
+      "blocked": [],
+      "bytes": "synthetic",
+      "cell_key": "C10/RELATIVE_VALUE/full",
+      "depth": "full",
+      "fails": 0,
+      "kind": "negative",
+      "needed": 1,
+      "outcome": "ingest",
+      "pack_id": "C10",
+      "passes": 1,
+      "pathway": "RELATIVE_VALUE",
+      "proves_pathway": false,
+      "stage": "ingest",
+      "status": "passed"
+    },
+    {
+      "blocked": [],
+      "bytes": "synthetic",
+      "cell_key": "C11/COVENANT_REFINANCING/full",
+      "depth": "full",
+      "fails": 0,
+      "kind": "negative",
+      "needed": 1,
+      "outcome": "succeeded",
+      "pack_id": "C11",
+      "passes": 1,
+      "pathway": "COVENANT_REFINANCING",
+      "proves_pathway": false,
+      "stage": "run",
+      "status": "passed"
+    },
+    {
+      "blocked": [],
+      "bytes": "synthetic",
+      "cell_key": "C12/FULL_CREDIT/full",
+      "depth": "full",
+      "fails": 0,
+      "kind": "negative",
+      "needed": 1,
+      "outcome": "succeeded",
+      "pack_id": "C12",
+      "passes": 1,
+      "pathway": "FULL_CREDIT",
+      "proves_pathway": false,
+      "stage": "run",
+      "status": "passed"
+    },
+    {
+      "blocked": [],
+      "bytes": "synthetic",
+      "cell_key": "C13/FULL_CREDIT/full",
+      "depth": "full",
+      "fails": 0,
+      "kind": "negative",
+      "needed": 1,
+      "outcome": "ingest",
+      "pack_id": "C13",
+      "passes": 1,
+      "pathway": "FULL_CREDIT",
+      "proves_pathway": false,
+      "stage": "ingest",
+      "status": "passed"
+    },
+    {
+      "blocked": [],
+      "bytes": "synthetic",
+      "cell_key": "C14/FULL_CREDIT/full",
+      "depth": "full",
+      "fails": 0,
+      "kind": "negative",
+      "needed": 1,
+      "outcome": "succeeded",
+      "pack_id": "C14",
+      "passes": 1,
+      "pathway": "FULL_CREDIT",
+      "proves_pathway": false,
+      "stage": "run",
+      "status": "passed"
+    },
+    {
+      "blocked": [],
+      "bytes": "synthetic",
+      "cell_key": "C15/FULL_CREDIT/full",
+      "depth": "full",
+      "fails": 0,
+      "kind": "negative",
+      "needed": 1,
+      "outcome": "ingest",
+      "pack_id": "C15",
+      "passes": 1,
+      "pathway": "FULL_CREDIT",
+      "proves_pathway": false,
+      "stage": "ingest",
+      "status": "passed"
+    },
+    {
+      "blocked": [],
+      "bytes": "synthetic",
+      "cell_key": "C16/FULL_CREDIT/full",
+      "depth": "full",
+      "fails": 0,
+      "kind": "negative",
+      "needed": 1,
+      "outcome": "succeeded",
+      "pack_id": "C16",
+      "passes": 1,
+      "pathway": "FULL_CREDIT",
+      "proves_pathway": false,
+      "stage": "run",
+      "status": "passed"
+    },
+    {
+      "blocked": [],
+      "bytes": "fetch",
+      "cell_key": "C17/FULL_CREDIT/full",
+      "depth": "full",
+      "fails": 0,
+      "kind": "positive",
+      "needed": 1,
+      "outcome": "succeeded",
+      "pack_id": "C17",
+      "passes": 1,
+      "pathway": "FULL_CREDIT",
+      "proves_pathway": true,
+      "stage": "run",
+      "status": "passed"
+    },
+    {
+      "blocked": [],
+      "bytes": "fetch",
+      "cell_key": "C18/EARNINGS_UPDATE/screen",
+      "depth": "screen",
+      "fails": 0,
+      "kind": "positive",
+      "needed": 1,
+      "outcome": "succeeded",
+      "pack_id": "C18",
+      "passes": 1,
+      "pathway": "EARNINGS_UPDATE",
+      "proves_pathway": true,
+      "stage": "run",
+      "status": "passed"
+    },
+    {
+      "blocked": [],
+      "bytes": "fetch",
+      "cell_key": "C18/EARNINGS_UPDATE/full",
+      "depth": "full",
+      "fails": 0,
+      "kind": "positive",
+      "needed": 1,
+      "outcome": "succeeded",
+      "pack_id": "C18",
+      "passes": 1,
+      "pathway": "EARNINGS_UPDATE",
+      "proves_pathway": true,
+      "stage": "run",
+      "status": "passed"
+    },
+    {
+      "blocked": [],
+      "bytes": "fetch",
+      "cell_key": "C19/COVENANT_REFINANCING/screen",
+      "depth": "screen",
+      "fails": 0,
+      "kind": "positive",
+      "needed": 1,
+      "outcome": "succeeded",
+      "pack_id": "C19",
+      "passes": 1,
+      "pathway": "COVENANT_REFINANCING",
+      "proves_pathway": true,
+      "stage": "run",
+      "status": "passed"
+    },
+    {
+      "blocked": [],
+      "bytes": "fetch",
+      "cell_key": "C19/COVENANT_REFINANCING/full",
+      "depth": "full",
+      "fails": 0,
+      "kind": "positive",
+      "needed": 1,
+      "outcome": "succeeded",
+      "pack_id": "C19",
+      "passes": 1,
+      "pathway": "COVENANT_REFINANCING",
+      "proves_pathway": true,
+      "stage": "run",
+      "status": "passed"
+    },
+    {
+      "blocked": [
+        "ANSWER_KEY_UNSIGNED"
+      ],
+      "bytes": "external",
+      "cell_key": "C20/RELATIVE_VALUE/screen",
+      "depth": "screen",
+      "fails": 0,
+      "kind": "positive",
+      "needed": 1,
+      "outcome": "succeeded",
+      "pack_id": "C20",
+      "passes": 0,
+      "pathway": "RELATIVE_VALUE",
+      "proves_pathway": true,
+      "stage": "run",
+      "status": "blocked_external"
+    },
+    {
+      "blocked": [
+        "ANSWER_KEY_UNSIGNED"
+      ],
+      "bytes": "external",
+      "cell_key": "C20/RELATIVE_VALUE/full",
+      "depth": "full",
+      "fails": 0,
+      "kind": "positive",
+      "needed": 1,
+      "outcome": "succeeded",
+      "pack_id": "C20",
+      "passes": 0,
+      "pathway": "RELATIVE_VALUE",
+      "proves_pathway": true,
+      "stage": "run",
+      "status": "blocked_external"
+    },
+    {
+      "blocked": [
+        "ANSWER_KEY_UNSIGNED"
+      ],
+      "bytes": "external",
+      "cell_key": "C21/DISTRESSED_RESTRUCTURING/screen",
+      "depth": "screen",
+      "fails": 0,
+      "kind": "positive",
+      "needed": 1,
+      "outcome": "succeeded",
+      "pack_id": "C21",
+      "passes": 0,
+      "pathway": "DISTRESSED_RESTRUCTURING",
+      "proves_pathway": true,
+      "stage": "run",
+      "status": "blocked_external"
+    },
+    {
+      "blocked": [
+        "ANSWER_KEY_UNSIGNED"
+      ],
+      "bytes": "external",
+      "cell_key": "C21/DISTRESSED_RESTRUCTURING/full",
+      "depth": "full",
+      "fails": 0,
+      "kind": "positive",
+      "needed": 1,
+      "outcome": "succeeded",
+      "pack_id": "C21",
+      "passes": 0,
+      "pathway": "DISTRESSED_RESTRUCTURING",
+      "proves_pathway": true,
+      "stage": "run",
+      "status": "blocked_external"
+    },
+    {
+      "blocked": [
+        "ANSWER_KEY_UNSIGNED"
+      ],
+      "bytes": "external",
+      "cell_key": "C22/DEEP_RESEARCH/full",
+      "depth": "full",
+      "fails": 0,
+      "kind": "positive",
+      "needed": 1,
+      "outcome": "succeeded",
+      "pack_id": "C22",
+      "passes": 0,
+      "pathway": "DEEP_RESEARCH",
+      "proves_pathway": true,
+      "stage": "run",
+      "status": "blocked_external"
+    }
+  ],
+  "complete": false,
+  "current": {
+    "commit": "c4f0270104ad659f7d54dd530b74ba4fd5bb6ccc",
+    "corpus_digest": "460e3ad6a64c8f78632862921f4d181f0fcb866160a6aa2f44b8c476d70ae7e3",
+    "identity_digest": "4e3a6e8fbd028475ac4acb81466ecfad1d867697b7bd74d6c8e888e2fd7b3137",
+    "methodology_build_id": "237bf4bc56b616b1c679a32c3733a2d9baf580b113758329320478e0226bae9d",
+    "methodology_manifest_digest": "d320bc44ccec402dba3bca1d8cb340de85f68d3f4560e9ac7ba2234e882b6231",
+    "policy_digest": "986e65236178128abeca0168c914c177310b15290e40fe89fb9c0b3f9b998f3f"
+  },
+  "expired_results": [],
+  "pathways": {
+    "COVENANT_REFINANCING/full": {
+      "proven_by": [
+        "C19"
+      ],
+      "qualified": true,
+      "required": [
+        {
+          "pack": "C01",
+          "status": "passed"
+        },
+        {
+          "pack": "C11",
+          "status": "passed"
+        },
+        {
+          "pack": "C19",
+          "status": "passed"
+        }
+      ]
+    },
+    "COVENANT_REFINANCING/screen": {
+      "proven_by": [
+        "C19"
+      ],
+      "qualified": true,
+      "required": [
+        {
+          "pack": "C01",
+          "status": "passed"
+        },
+        {
+          "pack": "C19",
+          "status": "passed"
+        }
+      ]
+    },
+    "DEEP_RESEARCH/full": {
+      "proven_by": [],
+      "qualified": false,
+      "required": [
+        {
+          "pack": "C01",
+          "status": "passed"
+        },
+        {
+          "pack": "C22",
+          "status": "blocked_external"
+        }
+      ]
+    },
+    "DISTRESSED_RESTRUCTURING/full": {
+      "proven_by": [],
+      "qualified": false,
+      "required": [
+        {
+          "pack": "C01",
+          "status": "passed"
+        },
+        {
+          "pack": "C21",
+          "status": "blocked_external"
+        }
+      ]
+    },
+    "DISTRESSED_RESTRUCTURING/screen": {
+      "proven_by": [],
+      "qualified": false,
+      "required": [
+        {
+          "pack": "C01",
+          "status": "passed"
+        },
+        {
+          "pack": "C21",
+          "status": "blocked_external"
+        }
+      ]
+    },
+    "EARNINGS_UPDATE/full": {
+      "proven_by": [
+        "C18"
+      ],
+      "qualified": true,
+      "required": [
+        {
+          "pack": "C01",
+          "status": "passed"
+        },
+        {
+          "pack": "C02",
+          "status": "passed"
+        },
+        {
+          "pack": "C18",
+          "status": "passed"
+        }
+      ]
+    },
+    "EARNINGS_UPDATE/screen": {
+      "proven_by": [
+        "C18"
+      ],
+      "qualified": true,
+      "required": [
+        {
+          "pack": "C01",
+          "status": "passed"
+        },
+        {
+          "pack": "C18",
+          "status": "passed"
+        }
+      ]
+    },
+    "FULL_CREDIT/full": {
+      "proven_by": [
+        "C01",
+        "C17"
+      ],
+      "qualified": true,
+      "required": [
+        {
+          "pack": "C01",
+          "status": "passed"
+        },
+        {
+          "pack": "C02",
+          "status": "passed"
+        },
+        {
+          "pack": "C03",
+          "status": "passed"
+        },
+        {
+          "pack": "C04",
+          "status": "passed"
+        },
+        {
+          "pack": "C05",
+          "status": "passed"
+        },
+        {
+          "pack": "C06",
+          "status": "passed"
+        },
+        {
+          "pack": "C07",
+          "status": "passed"
+        },
+        {
+          "pack": "C09",
+          "status": "passed"
+        },
+        {
+          "pack": "C12",
+          "status": "passed"
+        },
+        {
+          "pack": "C13",
+          "status": "passed"
+        },
+        {
+          "pack": "C14",
+          "status": "passed"
+        },
+        {
+          "pack": "C15",
+          "status": "passed"
+        },
+        {
+          "pack": "C16",
+          "status": "passed"
+        },
+        {
+          "pack": "C17",
+          "status": "passed"
+        }
+      ]
+    },
+    "FULL_CREDIT/screen": {
+      "proven_by": [
+        "C01"
+      ],
+      "qualified": true,
+      "required": [
+        {
+          "pack": "C01",
+          "status": "passed"
+        }
+      ]
+    },
+    "RELATIVE_VALUE/full": {
+      "proven_by": [],
+      "qualified": false,
+      "required": [
+        {
+          "pack": "C01",
+          "status": "passed"
+        },
+        {
+          "pack": "C08",
+          "status": "passed"
+        },
+        {
+          "pack": "C10",
+          "status": "passed"
+        },
+        {
+          "pack": "C20",
+          "status": "blocked_external"
+        }
+      ]
+    },
+    "RELATIVE_VALUE/screen": {
+      "proven_by": [],
+      "qualified": false,
+      "required": [
+        {
+          "pack": "C01",
+          "status": "passed"
+        },
+        {
+          "pack": "C20",
+          "status": "blocked_external"
+        }
+      ]
+    }
+  },
+  "repetitions": 1,
+  "selected_packs": "all",
+  "stale_results": [],
+  "verdict": "ORCHESTRATION_PROOF_INCOMPLETE"
+}
+exit 1

@@ -1,0 +1,4 @@
+## post-reset golden journey (G9 repeat) = pre-soak journey, chromium, on the stack reset by down -v / up
+{"browser":"chromium","timing":{"domContentLoaded":102.69999992847443,"firstContentfulPaint":200},"budgetEnforced":true,"caseRequests":1}
+{"browser":"chromium","browser_version":"151.0.7922.34","status":"passed","duration_ms":140161,"results":"/Users/ericguei/Claude/Projects/CAOS-LangMVP/.claude/worktrees/open-session-bcaed2/.superpowers/sdd/candidates/2026-09-04-b88c0f8/soak/pre-soak-journey/chromium"}
+journey exit 0

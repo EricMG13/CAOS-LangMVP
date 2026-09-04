@@ -1,0 +1,2 @@
+{"browser":"firefox","timing":{"domContentLoaded":178,"firstContentfulPaint":232},"budgetEnforced":false,"caseRequests":1}
+{"browser":"firefox","browser_version":"153.0","status":"passed","duration_ms":146530,"results":"/Users/ericguei/Claude/Projects/CAOS-LangMVP/.claude/worktrees/open-session-bcaed2/.superpowers/sdd/candidates/2026-09-04-b88c0f8/gates/browser/test-results/firefox"}

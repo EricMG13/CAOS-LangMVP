@@ -27,9 +27,13 @@ ROOT = Path(__file__).resolve().parent.parent
 LEDGER = ROOT / "docs" / "QUALITY_LEDGER.csv"
 API = ROOT / "caos" / "server" / "caos" / "api" / "__init__.py"
 
-# Checked-in but not the product: agent skills, review notes, design history.
+# Checked-in but not the product: agent skills, review notes, design history,
+# and the task reports, loop logs and retained candidate evidence under
+# .superpowers/ (Task 13 commits a candidate's gate outputs there; they are
+# evidence about the product, never part of it).
 EXCLUDED_PREFIXES = (".agents/", ".claude/", ".github/skills/", ".github/hooks/",
-                     "notes/", "DESIGN-IS-2026-08-27/", ".agent-reviews/", ".impeccable/")
+                     "notes/", "DESIGN-IS-2026-08-27/", ".agent-reviews/", ".impeccable/",
+                     ".superpowers/")
 EXCLUDED_FILES = {".gitattributes", ".gitignore", ".fallowrc.json", ".gitleaks.toml", "LICENSE",
                   "caos/tests/corpus/.gitignore"}
 
@@ -69,6 +73,7 @@ FILE_MAP = {
     r"^caos/frontend/scripts/draft-history-smoke": "F-UI-09, F-UI-11",
     r"^caos/frontend/scripts/workbench-smoke": "F-UI-02, F-UI-04",
     r"^caos/frontend/scripts/run-browsers": "F-UI-02, F-UI-04 (the three-engine runner for the workbench journey)",
+    r"^caos/frontend/scripts/webkit-teardown": "F-UI-02, F-UI-04 (WebKit's navigation-time fetch rejections, filtered only with server evidence; D-016)",
     r"^caos/frontend/scripts/draft-history-smoke": "F-UI-02, F-UI-04",
     r"^caos/frontend/scripts/identity-a11y": "F-UI-14, F-UI-15",
     r"^caos/frontend/scripts/production-inventory": "F-OPS-02 (D-009)",

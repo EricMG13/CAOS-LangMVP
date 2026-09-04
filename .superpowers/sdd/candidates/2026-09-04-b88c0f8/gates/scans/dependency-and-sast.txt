@@ -1,0 +1,9 @@
+# pip-audit --require-hashes -r caos/server/requirements.txt
+No known vulnerabilities found
+pip-audit exit 0
+pip-audit audited 57 dependencies, none vulnerable
+floor exit 0
+# bandit
+bandit exit 0
+bandit scanned 21632 lines with no parse errors
+floor exit 0

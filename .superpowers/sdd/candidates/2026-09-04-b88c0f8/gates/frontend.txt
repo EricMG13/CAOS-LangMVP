@@ -1,0 +1,35 @@
+# npm run lint -- --max-warnings=0
+
+> caos-frontend@0.1.0 lint
+> eslint . --max-warnings=0
+
+exit 0
+# npx tsc --noEmit
+exit 0
+# npm run build
+  Creating an optimized production build ...
+✓ Compiled successfully in 1803ms
+  Running TypeScript ...
+  Finished TypeScript in 2.4s ...
+  Collecting page data using 5 workers ...
+  Generating static pages using 5 workers (0/12) ...
+  Generating static pages using 5 workers (3/12) 
+  Generating static pages using 5 workers (6/12) 
+  Generating static pages using 5 workers (9/12) 
+✓ Generating static pages using 5 workers (12/12) in 320ms
+  Finalizing page optimization ...
+
+Route (app)
+┌ ○ /
+├ ○ /_not-found
+└   /[destination]
+  ├ ● /cases
+  ├ ● /sources
+  ├ ● /run-console
+  └ ● [+6 more paths]
+
+
+○  (Static)  prerendered as static content
+●  (SSG)     prerendered as static HTML (uses generateStaticParams)
+
+exit 0

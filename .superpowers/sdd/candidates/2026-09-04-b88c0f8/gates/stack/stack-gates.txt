@@ -1,0 +1,88 @@
+## stack before the gates
+caos-cand-20260904-app-1 caos-cand-20260904-app:b88c0f8 Up 29 minutes (healthy)
+caos-cand-20260904-clamav-1 clamav/clamav:1.5@sha256:0e85467cb0d6e7d860a45035707741cd5ffc032ffefc6002a3510c75b6d07027 Up 30 minutes (healthy)
+caos-cand-20260904-db-1 postgres:17-alpine@sha256:18cfe3ef5e6815560c98237d6216d1e5119702fb0f3894c8785dd58b8bbe5d73 Up 30 minutes (healthy)
+caos-cand-20260904-worker-1 caos-cand-20260904-worker:b88c0f8 Up 29 minutes
+{'cases': 36, 'sources': 72, 'runs': 36, 'runs_by_status': {'paused': 6, 'succeeded': 30}, 'snapshots': 6, 'model_builds': 0, 'frozen': 0, 'receipts': 0, 'audit_events': 171, 'chain_heads': 38, 'run_events': 621, 'run_nodes_non_terminal': 6, 'freeze_jobs_open': 0, 'builds_open': 0, 'db_connections': 14}
+## limits: qa/capacity.py limits --url http://127.0.0.1:18300
+             PASS  requests per subject per minute (declared 300)
+             PASS  event streams per subject (declared 4)
+             PASS  model previews per subject (declared 2)
+             PASS  active jobs per instance (declared 20)
+             PASS  source bytes (declared 26214400)
+    NOT_EXERCISED  request bytes (declared 33554432)
+             PASS  documents per intake (declared 40)
+             PASS  manifest rows per run (declared 2000)
+written /Users/ericguei/Claude/Projects/CAOS-LangMVP/.claude/worktrees/open-session-bcaed2/.superpowers/sdd/candidates/2026-09-04-b88c0f8/gates/stack/capacity-limits.json
+limits exit 0
+## backup: caos/deploy/backup.sh (writers paused for the capture)
+encrypted backup written to /private/tmp/claude-501/-Users-ericguei-Claude-Projects-CAOS-LangMVP--claude-worktrees-open-session-bcaed2/1ac947a6-0861-46c7-bffc-6efc48b0173a/scratchpad/backup/out (recipient age1c5nucajmsd8qsfyp9fd5v0mu3x2xjw2j8ma467ppmpmsc8tmueuq3ymfzq, vault volume caos-cand-20260904_vault-data)
+backup exit 0 in 1 s
+drwxr-xr-x@ 5 ericguei  wheel      160 Sep  4 01:01 .
+drwxr-xr-x@ 6 ericguei  wheel      192 Sep  4 01:01 ..
+-rw-------@ 1 ericguei  wheel      304 Sep  4 01:01 caos.backup.manifest
+-rw-------@ 1 ericguei  wheel  1103897 Sep  4 01:01 caos.dump.age
+-rw-------@ 1 ericguei  wheel   570266 Sep  4 01:01 vault.tgz.age
+recipient age1c5nucajmsd8qsfyp9fd5v0mu3x2xjw2j8ma467ppmpmsc8tmueuq3ymfzq
+vault_volume caos-cand-20260904_vault-data
+snapshot_point paused-writers
+caos.dump.age 2968d049df2422ce80dff3c549ea07f038fa3f743f18befedba5446ba06c648d
+vault.tgz.age fd8ee55d0ff063a3b26aeb7da393eeffc5f8ff1dd741b8e271cdf674cad7897e
+app after backup:
+{"status":"ok","store":true,"bundle":true,"checkpointer":true}
+## restore: caos/deploy/restore_drill.sh into an isolated database and volume
+DO
+ Container caos-cand-20260904-worker-1 Running 
+ Container caos-cand-20260904-app-1 Running 
+ Container caos-cand-20260904-db-1 Running 
+ Container caos-cand-20260904-clamav-1 Running 
+ Container caos-cand-20260904-app-run-5a0e7d1383af Creating 
+ Container caos-cand-20260904-app-run-5a0e7d1383af Created 
+restore drill passed for isolated database caos_restore_drill_cand
+restore drill exit 0
+restored row counts (isolated database caos_restore_drill_cand):
+psql: error: connection to server on socket "/var/run/postgresql/.s.PGSQL.5432" failed: FATAL:  database "caos_restore_drill_cand" does not exist
+restored vault entries:
+0
+NOTICE:  database "caos_restore_drill_cand" does not exist, skipping
+drill database and volume removed
+## single instance: a second app over the same vault volume
+    raise InstanceAlreadyRunning(lock_path) from exc
+caos.instance_lock.InstanceAlreadyRunning: INSTANCE_ALREADY_RUNNING: another CAOS application instance holds the checkpoint location /vault/checkpoints.db.lock
+
+second instance exit 1
+first app still:
+{"status":"ok","store":true,"bundle":true,"checkpointer":true}
+## hard kill of app and worker, then restart on the same volumes
+ Container caos-cand-20260904-app-1 Killing 
+ Container caos-cand-20260904-worker-1 Killing 
+ Container caos-cand-20260904-app-1 Killed 
+ Container caos-cand-20260904-worker-1 Killed 
+ Container caos-cand-20260904-worker-1 Starting 
+ Container caos-cand-20260904-worker-1 Started 
+{"status":"ok","store":true,"bundle":true,"checkpointer":true}
+health back 11 s after the kill
+"event": "recovery.started", "runs": 6
+"event": "recovery.run", "run_id": "run-b1935f425578417091a6", "action": "skipped_interrupt"
+"event": "recovery.run", "run_id": "run-13147e74719d45f7a023", "action": "skipped_interrupt"
+"event": "recovery.run", "run_id": "run-d5572a4f762a4f948799", "action": "skipped_interrupt"
+"event": "recovery.run", "run_id": "run-a657a7e155054d919f06", "action": "skipped_interrupt"
+before: {'cases': 67, 'sources': 128, 'runs': 62, 'runs_by_status': {'succeeded': 55, 'failed': 1, 'paused': 6}, 'snapshots': 6, 'model_builds': 0, 'frozen': 0, 'receipts': 0, 'audit_events': 263, 'chain_heads': 69, 'run_events': 1502, 'run_nodes_non_terminal': 14, 'freeze_jobs_open': 0, 'builds_open': 0, 'db_connections': 14}
+after:  {'cases': 67, 'sources': 128, 'runs': 62, 'runs_by_status': {'succeeded': 55, 'failed': 1, 'paused': 6}, 'snapshots': 6, 'model_builds': 0, 'frozen': 0, 'receipts': 0, 'audit_events': 263, 'chain_heads': 69, 'run_events': 1502, 'run_nodes_non_terminal': 14, 'freeze_jobs_open': 0, 'builds_open': 0, 'db_connections': 10}
+## reset: down -v, then up on the same images
+ Volume caos-cand-20260904_vault-data Removed 
+ Volume caos-cand-20260904_postgres-data Removed 
+ Network caos-cand-20260904_internal Removed 
+no project volumes remain
+ Container caos-cand-20260904-app-1 Healthy 
+ Container caos-cand-20260904-worker-1 Starting 
+ Container caos-cand-20260904-worker-1 Started 
+{"status":"ok","store":true,"bundle":true,"checkpointer":true}
+tables: 31
+startup tables missing: 0
+after reset: {'cases': 0, 'sources': 0, 'runs': 0, 'runs_by_status': {}, 'snapshots': 0, 'model_builds': 0, 'frozen': 0, 'receipts': 0, 'audit_events': 0, 'chain_heads': 1, 'run_events': 0, 'run_nodes_non_terminal': 0, 'freeze_jobs_open': 0, 'builds_open': 0, 'db_connections': 8}
+GET /api/cases as an analyst: []
+caos-cand-20260904-app-1 caos-cand-20260904-app:b88c0f8 Up 11 seconds (healthy)
+caos-cand-20260904-clamav-1 clamav/clamav:1.5@sha256:0e85467cb0d6e7d860a45035707741cd5ffc032ffefc6002a3510c75b6d07027 Up About a minute (healthy)
+caos-cand-20260904-db-1 postgres:17-alpine@sha256:18cfe3ef5e6815560c98237d6216d1e5119702fb0f3894c8785dd58b8bbe5d73 Up About a minute (healthy)
+caos-cand-20260904-worker-1 caos-cand-20260904-worker:b88c0f8 Up Less than a second

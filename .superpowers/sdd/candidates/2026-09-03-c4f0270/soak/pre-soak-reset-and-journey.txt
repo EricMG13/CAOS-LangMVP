@@ -1,0 +1,12 @@
+## reset before soak attempt 3: down -v / up
+ Network caos-cand-20260903_internal Removed 
+ Volume caos-cand-20260903_vault-data Removed 
+no project volumes remain
+ Container caos-cand-20260903-worker-1 Starting 
+ Container caos-cand-20260903-worker-1 Started 
+{"status":"ok","store":true,"bundle":true,"checkpointer":true}
+{'cases': 0, 'sources': 0, 'runs': 0, 'runs_by_status': {}, 'snapshots': 0, 'model_builds': 0, 'frozen': 0, 'receipts': 0, 'audit_events': 0, 'chain_heads': 1, 'run_events': 0, 'run_nodes_non_terminal': 0, 'freeze_jobs_open': 0, 'builds_open': 0, 'db_connections': 8}
+## pre-soak golden journey (chromium) on the reset stack
+{"browser":"chromium","timing":{"domContentLoaded":90.10000002384186,"firstContentfulPaint":184},"budgetEnforced":true,"caseRequests":1}
+{"browser":"chromium","browser_version":"151.0.7922.34","status":"passed","duration_ms":138156,"results":"/Users/ericguei/Claude/Projects/CAOS-LangMVP/.claude/worktrees/open-session-bcaed2/.superpowers/sdd/candidates/2026-09-03-c4f0270/soak/pre-soak-journey/chromium"}
+journey exit 0
