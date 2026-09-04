@@ -1,0 +1,11 @@
+# npm audit --audit-level=high
+npm warn audit network timeout at: https://registry.npmjs.org/-/npm/v1/security/advisories/bulk
+undefined
+npm error audit endpoint returned an error
+npm error A complete log of this run can be found in: /Users/ericguei/.npm/_logs/2026-09-03T23_29_46_813Z-debug-0.log
+npm audit exit 1
+npm audit covered 409 dependencies (high 0, critical 0)
+floor exit 0
+# npm audit --audit-level=high (rerun after the registry timeout)
+found 0 vulnerabilities
+npm audit exit 0

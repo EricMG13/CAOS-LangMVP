@@ -1,0 +1,223 @@
+{
+  "binding": {
+    "adapter_version": "caos.answer-keyed.host-control.v1",
+    "identity_digest": "4e3a6e8fbd028475ac4acb81466ecfad1d867697b7bd74d6c8e888e2fd7b3137",
+    "model": "deterministic",
+    "parameter_context_digest": "358e4ecee6ab8bcb3e2a7aac127223bfd0abe93fe2acbdd7acc7269d680eb3c2",
+    "provider_name": "host_control",
+    "provider_version": null,
+    "qualification_expires_at": null,
+    "qualification_record_digest": null,
+    "qualification_record_id": null,
+    "qualification_status": "host_control"
+  },
+  "binding_kind": "host_control",
+  "binding_view": {
+    "commit": "b88c0f8ca11af3200e8bb21daab16d838c64d39f",
+    "corpus_digest": "460e3ad6a64c8f78632862921f4d181f0fcb866160a6aa2f44b8c476d70ae7e3",
+    "identity_digest": "4e3a6e8fbd028475ac4acb81466ecfad1d867697b7bd74d6c8e888e2fd7b3137",
+    "methodology_build_id": "237bf4bc56b616b1c679a32c3733a2d9baf580b113758329320478e0226bae9d",
+    "methodology_manifest_digest": "d320bc44ccec402dba3bca1d8cb340de85f68d3f4560e9ac7ba2234e882b6231",
+    "policy_digest": "986e65236178128abeca0168c914c177310b15290e40fe89fb9c0b3f9b998f3f"
+  },
+  "blocked_code": null,
+  "blocked_detail": null,
+  "build": {
+    "commit": "b88c0f8ca11af3200e8bb21daab16d838c64d39f",
+    "image_digest": null,
+    "methodology_build_id": "237bf4bc56b616b1c679a32c3733a2d9baf580b113758329320478e0226bae9d",
+    "methodology_manifest_digest": "d320bc44ccec402dba3bca1d8cb340de85f68d3f4560e9ac7ba2234e882b6231",
+    "python": "3.14.6"
+  },
+  "cell_id": "FULL_CREDIT/full",
+  "cell_key": "C12/FULL_CREDIT/full",
+  "corpus": {
+    "answer_key_digest": "8575196b9f638464a82c153fe1fe3f6df4382837d4124c62092e2a1a4710d13d",
+    "answer_key_version": "1.0.0",
+    "approval": {
+      "approved_at": "2026-09-03",
+      "note": "host-control attestation of the draft key: orchestration proof only, never analysis",
+      "reviewer": "Claude Fable 5.1 (ER-G6 implementer)",
+      "scope": "host_control"
+    },
+    "corpus_digest": "460e3ad6a64c8f78632862921f4d181f0fcb866160a6aa2f44b8c476d70ae7e3",
+    "manifest_digest": "f0a19e268b0dd39804ef68d22724f37f8d2eec1a756ae9478804a5bf8c37c39c",
+    "pack_version": "1.0.0"
+  },
+  "date": "2026-09-03T23:53:56Z",
+  "depth": "full",
+  "expires_at": "2026-12-02T23:53:56Z",
+  "kind": "negative",
+  "pack_id": "C12",
+  "pathway": "FULL_CREDIT",
+  "policy": {
+    "averaging": false,
+    "host_control_is_qualification": false,
+    "live_repetitions": 3,
+    "refusal_proves_pathway": false,
+    "review_days": 90,
+    "schema_version": "caos.qualification-policy.v1"
+  },
+  "proves_pathway": false,
+  "repetition": 1,
+  "result_id": "28f6392062e7e69cd5270840c209873a98000d4d0e2749284a65e16a0f7bdf48",
+  "reviewer": "Claude Fable 5.1 (ER-G9, orchestration proof only)",
+  "run": {
+    "budget_used": {
+      "active_minutes": 0.006253590865526348,
+      "evidence_bytes": 11111,
+      "evidence_reads": 27,
+      "input_tokens": 56000,
+      "output_tokens": 5350,
+      "provider_retries": 0,
+      "repairs": 0,
+      "turns": 56
+    },
+    "error_code": null,
+    "latency_seconds": 0.884,
+    "provider_calls": 107,
+    "run_id": "run-7f067b617ae64324b7ea",
+    "status": "succeeded"
+  },
+  "schema_version": "caos.qualification-result.v1",
+  "scores": {
+    "dimensions": {
+      "after_run": {
+        "applicable": false,
+        "detail": {},
+        "pass": true,
+        "score": null
+      },
+      "budget": {
+        "applicable": true,
+        "detail": {
+          "budget_refusal": null,
+          "limits": {
+            "active_minutes": 15,
+            "evidence_bytes": 14854827,
+            "evidence_reads": 170,
+            "input_tokens": 1416667,
+            "output_tokens": 400000,
+            "provider_retries": 1,
+            "repairs": 1,
+            "turns": 200
+          },
+          "over": [],
+          "used": {
+            "active_minutes": 0.006253590865526348,
+            "evidence_bytes": 11111,
+            "evidence_reads": 27,
+            "input_tokens": 56000,
+            "output_tokens": 5350,
+            "provider_retries": 0,
+            "repairs": 0,
+            "turns": 56
+          }
+        },
+        "pass": true,
+        "score": null
+      },
+      "citations": {
+        "applicable": true,
+        "detail": {
+          "invalid": [],
+          "total": 28
+        },
+        "pass": true,
+        "score": 1.0
+      },
+      "conflicts": {
+        "applicable": false,
+        "detail": {},
+        "pass": true,
+        "score": null
+      },
+      "document_use": {
+        "applicable": true,
+        "detail": {
+          "dispositions": {},
+          "problems": [],
+          "route": null
+        },
+        "pass": true,
+        "score": 1.0
+      },
+      "facts": {
+        "applicable": true,
+        "detail": {
+          "linked": [
+            "F1"
+          ],
+          "missing": [],
+          "required_failed": [],
+          "stated_uncited": []
+        },
+        "pass": true,
+        "score": 1.0
+      },
+      "ingest": {
+        "applicable": false,
+        "detail": {},
+        "pass": true,
+        "score": null
+      },
+      "injection": {
+        "applicable": true,
+        "detail": {
+          "problems": []
+        },
+        "pass": true,
+        "score": 1.0
+      },
+      "latency": {
+        "applicable": true,
+        "detail": {
+          "limit": 900.0,
+          "seconds": 0.884
+        },
+        "pass": true,
+        "score": null
+      },
+      "model_effect": {
+        "applicable": false,
+        "detail": {},
+        "pass": true,
+        "score": null
+      },
+      "outcome": {
+        "applicable": true,
+        "detail": {
+          "error_code": null,
+          "route_static": true,
+          "status": "succeeded"
+        },
+        "pass": true,
+        "score": 1.0
+      },
+      "refusal": {
+        "applicable": false,
+        "detail": {
+          "expected": null,
+          "observed": null
+        },
+        "pass": true,
+        "score": null
+      },
+      "unsupported_claims": {
+        "applicable": true,
+        "detail": {
+          "exempt_modules": [],
+          "forbidden": [],
+          "numbers_checked": 1,
+          "untraceable": []
+        },
+        "pass": true,
+        "score": 1.0
+      }
+    },
+    "failed_dimensions": [],
+    "pass": true
+  },
+  "stage": "run",
+  "verdict": "pass"
+}

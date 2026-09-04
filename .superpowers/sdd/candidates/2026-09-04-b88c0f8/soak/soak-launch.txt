@@ -1,0 +1,6 @@
+# pre-soak baseline (harness): capacity.py baseline
+baseline of 0 cases written to /Users/ericguei/Claude/Projects/CAOS-LangMVP/.claude/worktrees/open-session-bcaed2/.superpowers/sdd/candidates/2026-09-04-b88c0f8/soak/baseline-pre.json
+# pre-soak authority snapshot (whole store)
+{"cases": 12, "sources": 24, "runs": 12, "runs_by_status": {"paused": 2, "succeeded": 10}, "snapshots": 2, "model_builds": 0, "frozen": 0, "receipts": 0, "audit_events": 57, "chain_heads": 14, "run_events": 207, "run_nodes_non_terminal": 2, "freeze_jobs_open": 0, "builds_open": 0, "db_connections": 14}
+# soak: capacity.py profile --duration 28800
+soak pid 56830 started 2026-09-04T00:19:33Z; log /Users/ericguei/Claude/Projects/CAOS-LangMVP/.claude/worktrees/open-session-bcaed2/.superpowers/sdd/candidates/2026-09-04-b88c0f8/soak/profile.log; samples /Users/ericguei/Claude/Projects/CAOS-LangMVP/.claude/worktrees/open-session-bcaed2/.superpowers/sdd/candidates/2026-09-04-b88c0f8/soak/profile/samples.jsonl

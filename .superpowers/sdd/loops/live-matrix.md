@@ -40,15 +40,16 @@ _(one entry per tick: cell, command, scores, budget, verdict)_
 
 ## Candidate binding (ER-G9, 2026-09-03)
 
-Every live cell must bind to candidate `2026-09-03-c4f0270`: run from a
-checkout of tag `enterprise-candidate-2026-09-03` (commit
-`c4f0270104ad659f7d54dd530b74ba4fd5bb6ccc`) with
-`CAOS_BUILD_COMMIT=c4f0270104ad659f7d54dd530b74ba4fd5bb6ccc` and
-`CAOS_IMAGE_DIGEST=sha256:cae0ed6b5c55696c44495825552353a4fdd51ff1f63ee6521bf18d89e5bd14fa`
+Every live cell must bind to candidate `2026-09-04-b88c0f8` (the first
+candidate `2026-09-03-c4f0270` is superseded): run from a checkout of tag
+`enterprise-candidate-2026-09-04` (commit
+`b88c0f8ca11af3200e8bb21daab16d838c64d39f`) with
+`CAOS_BUILD_COMMIT=b88c0f8ca11af3200e8bb21daab16d838c64d39f` and
+`CAOS_IMAGE_DIGEST=sha256:10ec8aa0798d06c9c9fcbc1d6db95303a02430385cbca0404a3fe422139f532d`
 exported; methodology build `237bf4bc56b616b1c679a32c3733a2d9baf580b113758329320478e0226bae9d`,
 corpus digest `460e3ad6a64c8f78632862921f4d181f0fcb866160a6aa2f44b8c476d70ae7e3`.
 The host-control results for this candidate (32 pass, 5 blocked external)
-are under `.superpowers/sdd/candidates/2026-09-03-c4f0270/gates/qualification/`;
+are under `.superpowers/sdd/candidates/2026-09-04-b88c0f8/gates/qualification/`;
 copy the live results there under `evidence/live/` when they exist. A cell
 whose binding view names a different commit, build or corpus digest is not
 this candidate's evidence.

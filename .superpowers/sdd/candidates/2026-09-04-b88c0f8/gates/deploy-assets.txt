@@ -1,0 +1,16 @@
+# bash -n
+bash -n ok
+# compose config --no-interpolate
+compose config ok
+# compose config with filled example env
+compose config (filled) ok
+# required secrets ship empty
+POSTGRES_PASSWORD empty ok
+EDGE_PROXY_SECRET empty ok
+SESSION_SECRET empty ok
+OAUTH2_PROXY_CLIENT_SECRET empty ok
+OAUTH2_PROXY_COOKIE_SECRET empty ok
+# corpus taxonomy consistency
+
+26 modules checked, 0 with drift.
+exit 0

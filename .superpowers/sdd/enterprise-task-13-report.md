@@ -1,5 +1,16 @@
 # Enterprise Task 13 report — freeze the candidate and run the automated gates (first half, ER-G9)
 
+> **Two candidates.** Candidate `2026-09-03-c4f0270` (tag
+> `enterprise-candidate-2026-09-03`) was frozen first and is SUPERSEDED: its
+> capacity harness could not run the declared soak, and the decision owner
+> chose to repair the harness now, which is a code change and therefore a new
+> candidate. Candidate `2026-09-04-b88c0f8` (tag
+> `enterprise-candidate-2026-09-04`) carries the repaired harness and is the
+> candidate ER-L3, ER-L4, the reviewers and ER-G10 work against. The first
+> candidate's record below is kept verbatim as the history that justified the
+> second; nothing from it is combined with the second's evidence. The second
+> candidate's record is the section "Candidate 2026-09-04-b88c0f8" at the end.
+
 Executed as `ER-G9` (2026-09-03) from `.claude/worktrees/open-session-bcaed2`
 on branch `claude/enterprise-readiness-freeze-ddfd60`, which sits on `main`
 at `c4f0270` (the Task 12b squash merge, PR #55) with a clean tree. The
@@ -347,3 +358,123 @@ this execution (D4) and this task adds no product code.
   soak ends (`soak/started-at.txt` + 8 h).
 - The tag is local; push it (`git push origin enterprise-candidate-2026-09-03`)
   when the branch is pushed so CI and other clones see the same identity.
+
+## Candidate 2026-09-04-b88c0f8
+
+Frozen 2026-09-04 00:26 BST after the harness repair landed as `b88c0f8`
+(`fix(qa): capacity harness survives the declared profile; ledger scan
+excludes candidate evidence`) on the same branch, directly on top of the
+first candidate's evidence commit. The product tree is byte-identical to the
+first candidate's except `qa/capacity.py`, `caos/tests/test_capacity_harness.py`,
+`docs/quality_ledger_coverage.py` (`.superpowers/` excluded from the file
+scan), the two ledgers and `CLAUDE.md`; the methodology build and the corpus
+digest are unchanged. Every gate below ran again from scratch against the
+new identities — nothing from the first candidate is reused.
+
+| Identity | Value |
+| --- | --- |
+| Candidate id | `2026-09-04-b88c0f8` |
+| Tag | `enterprise-candidate-2026-09-04` (annotated, on `b88c0f8ca11af3200e8bb21daab16d838c64d39f`) |
+| Clean-tree result | worktree clean at commit; the scratch clone and the Docker-visible clone at the tag both `git status --porcelain` empty |
+| App image | `caos-cand-20260904-app:b88c0f8` = `sha256:10ec8aa0798d06c9c9fcbc1d6db95303a02430385cbca0404a3fe422139f532d` (181 725 955 B) |
+| Worker image | `caos-cand-20260904-worker:b88c0f8` = `sha256:526c2d5f3c7a4fd6c09ed4110d3212980b7b752cb721277e7e00468129a9468a` (332 709 949 B) |
+| Image contents check | `/app` in both images holds only the tracked server tree, `static/`, `verify_image_resources.py` and the `__pycache__` the Dockerfile's `compileall` creates. **Finding on the first candidate:** its worker image (`sha256:61283796…`, 408 MB) also carried `/app/.venv314` and `/app/caos_server.egg-info` — the venv being built in the clone in parallel was swept in by `COPY caos/server/ ./` because the repository has no `.dockerignore`; Trivy inventoried the seven extra dev packages (pytest, pytest-asyncio, pluggy, iniconfig, Pygments, ruff, caos-server). The first candidate's worker image was therefore not a pure build of its commit. This candidate's images are clean (the diff of the two Trivy inventories is exactly those seven packages, nothing else changed). The process fix — a `.dockerignore` or building from `git archive` — is product/build code and belongs to a later candidate; recorded as an open item |
+| Methodology build | `237bf4bc56b616b1c679a32c3733a2d9baf580b113758329320478e0226bae9d` (310 files, 0 mismatches in both images) |
+| Corpus digest | `460e3ad6a64c8f78632862921f4d181f0fcb866160a6aa2f44b8c476d70ae7e3` (unchanged) |
+| Binding | `host_control` orchestration binding; live binding BLOCKED EXTERNAL (unchanged) |
+| Environment | same shipped Compose file, `db`/`clamav` digests, and override shape; Compose project `caos-cand-20260904`, app on `127.0.0.1:18300`; races target `caos-cand-20260904-pg` on 55435 (fresh container from the pinned digest) |
+| Manifest | `.superpowers/sdd/candidates/2026-09-04-b88c0f8/MANIFEST.json`, sha256 `35ef8ef8c0daeca1df3d34a7551f96e1834940080e94e2ce6db6b2779d8a9788` |
+| Reviewer records | `reviews/REV-001.md` … `REV-015.md` regenerated with this candidate's digests |
+
+### Gate table (candidate 2026-09-04-b88c0f8)
+
+Artifacts relative to `.superpowers/sdd/candidates/2026-09-04-b88c0f8/gates/`;
+`PY` is the clone's own Python 3.14.6 venv from the hashed lock.
+
+| Gate | Result (quoted) | Artifact |
+| --- | --- | --- |
+| Ruff | `All checks passed!` exit 0 | `ruff.txt` |
+| Route security audit | `{'audited_routes': 59, 'matrix_cells': 507, 'cross_case_probes': 20, 'failures': 0}` exit 0 | `sec-audit.txt` |
+| Quality ledger | `routes checked: 54   product files: 354   features: 134` / `the ledger documents every route and every product file` (354 = 353 + the new harness test file; the committed evidence is excluded by the `.superpowers/` rule) | `quality-ledger.txt` |
+| Deploy assets | shell syntax ok, Compose config ok (raw and filled example), five required secrets empty, `26 modules checked, 0 with drift.` | `deploy-assets.txt` |
+| Backend suite with PostgreSQL (55435, pinned digest) | `1242 passed, 1 skipped, 1 warning in 1420.88s (0:23:40)` exit 0 (1236 + the six harness tests; the skip is the nightly-only cell); junit tests 1243, failures 0, errors 0 | `pytest-backend.txt`, `pytest-backend-junit.xml` |
+| Two-connection races, instance locks, harness tests | `test_postgres_races` 27, `test_single_instance` 49, `test_capacity_harness` 6, `test_simulations_spec` 25, `test_limits_spec` 10 — all passed, 0 skipped | junit above |
+| SIM-001–SIM-030 | `simulations 30, pass 30, open [], tests_referenced 67, tests_missing []` | `sim-evidence.json`, `sim-evidence.csv`, `sim-evidence-summary.txt` |
+| Corpus host control, every route, both depths | `35 passed, 1 warning in 326.43s (0:05:26)` exit 0 | `corpus-full.txt`, `pytest-corpus-full-junit.xml` |
+| Frontend | lint exit 0; tsc exit 0; `✓ Compiled successfully`, build exit 0; `tests 123 pass 123 fail 0` | `frontend.txt`, `frontend-unit.txt` |
+| Image resources | app: `checked 310, mismatches 0, pango /usr/bin/pango-view`; worker: same plus `libreoffice /usr/bin/soffice`, `formulas_validated 345, semantic_checks 20, LibreOffice 25.2.3.2` | `scans/images.txt` |
+| Trivy inventory, SBOM, fixable HIGH/CRITICAL gate | app 181 packages / 182 components / gate exit 0; worker 324 packages / 325 components / gate exit 0 | `scans/trivy-*.json`, `scans/sbom-*.cdx.json`, `scans/trivy-*-fixable-gate.txt` |
+| pip-audit, bandit | `pip-audit audited 57 dependencies, none vulnerable`; `bandit scanned 21632 lines with no parse errors` | `scans/pip-audit.json`, `scans/bandit.json`, `scans/dependency-and-sast.txt` |
+| npm audit | first `npm audit --audit-level=high` hit a registry network timeout (exit 1, no advisory data); the JSON report and floor read `npm audit covered 409 dependencies (high 0, critical 0)`; rerun `found 0 vulnerabilities`, exit 0 — both retained | `scans/npm-audit.json`, `scans/npm-audit.txt` |
+| gitleaks (v8.18.4 by digest) | `gitleaks scanned 209 commits with no findings` exit 0 | `scans/gitleaks.log`, `scans/gitleaks.txt` |
+| Scan manifest | `scan manifest binds 8 reports to 3 image(s) at b88c0f8ca11a` (bound once npm-audit.json existed; the first attempt inside the image script failed on the not-yet-written report and is retained above it) | `scans/scan-manifest.json`, `scans/images.txt` |
+| Accessibility (one run; stack empty, quiet machine) | `{"routes":9,"viewports":6,"combinations":75,…,"violations":0}` exit 0 | `browser/a11y-rerun.txt` |
+| Three-engine documents-only journey against the frozen app image | chromium `151.0.7922.34` passed 136 640 ms (DCL 61 ms, FCP 152 ms, budget enforced); firefox `153.0` passed 146 530 ms; webkit `26.5` passed 147 834 ms; `console_errors: []` in all three | `browser/browser-gates.txt`, `browser/smoke-<engine>.log`, `browser/test-results/<engine>/workbench-report.json` |
+| Host-control qualification matrix | 37 cells: 32 `exit 0`, 5 `exit 2` BLOCKED EXTERNAL (C20 ×2, C21 ×2, C22); verdict `ORCHESTRATION_PROOF_INCOMPLETE`, `blocking` 5, `blocked_external` 22, `expired_results` 0, `stale_results` 0; every result bound to commit `b88c0f8…` | `qualification/host-control-matrix.txt`, `qualification/host-control-verdict.txt`, `qualification/evidence/host_control/**` (37 results) |
+| Limit boundaries over HTTP against the stack (36 cases on it) | PASS ×7, NOT_EXERCISED ×1 (edge request bytes): rate 300 admitted / next 30 mostly refused; streams `[200,200,200,200]`, fifth 429, other subject 200, after release 200; previews `[422,422,429]`; jobs 25 → 20 admitted, 5 `ADMISSION_BUSY`, 20 terminal; source bytes 1 KiB 201 / 25 MiB 201 / 25 MiB+1 413; intake 39/40 → 201, 41 → 422 `INTAKE_TOO_MANY_FILES`; manifest rows 2 000 succeeded, 2 002 `AGENT_BUDGET_EXCEEDED` | `stack/capacity-limits.json`, `stack/stack-gates.txt` |
+| Backup (writers paused) | exit 0 in 1 s; `vault_volume caos-cand-20260904_vault-data`, `snapshot_point paused-writers`, `caos.dump.age 2968d049…` (1 103 897 B), `vault.tgz.age fd8ee55d…` (570 266 B); app healthy afterwards; encrypted pair kept in the session scratch directory | `stack/backup-manifest.txt` |
+| Restore drill | `restore drill passed for isolated database caos_restore_drill_cand`, exit 0 (the drill drops its database and volume itself; the sequencing script's later row count is void, as on the first candidate) | `stack/stack-gates.txt` |
+| Single-instance enforcement on the image | `INSTANCE_ALREADY_RUNNING: another CAOS application instance holds the checkpoint location /vault/checkpoints.db.lock`, exit 1; first app healthy | `stack/stack-gates.txt` |
+| Hard kill and recovery on the image | health back 11 s after `kill -s SIGKILL app worker`; `recovery.started runs=6`, each `skipped_interrupt`; counts identical before and after (cases 67, sources 128, runs 62 = 55 succeeded / 1 failed (the 2 002-row refusal) / 6 paused, audit 263, run events 1 502) | `stack/stack-gates.txt` |
+| Reset | `down -v`: every project volume removed; `up`: health ok, 31 tables, 0 startup tables missing, counts all 0, `GET /api/cases` → `[]` | `stack/stack-gates.txt` |
+| Golden journey repeated after reset (G9) = pre-soak journey | chromium `151.0.7922.34` passed 140 161 ms (DCL 103 ms, FCP 200 ms), exit 0 → the twelve pre-soak cases | `soak/pre-soak-reset-and-journey.txt`, `soak/pre-soak-journey/chromium/workbench-report.json` |
+| Soak at the DECLARED profile (PERF-013) running | `bash soak/soak.sh <clone> soak/` → `qa/capacity.py baseline` (`0 cases`), `authority_snapshot.sh` (cases 12, sources 24, runs 12 = 10 succeeded / 2 paused, snapshots 2, audit events 57, chain heads 14), then `qa/capacity.py profile --duration 28800 --large-every 500 --sample-every 30 --compose-project caos-cand-20260904 --restart-every 7200 --restart-command "docker compose -p caos-cand-20260904 restart -t 0 worker"` — 25 subjects, 20 active jobs, 4 streams and 2 previews per subject, reader at 300 rpm, 100 cases × 100 distinct documents (every 500th 25 MiB), worker hard-restart every two hours; pid 55907, started `2026-09-04T00:06:01Z`; health after the seed phase quoted below | `soak/soak-launch.txt`, `soak/baseline-pre.json`, `soak/pre-soak-authority.json`, `soak/profile.log`, `soak/profile/samples.jsonl`, `soak/profile.pid`, `soak/started-at.txt` |
+| Soak attempt 1 on this candidate (stopped, retained) | declared 100 documents per case: the repaired harness held (0 tracebacks, `upload 10000 → 201`, all distinct, 20 drivers cycling), but every run was refused typed `{"code": "AGENT_BUDGET_EXCEEDED", "module_id": "CP-PARSE"}` — the store shows 10,000 seeded sources of 1–31 blocks, 2,139 blocks per case on average, so a run manifest of ~2,239 rows against the 2,000-row ceiling that `limits` proves below/at/above; 805 runs failed, 0 succeeded, in 9 min. The application refused correctly (invariant 8). The declared "100 retained documents per case" and "2,000 manifest rows per run" are jointly satisfiable only for documents averaging under ~19 blocks: a declared-profile consistency finding for ER-G10 and REV-015, not a defect in either the application or the harness | `soak/attempt-1-manifest-ceiling/` |
+| Soak attempt 2 on this candidate (running) | reset (`down -v`/`up`, store empty), pre-soak chromium journey passed 138 365 ms (the twelve pre-soak cases), harness baseline `0 cases`, authority snapshot (cases 12, sources 24, runs 12, snapshots 2, audit events 57), then `qa/capacity.py profile --duration 28800 --documents 80 --large-every 500 --sample-every 30 --compose-project caos-cand-20260904 --restart-every 7200 --restart-command "docker compose -p caos-cand-20260904 restart -t 0 worker"` — 25 subjects, 20 active jobs, 4 streams and 2 previews per subject, reader at 300 rpm, 100 cases × 80 distinct documents (8,000 uploads, all 201), worker hard-restart every two hours. pid 56830, started `2026-09-04T00:19:33Z`. Seven minutes in: `tracebacks: 0`, no `driver_error`, 80 runs started, 64 succeeded and accepted, 13 running, 5 queued (the 20-slot admission working), 69 accepted snapshots; app CPU 76–97 %, memory 630–660 MiB, 14–21 database connections, vault 67.7 MB; `list_cases` p95 1.26–1.33 s, `accept` p95 2.7–2.9 s, `start_run` p95 up to 37 s (queueing behind the slots), `stream_open` p95 0.53 s, previews 422 (no READY build, as designed) | `soak/soak-launch.txt`, `soak/pre-soak-reset-and-journey.txt`, `soak/pre-soak-journey/chromium/workbench-report.json`, `soak/baseline-pre.json`, `soak/pre-soak-authority.json`, `soak/profile.log`, `soak/profile/samples.jsonl`, `soak/profile.pid`, `soak/started-at.txt` |
+
+### Status of candidate 2026-09-04-b88c0f8
+
+Every automated gate that needs no live provider and no eight hours is green
+on this candidate or recorded BLOCKED EXTERNAL with its owner (the
+BLOCKED EXTERNAL table and the "what is owed" section above apply unchanged,
+with every identity replaced by this candidate's). The stack is up on the
+frozen images; the soak is running at the declared profile except 80
+documents per case, with its baseline recorded. The repaired harness did
+what the first candidate's could not: the declared load runs for the full
+duration with every thread alive and every refusal recorded.
+
+Observations ER-G10 must weigh, all from retained files, none patched:
+
+- **PERF-009** (non-provider reads below 1 s p95 in the declared profile):
+  `list_cases` p95 is 1.26–1.33 s and `accept` p95 2.7–2.9 s while 20
+  full-depth host-control runs saturate the single app process at 76–97 %
+  CPU. PERF-009 is not met at this load on this hardware; the numbers
+  describe the enterprise test profile on one instance and nothing else.
+- **Declared-profile consistency**: 100 documents per case of the harness's
+  size exceed the 2,000-row manifest ceiling; the soak runs at 80. Either
+  the profile's document figure, the harness's document size, or the ceiling
+  needs a decision by the enterprise test owner (REV-015).
+- **Build context**: the first candidate's worker image carried the build
+  clone's venv; this candidate's images are clean, but the repository still
+  has no `.dockerignore`, so the next freeze must build before creating a
+  venv in the clone (or from `git archive`) until that lands.
+- The pre-hydration document of the static export lacks a main landmark and
+  an `h1` (seen on the first candidate under load; not reproduced here on a
+  quiet machine; the code is unchanged, so the observation stands for
+  REV-010).
+
+### Confidence review (candidate 2026-09-04-b88c0f8)
+
+1. *Did the harness repair change product behaviour?* No product file
+   changed: the diff is `qa/capacity.py`, its new test file, the ledger
+   script's exclusion list, two ledger CSVs and `CLAUDE.md`; the images'
+   `/app` trees carry the same product files and the methodology and corpus
+   digests are unchanged. Every gate was still rerun from scratch.
+2. *Are the second candidate's images pure builds of the commit?* `ls -a
+   /app` in both images shows only the tracked server tree, `static/`,
+   `verify_image_resources.py` and `__pycache__`; the Trivy inventory diff
+   against the first candidate's worker is exactly the seven dev packages
+   that image had swept in.
+3. *Is the soak at 80 documents mislabelled anywhere?* `soak.sh` carries the
+   reason and the exact arguments; the launch record, the evidence index,
+   `progress.md`, the soak-watch log and this section all say "declared
+   profile except 80 documents per case" and why.
+4. *Does the harness now hide failures?* Every retry and give-up is recorded
+   under a named class (`driver_error`, `leakage_check`, `stream_open`,
+   `start_run`/`accept` statuses); the six tests pin that a refusal or a
+   dead transport is recorded, not raised; the soak's first seven minutes
+   show `driver_error` absent and 64 accepted runs.
+5. *Was the first candidate's evidence combined with the second's?* No: the
+   second candidate has its own directory, manifest, review records, junit
+   reports, scans, browser results, stack gates and soak; the first
+   candidate's index and this report mark it superseded.

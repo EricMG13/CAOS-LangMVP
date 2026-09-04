@@ -1,0 +1,176 @@
+
+> caos-frontend@0.1.0 test:unit
+> node --test 'src/**/*.test.ts'
+
+(node:50157) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///private/tmp/claude-501/-Users-ericguei-Claude-Projects-CAOS-LangMVP--claude-worktrees-open-session-bcaed2/1ac947a6-0861-46c7-bffc-6efc48b0173a/scratchpad/candidate2/caos/frontend/src/components/model/ModelBuilder.test.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to /private/tmp/claude-501/-Users-ericguei-Claude-Projects-CAOS-LangMVP--claude-worktrees-open-session-bcaed2/1ac947a6-0861-46c7-bffc-6efc48b0173a/scratchpad/candidate2/caos/frontend/package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ Workspace delegates Model Builder to the extracted component (3.372ms)
+✔ unknown identity roles fail closed before shared write controls are derived (0.097375ms)
+✔ the builder exposes one model with the application build as its saved starting version (0.387583ms)
+✔ queued build feedback waits for a current authority refresh (0.165458ms)
+✔ model builder headings lead directly without decorative eyebrow stacks (0.116042ms)
+✔ the visible worksheet is the current forecast preview without making governed cells editable (0.1265ms)
+✔ worksheet keyboard navigation and lineage remain accessible (0.546208ms)
+✔ legacy-style forecast scrubbers support all-years and exact-period edits (0.120792ms)
+✔ forecast edits preview the complete draft and only then become signable (0.212333ms)
+✔ model sign-off is one ordered approval sequence and remains reader-gated (0.198042ms)
+✔ the legacy tornado replaces sensitivities and scenarios (0.180458ms)
+✔ signed records are versions of the same model and remain recoverable (0.176042ms)
+✔ export polling fetches only lightweight revision export states (0.180208ms)
+✔ revision export polling retries without overlapping requests (7.422042ms)
+✔ readers can inspect but cannot change forecasts or sign a version (0.120542ms)
+✔ browser proof keeps historical and calculated cells unchanged after forecast edits (0.144333ms)
+(node:50158) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///private/tmp/claude-501/-Users-ericguei-Claude-Projects-CAOS-LangMVP--claude-worktrees-open-session-bcaed2/1ac947a6-0861-46c7-bffc-6efc48b0173a/scratchpad/candidate2/caos/frontend/src/components/model/modelBuilderState.test.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to /private/tmp/claude-501/-Users-ericguei-Claude-Projects-CAOS-LangMVP--claude-worktrees-open-session-bcaed2/1ac947a6-0861-46c7-bffc-6efc48b0173a/scratchpad/candidate2/caos/frontend/package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ derives spreadsheet columns from the engine's max-column metadata (0.904542ms)
+✔ worksheet authority keeps history and calculations locked (0.1135ms)
+✔ normalizes methodology numeric strings without dropping source context (0.170458ms)
+✔ assumption delta is measured against the Application Model Build default (0.118083ms)
+✔ all-year editing broadcasts within one case and enforces methodology bounds (0.306084ms)
+✔ server scenario and rebase assumptions replace the draft locally by identity (0.128083ms)
+✔ preview eligibility binds draft generation, build, registry, parent, and active head (0.103041ms)
+✔ the workflow exposes only the primary action appropriate to current state (0.081625ms)
+✔ one-way rows consume nested Base and Downside annual server outputs exactly (0.188167ms)
+✔ assumption scopes expose controlled same/mixed values and disable unavailable scopes (0.195666ms)
+✔ rebase candidates retain local draft shocks over the server-owned candidate (0.153791ms)
+✔ model outputs read as audited numbers whether the wire sends them as numbers or Decimal strings (16.827625ms)
+(node:50159) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///private/tmp/claude-501/-Users-ericguei-Claude-Projects-CAOS-LangMVP--claude-worktrees-open-session-bcaed2/1ac947a6-0861-46c7-bffc-6efc48b0173a/scratchpad/candidate2/caos/frontend/src/components/report/ReportStudio.test.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to /private/tmp/claude-501/-Users-ericguei-Claude-Projects-CAOS-LangMVP--claude-worktrees-open-session-bcaed2/1ac947a6-0861-46c7-bffc-6efc48b0173a/scratchpad/candidate2/caos/frontend/package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ Workspace delegates Report Studio to the structured component (0.817208ms)
+✔ authoring uses the six server templates and shared append-only draft route (0.148292ms)
+✔ the structured document is safe and keeps generated content read-only (0.247125ms)
+✔ unsaved report work has a scoped non-authoritative recovery copy and automatic retry (5.802541ms)
+✔ exact Frozen and Filed lifecycle is identity-bound and role-gated (0.22275ms)
+✔ freeze remains a reserved approval sequence with complete blockers and governed links (0.194459ms)
+✔ model fallback, evidence, scenario, focus, and case fences remain explicit (0.138958ms)
+✔ evidence search covers every served source block without silent truncation (8.783625ms)
+✔ the selected editor leads and expert composition tools are progressively disclosed (0.222708ms)
+✔ Scenario registry is build-bound and seeded only from server defaults (0.180041ms)
+✔ every lifecycle mutation shares one scope generation and in-flight gate (0.306417ms)
+✔ one lifecycle lock disables every draft-mutating authoring control (1.458084ms)
+✔ Draft and Frozen review render the same canonical governed document (2.63175ms)
+✔ browser proof carries the signed model into the canonical report and downloads the filed memo (6.981459ms)
+✔ paper columns collapse at the paper boundary before text is crushed (0.207834ms)
+✔ Workspace owns and retires at most one shared draft-history sentinel (0.162375ms)
+✔ every optional-block insertion re-sorts into template order (0.125958ms)
+✔ the opinion is signed on the exact saved revision with an expected-head CAS and every statement required (0.121042ms)
+✔ freeze is a worker job the studio tracks to a server-served frozen record (0.131833ms)
+✔ separation of duties and the detached receipt are explicit in the frozen review (0.142125ms)
+✔ approver provisioning is one governed mutation available to a case admin (0.070167ms)
+(node:50160) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///private/tmp/claude-501/-Users-ericguei-Claude-Projects-CAOS-LangMVP--claude-worktrees-open-session-bcaed2/1ac947a6-0861-46c7-bffc-6efc48b0173a/scratchpad/candidate2/caos/frontend/src/components/report/documentTypes.test.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to /private/tmp/claude-501/-Users-ericguei-Claude-Projects-CAOS-LangMVP--claude-worktrees-open-session-bcaed2/1ac947a6-0861-46c7-bffc-6efc48b0173a/scratchpad/candidate2/caos/frontend/package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ document pages retain first-seen page order and section order (0.967458ms)
+✔ only analyst-owned editable text can be overlaid by draft blocks (0.182125ms)
+✔ an unsaved first draft previews only its analyst narrative leaves (0.129833ms)
+(node:50161) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///private/tmp/claude-501/-Users-ericguei-Claude-Projects-CAOS-LangMVP--claude-worktrees-open-session-bcaed2/1ac947a6-0861-46c7-bffc-6efc48b0173a/scratchpad/candidate2/caos/frontend/src/components/report/reportRecovery.test.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to /private/tmp/claude-501/-Users-ericguei-Claude-Projects-CAOS-LangMVP--claude-worktrees-open-session-bcaed2/1ac947a6-0861-46c7-bffc-6efc48b0173a/scratchpad/candidate2/caos/frontend/package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ report recovery is scope-bound and rejects malformed draft blocks (1.0435ms)
+✔ report recovery rejects values outside the server draft contract (1.076917ms)
+✔ scenario recovery is case-bound and validates exact shocks and digests (0.311958ms)
+(node:50162) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///private/tmp/claude-501/-Users-ericguei-Claude-Projects-CAOS-LangMVP--claude-worktrees-open-session-bcaed2/1ac947a6-0861-46c7-bffc-6efc48b0173a/scratchpad/candidate2/caos/frontend/src/components/report/reportStudioState.test.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to /private/tmp/claude-501/-Users-ericguei-Claude-Projects-CAOS-LangMVP--claude-worktrees-open-session-bcaed2/1ac947a6-0861-46c7-bffc-6efc48b0173a/scratchpad/candidate2/caos/frontend/package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ freeze checklist is ready only when every prerequisite is satisfied (17.562583ms)
+✔ freeze checklist exposes the write-access blocker (0.105542ms)
+✔ freeze checklist exposes the saved-revision blocker (0.06025ms)
+✔ freeze checklist exposes the model-selection blocker (0.057167ms)
+✔ freeze checklist exposes the model-availability blocker (0.056417ms)
+✔ freeze checklist exposes the opinion-signoff blocker (0.045208ms)
+✔ freeze polling continues only while the worker owes a render (0.079042ms)
+✔ the opinion signer and the freeze actor never see a File control for their own output (0.067375ms)
+(node:50163) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///private/tmp/claude-501/-Users-ericguei-Claude-Projects-CAOS-LangMVP--claude-worktrees-open-session-bcaed2/1ac947a6-0861-46c7-bffc-6efc48b0173a/scratchpad/candidate2/caos/frontend/src/lib/api.test.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to /private/tmp/claude-501/-Users-ericguei-Claude-Projects-CAOS-LangMVP--claude-worktrees-open-session-bcaed2/1ac947a6-0861-46c7-bffc-6efc48b0173a/scratchpad/candidate2/caos/frontend/package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ api returns parsed JSON from successful responses (44.085ms)
+✔ api parses empty 204 responses without a special case (0.557875ms)
+✔ api extracts stable error details (0.398ms)
+✔ api failures carry the HTTP status for observed-404 capability gating (0.31925ms)
+✔ api never serves a raw object or validation detail as its message (0.350292ms)
+✔ firstErrorMessage unwraps every served detail shape before the fallback (0.159833ms)
+✔ only an observed 404 or 405 reads as an unavailable route (0.081125ms)
+(node:50164) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///private/tmp/claude-501/-Users-ericguei-Claude-Projects-CAOS-LangMVP--claude-worktrees-open-session-bcaed2/1ac947a6-0861-46c7-bffc-6efc48b0173a/scratchpad/candidate2/caos/frontend/src/lib/artifactReader.test.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to /private/tmp/claude-501/-Users-ericguei-Claude-Projects-CAOS-LangMVP--claude-worktrees-open-session-bcaed2/1ac947a6-0861-46c7-bffc-6efc48b0173a/scratchpad/candidate2/caos/frontend/package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ stripFrontmatter removes the host frontmatter block and keeps the body (0.522833ms)
+✔ stripFrontmatter returns empty for an unterminated frontmatter-only document (0.090834ms)
+✔ stripFrontmatter passes through markdown without frontmatter (0.063459ms)
+✔ markdownBlocks splits ## sections into headings and paragraphs (0.531416ms)
+✔ normalizeEvidenceRefs passes string refs through and dedupes (0.141833ms)
+✔ normalizeEvidenceRefs maps object refs to source ids, deduping and collecting block ids (0.08275ms)
+✔ normalizeEvidenceRefs is safe on empty and missing payloads (0.0655ms)
+✔ flattenValue flattens the pinned loan-universe shape into labeled rows (0.141333ms)
+(node:50165) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///private/tmp/claude-501/-Users-ericguei-Claude-Projects-CAOS-LangMVP--claude-worktrees-open-session-bcaed2/1ac947a6-0861-46c7-bffc-6efc48b0173a/scratchpad/candidate2/caos/frontend/src/lib/workbench.test.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to /private/tmp/claude-501/-Users-ericguei-Claude-Projects-CAOS-LangMVP--claude-worktrees-open-session-bcaed2/1ac947a6-0861-46c7-bffc-6efc48b0173a/scratchpad/candidate2/caos/frontend/package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ all shipped frontend files have no Google-hosted font dependency (3.585167ms)
+✔ browser proof watches every context for Google font requests through final cleanup (0.497583ms)
+✔ approved workspace labels preserve the existing routes (0.148875ms)
+✔ the shell omits the redundant reading taxonomy and renders its command shortcut as a key (0.143417ms)
+✔ navigation and data captions use the four-role label taxonomy (18.720292ms)
+✔ Cases makes opening the selected credit primary and keeps portfolio limits secondary (0.230708ms)
+✔ RV keeps core filters visible and discloses retained advanced bounds (0.125583ms)
+✔ draft navigation uses one focus-returning native dialog and preserves beforeunload (0.520542ms)
+✔ draft link interception accepts only an unmodified primary same-tab gesture (0.238ms)
+✔ discard resolution invokes one deferred callback without changing caller-owned protection (0.2625ms)
+✔ external history writes preserve application state without bypassing Next URL restore (0.149791ms)
+✔ Workspace settles history moves only at their tagged destination entry (0.404792ms)
+✔ DAG nodes use neutral containers and shape-coded visible statuses (0.288333ms)
+✔ every route path keeps its trailing slash (0.271667ms)
+✔ values set, replace, and clear query keys (0.113917ms)
+✔ acceptance stays live until the run's snapshot is the case authority (0.101708ms)
+✔ a positional block locator reads as English and every other shape keeps its JSON (0.172ms)
+✔ module ids carry their registry name, and an unknown id stays the id (0.053042ms)
+✔ a server code is never presented as a raw identifier (0.038958ms)
+✔ workspace identities compact only beyond the exact display threshold (0.119333ms)
+✔ the identity presenter retains exact pointer text and stays scoped to display values (0.240084ms)
+✔ command center selects a credit conclusion before preparation output (0.1375ms)
+✔ command center renders the served snapshot diff shape honestly (0.250542ms)
+✔ acceptance aftermath binds to the matching snapshot id (0.036542ms)
+✔ acceptance replacement and aftermath use the latest accepted authority (0.089417ms)
+✔ a switch-required accepted run stays accepted while the visible lens is disclosed separately (0.124416ms)
+✔ the shell names the visible lens instead of conflating it with latest acceptance (0.450791ms)
+✔ the browser geometry fixture covers every acceptance-region state (0.185667ms)
+✔ failed and paused runs never announce a pending module as current progress (0.1395ms)
+✔ acceptance review classifies authority slots without claiming artifact byte changes (0.245959ms)
+✔ an evidence id resolves whatever this store minted (0.116875ms)
+(node:50166) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///private/tmp/claude-501/-Users-ericguei-Claude-Projects-CAOS-LangMVP--claude-worktrees-open-session-bcaed2/1ac947a6-0861-46c7-bffc-6efc48b0173a/scratchpad/candidate2/caos/frontend/src/lib/workspaceAuthority.test.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to /private/tmp/claude-501/-Users-ericguei-Claude-Projects-CAOS-LangMVP--claude-worktrees-open-session-bcaed2/1ac947a6-0861-46c7-bffc-6efc48b0173a/scratchpad/candidate2/caos/frontend/package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ case authority refresh follows every reducer generation (1.169333ms)
+✔ hydrates route authority as a loading case/run boundary (0.997917ms)
+✔ hydrates an empty route into a new authority generation (0.0885ms)
+✔ selecting a different case clears the selected run and snapshot authority (0.0915ms)
+✔ rejects a run selected for a different case without changing state (0.065959ms)
+✔ starting a request increments generation and records its context (0.066959ms)
+✔ rejects a previous-generation completion for the same case and run (0.127458ms)
+✔ only a matching case completion can terminate authority after case and run selection (0.1055ms)
+✔ unrelated completions cannot alter resolved case authority (0.106417ms)
+✔ rejects a late result after the selected run changes (0.109667ms)
+✔ rejects a late response after selecting a different case and run (0.076708ms)
+✔ rejects a stale failed request (0.055417ms)
+✔ accepts a matching snapshot refresh (0.078ms)
+✔ invalidates only the active case or run authority (0.056666ms)
+ℹ tests 123
+ℹ suites 0
+ℹ pass 123
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 252.104792
+exit 0
