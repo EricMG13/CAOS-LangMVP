@@ -544,9 +544,13 @@ engine, the bundle, or the routes.
   rejects a same-origin fetch still in flight at navigation with a
   `TypeError` worded `<url> due to access control checks.`, which Next's
   unawaited prefetches turn into a page error on a slow runner; the smoke
-  drops that page error only with evidence (WebKit, same origin, that exact
-  URL answered 2xx/3xx on this page — `scripts/webkit-teardown.mjs`, D-016)
-  and retains every dropped entry in the report.
+  drops that page error only with evidence (WebKit, same origin, and that
+  exact URL answered 2xx/3xx on this page or abandoned without a response
+  while its path had been answered — `scripts/webkit-teardown.mjs`, D-016)
+  and retains every dropped entry in the report. Every focus-return check in
+  the smoke waits for the frame the workspace restores focus on
+  (`awaitFocus`); an instant read of `document.activeElement` races that
+  frame on a slow runner.
 - Blocks live in one JSON column on the source row, so `read_evidence` parses
   every block of a source on each call. Measured at the ceiling: a 10 MB source
   costs 17 ms per read, so a run's ~80 reads cost about 1.4 s. Fine at current

@@ -17,7 +17,20 @@ const responded = new Map([
 
 test("a same-origin URL the server answered 2xx is a teardown rejection under WebKit", () => {
   const result = webkitTeardownRejection("/127.0.0.1:8000/cases/ due to access control checks.", { browserName: "webkit", baseURL, responded });
-  assert.deepEqual(result, { url: "http://127.0.0.1:8000/cases/", status: 200 });
+  assert.deepEqual(result, { url: "http://127.0.0.1:8000/cases/", status: 200, evidence: "answered" });
+});
+
+test("an abandoned request for a fresh prefetch query is dropped when its path was answered before", () => {
+  const abandoned = new Set(["http://127.0.0.1:8000/cases/__next.$d$destination.__PAGE__.txt?case=case-2&_rsc=zzz"]);
+  const result = webkitTeardownRejection("/127.0.0.1:8000/cases/__next.$d$destination.__PAGE__.txt?case=case-2&_rsc=zzz due to access control checks.", { browserName: "webkit", baseURL, responded, abandoned });
+  assert.deepEqual(result, { url: "http://127.0.0.1:8000/cases/__next.$d$destination.__PAGE__.txt?case=case-2&_rsc=zzz", status: 200, evidence: "abandoned; path answered" });
+});
+
+test("an abandoned request whose path was never answered stays a page error", () => {
+  const abandoned = new Set(["http://127.0.0.1:8000/api/blocked?x=1"]);
+  assert.equal(webkitTeardownRejection("/127.0.0.1:8000/api/blocked?x=1 due to access control checks.", { browserName: "webkit", baseURL, responded, abandoned }), null);
+  const unanswered = new Set(["http://127.0.0.1:8000/cases/__next.$d$destination.__PAGE__.txt?case=case-9&_rsc=q"]);
+  assert.equal(webkitTeardownRejection("/127.0.0.1:8000/cases/__next.$d$destination.__PAGE__.txt?case=case-9&_rsc=q due to access control checks.", { browserName: "webkit", baseURL, responded: new Map(), abandoned: unanswered }), null);
 });
 
 test("the scheme-bearing form and query strings resolve to the same evidence", () => {

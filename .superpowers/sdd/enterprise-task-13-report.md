@@ -479,6 +479,59 @@ Observations ER-G10 must weigh, all from retained files, none patched:
    reports, scans, browser results, stack gates and soak; the first
    candidate's index and this report mark it superseded.
 
+### CI follow-up on the pull request (2026-09-04): the WebKit job
+
+The pull request's WebKit browser job failed twice on the runner (run
+33863698677) with five, then nine page errors of the form
+`/127.0.0.1:8000/<route> due to access control checks.` for Next 16's
+segment-cache prefetch GETs and HEAD route probes, while Chromium and
+Firefox passed and no frontend or server code had changed. The retained
+trace shows every flagged URL answered 200 same-origin, all 1 726 requests
+same-origin, and 11 requests aborted at navigation: WebKit rejects a
+same-origin fetch still in flight when the document navigates with a
+`TypeError` worded as an access-control failure, Next leaves the prefetch
+unawaited, and the smoke recorded the unhandled rejection verbatim. It
+never reproduces locally because nothing is in flight at navigation (FCP
+130 ms against 1 669 ms on the runner); holding responses two seconds with
+`page.route` reproduces it on macOS WebKit for the app's own `/api/me` and
+`/api/cases` fetches. Not a security misconfiguration and not a product
+regression from this branch.
+
+Fix (commit `0a64228`, D-016): `caos/frontend/scripts/webkit-teardown.mjs`
+drops such a page error only under WebKit, only for a URL same-origin with
+the server under test, and only when the page saw that exact URL answered
+2xx/3xx; every dropped entry is retained in
+`workbench-report.json::webkit_teardown_rejections`. Five `node --test`
+cases (red before the module existed) run under `npm run test:unit`; the
+held-response reproduction dropped 2 of 2 with evidence and kept a
+synthetic cross-origin one; the WebKit smoke passed twice and Chromium once
+against a fresh host-control dev server (the very first local WebKit run
+failed at 25 s with an error the next run overwrote and I did not retain;
+two further runs passed). Because the smoke is in the tagged tree, this is
+by the binding constraints a change after the freeze: candidate
+`2026-09-04-b88c0f8`'s retained browser evidence was produced by the
+pre-fix smoke (which passed locally in all three engines), and a third
+candidate on `0a64228` or later is what makes the tree and the evidence
+one identity again. That decision is the decision owner's.
+
+The first fix (`0a64228`) was not enough: the next CI run (33875704963)
+passed the console assertion (`webkit_teardown_rejections []`) but the
+WebKit job then lost a second race the slow runner exposes — the smoke
+read `document.activeElement` the instant the research plan heading
+rendered, while `Workspace.tsx` restores focus on the animation frame
+after the action settles (`useEffect` → `requestAnimationFrame`); the
+trace shows the check 20 ms after the heading, before that frame. Three
+instant focus reads remained in the smoke (palette trigger, compile
+control, accept-dialog cancel); all now wait for the frame through one
+`awaitFocus` helper, as every other site has since Task 12b. A local full
+WebKit run also showed the evidence rule needed the abandoned-request case:
+a prefetch's `_rsc` query changes per navigation, so the abandoned request
+can be the first for its exact URL; the predicate now also accepts a
+request that ended without any response while its path had been answered
+2xx/3xx by an earlier non-document request (document loads never vouch for
+a fetch). Seven unit tests; WebKit passed twice and Chromium once locally
+on the final script.
+
 Draft pull request: https://github.com/EricMG13/CAOS-LangMVP/pull/56 (branch `claude/enterprise-readiness-freeze-ddfd60`, commits `381f540`, `b88c0f8`, `c00f59b`, plus this URL commit; tags `enterprise-candidate-2026-09-03` and `enterprise-candidate-2026-09-04` on origin).
 
 ### Soak attempt 2 completed (recorded 2026-09-04 10:30Z, after the session was idle)
