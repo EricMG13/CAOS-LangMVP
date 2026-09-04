@@ -478,3 +478,5 @@ Observations ER-G10 must weigh, all from retained files, none patched:
    second candidate has its own directory, manifest, review records, junit
    reports, scans, browser results, stack gates and soak; the first
    candidate's index and this report mark it superseded.
+
+Draft pull request: https://github.com/EricMG13/CAOS-LangMVP/pull/56 (branch `claude/enterprise-readiness-freeze-ddfd60`, commits `381f540`, `b88c0f8`, `c00f59b`, plus this URL commit; tags `enterprise-candidate-2026-09-03` and `enterprise-candidate-2026-09-04` on origin).
