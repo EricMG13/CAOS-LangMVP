@@ -480,3 +480,53 @@ Observations ER-G10 must weigh, all from retained files, none patched:
    candidate's index and this report mark it superseded.
 
 Draft pull request: https://github.com/EricMG13/CAOS-LangMVP/pull/56 (branch `claude/enterprise-readiness-freeze-ddfd60`, commits `381f540`, `b88c0f8`, `c00f59b`, plus this URL commit; tags `enterprise-candidate-2026-09-03` and `enterprise-candidate-2026-09-04` on origin).
+
+### Soak attempt 2 completed (recorded 2026-09-04 10:30Z, after the session was idle)
+
+The eight-hour soak finished on its own: `soak/profile/profile.json`
+written at `2026-09-04T08:20Z` with `cases_seeded 100, seed_seconds 71.1,
+leakage [], restarts [02:20:43Z, 04:21:19Z, 06:22:01Z], samples 631`,
+requested `25/20/4/2/300, 100 cases × 80 documents, 28 800 s`. Retained
+totals over the run (from `profile.json`): `upload 8000 → 201 8000`;
+`start_run 6982 → 201 6291, 409 690 (a run already active on the case), one
+ReadError`; `run:succeeded 6291`, `accept 6291 → 200 6291`; `stream_open
+94 203 → 200 94 202`; reads `list_cases 281 945`, `list_sources 281 935`,
+`case_detail 281 922`, each with three to seven transport errors
+(`ReadTimeout`/`ReadError`) in 280 000; `preview 33 832 → 422` (no READY
+build, by design). No `driver_error` class exists in the summary: no cycle
+ever gave up. `profile.log` carries no traceback. Latency: `accept` p50
+1.13 s / p95 2.23 s; `list_cases` p50 0.56 s / p95 1.28 s; `list_sources`
+p95 1.41 s; `case_detail` p95 1.20 s; `start_run` p50 31 s / p95 39 s
+(queueing behind the 20 admitted slots); `stream_open` p95 0.65 s.
+
+Store after the soak (`authority_snapshot.sh`): cases 112, sources 8 024,
+runs 6 304 (6 302 succeeded, the 2 pre-soak paused), snapshots 6 293, audit
+events 14 448, run events 124 981, `run_nodes_non_terminal 2` (the two
+paused runs' plan gates), `freeze_jobs_open 0`, `builds_open 0`, database
+connections back to 14. Resources over the 631 samples: app memory 545–780
+MiB, last 698 MiB (bounded, no trend); database connections 14–23, last
+sample 23, post-soak 14; vault 62.7 → 68.9 MB, flat from the midpoint;
+checkpoint file 0.28 → 5.95 MB, flat from the midpoint; worker 67–71 MiB;
+PostgreSQL 81 → 196 MiB (shared buffers filling, flat from the midpoint).
+Nothing grew monotonically to the end — the PERF-014 leak inputs read
+clean; ER-L4 still owes the formal comparison.
+
+**Finding (environment, REV-014 / ER-G10): clamd was OOM-killed three hours
+into the soak and never came back.** The `clamav` container's memory
+collapsed from 1 010 MiB to 45 MiB between `03:30:50Z` and `03:31:36Z`
+(`docker inspect` reads `OOMKilled true`, `RestartCount 0`, no container
+memory limit; the signature database is loaded in memory under amd64
+emulation on a 3.8 GiB Docker VM shared with the app at ~700 MiB and
+PostgreSQL at ~200 MiB). `clamd` is a zombie inside a container whose
+`tini`/`freshclam` keep it "up", so `restart: unless-stopped` never fires;
+the healthcheck has read `Could not connect to clamd on LocalSocket
+/tmp/clamd.sock: Connection refused` for 836 consecutive checks and Compose
+does not restart on unhealthy. Every upload after `03:31Z` would have been
+refused closed (`SIM-028`), which the soak did not observe because its 8 000
+uploads all landed in the first 71 s. Consequences: the enterprise test
+environment needs memory sizing for clamd and a restart-on-unhealthy policy
+(or a clamd process supervisor) before the soak's upload path can be called
+continuous; the post-soak six journeys ER-L4 owes will fail at upload until
+the `clamav` container is restarted, and that restart must be logged as an
+operator action, not hidden. The application side behaved as declared
+(fail closed, health of the app itself unaffected).

@@ -39,4 +39,18 @@ candidate's evidence.
 
 ## Log
 
-_(one entry per tick: timestamp, latest sample, deltas since the previous tick, findings)_
+- 2026-09-04T10:30Z (ER-G9, after the fact): the soak completed on its own at
+  `2026-09-04T08:20Z` — `profile.json` written; `leakage []`; restarts at
+  02:20:43Z, 04:21:19Z, 06:22:01Z; 631 samples; 6,291 runs accepted; no
+  `driver_error`, no traceback; app memory 545–780 MiB bounded; db
+  connections back to 14; vault and checkpoints flat from the midpoint.
+  FINDING: `caos-cand-20260904-clamav-1` was OOM-killed between 03:30:50Z and
+  03:31:36Z (memory 1 010 → 45 MiB, `OOMKilled true`, no container limit) and
+  is still up-but-unhealthy (`clamd` zombie; 836 failed health checks; Compose
+  does not restart on unhealthy). Uploads have failed closed since then.
+  Still owed by ER-L4: restart the clamav container (log it as an operator
+  action with the time), then `qa/capacity.py baseline` + `compare` against
+  `soak/baseline-pre.json`, `authority_snapshot.sh` diffed against
+  `soak/pre-soak-authority.json` (the 12 pre-soak cases unchanged), the three
+  post-soak journeys compared with `gates/browser/test-results/*`, and the
+  PERF-014 leak check from `soak/profile/samples.jsonl`.
