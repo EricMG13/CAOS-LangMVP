@@ -4,6 +4,8 @@ import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { chromium, firefox, request, webkit } from "playwright";
 
+import { webkitTeardownRejection } from "./webkit-teardown.mjs";
+
 // WEB-002: one Playwright script drives every supported engine. CAOS_BROWSER
 // selects it; every context is traced and, on failure, the trace and a
 // screenshot of every open page land under test-results/<browser>/ beside a
@@ -186,6 +188,10 @@ browser.newContext = async (options) => {
   return context;
 };
 const errors = [];
+// WebKit's "<url> due to access control checks." rejections for fetches still
+// in flight at navigation, kept out of `errors` only with server evidence and
+// retained in the report so nothing is swallowed silently.
+const webkitTeardownRejections = [];
 const externalGoogleFontRequests = [];
 const watchExternalGoogleFonts = (context) => {
   context.on("request", (requestValue) => {
@@ -282,7 +288,18 @@ try {
       }).catch(() => {});
     }
   });
-  page.on("pageerror", (error) => errors.push(error.message));
+  // Every response the page saw, by exact URL: the evidence the WebKit
+  // teardown filter below demands before it drops a page error.
+  const responded = new Map();
+  page.on("response", (response) => responded.set(response.url(), response.status()));
+  page.on("pageerror", (error) => {
+    const teardown = webkitTeardownRejection(error.message, { browserName, baseURL, responded });
+    if (teardown) {
+      webkitTeardownRejections.push(teardown);
+      return;
+    }
+    errors.push(error.message);
+  });
   // Firefox logs no console line for an HTTP error, so the controlled 503 is
   // observed on the response itself; the console filter above still swallows
   // Chromium's and WebKit's "Failed to load resource" line for it.
@@ -2300,6 +2317,7 @@ function report(outcome) {
     duration_ms: Date.now() - startedAt,
     timing: pageTiming,
     console_errors: errors,
+    webkit_teardown_rejections: webkitTeardownRejections,
     ...outcome,
   };
   if (outcome.status === "passed") {

@@ -540,7 +540,13 @@ engine, the bundle, or the routes.
   the "flaky" CI focus failure the Task 10 report left open. Under WebKit the
   smoke presses `Alt+Tab` to reach links, drops the CSP line for the
   automation-inserted `<style>body {}</style>`, and does not assert the
-  route-intercepted download (Chromium and Firefox prove it).
+  route-intercepted download (Chromium and Firefox prove it). WebKit also
+  rejects a same-origin fetch still in flight at navigation with a
+  `TypeError` worded `<url> due to access control checks.`, which Next's
+  unawaited prefetches turn into a page error on a slow runner; the smoke
+  drops that page error only with evidence (WebKit, same origin, that exact
+  URL answered 2xx/3xx on this page — `scripts/webkit-teardown.mjs`, D-016)
+  and retains every dropped entry in the report.
 - Blocks live in one JSON column on the source row, so `read_evidence` parses
   every block of a source on each call. Measured at the ceiling: a 10 MB source
   costs 17 ms per read, so a run's ~80 reads cost about 1.4 s. Fine at current

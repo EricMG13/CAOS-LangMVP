@@ -12,7 +12,7 @@
     "test:production-inventory": "node scripts/production-inventory.mjs",
     "test:workbench": "node scripts/workbench-smoke.mjs",
     "test:browsers": "node scripts/run-browsers.mjs",
-    "test:unit": "node --test 'src/**/*.test.ts'"
+    "test:unit": "node --test 'src/**/*.test.ts' 'scripts/**/*.test.mjs'"
   },
   "dependencies": {
     "next": "^16.3.3",
