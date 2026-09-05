@@ -851,6 +851,29 @@ try {
   await page.unroute(approveResearchFixturePath);
   await page.setViewportSize({ width: 1440, height: 1000 });
 
+  // The compile form offers only the served cut (FE-A0 F9): with one pathway in
+  // the cut the select starts on it and the default outside the cut is never the
+  // value; an empty cut disables submission, so no POST leaves for a refusal the
+  // client already knows.
+  let cutStartPosts = 0;
+  const countCutStart = (requestValue) => { if (requestValue.method() === "POST" && new URL(requestValue.url()).pathname === `/api/cases/${caseRecord.id}/runs`) cutStartPosts += 1; };
+  page.on("request", countCutStart);
+  let servedCut = ["FULL_CREDIT"];
+  await page.route(caseDetailFixturePath, (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ...caseDetailFixture, available_pathways: servedCut, deep_research_available: false, deep_research_unavailable_reason: "Controlled fixture." }) }));
+  await page.goto(`${baseURL}/run-console/?case=${caseRecord.id}&fixture=cut`, { waitUntil: "networkidle" });
+  await page.waitForFunction(() => document.querySelector("#pathway")?.value === "FULL_CREDIT");
+  assert.equal(await page.locator('#pathway option[value="EARNINGS_UPDATE"]').isDisabled(), true, "a pathway outside the cut stayed selectable");
+  assert.equal(await page.getByRole("button", { name: "Compile and run" }).isDisabled(), false, "a one-pathway cut disabled the compile action");
+  servedCut = [];
+  await page.reload({ waitUntil: "networkidle" });
+  await page.getByText(/are outside this deployment's cut\./).waitFor();
+  assert.equal(await page.getByRole("button", { name: "Compile and run" }).isDisabled(), true, "an empty cut left the compile action enabled");
+  await page.locator("#pathway").evaluate((element) => element.form?.requestSubmit());
+  await page.waitForTimeout(300);
+  assert.equal(cutStartPosts, 0, "the compile form posted a pathway outside the served cut");
+  page.off("request", countCutStart);
+  await page.unroute(caseDetailFixturePath);
+
   await page.goto(`${baseURL}/run-console/?case=${caseRecord.id}&run=${run.id}`, { waitUntil: "networkidle" });
   let markStartRunIntercepted;
   const startRunIntercepted = new Promise((resolve) => { markStartRunIntercepted = resolve; });

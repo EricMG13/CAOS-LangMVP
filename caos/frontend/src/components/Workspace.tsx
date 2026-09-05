@@ -1523,6 +1523,12 @@ function RunConsole({ writeAccess, caseId, selectedCase, run, runLoading, runErr
   const cut = selectedCase?.available_pathways;
   const pathwayEnabled = (value: string) => value === "DEEP_RESEARCH" ? deepResearchAvailable : !cut || cut.includes(value);
   const outsideCut = pathways.filter(([value]) => value !== "DEEP_RESEARCH" && !pathwayEnabled(value)).map(([, label]) => label);
+  // The served cut decides what the form submits (FE-A0 F9): a pick outside it —
+  // the initial default included — falls to the first pathway the engine will
+  // start, and an empty cut disables the action instead of posting a pathway the
+  // server would refuse. The analyst's own pick is kept for when the cut allows it.
+  const effectivePathway = pathwayEnabled(pathway) ? pathway : pathways.find(([value]) => pathwayEnabled(value))?.[0] ?? "";
+  const effectiveDepth = effectivePathway === "DEEP_RESEARCH" ? "full" : depth;
   const approvalPlan = run?.status === "paused" && run.error?.code === "PLAN_APPROVAL_REQUIRED" ? run.research?.proposed_plan : null;
   const approvalHash = run?.status === "paused" && run.error?.code === "PLAN_APPROVAL_REQUIRED" ? run.research?.proposed_plan_hash : null;
   return <div className="grid">
@@ -1532,7 +1538,7 @@ function RunConsole({ writeAccess, caseId, selectedCase, run, runLoading, runErr
         {writeAccess === "yes" ? <form onSubmit={startRun}>
           <div className="field">
             <label htmlFor="pathway">Purpose</label>
-            <select id="pathway" name="pathway" value={pathway} aria-describedby={[!deepResearchAvailable ? "deep-research-availability" : "", outsideCut.length ? "pathway-availability" : ""].filter(Boolean).join(" ") || undefined} onChange={(event) => { setPathway(event.target.value); if (event.target.value === "DEEP_RESEARCH") setDepth("full"); }}>
+            <select id="pathway" name="pathway" value={effectivePathway} aria-describedby={[!deepResearchAvailable ? "deep-research-availability" : "", outsideCut.length ? "pathway-availability" : ""].filter(Boolean).join(" ") || undefined} onChange={(event) => { setPathway(event.target.value); if (event.target.value === "DEEP_RESEARCH") setDepth("full"); }}>
               {pathways.map(([value, label]) => <option value={value} disabled={!pathwayEnabled(value)} key={value}>{label}</option>)}
             </select>
           </div>
@@ -1540,9 +1546,9 @@ function RunConsole({ writeAccess, caseId, selectedCase, run, runLoading, runErr
           {outsideCut.length > 0 && <p className="muted" id="pathway-availability">{`${outsideCut.join(", ")} ${outsideCut.length === 1 ? "is" : "are"} outside this deployment's cut.`}</p>}
           <div className="field">
             <label htmlFor="depth">Depth</label>
-            <select id="depth" name="depth" value={depth} onChange={(event) => setDepth(event.target.value)}><option value="screen" disabled={pathway === "DEEP_RESEARCH"}>Screen</option><option value="full">Full</option></select>
+            <select id="depth" name="depth" value={effectiveDepth} onChange={(event) => setDepth(event.target.value)}><option value="screen" disabled={effectivePathway === "DEEP_RESEARCH"}>Screen</option><option value="full">Full</option></select>
           </div>
-          {pathway === "DEEP_RESEARCH" && <fieldset className="research-brief">
+          {effectivePathway === "DEEP_RESEARCH" && <fieldset className="research-brief">
             <legend>Bounded research brief</legend>
             <div className="field"><label htmlFor="research-question">Research question</label><textarea id="research-question" name="research_question" maxLength={400} required /></div>
             <div className="field"><label htmlFor="decision-context">Decision context</label><textarea id="decision-context" name="decision_context" maxLength={400} required /></div>
@@ -1552,7 +1558,7 @@ function RunConsole({ writeAccess, caseId, selectedCase, run, runLoading, runErr
             <div className="field"><label htmlFor="exclusions">Exclusion lines</label><textarea id="exclusions" name="exclusions" maxLength={2009} aria-describedby="research-list-bounds" /></div>
             <p className="muted" id="research-list-bounds">One item per line; 10 items combined, 200 characters per item.</p>
           </fieldset>}
-          <button className="button primary" type="submit" disabled={!caseId || pendingAction === "start-run"}>{pendingAction === "start-run" ? "Compiling…" : "Compile and run"}</button>
+          <button className="button primary" type="submit" disabled={!caseId || !effectivePathway || pendingAction === "start-run"}>{pendingAction === "start-run" ? "Compiling…" : "Compile and run"}</button>
         </form> : <WriteBlocked access={writeAccess} action="compiling a route" />}
         <div className="callout">Every route begins by parsing your sources; the readiness check then runs against that exact parse.</div>
       </div>
