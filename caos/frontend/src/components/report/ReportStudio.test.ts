@@ -43,7 +43,7 @@ test("the structured document is safe and keeps generated content read-only", ()
 });
 
 test("unsaved report work has a scoped non-authoritative recovery copy and automatic retry", () => {
-  assert.match(studio, /reportRecoveryKey\(caseId, pathway\)/);
+  assert.match(studio, /reportRecoveryKey\(caseId, pathway, subject, browserTabId\(\)\)/);
   assert.match(studio, /window\.localStorage\.setItem/);
   assert.match(studio, /clearBrowserRecovery/);
   assert.match(studio, /SAVE_RETRY_DELAY_MS/);

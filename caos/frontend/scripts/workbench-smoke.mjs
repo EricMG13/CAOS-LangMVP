@@ -1807,14 +1807,16 @@ try {
   const recoveryTemplate = reportTemplate(recoveryPathway);
   const recoveryBlocks = reportDraft(recoveryPathway).content.blocks.map((block, index) => index === 0 ? { ...block, text: "Recovered from stale server v0." } : block);
   const recoveryCopy = {
-    caseId: caseRecord.id, pathway: recoveryPathway, savedAt: Date.now(), expectedVersion: 0,
+    subject: reportSubject, caseId: caseRecord.id, pathway: recoveryPathway, savedAt: Date.now(), expectedVersion: 0,
     templateId: recoveryTemplate.template_id, templateVersion: recoveryTemplate.template_version,
     modelSelection: reportSelection, blocks: recoveryBlocks,
   };
-  await page.evaluate(([key, value]) => localStorage.setItem(key, value), [
-    `caos:report-recovery:${encodeURIComponent(caseRecord.id)}:${recoveryPathway}`,
-    JSON.stringify(recoveryCopy),
-  ]);
+  // The recovery slot is one per subject, case, pathway and browser tab (WEB-014;
+  // FE-A0 F2). The tab id is minted by the studio on its first read.
+  const recoveryTabId = await page.evaluate(() => sessionStorage.getItem("caos:tab-id"));
+  assert.ok(recoveryTabId, "Report Studio minted no browser tab id for its recovery slot");
+  const recoveryKey = (subject, pathway) => `caos:report-recovery:${encodeURIComponent(subject)}:${encodeURIComponent(caseRecord.id)}:${pathway}:${encodeURIComponent(recoveryTabId)}`;
+  await page.evaluate(([key, value]) => localStorage.setItem(key, value), [recoveryKey(reportSubject, recoveryPathway), JSON.stringify(recoveryCopy)]);
   await page.getByRole("combobox", { name: "Pathway template" }).selectOption(recoveryPathway);
   await page.getByText(/Unsaved browser copy from/).waitFor();
   // Report Studio autosaves 850 ms after the last edit. On a slow runner that
@@ -1839,6 +1841,21 @@ try {
   await awaitReportSave(recoveryPathway, hasBlockText("Recovered from stale server v0."), "recovery");
   assert.equal(reportLastSave.expected_version, 0, "recovery save discarded its original compare-and-swap base");
   assert.equal(reportLastSave.blocks[0].text, "Recovered from stale server v0.", "recovery save did not use the browser copy");
+  assert.equal(await page.evaluate((key) => localStorage.getItem(key), recoveryKey(reportSubject, recoveryPathway)), null, "a successful save left its recovery copy behind");
+  // The next subject on the same browser profile is never offered this subject's
+  // unsaved text: the slot is keyed by subject, and a copy whose subject differs
+  // is refused even if the keys were ever to collide.
+  await page.evaluate(([key, value]) => localStorage.setItem(key, value), [recoveryKey(reportSubject, recoveryPathway), JSON.stringify({ ...recoveryCopy, savedAt: Date.now() })]);
+  reportSubject = "second-analyst";
+  await page.reload({ waitUntil: "networkidle" });
+  await page.getByRole("combobox", { name: "Pathway template" }).selectOption(recoveryPathway);
+  await page.getByRole("article", { name: /Deliverable preview/i }).locator(".rd-subtitle").filter({ hasText: reportTitles[recoveryPathway] }).waitFor();
+  assert.equal(await page.getByText(/Unsaved browser copy from/).count(), 0, "a second subject was offered the previous subject's recovery copy");
+  assert.equal(await page.getByRole("button", { name: "Restore copy" }).count(), 0, "a second subject could restore the previous subject's copy");
+  assert.notEqual(await page.evaluate((key) => localStorage.getItem(key), recoveryKey("analyst", recoveryPathway)), null, "a second subject's load discarded the previous subject's recovery copy");
+  await page.evaluate((key) => localStorage.removeItem(key), recoveryKey("analyst", recoveryPathway));
+  reportSubject = "analyst";
+  await page.reload({ waitUntil: "networkidle" });
 
   const reportPaper = () => page.getByRole("article", { name: /Deliverable preview/i });
   const reportTitle = (title) => reportPaper().locator(".rd-subtitle").filter({ hasText: title });
@@ -1865,6 +1882,11 @@ try {
   const dirtyPathwayEditor = page.getByRole("textbox", { name: "Credit Snapshot" });
   await dirtyPathwayEditor.fill("Dirty pathway fence value");
   await page.getByText("Unsaved changes", { exact: true }).waitFor();
+  // The studio writes the recovery copy itself on every change, under this
+  // subject's own tab-scoped slot, before the autosave lands.
+  const writtenRecovery = await page.evaluate((key) => JSON.parse(localStorage.getItem(key) || "null"), recoveryKey(reportSubject, "EARNINGS_UPDATE"));
+  assert.equal(writtenRecovery?.subject, reportSubject, "an edit did not write a subject-scoped recovery copy");
+  assert.equal(writtenRecovery?.blocks?.[0]?.text, "Dirty pathway fence value", "the recovery copy does not carry the unsaved text");
   await pathwaySelect.selectOption("FULL_CREDIT");
   await discardDraftDialog().waitFor();
   assert.equal(await pathwaySelect.inputValue(), "EARNINGS_UPDATE", "dirty pathway cancel changed pathway before confirmation");
