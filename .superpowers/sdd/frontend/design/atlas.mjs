@@ -1,7 +1,9 @@
 // FE-A2 screenshot atlas + computed-style measurements against the host-control
 // server on :8773 (real seeded cases from the workbench smoke; Model Builder READY
 // and the paused research plan use the a11y sweep's fixtures because host control
-// yields no READY model and no live approval gate on a seeded case).
+// yields no READY model and no live approval gate on a seeded case). No role
+// header is sent: the development identity edge treats a headerless call as
+// ANALYST (identity.py), and the one reader capture fixtures /api/me.
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { chromium, request } from "/Users/ericguei/Claude/Projects/CAOS-LangMVP/.claude/worktrees/frontend-design-truth-ca9b32/caos/frontend/node_modules/playwright/index.mjs";
@@ -9,7 +11,7 @@ import { chromium, request } from "/Users/ericguei/Claude/Projects/CAOS-LangMVP/
 const baseURL = process.env.CAOS_URL || "http://127.0.0.1:8773";
 const outDir = process.env.ATLAS_DIR;
 mkdirSync(outDir, { recursive: true });
-const api = await request.newContext({ baseURL, extraHTTPHeaders: { "x-caos-role": "ANALYST" } });
+const api = await request.newContext({ baseURL });
 const cases = await (await api.get("/api/cases")).json();
 const accepted = cases.find((c) => c.accepted_snapshot_id);
 const snapshot = await (await api.get(`/api/cases/${accepted.id}/snapshot`)).json();
@@ -150,7 +152,7 @@ async function geometry(page, tag, selectors) {
 
 for (const vp of viewports) {
   const t = vp.tag;
-  const context = await browser.newContext({ viewport: { width: vp.width, height: vp.height }, extraHTTPHeaders: { "x-caos-role": "ANALYST" } });
+  const context = await browser.newContext({ viewport: { width: vp.width, height: vp.height } });
   const page = await context.newPage();
 
   // 1 Cases (Portfolio) — intake, register, create, fit
@@ -249,7 +251,7 @@ for (const vp of viewports) {
   // 5 Run console — paused for research-plan approval (a11y fixture shapes)
   {
     const fx = pendingPlanFixture(accepted.id, "run_atlas_pending_plan");
-    const ctx2 = await browser.newContext({ viewport: { width: vp.width, height: vp.height }, extraHTTPHeaders: { "x-caos-role": "ANALYST" } });
+    const ctx2 = await browser.newContext({ viewport: { width: vp.width, height: vp.height } });
     const p2 = await ctx2.newPage();
     await p2.route((u) => u.pathname === `/api/cases/${accepted.id}`, (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(fx.caseFixture) }));
     await p2.route((u) => u.pathname === `/api/runs/${fx.runFixture.id}`, (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(fx.runFixture) }));
@@ -296,7 +298,7 @@ for (const vp of viewports) {
 
   // 9 Model Builder READY (fixture)
   {
-    const ctx3 = await browser.newContext({ viewport: { width: vp.width, height: vp.height }, extraHTTPHeaders: { "x-caos-role": "ANALYST" } });
+    const ctx3 = await browser.newContext({ viewport: { width: vp.width, height: vp.height } });
     const p3 = await ctx3.newPage();
     await routeModel(p3, accepted.id);
     await p3.goto(url("/model-builder/", { case: accepted.id })); await settle(p3);
@@ -363,7 +365,7 @@ for (const vp of viewports) {
 
   // 14 States: skeleton (held snapshot), error (500), empty panel (no cases), stale (switch_required)
   {
-    const ctx4 = await browser.newContext({ viewport: { width: vp.width, height: vp.height }, extraHTTPHeaders: { "x-caos-role": "ANALYST" } });
+    const ctx4 = await browser.newContext({ viewport: { width: vp.width, height: vp.height } });
     const p4 = await ctx4.newPage();
     let release;
     const held = new Promise((resolve) => { release = resolve; });
@@ -403,8 +405,12 @@ for (const vp of viewports) {
 
   // 15 Reader role — WriteBlocked and reader-mode idle status
   {
-    const ctx5 = await browser.newContext({ viewport: { width: vp.width, height: vp.height }, extraHTTPHeaders: { "x-caos-role": "READER" } });
+    // The reader state is fixtured on the identity read the workspace makes
+    // (/api/me), not by sending the development role header: that header is
+    // read only by identity.py and the recorded review blocks it elsewhere.
+    const ctx5 = await browser.newContext({ viewport: { width: vp.width, height: vp.height } });
     const p5 = await ctx5.newPage();
+    await p5.route((u) => u.pathname === "/api/me", (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ role: "READER", subject: "atlas.reader" }) }));
     await p5.goto(url("/run-console/", { case: accepted.id, run: accepted.current_execution_id })); await settle(p5);
     await shot(p5, `${t}-27-run-console-reader`);
     if (t === "1440") await clip(p5, ".panel.span-4", `${t}-c-state-write-blocked`);
@@ -413,7 +419,7 @@ for (const vp of viewports) {
 
   // 16 Reduced motion + coarse pointer probe (computed values only)
   if (t === "1440") {
-    const ctx6 = await browser.newContext({ viewport: { width: vp.width, height: vp.height }, reducedMotion: "reduce", hasTouch: true, extraHTTPHeaders: { "x-caos-role": "ANALYST" } });
+    const ctx6 = await browser.newContext({ viewport: { width: vp.width, height: vp.height }, reducedMotion: "reduce", hasTouch: true });
     const p6 = await ctx6.newPage();
     await p6.goto(url("/cases/", { case: accepted.id })); await settle(p6);
     log.measurements["reduced-motion"] = await p6.evaluate(() => {

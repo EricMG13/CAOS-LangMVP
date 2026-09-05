@@ -1,20 +1,10 @@
 {
   "cases": {
-    "accepted": "case-32b7088bb41a494a9250",
-    "acceptedRun": "run-0aa190378e60469a8999",
-    "artifactId": "art-71c3ae221e5f4a288732",
+    "accepted": "case-2247b39badc7411d9ef8",
+    "acceptedRun": "run-1665b1c475f3437f90b5",
+    "artifactId": "art-131b3f4882ff4ce1b022",
     "rvCase": "case-728f972f3f2f4af9b835",
     "unaccepted": [
-      {
-        "caseId": "case-2247b39badc7411d9ef8",
-        "runId": "run-1665b1c475f3437f90b5",
-        "pathway": "FULL_CREDIT"
-      },
-      {
-        "caseId": "case-30a1f085e2a84373af7f",
-        "runId": "run-dd9f9d4a05db464fb149",
-        "pathway": "COVENANT_REFINANCING"
-      },
       {
         "caseId": "case-62084f0c54a54452ac6c",
         "runId": "run-7bce609d275649bbae06",
@@ -185,7 +175,7 @@
       "outlineColor": "rgb(233, 237, 244)",
       "box": {
         "w": 1440,
-        "h": 1716
+        "h": 2158
       },
       "text": "(self.__next_f=self.__next_f||[]).push(["
     },
@@ -317,9 +307,9 @@
       "outlineColor": "rgb(153, 163, 180)",
       "box": {
         "w": 199,
-        "h": 66
+        "h": 81
       },
-      "text": "AnalystNorthstar-7e597e74Desktop workben"
+      "text": "AnalystApiGoldenpack-7e597e74 HoldingsDe"
     },
     ".topbar h1": {
       "fontFamily": "\"Avenir Next\", \"Segoe UI\", system-ui, sans-serif, -apple-system, \"system-ui\", \"Segoe UI\", Roboto, Helvetica, Arial, sans-serif, ui-sans-serif, sans-serif",
@@ -385,7 +375,7 @@
         "w": 1216,
         "h": 36
       },
-      "text": "Credit: Northstar-7e597e74Visible snapsh"
+      "text": "Credit: ApiGoldenpack-7e597e74 HoldingsV"
     },
     ".authority-strip b": {
       "fontFamily": "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, \"Liberation Mono\", \"Courier New\", monospace, ui-monospace, monospace",
@@ -448,10 +438,10 @@
       "fontVariantNumeric": "normal",
       "outlineColor": "rgb(153, 163, 180)",
       "box": {
-        "w": 253,
+        "w": 172,
         "h": 14
       },
-      "text": "Creates or resolves the credit from the "
+      "text": "Last intake Sep 5, 2026, 10:46 AM"
     },
     ".button.primary": {
       "fontFamily": "-apple-system, \"system-ui\", \"Segoe UI\", Roboto, Helvetica, Arial, sans-serif, ui-sans-serif, system-ui, sans-serif",
@@ -539,7 +529,7 @@
         "w": 1134,
         "h": 43
       },
-      "text": "Add to Northstar-7e597e74 / Workbench QA"
+      "text": "Add to ApiGoldenpack-7e597e74 Holdings /"
     },
     ".field input": {
       "fontFamily": "-apple-system, \"system-ui\", \"Segoe UI\", Roboto, Helvetica, Arial, sans-serif, ui-sans-serif, system-ui, sans-serif",
@@ -558,7 +548,7 @@
       "fontVariantNumeric": "normal",
       "outlineColor": "rgb(233, 237, 244)",
       "box": {
-        "w": 751,
+        "w": 620,
         "h": 13
       },
       "text": ""
@@ -580,13 +570,13 @@
       "fontVariantNumeric": "normal",
       "outlineColor": "rgb(153, 163, 180)",
       "box": {
-        "w": 236,
+        "w": 447,
         "h": 32
       },
-      "text": "Credit"
+      "text": "Document"
     },
     "td": {
-      "fontFamily": "-apple-system, \"system-ui\", \"Segoe UI\", Roboto, Helvetica, Arial, sans-serif, ui-sans-serif, system-ui, sans-serif",
+      "fontFamily": "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, \"Liberation Mono\", \"Courier New\", monospace, ui-monospace, monospace",
       "fontSize": "14px",
       "fontWeight": "400",
       "lineHeight": "21.7px",
@@ -602,10 +592,10 @@
       "fontVariantNumeric": "normal",
       "outlineColor": "rgb(233, 237, 244)",
       "box": {
-        "w": 236,
-        "h": 82
+        "w": 447,
+        "h": 40
       },
-      "text": "ApiGoldenpack-7e597e74 HoldingsUnclassif"
+      "text": "apigoldenpack-7e597e74-10k-fy2024.txt"
     },
     ".status": {
       "fontFamily": "-apple-system, \"system-ui\", \"Segoe UI\", Roboto, Helvetica, Arial, sans-serif, ui-sans-serif, system-ui, sans-serif",
@@ -614,20 +604,42 @@
       "lineHeight": "21.7px",
       "letterSpacing": "normal",
       "textTransform": "none",
-      "color": "rgb(251, 191, 36)",
+      "color": "rgb(52, 211, 153)",
       "backgroundColor": "rgba(0, 0, 0, 0)",
-      "borderColor": "rgb(251, 191, 36)",
+      "borderColor": "rgb(52, 211, 153)",
       "borderRadius": "0px",
       "boxShadow": "none",
       "minHeight": "0px",
       "padding": "0px",
       "fontVariantNumeric": "normal",
-      "outlineColor": "rgb(251, 191, 36)",
+      "outlineColor": "rgb(52, 211, 153)",
       "box": {
-        "w": 98,
-        "h": 43
+        "w": 47,
+        "h": 22
       },
-      "text": "Not accepted"
+      "text": "used"
+    },
+    ".mono": {
+      "fontFamily": "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, \"Liberation Mono\", \"Courier New\", monospace, ui-monospace, monospace",
+      "fontSize": "14px",
+      "fontWeight": "400",
+      "lineHeight": "21.7px",
+      "letterSpacing": "normal",
+      "textTransform": "none",
+      "color": "rgb(233, 237, 244)",
+      "backgroundColor": "rgba(0, 0, 0, 0)",
+      "borderColor": "rgb(233, 237, 244) rgb(233, 237, 244) rgb(36, 43, 56)",
+      "borderRadius": "0px",
+      "boxShadow": "none",
+      "minHeight": "0px",
+      "padding": "8px",
+      "fontVariantNumeric": "normal",
+      "outlineColor": "rgb(233, 237, 244)",
+      "box": {
+        "w": 447,
+        "h": 40
+      },
+      "text": "apigoldenpack-7e597e74-10k-fy2024.txt"
     },
     ".muted": {
       "fontFamily": "-apple-system, \"system-ui\", \"Segoe UI\", Roboto, Helvetica, Arial, sans-serif, ui-sans-serif, system-ui, sans-serif",
@@ -737,7 +749,7 @@
         "w": 163,
         "h": 24
       },
-      "text": "src-b9fee4b5e5b94782b596"
+      "text": "src-04a7d88ca23d4bb5a140"
     },
     ".source-reader h2": {
       "fontFamily": "-apple-system, \"system-ui\", \"Segoe UI\", Roboto, Helvetica, Arial, sans-serif, ui-sans-serif, system-ui, sans-serif",
@@ -759,7 +771,7 @@
         "w": 444,
         "h": 34
       },
-      "text": "earnings.txt"
+      "text": "apigoldenpack-7e597e74-10k-fy2024.txt"
     },
     ".source-region-head h2": {
       "fontFamily": "-apple-system, \"system-ui\", \"Segoe UI\", Roboto, Helvetica, Arial, sans-serif, ui-sans-serif, system-ui, sans-serif",
@@ -803,7 +815,7 @@
         "w": 444,
         "h": 71
       },
-      "text": "b00001 · line 1Revenue 1,160"
+      "text": "b00001 · line 1ApiGoldenpack-7e597e74 Ho"
     },
     ".state-block": {
       "fontFamily": "-apple-system, \"system-ui\", \"Segoe UI\", Roboto, Helvetica, Arial, sans-serif, ui-sans-serif, system-ui, sans-serif",
@@ -844,10 +856,10 @@
       "fontVariantNumeric": "normal",
       "outlineColor": "rgb(233, 237, 244)",
       "box": {
-        "w": 94,
+        "w": 287,
         "h": 25
       },
-      "text": "earnings.txt"
+      "text": "apigoldenpack-7e597e74-10q-q3.txt"
     },
     "dialog": {
       "fontFamily": "-apple-system, \"system-ui\", \"Segoe UI\", Roboto, Helvetica, Arial, sans-serif, ui-sans-serif, system-ui, sans-serif",
@@ -869,7 +881,7 @@
         "w": 440,
         "h": 1000
       },
-      "text": "earnings.txtCloseSource IDsrc-b9fee4b5e5"
+      "text": "apigoldenpack-7e597e74-10q-q3.txtCloseSo"
     },
     ".dag-edge": {
       "fontFamily": "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, \"Liberation Mono\", \"Courier New\", monospace, ui-monospace, monospace",
@@ -911,7 +923,7 @@
       "outlineColor": "rgb(233, 237, 244)",
       "box": {
         "w": 179,
-        "h": 103
+        "h": 124
       },
       "text": "CP-PARSEsucceededOpen output"
     },
@@ -1067,7 +1079,7 @@
         "w": 562,
         "h": 32
       },
-      "text": "CP-PARSE"
+      "text": "Fundamental Credit Synthesizer"
     },
     ".analysis-lead": {
       "fontFamily": "-apple-system, \"system-ui\", \"Segoe UI\", Roboto, Helvetica, Arial, sans-serif, ui-sans-serif, system-ui, sans-serif",
@@ -1142,15 +1154,15 @@
       "lineHeight": "21.7px",
       "letterSpacing": "normal",
       "textTransform": "none",
-      "color": "rgb(233, 237, 244)",
-      "backgroundColor": "rgb(24, 29, 40)",
-      "borderColor": "rgb(36, 43, 56)",
+      "color": "rgb(153, 163, 180)",
+      "backgroundColor": "rgba(0, 0, 0, 0)",
+      "borderColor": "rgba(0, 0, 0, 0)",
       "borderRadius": "8px",
-      "boxShadow": "rgb(139, 147, 248) 2px 0px 0px 0px inset",
+      "boxShadow": "none",
       "minHeight": "auto",
       "padding": "8px",
       "fontVariantNumeric": "normal",
-      "outlineColor": "rgb(233, 237, 244)",
+      "outlineColor": "rgb(153, 163, 180)",
       "box": {
         "w": 165,
         "h": 56
@@ -1177,7 +1189,7 @@
         "w": 287,
         "h": 23
       },
-      "text": "1 cited source"
+      "text": "3 cited sources"
     },
     ".loan-table": {
       "fontFamily": "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, \"Liberation Mono\", \"Courier New\", monospace, ui-monospace, monospace",
@@ -1287,7 +1299,7 @@
         "w": 184,
         "h": 26
       },
-      "text": "snap-6d7da36…af87snap-6d7da36…af87. Full"
+      "text": "snap-7c017ff…867asnap-7c017ff…867a. Full"
     },
     ".proof-register strong": {
       "fontFamily": "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, \"Liberation Mono\", \"Courier New\", monospace, ui-monospace, monospace",
@@ -1306,10 +1318,10 @@
       "fontVariantNumeric": "tabular-nums",
       "outlineColor": "rgb(139, 147, 248)",
       "box": {
-        "w": 13,
+        "w": 27,
         "h": 25
       },
-      "text": "4"
+      "text": "17"
     },
     ".credit-authority-head h2": {
       "fontFamily": "-apple-system, \"system-ui\", \"Segoe UI\", Roboto, Helvetica, Arial, sans-serif, ui-sans-serif, system-ui, sans-serif",
@@ -1659,9 +1671,9 @@
       "outlineColor": "rgb(25, 25, 34)",
       "box": {
         "w": 377,
-        "h": 25
+        "h": 76
       },
-      "text": "Northstar-7e597e74 — Workbench QA"
+      "text": "ApiGoldenpack-7e597e74 Holdings — ApiGol"
     },
     ".rd-subtitle": {
       "fontFamily": "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, \"Liberation Mono\", \"Courier New\", monospace, ui-monospace, monospace",
@@ -1791,7 +1803,7 @@
       "outlineColor": "rgb(25, 25, 34)",
       "box": {
         "w": 471,
-        "h": 805
+        "h": 816
       },
       "text": "CCAOS · Full Credit · DraftDRAFT · PAGE "
     },
@@ -1936,7 +1948,7 @@
       ".SF NS (.SFNS-Regular) ×151"
     ],
     ".authority-strip": [
-      "Menlo (Menlo-Regular) ×24"
+      "Menlo (Menlo-Regular) ×37"
     ],
     ".rail-meta span": [
       "Menlo (Menlo-Regular) ×7"
@@ -1949,10 +1961,10 @@
     ],
     ".authority-metrics strong": [],
     ".standing-answer > p": [
-      "Menlo (Menlo-Regular) ×26"
+      "Menlo (Menlo-Regular) ×33"
     ],
     ".rd-title": [
-      ".SF NS (.SFNS-Regular_wdth_opsz150000_GRAD_wght28A0000) ×33"
+      ".SF NS (.SFNS-Regular_wdth_opsz150000_GRAD_wght28A0000) ×81"
     ],
     ".rd-body": [
       ".SF NS (.SFNS-Regular) ×16"
@@ -1971,109 +1983,109 @@
         "x": 0,
         "y": 0,
         "w": 720,
-        "h": 121
+        "h": 136
       },
       ".wordmark": {
         "x": 12,
-        "y": 37,
+        "y": 45,
         "w": 110,
         "h": 30
       },
       ".brand-mark": {
         "x": 20,
-        "y": 37,
+        "y": 45,
         "w": 30,
         "h": 30
       },
       ".topbar": {
         "x": 0,
-        "y": 121,
+        "y": 136,
         "w": 720,
         "h": 123
       },
       ".topbar h1": {
         "x": 12,
-        "y": 158,
+        "y": 173,
         "w": 696,
         "h": 25
       },
       ".authority-strip": {
         "x": 0,
-        "y": 244,
+        "y": 259,
         "w": 720,
         "h": 36
       },
       ".content": {
         "x": 0,
-        "y": 280,
+        "y": 295,
         "w": 720,
-        "h": 2125
+        "h": 2693
       },
       ".panel-header": {
         "x": 13,
-        "y": 297,
+        "y": 312,
         "w": 694,
         "h": 46
       },
       ".cases-intake": {
         "x": 12,
-        "y": 296,
+        "y": 311,
         "w": 696,
-        "h": 357
+        "h": 925
       },
       ".cases-register": {
         "x": 12,
-        "y": 669,
+        "y": 1252,
         "w": 696,
         "h": 1088
       },
       ".cases-create": {
         "x": 12,
-        "y": 1773,
+        "y": 2355,
         "w": 696,
         "h": 344
       },
       ".button.primary": {
         "x": 533,
-        "y": 600,
+        "y": 637,
         "w": 162,
         "h": 40
       },
       "#case-select": {
         "x": 174,
-        "y": 193,
+        "y": 208,
         "w": 428,
         "h": 36
       },
       "#command-palette-trigger": {
         "x": 611,
-        "y": 196,
+        "y": 211,
         "w": 97,
         "h": 30
       },
       ".dropzone": {
         "x": 25,
-        "y": 355,
+        "y": 370,
         "w": 670,
         "h": 178
       },
       ".worklist-toolbar": {
         "x": 13,
-        "y": 716,
+        "y": 1299,
         "w": 694,
         "h": 82
       },
       ".nav-link": {
         "x": 233,
-        "y": 40,
+        "y": 48,
         "w": 98,
         "h": 40
       },
       ".rail-meta": {
         "x": 1113,
         "y": 16,
-        "w": 76,
-        "h": 96
+        "w": 100,
+        "h": 111
       }
     },
     "1440": {
@@ -2117,7 +2129,7 @@
         "x": 224,
         "y": 119,
         "w": 1216,
-        "h": 1597
+        "h": 2039
       },
       ".panel-header": {
         "x": 253,
@@ -2129,17 +2141,17 @@
         "x": 252,
         "y": 143,
         "w": 1160,
-        "h": 336
+        "h": 778
       },
       ".cases-register": {
         "x": 252,
-        "y": 495,
+        "y": 937,
         "w": 866,
         "h": 1088
       },
       ".cases-create": {
         "x": 1134,
-        "y": 495,
+        "y": 937,
         "w": 278,
         "h": 344
       },
@@ -2169,7 +2181,7 @@
       },
       ".worklist-toolbar": {
         "x": 253,
-        "y": 542,
+        "y": 984,
         "w": 864,
         "h": 82
       },
@@ -2181,9 +2193,9 @@
       },
       ".rail-meta": {
         "x": 12,
-        "y": 918,
+        "y": 903,
         "w": 199,
-        "h": 66
+        "h": 81
       }
     }
   },
