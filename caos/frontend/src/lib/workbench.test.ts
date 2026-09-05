@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
-import { acceptanceSlotSummary, acceptedAuthorityMatch, destinationMeta, evidenceKind, formatBlockLocator, humanizeCode, moduleLabel, supersededAcceptance, withQuery, workflows } from "./workbench.ts";
+import { acceptanceSlotSummary, acceptedAuthorityMatch, destinationMeta, evidenceKind, formatBlockLocator, humanizeCode, moduleLabel, protectDirtyDraftUnload, supersededAcceptance, withQuery, workflows } from "./workbench.ts";
 
 const workbenchShell = readFileSync(new URL("../components/WorkbenchShell.tsx", import.meta.url), "utf8");
 const workspace = readFileSync(new URL("../components/Workspace.tsx", import.meta.url), "utf8");
@@ -95,7 +95,15 @@ test("draft navigation uses one focus-returning native dialog and preserves befo
   assert.doesNotMatch(reportStudio, /window\.confirm/);
   assert.match(workspace, /function DraftDiscardDialog/);
   assert.match(workspace, /dialog\.addEventListener\("cancel", cancel\)/);
-  assert.match(workspace, /window\.addEventListener\("beforeunload", guardUnload\)/);
+  // The unload guard's behaviour, not its presence: a dirty draft cancels the
+  // event and sets the legacy returnValue; a clean one touches nothing. The
+  // wiring is driven in the smoke with a synthetic beforeunload on the window.
+  const dirtyEvent = { prevented: false, preventDefault() { this.prevented = true; }, returnValue: "unchanged" };
+  assert.equal(protectDirtyDraftUnload(dirtyEvent, true), true);
+  assert.deepEqual({ prevented: dirtyEvent.prevented, returnValue: dirtyEvent.returnValue }, { prevented: true, returnValue: "" });
+  const cleanEvent = { prevented: false, preventDefault() { this.prevented = true; }, returnValue: "unchanged" };
+  assert.equal(protectDirtyDraftUnload(cleanEvent, false), false);
+  assert.deepEqual({ prevented: cleanEvent.prevented, returnValue: cleanEvent.returnValue }, { prevented: false, returnValue: "unchanged" });
   assert.doesNotMatch(workspace, /history\.replaceState\(null/);
   assert.equal(workspace.match(/historyStateForExternalReplace\(window\.history\.state\)/g)?.length, 2);
   assert.match(workspace, /requestDraftDiscard/);
@@ -184,7 +192,34 @@ test("DAG nodes use neutral containers and shape-coded visible statuses", async 
   assert.doesNotMatch(workspace, /className=\{`dag-node \$\{node\.status\}`\}/);
   assert.match(workspace, /className=\{`status \$\{nodeStatusTone\(node\.status\)\}`\}>\{node\.status\}<\/div>/);
   assert.match(workspace, /dag-node-open dag-node-placeholder" aria-hidden="true">Open output/, "unfinished DAG nodes must reserve the completed-output row");
-  assert.match(styles, /\.status\.running::before\s*\{/);
+  // Severity is shape plus hue, never hue alone: every tone's glyph rule draws a
+  // distinct shape, so removing one (colour-only status) fails here rather than
+  // passing on the presence of a selector (FE-A0 §4, M8).
+  const glyph = (tone: string) => {
+    const rule = new RegExp(`\\.status\\.${tone}::before\\s*\\{([^}]*)\\}`).exec(styles);
+    assert.ok(rule, `no glyph rule for .status.${tone}`);
+    assert.doesNotMatch(rule[1], /content:\s*none/, `${tone} glyph removed`);
+    return rule[1];
+  };
+  assert.match(glyph("success"), /border-radius:\s*50%/);
+  assert.match(glyph("success"), /background:\s*var\(--caos-success\)/);
+  assert.match(glyph("running"), /border-radius:\s*50%/);
+  assert.match(glyph("running"), /background:\s*var\(--caos-accent\)/);
+  assert.match(glyph("warning"), /border-bottom:\s*8px solid var\(--caos-warning\)/);
+  assert.match(glyph("critical"), /border-radius:\s*2px/);
+  assert.match(glyph("critical"), /background:\s*var\(--caos-critical\)/);
+  assert.match(styles, /\.status::before, \.status\.idle::before\s*\{[^}]*width: 8px; height: 3px/);
+});
+
+test("no shipped frontend file carries an HTML or script sink", () => {
+  // WEB-012. The per-component pins covered DeliverableDocument and Report Studio
+  // only; a raw-HTML sink in the artifact reader or the shell passed every test
+  // (FE-A0 §4, M9). Every shipped file under app/ and src/ is scanned.
+  const frontendRoot = new URL("../../", import.meta.url);
+  const files = ["app/", "src/"].flatMap((directory) => shippedFiles(new URL(directory, frontendRoot)));
+  const forbidden = /dangerouslySetInnerHTML|\.innerHTML\s*=|\.outerHTML\s*=|insertAdjacentHTML|srcdoc|\beval\(|new Function\(|javascript:/;
+  const violations = files.filter((file) => forbidden.test(readFileSync(file, "utf8"))).map((file) => file.pathname.slice(frontendRoot.pathname.length));
+  assert.deepEqual(violations, []);
 });
 
 test("every custom property the stylesheets read is declared on :root", () => {

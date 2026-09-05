@@ -188,6 +188,7 @@ browser.newContext = async (options) => {
   return context;
 };
 const errors = [];
+const unexpectedDialogs = [];
 // The workspace restores focus on the animation frame AFTER an action settles
 // (Workspace.tsx: useEffect → requestAnimationFrame), so a check that reads
 // document.activeElement the instant the settled UI renders races that frame
@@ -1420,6 +1421,11 @@ try {
   });
   await firstAssumption.fill("0.06");
   await firstAssumption.press("Enter");
+  // beforeunload protects a dirty draft (WEB-014). Playwright cannot observe the
+  // native prompt on a navigation, so the listener is driven with a synthetic
+  // event: a dirty draft cancels it.
+  const unloadGuarded = () => page.evaluate(() => { const event = new Event("beforeunload", { cancelable: true }); window.dispatchEvent(event); return event.defaultPrevented; });
+  assert.equal(await unloadGuarded(), true, "a dirty draft did not arm beforeunload");
   const discardDraftDialog = () => page.getByRole("dialog", { name: "Discard draft changes?" });
   const caseSelect = page.getByRole("combobox", { name: "Select case" });
   await caseSelect.selectOption(raceCase.id);
@@ -1511,6 +1517,7 @@ try {
   await discardDraftDialog().getByRole("button", { name: "Discard changes" }).click();
   await page.waitForFunction((caseId) => document.querySelector("#case-select")?.value === caseId, raceCase.id);
   assert.equal(await caseSelect.inputValue(), raceCase.id, "confirming draft discard did not complete the case switch");
+  assert.equal(await unloadGuarded(), false, "a discarded draft left beforeunload armed");
   await page.setViewportSize({ width: 720, height: 900 });
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth), false, "Model Builder causes page-level horizontal overflow at 200% desktop zoom width");
   await page.setViewportSize({ width: 1440, height: 1000 });
@@ -1539,7 +1546,10 @@ try {
     if (readOnly) modelRevisions = modelRevisions.map((item) => ({ ...item, export: { ...item.export, status: "READY", error: null } }));
   }
   modelRole = "ANALYST";
-  page.once("dialog", (dialog) => void dialog.accept());
+  // No native dialog belongs to this journey: every prompt is a styled <dialog>.
+  // A reintroduced window.confirm/alert/prompt is recorded and fails the run
+  // instead of being auto-accepted and forgotten (FE-A0 §4).
+  page.on("dialog", (dialog) => { unexpectedDialogs.push(`${dialog.type()}: ${dialog.message()}`); void dialog.dismiss(); });
   for (const [state, text] of [["FAILED", "MODEL CALCULATION FAILED"], ["NOT_READY", "ACCEPTED FULL CREDIT REQUIRED"]]) {
     modelState = state; modelExportState = "NOT_REQUESTED";
     await page.goto(`${baseURL}/model-builder/?case=${caseRecord.id}&state=${state}`, { waitUntil: "networkidle" });
@@ -2446,6 +2456,7 @@ try {
   for (const engineText of ["Failed to fetch", "NetworkError when attempting to fetch resource.", "Load failed"]) {
     assert.equal(alertText.some((text) => text.includes(engineText)), false, `the page-level alert carried engine text: ${engineText}`);
   }
+  assert.deepEqual(unexpectedDialogs, [], "a native dialog appeared during the journey");
   await reader.close();
   assert.deepEqual(externalGoogleFontRequests, [], "workbench requested an external Google font");
   report({ status: "passed" });
