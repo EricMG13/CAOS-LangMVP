@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
-import { acceptanceSlotSummary, acceptedAuthorityMatch, destinationMeta, evidenceKind, formatBlockLocator, humanizeCode, moduleLabel, withQuery, workflows } from "./workbench.ts";
+import { acceptanceSlotSummary, acceptedAuthorityMatch, destinationMeta, evidenceKind, formatBlockLocator, humanizeCode, moduleLabel, supersededAcceptance, withQuery, workflows } from "./workbench.ts";
 
 const workbenchShell = readFileSync(new URL("../components/WorkbenchShell.tsx", import.meta.url), "utf8");
 const workspace = readFileSync(new URL("../components/Workspace.tsx", import.meta.url), "utf8");
@@ -204,7 +204,20 @@ test("acceptance stays live until the run's snapshot is the case authority", () 
   assert.equal(acceptedAuthorityMatch(null, "", "snap_a"), "", "an unaccepted run offers the action");
   assert.equal(acceptedAuthorityMatch(undefined, undefined, undefined), "", "no authority, no aftermath");
   assert.equal(acceptedAuthorityMatch("snap_a", "", null), "", "authority not yet loaded keeps the action live");
-  assert.equal(acceptedAuthorityMatch("snap_a", "", "snap_b"), "", "a different accepted authority keeps the action live");
+  assert.equal(acceptedAuthorityMatch("snap_a", "", "snap_b"), "", "acceptedAuthorityMatch names only the latest accepted id; a superseded acceptance is supersededAcceptance's to name");
+});
+
+test("a run accepted earlier and superseded since is named as superseded, never re-offered", () => {
+  assert.equal(supersededAcceptance("snap_a", "snap_b"), "snap_a", "the run's own accepted snapshot is named");
+  assert.equal(supersededAcceptance("snap_a", "snap_a"), "", "the latest acceptance is not superseded");
+  assert.equal(supersededAcceptance(null, "snap_b"), "", "a run never accepted is not superseded");
+  assert.equal(supersededAcceptance("", "snap_b"), "");
+  assert.equal(supersededAcceptance("snap_a", undefined), "", "unknown authority claims nothing");
+  assert.equal(supersededAcceptance("snap_a", null), "");
+  const runStatus = workspace.slice(workspace.indexOf("function RunStatus("), workspace.indexOf("function RunConsole("));
+  const superseded = runStatus.slice(runStatus.indexOf("else if (supersededSnapshotId)"), runStatus.indexOf('else if (run.status === "succeeded")'));
+  assert.match(superseded, /Accepted, superseded/);
+  assert.doesNotMatch(superseded, /Accept analytical snapshot|Ready for acceptance/, "a superseded run must never re-offer acceptance");
 });
 
 test("a positional block locator reads as English and every other shape keeps its JSON", () => {
@@ -330,9 +343,9 @@ test("the shell names the visible lens instead of conflating it with latest acce
 });
 
 test("the browser geometry fixture covers every acceptance-region state", () => {
-  assert.match(smoke, /\["queued", "running", "succeeded", "accepted", "failed", "paused"\]/);
-  assert.match(smoke, /accepted_snapshot_id: acceptanceRunPhase === "accepted" \? acceptanceSnapshot\.id : null/);
-  for (const state of ["Accepted", "Acceptance blocked", "Ready for acceptance", "Acceptance waiting"]) {
+  assert.match(smoke, /\["queued", "running", "succeeded", "accepted", "superseded", "failed", "paused"\]/);
+  assert.match(smoke, /accepted_snapshot_id: acceptanceRunPhase === "accepted" \? acceptanceSnapshot\.id : acceptanceRunPhase === "superseded" \? supersededSnapshotId : null/);
+  for (const state of ["Accepted", "Accepted, superseded", "Acceptance blocked", "Ready for acceptance", "Acceptance waiting"]) {
     assert.match(smoke, new RegExp(state));
   }
 });

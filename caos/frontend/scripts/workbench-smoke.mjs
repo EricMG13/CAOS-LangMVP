@@ -963,13 +963,16 @@ try {
   // progress crosses the irreversible-action boundary.
   let acceptanceRunPhase = "queued";
   const acceptanceSnapshot = { ...accepted, id: `snap_acceptance_${fixtureSuffix}`, run_id: nextRun.id };
+  // A run accepted earlier and superseded since (FE-A1 F-14; D9): its own
+  // accepted id differs from the case's latest accepted id.
+  const supersededSnapshotId = `snap_superseded_${fixtureSuffix}`;
   const acceptanceRunPath = (url) => url.pathname === `/api/runs/${nextRun.id}`;
   const acceptanceEventsPath = (url) => url.pathname === `/api/runs/${nextRun.id}/events`;
   const acceptanceAuthorityPath = (url) => url.pathname === `/api/cases/${caseRecord.id}/snapshot`;
   const acceptanceRunFixture = () => ({
     ...nextRunState,
-    status: acceptanceRunPhase === "accepted" ? "succeeded" : acceptanceRunPhase,
-    accepted_snapshot_id: acceptanceRunPhase === "accepted" ? acceptanceSnapshot.id : null,
+    status: acceptanceRunPhase === "accepted" || acceptanceRunPhase === "superseded" ? "succeeded" : acceptanceRunPhase,
+    accepted_snapshot_id: acceptanceRunPhase === "accepted" ? acceptanceSnapshot.id : acceptanceRunPhase === "superseded" ? supersededSnapshotId : null,
     error: acceptanceRunPhase === "failed"
       ? { code: "GEOMETRY_FAILURE", message: "Controlled fixture failure." }
       : acceptanceRunPhase === "paused"
@@ -977,11 +980,11 @@ try {
         : null,
     nodes: nextRunState.nodes.map((node, index) => ({
       ...node,
-      status: acceptanceRunPhase === "succeeded" || acceptanceRunPhase === "accepted" ? "succeeded"
+      status: acceptanceRunPhase === "succeeded" || acceptanceRunPhase === "accepted" || acceptanceRunPhase === "superseded" ? "succeeded"
         : acceptanceRunPhase === "failed" ? index === 0 ? "failed" : "pending"
         : acceptanceRunPhase === "running" ? index === 0 ? "succeeded" : index === 1 ? "running" : "pending"
           : "pending",
-      artifact_id: acceptanceRunPhase === "succeeded" || acceptanceRunPhase === "accepted" ? node.artifact_id : index === 0 && acceptanceRunPhase === "running" ? node.artifact_id : null,
+      artifact_id: acceptanceRunPhase === "succeeded" || acceptanceRunPhase === "accepted" || acceptanceRunPhase === "superseded" ? node.artifact_id : index === 0 && acceptanceRunPhase === "running" ? node.artifact_id : null,
     })),
   });
   const acceptanceAuthorityFixture = () => {
@@ -992,16 +995,21 @@ try {
   await page.route(acceptanceEventsPath, (route) => route.fulfill({ status: 200, contentType: "text/event-stream", body: "retry: 60000\n\n" }));
   await page.route(acceptanceAuthorityPath, (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(acceptanceAuthorityFixture()) }));
   const acceptanceBoxes = [];
-  const acceptancePhases = ["queued", "running", "succeeded", "accepted", "failed", "paused"];
+  const acceptancePhases = ["queued", "running", "succeeded", "accepted", "superseded", "failed", "paused"];
   for (const phase of acceptancePhases) {
     acceptanceRunPhase = phase;
     await page.reload({ waitUntil: "networkidle" });
     const region = page.locator("[data-run-acceptance]");
     const expectedState = phase === "accepted" ? "Latest accepted authority"
-      : phase === "succeeded" ? "Ready for acceptance"
-        : phase === "failed" || phase === "paused" ? "Acceptance blocked"
-          : "Acceptance waiting";
+      : phase === "superseded" ? "Accepted, superseded"
+        : phase === "succeeded" ? "Ready for acceptance"
+          : phase === "failed" || phase === "paused" ? "Acceptance blocked"
+            : "Acceptance waiting";
     await region.getByText(expectedState, { exact: true }).waitFor();
+    if (phase === "superseded") {
+      await region.getByText(supersededSnapshotId, { exact: true }).waitFor();
+      assert.equal(await page.getByRole("button", { name: "Accept analytical snapshot" }).count(), 0, "a superseded acceptance re-offered a live acceptance action");
+    }
     acceptanceBoxes.push(await region.boundingBox());
   }
   assert.ok(acceptanceBoxes.every(Boolean), "an execution state omitted the acceptance region");

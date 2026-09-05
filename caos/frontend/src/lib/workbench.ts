@@ -306,6 +306,17 @@ export function acceptedAuthorityMatch(
   return candidate && candidate === authoritySnapshotId ? candidate : "";
 }
 
+// A run that was accepted and then superseded by a later acceptance (FE-A1 F-14;
+// D9): its own snapshot id when the case's latest accepted id is known and is a
+// different snapshot, else "". The run surface renders that as "accepted,
+// superseded" and never re-offers acceptance. Unknown authority claims nothing.
+export function supersededAcceptance(
+  runSnapshotId: string | null | undefined,
+  authoritySnapshotId: string | null | undefined,
+): string {
+  return runSnapshotId && authoritySnapshotId && runSnapshotId !== authoritySnapshotId ? runSnapshotId : "";
+}
+
 export function acceptanceSlotSummary(
   runNodes: readonly { module_id: string }[],
   replacedArtifacts: readonly { module_id: string }[],
