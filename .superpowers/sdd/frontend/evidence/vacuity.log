@@ -1,0 +1,12 @@
+M1 SURVIVES (vacuous) — worksheet arrow-key navigation is disconnected (handler never wired) [src/components/model/ModelBuilder.tsx → src/components/model/ModelBuilder.test.ts] pass=16 fail=0
+M3 SURVIVES (vacuous) — READER can edit every per-period forecast assumption [src/components/model/ModelBuilder.tsx → src/components/model/ModelBuilder.test.ts] pass=16 fail=0
+M4 SURVIVES (vacuous) — beforeunload never protects a dirty draft (listener kept, body inert) [src/components/Workspace.tsx → src/lib/workbench.test.ts] pass=31 fail=0
+M4b SURVIVES (vacuous) — beforeunload never protects a dirty draft (same mutation, ModelBuilder test) [src/components/Workspace.tsx → src/components/model/ModelBuilder.test.ts] pass=16 fail=0
+M5 SURVIVES (vacuous) — identity fails OPEN: every write control renders until /api/me answers [src/components/Workspace.tsx → src/components/model/ModelBuilder.test.ts] pass=16 fail=0
+M6 SURVIVES (vacuous) — the browser recovery copy is never written [src/components/report/ReportStudio.tsx → src/components/report/ReportStudio.test.ts] pass=21 fail=0
+M7 SURVIVES (vacuous) — case authority is never refreshed (effect keeps its deps, body returns early) [src/components/Workspace.tsx → src/lib/workspaceAuthority.test.ts] pass=14 fail=0
+M8 SURVIVES (vacuous) — success, warning and critical status glyphs removed: status is colour alone [app/globals.css → src/lib/workbench.test.ts] pass=31 fail=0
+M9 SURVIVES (vacuous) — artifact markdown paragraphs rendered as raw HTML (dangerouslySetInnerHTML in the reader) [src/components/Workspace.tsx → ALL] pass=123 fail=0
+M10 SURVIVES (vacuous) — evidence drawer never restores focus to its trigger on close [src/components/WorkbenchShell.tsx → ALL] pass=123 fail=0
+M11 SURVIVES (vacuous) — cross-case run guard removed: a run from another case is shown and acceptable [src/components/Workspace.tsx → ALL] pass=123 fail=0
+M12 SURVIVES (vacuous) — SSE tail never subscribes to any run event (progress stops after the first fetch) [src/components/Workspace.tsx → ALL] pass=123 fail=0

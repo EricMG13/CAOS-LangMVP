@@ -1,0 +1,20 @@
+{
+  "schema_version": "caos.workbench-report.v1",
+  "browser": "chromium",
+  "browser_version": "151.0.7922.34",
+  "base_url": "http://127.0.0.1:8766",
+  "started_at": "2026-09-05T09:50:07.829Z",
+  "duration_ms": 133764,
+  "timing": {
+    "domContentLoaded": 60.300000071525574,
+    "firstContentfulPaint": 148,
+    "budget": {
+      "domContentLoaded": 250,
+      "firstContentfulPaint": 400,
+      "enforced": true
+    }
+  },
+  "console_errors": [],
+  "webkit_teardown_rejections": [],
+  "status": "passed"
+}

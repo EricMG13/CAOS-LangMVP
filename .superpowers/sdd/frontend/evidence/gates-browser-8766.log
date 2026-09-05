@@ -1,0 +1,8 @@
+== workbench chromium 2026-09-05T09:50:07Z
+{"browser":"chromium","timing":{"domContentLoaded":60.300000071525574,"firstContentfulPaint":148},"budgetEnforced":true,"caseRequests":1}
+{"browser":"chromium","browser_version":"151.0.7922.34","status":"passed","duration_ms":133764,"results":"../../.superpowers/sdd/frontend/evidence/test-results/chromium"}
+exit=
+== a11y 2026-09-05T09:52:21Z
+{"routes":9,"viewports":6,"combinations":75,"pendingPlanFixture":true,"readyModelFixture":true,"readyReportFixture":true,"states":["empty","populated","review","filed","loading","error","refusal"],"modelBuilderAxeChecks":12,"modelBuilderKeyboardTabChecks":3,"reportStudioAxeChecks":3,"reportStudioKeyboardTabChecks":3,"violations":0}
+exit=
+== end 2026-09-05T09:53:27Z
