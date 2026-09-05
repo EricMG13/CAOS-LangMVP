@@ -102,6 +102,10 @@ FILE_MAP = {
     r"^docs/(QUALITY_[A-Z]+\.csv|quality_ledger_coverage\.py)$": "the ledger itself",
     r"^docs/SIMULATION_LEDGER\.csv$": "F-QUAL-04",
     r"^docs/PERIMETER_LEDGER\.csv$": "F-QUAL-05",
+    # Design exploration records: rendered canvases of candidate UI directions,
+    # kept beside the audit that produced them. Named, not excluded, so a future
+    # docs/ file that IS product still fails this check.
+    r"^docs/design/canvas/": "F-UI-01..15 (candidate IA directions, not shipped code)",
     r"^Modular OS/tools/": "F-OPS-07 (module consistency check)",
     r"^Modular OS/": "F-RUN-15 (methodology corpus the vendored bundle is built from)",
 }
