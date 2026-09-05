@@ -1495,7 +1495,7 @@ function RunStatus({ writeAccess, caseId, run, runLoading, runError, acceptRun, 
     acceptance = <>
       <span className="status idle">Accepted, superseded</span>
       <span className="mono muted">{supersededSnapshotId}</span>
-      <p>A later acceptance is the latest authority. This run&apos;s snapshot stays addressable and is not offered for acceptance again.</p>
+      <p>A later acceptance is the latest authority; this snapshot is not offered again.</p>
     </>;
   } else if (run.status === "succeeded") {
     acceptance = <>
