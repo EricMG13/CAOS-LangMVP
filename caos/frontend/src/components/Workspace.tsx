@@ -871,6 +871,12 @@ export default function Workspace({ destination, children }: { destination?: Des
     const form = new FormData(event.currentTarget);
     const pathway = String(form.get("pathway") || "");
     const depth = String(form.get("depth") || "");
+    // The disabled action covers every user path; a scripted requestSubmit() does
+    // not consult it, so the handler refuses an empty cut itself (FE-A0 F9).
+    if (!pathway) {
+      setError("No pathway inside this deployment's cut can be compiled for this case.");
+      return;
+    }
     const mustAnswer = String(form.get("must_answer") || "").split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
     const exclusions = String(form.get("exclusions") || "").split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
     if (pathway === "DEEP_RESEARCH" && (mustAnswer.length > 10 || exclusions.length > 10 || mustAnswer.length + exclusions.length > 10 || [...mustAnswer, ...exclusions].some((line) => line.length > 200))) {

@@ -868,8 +868,9 @@ try {
   await page.reload({ waitUntil: "networkidle" });
   await page.getByText(/are outside this deployment's cut\./).waitFor();
   assert.equal(await page.getByRole("button", { name: "Compile and run" }).isDisabled(), true, "an empty cut left the compile action enabled");
+  // A scripted requestSubmit() bypasses the disabled button; the handler refuses too.
   await page.locator("#pathway").evaluate((element) => element.form?.requestSubmit());
-  await page.waitForTimeout(300);
+  await page.getByRole("alert").getByText("No pathway inside this deployment's cut can be compiled for this case.", { exact: true }).waitFor();
   assert.equal(cutStartPosts, 0, "the compile form posted a pathway outside the served cut");
   page.off("request", countCutStart);
   await page.unroute(caseDetailFixturePath);
