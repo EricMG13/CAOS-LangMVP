@@ -544,6 +544,27 @@ try {
   await page.getByRole("region", { name: "Visible authority" }).getByText(new RegExp(`Credit:\\s*${primaryIssuer}`)).waitFor();
   await page.getByRole("region", { name: "Visible authority" }).getByText(/Source set:\s*v1/).waitFor();
 
+  // One snapshot authority per screen (FE-A0 F3): the credit screen renders the
+  // shell's snapshot, never a second read of its own, so with the route answering
+  // a different id on every read the authority strip and the accepted-snapshot
+  // metric still name the same id and no divergence goes unmarked.
+  let alternatingSnapshotReads = 0;
+  const alternatingSnapshotPath = (url) => url.pathname === `/api/cases/${caseRecord.id}/snapshot`;
+  await page.route(alternatingSnapshotPath, (route) => {
+    alternatingSnapshotReads += 1;
+    const answer = alternatingSnapshotReads % 2 === 1 ? accepted : { ...accepted, id: `snap_alternate_${fixtureSuffix}` };
+    return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ accepted: answer, latest_accepted: answer, switch_required: false, diff: { changed: false } }) });
+  });
+  await page.goto(`${baseURL}/command-center/?case=${caseRecord.id}&fixture=alternating-snapshot`, { waitUntil: "networkidle" });
+  await page.locator(".authority-metrics [title]").first().waitFor();
+  const stripSnapshotId = await page.getByRole("region", { name: "Visible authority" }).locator("span", { hasText: /^Visible snapshot:/ }).locator("[title]").first().getAttribute("title");
+  const creditSnapshotId = await page.locator(".authority-metrics [title]").first().getAttribute("title");
+  assert.ok(alternatingSnapshotReads >= 1, "the alternating snapshot fixture was not read");
+  assert.ok(stripSnapshotId, "the authority strip names no visible snapshot");
+  assert.equal(creditSnapshotId, stripSnapshotId, `the credit screen (${creditSnapshotId}) and the authority strip (${stripSnapshotId}) name different accepted snapshots on one screen`);
+  await page.unroute(alternatingSnapshotPath);
+  await page.goto(`${baseURL}/command-center/?case=${caseRecord.id}`, { waitUntil: "networkidle" });
+
   const paletteTrigger = page.getByRole("button", { name: /Open command palette/ });
   await paletteTrigger.focus();
   await page.keyboard.press(process.platform === "darwin" ? "Meta+K" : "Control+K");

@@ -9,7 +9,7 @@ import ReportStudio from "./report/ReportStudio";
 import { EmptyBlock, EmptyPanel, IdentityValue, LoadState, MutationReceipt, StateBlock, StateNote, Unavailable } from "./states";
 import { ApiRequestError, api as request, firstErrorMessage, isIntakeRefusal, isUnavailableRoute, networkFetch, type ArtifactRecord, type CaseRecord, type IntakeRecord, type IntakeRefusal, type LoanFinding, type LoanRow, type LoanUniverseResponse, type ResearchPlan, type RunRecord, type SourceRecord } from "../lib/api";
 import { displayValue, flattenValue, markdownBlocks, normalizeEvidenceRefs, type NormalizedEvidenceRef } from "../lib/artifactReader";
-import { initialAuthorityState, matchesAuthority, requestContext, workspaceAuthorityReducer, type AuthorityEvent } from "../lib/workspaceAuthority";
+import { initialAuthorityState, matchesAuthority, requestContext, workspaceAuthorityReducer, type AuthorityEvent, type AuthorityStatus } from "../lib/workspaceAuthority";
 
 import WorkbenchShell, { type DrawerState } from "./WorkbenchShell";
 import { type Destination, type DraftHistoryTraversal, type Snapshot, type SnapshotView, acceptanceSlotSummary, acceptedAuthorityMatch, beginDraftHistoryTraversal, destinationFromSlug, destinationMeta, draftHistoryEntryId, draftHistoryNeedsRearm, finishDraftHistoryTraversal, formatBlockLocator, formatDate, historyStateForExternalReplace, humanizeCode, isSameTabPrimaryGesture, moduleLabel, nodeStatusTone, observeDraftHistoryPop, protectDirtyDraftUnload, resolveDraftDiscard, routeDestinations, selectConclusionArtifact, withQuery } from "../lib/workbench";
@@ -1067,9 +1067,9 @@ export default function Workspace({ destination, children }: { destination?: Des
       case "Cases": return <CasesView writeAccess={writeAccess} cases={cases} casesLoading={casesLoading} selectedCase={selectedCase} caseId={caseId} createCase={createCase} pendingAction={pendingAction} intake={intake} intakeRefusal={intakeRefusal} run={run} submitIntake={submitIntake} />;
       case "Sources": return <SourcesView writeAccess={writeAccess} selectedCase={selectedCase} artifactId={routeArtifactId} sourceId={routeSourceId} upload={upload} pendingAction={pendingAction} onOpenEvidence={(evidenceId, source) => setDrawer({ kind: "evidence", evidenceId, source })} />;
       case "Run Console": return <RunConsole writeAccess={writeAccess} caseId={caseId} selectedCase={selectedCase} run={run} runLoading={runLoading} runError={runError} startRun={startRun} acceptRun={acceptRun} acceptedSnapshotId={acceptedRunSnapshotId} visibleSnapshotId={authority?.accepted?.id || ""} switchRequired={authority?.switch_required === true} approveResearchPlan={approveResearchPlan} approvalUnavailable={approvalUnavailable === runId} pendingAction={pendingAction} resumeSlot={resumeSlot} />;
-      case "Deep-Dive": return <DeepDive writeAccess={writeAccess} selectedCase={selectedCase} question={routeQuestion} caseId={caseId} run={run} onSwitchSnapshot={switchSnapshot} />;
+      case "Deep-Dive": return <DeepDive writeAccess={writeAccess} selectedCase={selectedCase} question={routeQuestion} caseId={caseId} run={run} authority={authority} authorityStatus={authorityStatus} onSwitchSnapshot={switchSnapshot} />;
       case "RV Screener": return <RVView key={caseId} writeAccess={writeAccess} caseId={caseId} />;
-      case "Command Center": return <CommandView caseId={caseId} question={routeQuestion} />;
+      case "Command Center": return <CommandView caseId={caseId} question={routeQuestion} authority={authority} authorityStatus={authorityStatus} />;
       case "Model Builder": return <ModelBuilder caseId={caseId} role={role} onDraftStateChange={onModelDraftStateChange} />;
       case "Report Studio": return <ReportStudio key={caseId} caseId={caseId} role={role} subject={subject} selectedCase={selectedCase} onDraftStateChange={onReportDraftStateChange} requestDraftDiscard={requestDraftDiscard} />;
       case "Admin Studio": return <AdminView />;
@@ -1625,89 +1625,63 @@ function ResearchPlanView({ plan, planHash, approving, approvalUnavailable, writ
   </section>;
 }
 
-function DeepDive({ writeAccess, selectedCase, question, caseId, run, onSwitchSnapshot }: { writeAccess: WriteAccess; selectedCase: CaseRecord | null; question: string; caseId: string; run: RunRecord | null; onSwitchSnapshot: (snapshotId: string) => Promise<SnapshotView | null> }) {
+function DeepDive({ writeAccess, selectedCase, question, caseId, run, authority, authorityStatus, onSwitchSnapshot }: { writeAccess: WriteAccess; selectedCase: CaseRecord | null; question: string; caseId: string; run: RunRecord | null; authority: SnapshotView | null; authorityStatus: AuthorityStatus; onSwitchSnapshot: (snapshotId: string) => Promise<SnapshotView | null> }) {
   const selectedCaseId = selectedCase?.id || "";
-  const [view, setView] = useState<SnapshotView | null>(null);
+  // The shell's snapshot is the one authority this reader renders (FE-A0 F3): a
+  // second read of /snapshot here could name a different accepted id than the
+  // authority strip on the same screen. Only the accepted artifacts are read,
+  // and only when the accepted artifact set changes.
+  const snapshot = authority?.accepted ?? null;
+  const artifactIds = snapshot?.artifacts.map((item) => item.id).join("\u0000") ?? "";
   const [artifacts, setArtifacts] = useState<ArtifactRecord[]>([]);
   const [selectedArtifactId, setSelectedArtifactId] = useState("");
   const [artifactError, setArtifactError] = useState("");
   const [message, setMessage] = useState("");
-  const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState("");
+  const [artifactsLoading, setArtifactsLoading] = useState(false);
   const loadGeneration = useRef(0);
   useEffect(() => {
     const generation = ++loadGeneration.current;
-    let ignore = false;
+    const ids = artifactIds ? artifactIds.split("\u0000") : [];
+    // The accepted artifact set is external state: its change resets the reader.
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    setView(null); setArtifacts([]); setSelectedArtifactId(""); setArtifactError(""); setMessage(""); setLoadError(""); setLoading(Boolean(selectedCaseId));
-
-    if (selectedCaseId) {
-      void (async () => {
-        try {
-          const next = await request<SnapshotView>(`/api/cases/${selectedCaseId}/snapshot`);
-          if (ignore || generation !== loadGeneration.current) return;
-          const expected = next?.accepted?.artifacts ?? [];
-          const loaded = await Promise.all(expected.map(({ id }) =>
-            request<ArtifactRecord>(`/api/cases/${selectedCaseId}/artifacts/${id}`).catch(() => null)
-          ));
-          if (ignore || generation !== loadGeneration.current) return;
-          const available = loaded.filter((item): item is ArtifactRecord => item !== null);
-          setView(next);
-          setArtifacts(available);
-          if (available.length !== expected.length) setArtifactError("Some accepted module outputs could not be loaded.");
-        } catch (caught) {
-          if (ignore || generation !== loadGeneration.current || caught instanceof DOMException && caught.name === "AbortError") return;
-          setLoadError(firstErrorMessage(caught, "Unable to load snapshot authority"));
-        } finally {
-          if (!ignore && generation === loadGeneration.current) setLoading(false);
-        }
-      })();
-    }
-
-    return () => { ignore = true; loadGeneration.current += 1; };
-  }, [selectedCaseId]);
-  const switchSnapshot = async () => {
-    if (!selectedCase || !view?.latest_accepted) return;
-    const generation = ++loadGeneration.current;
-    const selectedCaseId = selectedCase.id;
-    const snapshotId = view.latest_accepted.id;
-    setLoading(true); setLoadError(""); setArtifactError(""); setMessage("");
-
-    try {
-      const next = await onSwitchSnapshot(snapshotId);
-      if (!next || generation !== loadGeneration.current) return;
-      const expected = next.accepted?.artifacts ?? [];
-      const loaded = await Promise.all(expected.map(({ id }) =>
-        request<ArtifactRecord>(`/api/cases/${selectedCaseId}/artifacts/${id}`).catch(() => null)
-      ));
+    setArtifacts([]); setSelectedArtifactId(""); setArtifactError(""); setArtifactsLoading(Boolean(selectedCaseId) && ids.length > 0);
+    if (!selectedCaseId || !ids.length) return;
+    void (async () => {
+      const loaded = await Promise.all(ids.map((id) => request<ArtifactRecord>(`/api/cases/${selectedCaseId}/artifacts/${id}`).catch(() => null)));
       if (generation !== loadGeneration.current) return;
       const available = loaded.filter((item): item is ArtifactRecord => item !== null);
-      setView(next);
       setArtifacts(available);
-      setSelectedArtifactId("");
-      if (available.length !== expected.length) setArtifactError("Some accepted module outputs could not be loaded.");
-      setMessage("Visible snapshot switched.");
+      if (available.length !== ids.length) setArtifactError("Some accepted module outputs could not be loaded.");
+      setArtifactsLoading(false);
+    })();
+    return () => { loadGeneration.current += 1; };
+  }, [selectedCaseId, artifactIds]);
+  const switchSnapshot = async () => {
+    if (!selectedCase || !authority?.latest_accepted) return;
+    setArtifactError(""); setMessage("");
+    try {
+      // The switch lands in the shell's authority; the artifact read above follows it.
+      const next = await onSwitchSnapshot(authority.latest_accepted.id);
+      if (next) setMessage("Visible snapshot switched.");
     } catch (caught) {
-      if (generation !== loadGeneration.current || caught instanceof DOMException && caught.name === "AbortError") return;
+      if (caught instanceof DOMException && caught.name === "AbortError") return;
       setArtifactError(firstErrorMessage(caught, "Unable to switch snapshot"));
-    } finally {
-      if (generation === loadGeneration.current) setLoading(false);
     }
   };
-  const snapshot = view?.accepted;
+  const loading = ((authorityStatus === "idle" || authorityStatus === "loading") && !authority) || artifactsLoading;
   const selectedArtifact = artifacts.find((item) => item.id === selectedArtifactId) || artifacts.find((item) => item.module_id === "CP-2") || artifacts[0] || null;
   const selectedBlocks = selectedArtifact?.markdown ? markdownBlocks(selectedArtifact.markdown) : [];
   const selectedEvidence = normalizeEvidenceRefs(selectedArtifact?.payload?.evidence_refs);
   if (loading) return <div className="panel"><div className="panel-body"><LoadState loading /></div></div>;
-  if (!snapshot) return <div className="panel"><div className="panel-body">{loading || loadError ? <LoadState loading={loading} error={loadError} /> : <StateBlock shape="action" title="Analysis unavailable" body="No accepted snapshot. Run the selected route, inspect exceptions, then accept it explicitly." action={{ label: "Open analysis run", href: withQuery("/run-console", { case: selectedCase?.id, run: run?.id }) }} />}</div></div>;
+  if (!snapshot) return <div className="panel"><div className="panel-body">{authorityStatus === "error" ? <LoadState loading={false} error="Case authority could not be loaded." title="Unable to load the accepted analysis." /> : <StateBlock shape="action" title="Analysis unavailable" body="No accepted snapshot. Run the selected route, inspect exceptions, then accept it explicitly." action={{ label: "Open analysis run", href: withQuery("/run-console", { case: selectedCase?.id, run: run?.id }) }} />}</div></div>;
   return <div className="analysis-screen">
     {question ? <section className="context-strip"><strong>Evidence request</strong><p>{question}</p></section> : null}
-    {view?.switch_required ? <div className="analysis-switch callout warning"><strong>New accepted execution available.</strong><p>This reader remains on snapshot <IdentityValue value={snapshot.id} /> until authority is switched explicitly.</p>{writeAccess === "yes" ? <button className="button small" type="button" onClick={switchSnapshot}>Switch visible snapshot</button> : null}</div> : null}
+    {authority?.switch_required ? <div className="analysis-switch callout warning"><strong>New accepted execution available.</strong><p>This reader remains on snapshot <IdentityValue value={snapshot.id} /> until authority is switched explicitly.</p>{writeAccess === "yes" ? <button className="button small" type="button" onClick={switchSnapshot}>Switch visible snapshot</button> : null}</div> : null}
     {message ? <MutationReceipt>{message}</MutationReceipt> : null}
     {artifactError ? <StateNote tone="critical" live="alert">{artifactError}</StateNote> : null}
     <div className="analysis-reader-shell">
       <nav className="analysis-toc" aria-label="Accepted analysis modules"><div className="meta-label">Accepted modules</div>{artifacts.map((artifact) => <button type="button" aria-pressed={selectedArtifact?.id === artifact.id} className={selectedArtifact?.id === artifact.id ? "is-active" : ""} onClick={() => setSelectedArtifactId(artifact.id)} key={artifact.id}><span>{moduleLabel(artifact.module_id)}</span><span className="mono">{artifact.module_id}</span></button>)}<Link className="button small" href={withQuery("/run-console", { case: caseId, run: run?.id })}>Open selected run</Link></nav>
-      <article className="analysis-reader" aria-labelledby="analysis-artifact-title">{selectedArtifact ? <><div className="meta-label">Accepted {formatDate(snapshot.accepted_at)} · Source set v{snapshot.source_set_version ?? "Unavailable"}</div><h2 id="analysis-artifact-title">{moduleLabel(selectedArtifact.module_id)}</h2><p className="analysis-lead">{selectedArtifact.payload?.narrative?.takeaway || selectedArtifact.payload?.summary || selectedBlocks.find((block) => block.kind === "paragraph")?.text || "No module summary is available."}</p>{selectedArtifact.markdown ? <div className="analysis-copy">{selectedBlocks.map((block, index) => block.kind === "heading" ? <h3 key={`${block.text}:${index}`}>{block.text}</h3> : <p key={`${block.text}:${index}`}>{block.text}</p>)}</div> : <div className="analysis-copy">{selectedArtifact.payload?.narrative?.basis ? <><h3>Basis</h3><p>{selectedArtifact.payload.narrative.basis}</p></> : null}{selectedArtifact.payload?.narrative?.exceptions ? <div className="callout warning"><strong>Exceptions</strong><p>{selectedArtifact.payload.narrative.exceptions}</p></div> : null}</div>}<dl className="analysis-provenance"><dt className="meta-label">Artifact</dt><dd><IdentityValue value={selectedArtifact.id} /></dd><dt className="meta-label">Digest</dt><dd><IdentityValue value={selectedArtifact.digest} /></dd><dt className="meta-label">Input fingerprint</dt><dd><IdentityValue value={selectedArtifact.payload?.lineage?.input_fingerprint || selectedArtifact.input_fingerprint || "Unavailable"} /></dd></dl></> : <LoadState loading={loading} error={loadError} empty="No accepted module output is available." />}</article>
+      <article className="analysis-reader" aria-labelledby="analysis-artifact-title">{selectedArtifact ? <><div className="meta-label">Accepted {formatDate(snapshot.accepted_at)} · Source set v{snapshot.source_set_version ?? "Unavailable"}</div><h2 id="analysis-artifact-title">{moduleLabel(selectedArtifact.module_id)}</h2><p className="analysis-lead">{selectedArtifact.payload?.narrative?.takeaway || selectedArtifact.payload?.summary || selectedBlocks.find((block) => block.kind === "paragraph")?.text || "No module summary is available."}</p>{selectedArtifact.markdown ? <div className="analysis-copy">{selectedBlocks.map((block, index) => block.kind === "heading" ? <h3 key={`${block.text}:${index}`}>{block.text}</h3> : <p key={`${block.text}:${index}`}>{block.text}</p>)}</div> : <div className="analysis-copy">{selectedArtifact.payload?.narrative?.basis ? <><h3>Basis</h3><p>{selectedArtifact.payload.narrative.basis}</p></> : null}{selectedArtifact.payload?.narrative?.exceptions ? <div className="callout warning"><strong>Exceptions</strong><p>{selectedArtifact.payload.narrative.exceptions}</p></div> : null}</div>}<dl className="analysis-provenance"><dt className="meta-label">Artifact</dt><dd><IdentityValue value={selectedArtifact.id} /></dd><dt className="meta-label">Digest</dt><dd><IdentityValue value={selectedArtifact.digest} /></dd><dt className="meta-label">Input fingerprint</dt><dd><IdentityValue value={selectedArtifact.payload?.lineage?.input_fingerprint || selectedArtifact.input_fingerprint || "Unavailable"} /></dd></dl></> : <LoadState loading={loading} empty="No accepted module output is available." />}</article>
       <aside className="analysis-evidence"><div className="meta-label">Evidence rail</div><h2>{selectedEvidence.length} cited source{selectedEvidence.length === 1 ? "" : "s"}</h2>{selectedEvidence.map((ref, index) => <div className="analysis-evidence-card" key={`${ref.sourceId}:${index}`}><Link href={withQuery("/sources", { case: caseId, source: ref.sourceId })}>{ref.sourceId}</Link><span className="mono muted">{ref.blockIds.length ? ref.blockIds.join(" · ") : "Source-level reference"}</span></div>)}{selectedArtifact && !selectedEvidence.length ? <Unavailable title="Evidence citations" context="This accepted module output contains no normalized evidence references." /> : null}<div className="analysis-evidence-authority"><span className="meta-label">Visible authority</span><IdentityValue value={snapshot.digest} /></div></aside>
     </div>
   </div>;
@@ -1816,22 +1790,22 @@ function RVView({ writeAccess, caseId }: { writeAccess: WriteAccess; caseId: str
   </div>;
 }
 
-function CommandView({ caseId, question }: { caseId: string; question: string }) {
+function CommandView({ caseId, question, authority, authorityStatus }: { caseId: string; question: string; authority: SnapshotView | null; authorityStatus: AuthorityStatus }) {
   const [lens, setLens] = useState<{ issuer: string; sector: string; accepted_snapshot_id: string | null; source_set?: { version: number } | null } | null>(null);
-  const [snapshot, setSnapshot] = useState<SnapshotView | null>(null);
   const [artifacts, setArtifacts] = useState<ArtifactRecord[]>([]);
   const [artifactError, setArtifactError] = useState("");
+  const [artifactsLoading, setArtifactsLoading] = useState(false);
   const [lensLoading, setLensLoading] = useState(true); const [lensError, setLensError] = useState(""); const [lensUnavailable, setLensUnavailable] = useState(false);
-  const [snapshotLoading, setSnapshotLoading] = useState(true); const [snapshotError, setSnapshotError] = useState(""); const [snapshotUnavailable, setSnapshotUnavailable] = useState(false);
-  // Command-center state is synchronized from two external authorities. The two
-  // requests are deliberately independent: each panel loads, fails, or degrades to
-  // its unavailable block on its own, so a dead lens route never blanks the diff.
+  // The shell's snapshot is the one authority this screen renders (FE-A0 F3): a
+  // second read of /snapshot here could name a different accepted id than the
+  // authority strip on the same screen. The lens is read here, independently: a
+  // dead lens route degrades its own panel and never blanks the diff.
   useEffect(() => {
     if (!caseId) return;
     let ignore = false;
-    // The fetch boundary intentionally resets both panels' state.
+    // The fetch boundary intentionally resets the lens panel's state.
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    setLensLoading(true); setLensError(""); setLensUnavailable(false); setSnapshotLoading(true); setSnapshotError(""); setSnapshotUnavailable(false); setArtifacts([]); setArtifactError("");
+    setLensLoading(true); setLensError(""); setLensUnavailable(false);
     void request<typeof lens>(`/api/cases/${caseId}/lens`)
       .then((nextLens) => { if (!ignore) setLens(nextLens); })
       .catch((caught) => {
@@ -1840,25 +1814,32 @@ function CommandView({ caseId, question }: { caseId: string; question: string })
         else setLensError(firstErrorMessage(caught, "Unable to load the issuer lens"));
       })
       .finally(() => { if (!ignore) setLensLoading(false); });
-    void request<SnapshotView>(`/api/cases/${caseId}/snapshot`)
-      .then(async (nextSnapshot) => {
-        if (ignore) return;
-        setSnapshot(nextSnapshot);
-        const acceptedArtifacts = nextSnapshot?.accepted?.artifacts || [];
-        const loaded = await Promise.all(acceptedArtifacts.map((item) => request<ArtifactRecord>(`/api/cases/${caseId}/artifacts/${item.id}`).catch(() => null)));
-        if (ignore) return;
-        const available = loaded.filter((item): item is ArtifactRecord => item !== null);
-        setArtifacts(available);
-        if (available.length !== acceptedArtifacts.length) setArtifactError("Some accepted module outputs could not be loaded. Snapshot identity remains visible.");
-      })
-      .catch((caught) => {
-        if (ignore) return;
-        if (isUnavailableRoute(caught)) setSnapshotUnavailable(true);
-        else setSnapshotError(firstErrorMessage(caught, "Unable to load the snapshot diff"));
-      })
-      .finally(() => { if (!ignore) setSnapshotLoading(false); });
     return () => { ignore = true; };
   }, [caseId]);
+  const snapshot = authority;
+  const artifactIds = snapshot?.accepted?.artifacts.map((item) => item.id).join("\u0000") ?? "";
+  const loadGeneration = useRef(0);
+  useEffect(() => {
+    const generation = ++loadGeneration.current;
+    const ids = artifactIds ? artifactIds.split("\u0000") : [];
+    // The accepted artifact set is external state: its change resets the register.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setArtifacts([]); setArtifactError(""); setArtifactsLoading(Boolean(caseId) && ids.length > 0);
+    if (!caseId || !ids.length) return;
+    void (async () => {
+      const loaded = await Promise.all(ids.map((id) => request<ArtifactRecord>(`/api/cases/${caseId}/artifacts/${id}`).catch(() => null)));
+      if (generation !== loadGeneration.current) return;
+      const available = loaded.filter((item): item is ArtifactRecord => item !== null);
+      setArtifacts(available);
+      if (available.length !== ids.length) setArtifactError("Some accepted module outputs could not be loaded. Snapshot identity remains visible.");
+      setArtifactsLoading(false);
+    })();
+    return () => { loadGeneration.current += 1; };
+  }, [caseId, artifactIds]);
+  // One loading state for identity and proof: the accepted id is never shown
+  // beside an empty proof register that is still on its way.
+  const snapshotLoading = ((authorityStatus === "idle" || authorityStatus === "loading") && !snapshot) || artifactsLoading;
+  const snapshotError = authorityStatus === "error" && !snapshot ? "Case authority could not be loaded." : "";
   const diff = snapshot?.diff;
   const conclusion = selectConclusionArtifact(artifacts);
   const conclusionBlocks = conclusion?.markdown ? markdownBlocks(conclusion.markdown) : [];
@@ -1867,7 +1848,7 @@ function CommandView({ caseId, question }: { caseId: string; question: string })
   return <div className="grid credit-screen">
     {question && <section className="context-strip span-12"><strong>Evidence request</strong><p>{question}</p></section>}
     <section className="credit-main span-9">
-      {snapshotUnavailable ? <Unavailable title="Credit authority" /> : snapshotLoading || snapshotError ? <LoadState loading={snapshotLoading} error={snapshotError} /> : !snapshot?.accepted ? <StateBlock shape="action" title="Credit state unavailable" body="No accepted snapshot yet. Run analysis, inspect its exact outputs, then accept the snapshot." action={{ label: "Open analysis run", href: withQuery("/run-console", { case: caseId }) }} /> : <>
+      {snapshotLoading || snapshotError ? <LoadState loading={snapshotLoading} error={snapshotError} /> : !snapshot?.accepted ? <StateBlock shape="action" title="Credit state unavailable" body="No accepted snapshot yet. Run analysis, inspect its exact outputs, then accept the snapshot." action={{ label: "Open analysis run", href: withQuery("/run-console", { case: caseId }) }} /> : <>
         <div className="credit-authority-head"><div><span className="meta-label">{lens?.issuer || "Selected credit"} · accepted record</span><h2>Accepted conclusion and exact module authority</h2></div><span className="status success">Accepted {formatDate(snapshot.accepted.accepted_at)}</span></div>
         <div className="standing-answer"><span className="meta-label">Current conclusion · {evidenceCount} source reference{evidenceCount === 1 ? "" : "s"}</span>{conclusionText ? <><h2>{conclusionText}</h2>{conclusion?.payload?.narrative?.basis ? <p>{conclusion.payload.narrative.basis}</p> : null}<p className="mono muted">{moduleLabel(conclusion?.module_id || "")} · {conclusion ? <IdentityValue value={conclusion.digest} className="" /> : null}</p></> : <Unavailable title="Standing conclusion" context="The accepted snapshot contains no module summary that can be presented as a conclusion." />}</div>
         <div className="authority-metrics"><div><span className="meta-label">Accepted snapshot</span><strong><IdentityValue value={snapshot.accepted.id} /></strong></div><div><span className="meta-label">Source set</span><strong className="mono">v{snapshot.accepted.source_set_version ?? "Unavailable"}</strong></div><div><span className="meta-label">Module outputs</span><strong className="num">{snapshot.accepted.artifacts.length}</strong></div><div><span className="meta-label">Evidence references</span><strong className="num">{evidenceCount}</strong></div></div>

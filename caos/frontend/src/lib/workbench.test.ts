@@ -289,7 +289,10 @@ test("command center selects a credit conclusion before preparation output", asy
 
 test("command center renders the served snapshot diff shape honestly", () => {
   const commandView = workspace.slice(workspace.indexOf("function CommandView("), workspace.indexOf("function AdminView("));
-  assert.match(commandView, /useState<SnapshotView \| null>/);
+  // One authority per screen: the credit screen renders the shell's snapshot and
+  // never reads /snapshot itself (FE-A0 F3).
+  assert.match(commandView, /authority: SnapshotView \| null/);
+  assert.doesNotMatch(commandView, /\/snapshot`/);
   assert.match(commandView, /selectConclusionArtifact\(artifacts\)/);
   assert.match(commandView, /diff\.modified(?:\?\.|\.)map\(\(item\)[\s\S]*?<IdentityValue value=\{item\.digest\}/);
   assert.doesNotMatch(commandView, /item\.(?:before|after)/);
