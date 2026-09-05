@@ -736,6 +736,30 @@ try {
     approvedResearchPlan = true;
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ...pendingResearchRun, status: "queued", error: null }) });
   });
+  // An observed 404 pins the unavailable state to the run it was observed on
+  // (FE-A0 F4): a run the caller may no longer see answers 404 without marking the
+  // route absent for every other paused run for the rest of the session.
+  const goneResearchRun = { ...pendingResearchRun, id: `run_plan_gone_${fixtureSuffix}` };
+  const goneRunPath = (url) => url.pathname === `/api/runs/${goneResearchRun.id}`;
+  const goneEventsPath = (url) => url.pathname === `/api/runs/${goneResearchRun.id}/events`;
+  const goneApprovePath = (url) => url.pathname === `/api/runs/${goneResearchRun.id}/research-plan/approve`;
+  await page.route(goneRunPath, (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(goneResearchRun) }));
+  await page.route(goneEventsPath, (route) => route.fulfill({ status: 200, contentType: "text/event-stream", body: "retry: 60000\n\n" }));
+  await page.route(goneApprovePath, (route) => route.fulfill({ status: 404, contentType: "application/json", body: JSON.stringify({ detail: "Not Found" }) }));
+  expectedNotFoundURL = `${baseURL}/api/runs/${goneResearchRun.id}/research-plan/approve`;
+  await page.goto(`${baseURL}/run-console/?case=${caseRecord.id}&run=${goneResearchRun.id}`, { waitUntil: "networkidle" });
+  await page.getByRole("heading", { name: "Proposed research plan" }).waitFor();
+  await page.getByRole("button", { name: "Approve research plan" }).click();
+  await page.getByText("Not available in this deployment.", { exact: true }).waitFor();
+  assert.equal(await page.getByRole("button", { name: "Approve research plan" }).count(), 0, "a 404 on approval left the action live on the same run");
+  await page.evaluate(({ caseId, runId }) => { window.history.pushState(null, "", `/run-console/?case=${caseId}&run=${runId}`); }, { caseId: caseRecord.id, runId: pendingResearchRun.id });
+  await page.waitForURL((url) => url.searchParams.get("run") === pendingResearchRun.id);
+  await page.getByRole("button", { name: "Approve research plan" }).waitFor();
+  assert.equal(await page.getByText("Not available in this deployment.", { exact: true }).count(), 0, "a run-scoped 404 marked plan approval unavailable for every run");
+  await page.unroute(goneRunPath);
+  await page.unroute(goneEventsPath);
+  await page.unroute(goneApprovePath);
+
   await page.goto(`${baseURL}/run-console/?case=${caseRecord.id}&fixture=pending-plan`, { waitUntil: "networkidle" });
   await page.getByRole("combobox", { name: "Purpose" }).selectOption("DEEP_RESEARCH");
   const depth = page.getByRole("combobox", { name: "Depth" });

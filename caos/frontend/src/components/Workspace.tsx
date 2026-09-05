@@ -95,11 +95,14 @@ export default function Workspace({ destination, children }: { destination?: Des
   const [drawer, setDrawer] = useState<DrawerState | null>(null);
   const [acceptPrompt, setAcceptPrompt] = useState(false);
   const [discardPrompt, setDiscardPrompt] = useState<DraftDiscardRequest | null>(null);
-  // Observed-404 capability memory: a resume or plan-approval POST that 404ed means the
-  // route is absent on this deployment, so the control renders its unavailable block
-  // instead of an action that can never succeed.
-  const [resumeUnavailable, setResumeUnavailable] = useState(false);
-  const [approvalUnavailable, setApprovalUnavailable] = useState(false);
+  // Observed-404 capability memory, scoped to the run it was observed on: a resume
+  // or plan-approval POST answers 404 both when the route is absent on this
+  // deployment and when the run itself is unknown or no longer visible to the
+  // caller (CLAUDE.md auth edge: the same 404). The control renders its
+  // unavailable block for that run only; every other run keeps its action
+  // (FE-A0 F4). Each holds the run id the 404 was observed on.
+  const [resumeUnavailable, setResumeUnavailable] = useState("");
+  const [approvalUnavailable, setApprovalUnavailable] = useState("");
   // Fallback aftermath state for a server that does not serve run.accepted_snapshot_id:
   // the snapshot the accept POST just returned, bound to the run it was accepted for.
   const [localAccepted, setLocalAccepted] = useState<{ runId: string; snapshotId: string } | null>(null);
@@ -972,7 +975,7 @@ export default function Workspace({ destination, children }: { destination?: Des
       await refreshRun(runId);
     } catch (caught) {
       if (!matchesAuthority(authorityRef.current, context)) return;
-      if (isUnavailableRoute(caught)) setResumeUnavailable(true);
+      if (isUnavailableRoute(caught)) setResumeUnavailable(runId);
       else setError(firstErrorMessage(caught, "Unable to resume run"));
       dispatchAuthority({ type: "requestFailed", context, scope: "resume-run" });
     } finally {
@@ -996,7 +999,7 @@ export default function Workspace({ destination, children }: { destination?: Des
       await refreshRun(expectedRunId);
     } catch (caught) {
       if (!matchesAuthority(authorityRef.current, context)) return;
-      if (isUnavailableRoute(caught)) setApprovalUnavailable(true);
+      if (isUnavailableRoute(caught)) setApprovalUnavailable(expectedRunId);
       else setError(firstErrorMessage(caught, "Unable to approve research plan"));
       dispatchAuthority({ type: "requestFailed", context, scope: "research-plan" });
     } finally {
@@ -1035,9 +1038,9 @@ export default function Workspace({ destination, children }: { destination?: Des
   const writeAccess: WriteAccess = !roleResolved ? "unknown" : role === "READER" ? "no" : "yes";
 
   // The generic paused branch's resume control; READER never sees the shared write,
-  // and an observed 404 (older server without the resume route) pins the block.
-  const resumeSlot = resumeUnavailable
-    ? <Unavailable title="Run resume" />
+  // and an observed 404 pins the block for the run it was observed on.
+  const resumeSlot = resumeUnavailable === runId
+    ? <Unavailable title="Run resume" context="The server answered 404 for this run: the route is absent on this deployment or the run is no longer visible to you." />
     : writeAccess === "yes"
       ? <button className="button small" type="button" disabled={pendingAction === "resume-run"} onClick={() => void resumeRun()}>{pendingAction === "resume-run" ? "Resuming…" : "Resume run"}</button>
       : null;
@@ -1047,7 +1050,7 @@ export default function Workspace({ destination, children }: { destination?: Des
     switch (active) {
       case "Cases": return <CasesView writeAccess={writeAccess} cases={cases} casesLoading={casesLoading} selectedCase={selectedCase} caseId={caseId} createCase={createCase} pendingAction={pendingAction} intake={intake} intakeRefusal={intakeRefusal} run={run} submitIntake={submitIntake} />;
       case "Sources": return <SourcesView writeAccess={writeAccess} selectedCase={selectedCase} artifactId={routeArtifactId} sourceId={routeSourceId} upload={upload} pendingAction={pendingAction} onOpenEvidence={(evidenceId, source) => setDrawer({ kind: "evidence", evidenceId, source })} />;
-      case "Run Console": return <RunConsole writeAccess={writeAccess} caseId={caseId} selectedCase={selectedCase} run={run} runLoading={runLoading} runError={runError} startRun={startRun} acceptRun={acceptRun} acceptedSnapshotId={acceptedRunSnapshotId} visibleSnapshotId={authority?.accepted?.id || ""} switchRequired={authority?.switch_required === true} approveResearchPlan={approveResearchPlan} approvalUnavailable={approvalUnavailable} pendingAction={pendingAction} resumeSlot={resumeSlot} />;
+      case "Run Console": return <RunConsole writeAccess={writeAccess} caseId={caseId} selectedCase={selectedCase} run={run} runLoading={runLoading} runError={runError} startRun={startRun} acceptRun={acceptRun} acceptedSnapshotId={acceptedRunSnapshotId} visibleSnapshotId={authority?.accepted?.id || ""} switchRequired={authority?.switch_required === true} approveResearchPlan={approveResearchPlan} approvalUnavailable={approvalUnavailable === runId} pendingAction={pendingAction} resumeSlot={resumeSlot} />;
       case "Deep-Dive": return <DeepDive writeAccess={writeAccess} selectedCase={selectedCase} question={routeQuestion} caseId={caseId} run={run} onSwitchSnapshot={switchSnapshot} />;
       case "RV Screener": return <RVView key={caseId} writeAccess={writeAccess} caseId={caseId} />;
       case "Command Center": return <CommandView caseId={caseId} question={routeQuestion} />;
