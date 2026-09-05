@@ -132,7 +132,10 @@ def parse_diff(text: str) -> dict[str, list[tuple[int, str]]]:
             continue
         if raw.startswith("+++ "):
             if raw != "+++ /dev/null":
-                path = raw[4:].removeprefix("b/").strip('"')
+                # git appends a TAB and a (usually empty) timestamp when the
+                # path contains a space; without cutting there the same file is
+                # registered twice, once with a trailing tab.
+                path = raw[4:].split("\t", 1)[0].removeprefix("b/").strip('"')
                 files.setdefault(path, [])
             continue
         if raw.startswith("--- ") or raw.startswith("index ") or raw.startswith("rename ") \
