@@ -189,6 +189,7 @@ browser.newContext = async (options) => {
 };
 const errors = [];
 const unexpectedDialogs = [];
+let beforeunloadPrompts = 0;
 // The workspace restores focus on the animation frame AFTER an action settles
 // (Workspace.tsx: useEffect → requestAnimationFrame), so a check that reads
 // document.activeElement the instant the settled UI renders races that frame
@@ -1546,15 +1547,25 @@ try {
     if (readOnly) modelRevisions = modelRevisions.map((item) => ({ ...item, export: { ...item.export, status: "READY", error: null } }));
   }
   modelRole = "ANALYST";
-  // No native dialog belongs to this journey: every prompt is a styled <dialog>.
-  // A reintroduced window.confirm/alert/prompt is recorded and fails the run
+  // The only native dialog that belongs to this journey is the browser's own
+  // beforeunload prompt, raised by the dirty-draft guard when the next goto
+  // leaves an edited Model Builder: it is accepted and counted (native proof of
+  // the guard, beside the synthetic dispatch above). Every other native dialog —
+  // a reintroduced window.confirm/alert/prompt — is recorded and fails the run
   // instead of being auto-accepted and forgotten (FE-A0 §4).
-  page.on("dialog", (dialog) => { unexpectedDialogs.push(`${dialog.type()}: ${dialog.message()}`); void dialog.dismiss(); });
+  page.on("dialog", (dialog) => {
+    if (dialog.type() === "beforeunload") { beforeunloadPrompts += 1; void dialog.accept(); return; }
+    unexpectedDialogs.push(`${dialog.type()}: ${dialog.message()}`);
+    void dialog.dismiss();
+  });
   for (const [state, text] of [["FAILED", "MODEL CALCULATION FAILED"], ["NOT_READY", "ACCEPTED FULL CREDIT REQUIRED"]]) {
     modelState = state; modelExportState = "NOT_REQUESTED";
     await page.goto(`${baseURL}/model-builder/?case=${caseRecord.id}&state=${state}`, { waitUntil: "networkidle" });
     await page.getByText(text, { exact: true }).waitFor();
   }
+  // Chromium raises the native prompt on a navigation away from a dirty draft;
+  // Firefox and WebKit under automation may not, so only Chromium asserts it.
+  if (browserName === "chromium") assert.ok(beforeunloadPrompts >= 1, "leaving a dirty Model Builder draft by navigation raised no native beforeunload prompt");
   modelLoadFails = true;
   await page.goto(`${baseURL}/model-builder/?case=${caseRecord.id}&state=load-error`, { waitUntil: "networkidle" });
   await page.getByText("Unavailable", { exact: true }).waitFor();
@@ -2489,6 +2500,7 @@ function report(outcome) {
     duration_ms: Date.now() - startedAt,
     timing: pageTiming,
     console_errors: errors,
+    beforeunload_prompts: beforeunloadPrompts,
     webkit_teardown_rejections: webkitTeardownRejections,
     ...outcome,
   };
