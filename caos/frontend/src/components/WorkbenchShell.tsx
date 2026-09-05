@@ -26,6 +26,9 @@ export type DrawerState = {
     sha256: string;
     blocks: { block_id: string; locator: Record<string, unknown>; text?: string }[];
   };
+  // The control that opened the drawer, passed from its click: focus returns
+  // here on close. Never inferred from document.activeElement (FE-A0 F11).
+  opener?: HTMLElement | null;
 };
 
 type Props = {
@@ -161,7 +164,9 @@ export default function WorkbenchShell({
       return () => dialog.removeEventListener("cancel", cancel);
     }
     if (!dialog.open) {
-      drawerTriggerRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+      // Every opener today passes itself; the activeElement fallback covers a
+      // caller that does not and is wrong under WebKit, where a click focuses nothing.
+      drawerTriggerRef.current = drawer.opener ?? (document.activeElement instanceof HTMLElement ? document.activeElement : null);
       dialog.showModal();
     }
     const frame = window.requestAnimationFrame(() => drawerHeadingRef.current?.focus());

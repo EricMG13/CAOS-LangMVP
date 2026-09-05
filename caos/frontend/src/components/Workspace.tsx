@@ -1065,7 +1065,7 @@ export default function Workspace({ destination, children }: { destination?: Des
     if (!selectedCase && active !== "Cases" && active !== "Admin Studio") return unresolvedCaseId ? null : <EmptyPanel text="Create or select a case before entering an analytical workspace." action={{ label: "Open Cases", href: "/cases/" }} />;
     switch (active) {
       case "Cases": return <CasesView writeAccess={writeAccess} cases={cases} casesLoading={casesLoading} selectedCase={selectedCase} caseId={caseId} createCase={createCase} pendingAction={pendingAction} intake={intake} intakeRefusal={intakeRefusal} run={run} submitIntake={submitIntake} />;
-      case "Sources": return <SourcesView writeAccess={writeAccess} selectedCase={selectedCase} artifactId={routeArtifactId} sourceId={routeSourceId} upload={upload} pendingAction={pendingAction} onOpenEvidence={(evidenceId, source) => setDrawer({ kind: "evidence", evidenceId, source })} />;
+      case "Sources": return <SourcesView writeAccess={writeAccess} selectedCase={selectedCase} artifactId={routeArtifactId} sourceId={routeSourceId} upload={upload} pendingAction={pendingAction} onOpenEvidence={(evidenceId, source, opener) => setDrawer({ kind: "evidence", evidenceId, source, opener })} />;
       case "Run Console": return <RunConsole writeAccess={writeAccess} caseId={caseId} selectedCase={selectedCase} run={run} runLoading={runLoading} runError={runError} startRun={startRun} acceptRun={acceptRun} acceptedSnapshotId={acceptedRunSnapshotId} visibleSnapshotId={authority?.accepted?.id || ""} switchRequired={authority?.switch_required === true} approveResearchPlan={approveResearchPlan} approvalUnavailable={approvalUnavailable === runId} pendingAction={pendingAction} resumeSlot={resumeSlot} />;
       case "Deep-Dive": return <DeepDive writeAccess={writeAccess} selectedCase={selectedCase} question={routeQuestion} caseId={caseId} run={run} authority={authority} authorityStatus={authorityStatus} onSwitchSnapshot={switchSnapshot} />;
       case "RV Screener": return <RVView key={caseId} writeAccess={writeAccess} caseId={caseId} />;
@@ -1207,7 +1207,7 @@ function IntakeEvidence({ intake, run, caseId }: { intake: IntakeRecord; run: Ru
   </div>;
 }
 
-function SourcesView({ writeAccess, selectedCase, artifactId, sourceId, upload, pendingAction, onOpenEvidence }: { writeAccess: WriteAccess; selectedCase: CaseRecord | null; artifactId: string; sourceId: string; upload: (event: FormEvent<HTMLFormElement>) => void; pendingAction: string; onOpenEvidence: (evidenceId: string, source: SourceRecord) => void }) {
+function SourcesView({ writeAccess, selectedCase, artifactId, sourceId, upload, pendingAction, onOpenEvidence }: { writeAccess: WriteAccess; selectedCase: CaseRecord | null; artifactId: string; sourceId: string; upload: (event: FormEvent<HTMLFormElement>) => void; pendingAction: string; onOpenEvidence: (evidenceId: string, source: SourceRecord, opener: HTMLElement | null) => void }) {
   const [sources, setSources] = useState<SourceRecord[]>([]);
   const [artifact, setArtifact] = useState<ArtifactRecord | null>(null);
   const [loading, setLoading] = useState(true);
@@ -1233,7 +1233,7 @@ function SourcesView({ writeAccess, selectedCase, artifactId, sourceId, upload, 
   const evidenceRefs = useMemo(() => normalizeEvidenceRefs(artifact?.payload?.evidence_refs), [artifact]);
   const sourceById = useMemo(() => new Map(sources.map((source) => [source.id, source])), [sources]);
   const activeEvidenceId = linkedEvidenceId || selectedEvidenceId;
-  const openEvidence = (evidenceId: string) => {
+  const openEvidence = (evidenceId: string, opener: HTMLElement | null = null) => {
     const source = sourceById.get(evidenceId);
     if (!source) {
       setArtifactError(`Evidence ${evidenceId} is not in the active case source set.`);
@@ -1241,7 +1241,7 @@ function SourcesView({ writeAccess, selectedCase, artifactId, sourceId, upload, 
     }
     setArtifactError("");
     setSelectedEvidenceId(evidenceId);
-    onOpenEvidence(evidenceId, source);
+    onOpenEvidence(evidenceId, source, opener);
   };
   useEffect(() => {
     if (!selectedCase || !sourceId || loading || readySourceCaseId !== selectedCase.id) return;
@@ -1271,7 +1271,7 @@ function SourcesView({ writeAccess, selectedCase, artifactId, sourceId, upload, 
     <section className="source-workspace span-12" aria-label="Source workspace">
       <aside className="source-register"><div className="source-region-head"><h2>Source register</h2><span className="mono muted">{loading ? "Loading…" : `${filteredSources.length} / ${sources.length}`}</span></div>{artifactError && !artifactId ? <StateNote tone="critical" live="alert">{artifactError}</StateNote> : null}{filteredSources.map((source) => <button id={`source-${source.id}`} className={`source-register-row ${selectedSource?.id === source.id ? "is-active" : ""}`} type="button" aria-pressed={selectedSource?.id === source.id} onClick={() => { setSelectedSourceId(source.id); setSelectedBlockId(""); }} key={source.id}><strong>{source.filename}</strong><span className="mono">{source.id} · {source.blocks.length} blocks</span><span className={`status ${source.blocks.length ? "success" : "warning"}`}>{source.blocks.length ? "Extracted" : "No blocks"}</span></button>)}{!filteredSources.length ? <LoadState loading={loading} error={loadError} empty={sources.length ? "No documents match this search." : "No source objects in this credit."} /> : null}</aside>
       <section className="source-reader" aria-labelledby="source-reader-title">{selectedSource ? <><div className="meta-label">{selectedSource.id} · immutable source object</div><h2 id="source-reader-title">{selectedSource.filename}</h2><div className="source-document-blocks">{selectedSource.blocks.slice(0, 40).map((block) => <article className={selectedBlock?.block_id === block.block_id ? "source-document-block is-selected" : "source-document-block"} id={`block-${selectedSource.id}-${block.block_id}`} key={block.block_id}><button type="button" onClick={() => setSelectedBlockId(block.block_id)} aria-pressed={selectedBlock?.block_id === block.block_id}><span className="meta-label">{block.block_id} · {formatBlockLocator(block.locator)}</span><span>{block.text || "No extracted text."}</span></button></article>)}</div>{selectedSource.blocks.length > 40 ? <p className="muted">Showing the first 40 of {selectedSource.blocks.length} extracted blocks.</p> : null}</> : <LoadState loading={loading} empty={loadError ? "Source reader unavailable while the source register could not be loaded." : "Select a source document."} />}</section>
-      <aside className="source-support"><div className="meta-label">Evidence support</div><h2>Selected source authority</h2>{selectedSource ? <><dl className="state-facts"><dt>Source</dt><dd className="mono">{selectedSource.id}</dd><dt>SHA-256</dt><dd><IdentityValue value={selectedSource.sha256} /></dd><dt>Blocks</dt><dd className="num">{selectedSource.blocks.length}</dd>{selectedBlock ? <><dt>Selected block</dt><dd className="mono">{selectedBlock.block_id}</dd><dt>Locator</dt><dd className="mono">{formatBlockLocator(selectedBlock.locator)}</dd></> : null}</dl><button className="button small" type="button" onClick={() => openEvidence(selectedSource.id)}>Open evidence context</button></> : <p className="muted">No source selected.</p>}<div className="source-coverage-gate"><Unavailable title="Claim coverage" context="A normalized claim-to-source map is not served by this deployment. Source blocks remain readable above." /></div></aside>
+      <aside className="source-support"><div className="meta-label">Evidence support</div><h2>Selected source authority</h2>{selectedSource ? <><dl className="state-facts"><dt>Source</dt><dd className="mono">{selectedSource.id}</dd><dt>SHA-256</dt><dd><IdentityValue value={selectedSource.sha256} /></dd><dt>Blocks</dt><dd className="num">{selectedSource.blocks.length}</dd>{selectedBlock ? <><dt>Selected block</dt><dd className="mono">{selectedBlock.block_id}</dd><dt>Locator</dt><dd className="mono">{formatBlockLocator(selectedBlock.locator)}</dd></> : null}</dl><button className="button small" type="button" onClick={(event) => openEvidence(selectedSource.id, event.currentTarget)}>Open evidence context</button></> : <p className="muted">No source selected.</p>}<div className="source-coverage-gate"><Unavailable title="Claim coverage" context="A normalized claim-to-source map is not served by this deployment. Source blocks remain readable above." /></div></aside>
     </section>
   </div>;
 }
@@ -1281,7 +1281,7 @@ function SourcesView({ writeAccess, selectedCase, artifactId, sourceId, upload, 
 // Deterministic payloads (markdown null) render the typed narrative fields;
 // agent payloads render the canonical six-section markdown, host frontmatter
 // stripped, with no HTML injection surface.
-function ArtifactReader({ artifact, evidenceRefs, activeEvidenceId, onOpenEvidence, onPreview, onPreviewEnd }: { artifact: ArtifactRecord; evidenceRefs: NormalizedEvidenceRef[]; activeEvidenceId: string; onOpenEvidence: (evidenceId: string) => void; onPreview: (evidenceId: string) => void; onPreviewEnd: () => void }) {
+function ArtifactReader({ artifact, evidenceRefs, activeEvidenceId, onOpenEvidence, onPreview, onPreviewEnd }: { artifact: ArtifactRecord; evidenceRefs: NormalizedEvidenceRef[]; activeEvidenceId: string; onOpenEvidence: (evidenceId: string, opener: HTMLElement) => void; onPreview: (evidenceId: string) => void; onPreviewEnd: () => void }) {
   const payload = artifact.payload || undefined;
   const blocks = useMemo(() => (artifact.markdown ? markdownBlocks(artifact.markdown) : []), [artifact.markdown]);
   const summary = payload?.summary;

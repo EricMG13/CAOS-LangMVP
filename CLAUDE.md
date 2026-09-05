@@ -533,7 +533,10 @@ engine, the bundle, or the routes.
   `document.activeElement`: WebKit does not focus a button or link on click,
   so an inferred opener is `<body>` there and cancelling the dialog drops focus
   to the landmark. `AcceptDialog` and the palette-initiated discard were fixed
-  in Task 12b; `closeDrawer` in `WorkbenchShell` still infers and is open. A
+  in Task 12b; the evidence drawer in FE-G1 (`EvidenceChip` and the "Open
+  evidence context" button pass their click target through
+  `DrawerState.opener`, and `WorkbenchShell` falls back to `activeElement`
+  only for a caller that passes none). A
   focus repair that runs on a timer must first check where the browser's own
   close restoration left focus and whether the user has moved since
   (`DraftDiscardDialog.dismiss`) — the 24 ms focus steal that fix removed was

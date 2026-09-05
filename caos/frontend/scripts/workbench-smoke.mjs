@@ -2268,6 +2268,14 @@ try {
   await chip.click();
   const evidence = page.getByRole("dialog", { name: source.filename });
   await evidence.getByText("earnings.txt").waitFor();
+  // The drawer's opener is the chip that was clicked, passed explicitly (FE-A0
+  // F11): closing with Escape returns focus to it in every engine, including
+  // WebKit, where the click itself focused nothing.
+  await page.keyboard.press("Escape");
+  await evidence.waitFor({ state: "hidden" });
+  await awaitFocus(chip, "closing the evidence drawer did not return focus to the chip that opened it");
+  await chip.click();
+  await evidence.getByText("earnings.txt").waitFor();
   await evidence.getByText(/Source-level reference; no block locator supplied/).waitFor();
   await evidence.getByRole("link", { name: "Open full source" }).click();
   await page.waitForURL((url) => url.pathname.replace(/\/$/, "") === "/sources" && url.hash === `#source-${source.id}`);
