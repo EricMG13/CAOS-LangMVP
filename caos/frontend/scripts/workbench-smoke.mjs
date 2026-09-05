@@ -486,6 +486,14 @@ try {
       });
     assert.equal(await page.locator('[aria-current="page"]').count(), 1, `${route} rendered more than one aria-current="page" entry`);
   }
+  // Admin Studio states which contracts this build serves (FE-A0 F8; D-D): the
+  // audit package and membership are served, the rest are not.
+  await page.goto(`${baseURL}/admin-studio/?case=${caseRecord.id}`, { waitUntil: "networkidle" });
+  const contractsTable = page.getByRole("region", { name: "Required administrative contracts" });
+  for (const [capability, state] of [["Bundle integrity", "Not served"], ["Audit rows", "Not served"], ["Audit package", "Served"], ["Membership", "Served"], ["Step-up", "Not served"]]) {
+    const row = contractsTable.getByRole("row").filter({ has: page.getByRole("rowheader", { name: capability, exact: true }) });
+    assert.equal(await row.locator(".status").innerText(), state, `Admin Studio misstates the ${capability} contract`);
+  }
   expectedNotFoundURL = `${baseURL}/missing-${fixtureSuffix}`;
   await page.goto(expectedNotFoundURL, { waitUntil: "networkidle" });
   await page.getByRole("heading", { name: "Page not found" }).waitFor();

@@ -1881,16 +1881,21 @@ function CommandView({ caseId, question }: { caseId: string; question: string })
   </div>;
 }
 
+// The table states what this build serves (FE-A0 F8; D-D). The administrative
+// screens stay an unavailable capability (CLAUDE.md known gaps), but two of the
+// contracts they would draw on are served today: the hash-chained case audit
+// package and case membership. Saying "Not served" for those was a false claim.
 function AdminView() {
-  const contracts = [
-    ["Bundle integrity", "Signed build manifest and file verification"],
-    ["Audit trail", "Immutable, exportable actor and action events"],
-    ["Membership", "Identity-to-case role assignments"],
-    ["Step-up", "Server-verified privileged-session state"],
+  const contracts: [string, string, "served" | "absent"][] = [
+    ["Bundle integrity", "Signed build manifest and file verification", "absent"],
+    ["Audit rows", "Readable, immutable actor and action events", "absent"],
+    ["Audit package", "Hash-chained case audit package (GET /api/cases/{case_id}/audit-package); not drawn on this surface", "served"],
+    ["Membership", "Identity-to-case role assignments (POST /api/cases/{case_id}/members); provisioned from Report Studio", "served"],
+    ["Step-up", "Server-verified privileged-session state", "absent"],
   ];
   return <div className="admin-capability">
-    <section className="admin-intro"><span className="flag">UNAVAILABLE</span><div><div className="meta-label">Deployment capability</div><h2>Administrative authority is not served by this application build.</h2><p>No token prompt or simulated audit record is shown. Identity role and case role remain separate server-owned concepts.</p></div></section>
-    <section className="panel"><div className="panel-header"><h2>Required contracts</h2><span className="panel-meta">Server-owned</span></div><div className="panel-body table-wrap" tabIndex={0} role="region" aria-label="Required administrative contracts"><table><thead><tr><th scope="col">Capability</th><th scope="col">Required response</th><th scope="col">State</th></tr></thead><tbody>{contracts.map(([capability, response]) => <tr key={capability}><th scope="row">{capability}</th><td>{response}</td><td><span className="status warning">Not served</span></td></tr>)}</tbody></table></div></section>
+    <section className="admin-intro"><span className="flag">UNAVAILABLE</span><div><div className="meta-label">Deployment capability</div><h2>Administrative screens are not served by this application build.</h2><p>No token prompt or simulated audit record is shown. Identity role and case role remain separate server-owned concepts. The contracts this build does serve are marked below; none of them is drawn here.</p></div></section>
+    <section className="panel"><div className="panel-header"><h2>Required contracts</h2><span className="panel-meta">Server-owned</span></div><div className="panel-body table-wrap" tabIndex={0} role="region" aria-label="Required administrative contracts"><table><thead><tr><th scope="col">Capability</th><th scope="col">Required response</th><th scope="col">State</th></tr></thead><tbody>{contracts.map(([capability, response, state]) => <tr key={capability}><th scope="row">{capability}</th><td>{response}</td><td>{state === "served" ? <span className="status success">Served</span> : <span className="status warning">Not served</span>}</td></tr>)}</tbody></table></div></section>
     <section className="context-strip"><strong>Authorization boundary</strong><p>Adding these screens requires authenticated backend routes and auditable policy enforcement. Client-only controls would not create administrative authority.</p></section>
   </div>;
 }
