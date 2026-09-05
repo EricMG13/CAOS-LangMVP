@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { KeyboardEvent, ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import { KeyboardEvent, ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   CaseRecord,
   Destination,
@@ -125,14 +125,14 @@ export default function WorkbenchShell({
   const exactEvidenceKind = caseId ? evidenceKind(query) : null;
   const resultCount = caseItems.length + workflowItems.length + toolItems.length + (exactEvidenceKind ? 1 : 0);
 
-  const openPalette = () => {
+  const openPalette = useCallback(() => {
     if (document.querySelector("dialog[open]")) return;
     setPaletteOpen(true);
     setQuery("");
     setActiveResult(0);
     if (!dialogRef.current?.open) dialogRef.current?.showModal();
     window.requestAnimationFrame(() => searchRef.current?.focus());
-  };
+  }, [setActiveResult, setPaletteOpen, setQuery]);
 
   const closePalette = () => dialogRef.current?.close();
 
@@ -182,7 +182,7 @@ export default function WorkbenchShell({
     };
     window.addEventListener("keydown", openShortcut);
     return () => window.removeEventListener("keydown", openShortcut);
-  });
+  }, [openPalette]);
 
   const paletteKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
     if (event.key === "Escape") {

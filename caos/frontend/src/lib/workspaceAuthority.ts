@@ -13,7 +13,6 @@ export type AuthorityState = {
   status: AuthorityStatus;
   generation: number;
   pending: { scope: string; context: RequestContext } | null;
-  acceptedSnapshotId: string | null;
 };
 
 export type AuthorityEvent =
@@ -24,8 +23,7 @@ export type AuthorityEvent =
   | { type: "requestSucceeded"; context: RequestContext; scope: string }
   | { type: "requestFailed"; context: RequestContext; scope: string }
   | { type: "invalidateCase"; caseId: string }
-  | { type: "invalidateRun"; caseId: string; runId: string }
-  | { type: "snapshotAccepted"; context: RequestContext; snapshotId: string };
+  | { type: "invalidateRun"; caseId: string; runId: string };
 
 export const initialAuthorityState: AuthorityState = {
   caseId: null,
@@ -34,7 +32,6 @@ export const initialAuthorityState: AuthorityState = {
   status: "idle",
   generation: 0,
   pending: null,
-  acceptedSnapshotId: null,
 };
 
 export function requestContext(state: AuthorityState): RequestContext {
@@ -67,7 +64,6 @@ export function workspaceAuthorityReducer(state: AuthorityState, event: Authorit
         status: event.caseId ? "loading" : "idle",
         generation,
         pending: event.caseId ? { scope: "case", context: { generation, caseId: event.caseId, runId } } : null,
-        acceptedSnapshotId: null,
       };
     }
     case "selectCase": {
@@ -80,7 +76,6 @@ export function workspaceAuthorityReducer(state: AuthorityState, event: Authorit
         status: event.caseId ? "loading" : "idle",
         generation,
         pending: event.caseId ? { scope: "case", context: { generation, caseId: event.caseId, runId: null } } : null,
-        acceptedSnapshotId: null,
       };
     }
     case "selectRun": {
@@ -92,7 +87,6 @@ export function workspaceAuthorityReducer(state: AuthorityState, event: Authorit
         status: "loading",
         generation,
         pending: { scope: "case", context: { generation, caseId: state.caseId, runId: event.runId } },
-        acceptedSnapshotId: null,
       };
     }
     case "requestStarted": {
@@ -107,9 +101,6 @@ export function workspaceAuthorityReducer(state: AuthorityState, event: Authorit
     case "requestFailed":
       if (!matchesPendingRequest(state, event.scope, event.context)) return state;
       return { ...state, status: "error", pending: null };
-    case "snapshotAccepted":
-      if (!matchesAuthority(state, event.context) || state.status !== "ready" || state.pending) return state;
-      return { ...state, acceptedSnapshotId: event.snapshotId };
     case "invalidateCase":
       if (state.caseId !== event.caseId) return state;
       return {
@@ -119,7 +110,6 @@ export function workspaceAuthorityReducer(state: AuthorityState, event: Authorit
         status: "idle",
         generation: state.generation + 1,
         pending: null,
-        acceptedSnapshotId: null,
       };
     case "invalidateRun": {
       if (state.caseId !== event.caseId || state.runId !== event.runId) return state;
@@ -130,7 +120,6 @@ export function workspaceAuthorityReducer(state: AuthorityState, event: Authorit
         status: "loading",
         generation,
         pending: { scope: "case", context: { generation, caseId: state.caseId, runId: null } },
-        acceptedSnapshotId: null,
       };
     }
   }

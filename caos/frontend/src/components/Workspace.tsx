@@ -406,7 +406,6 @@ export default function Workspace({ destination, children }: { destination?: Des
       setCases((previous) => previous.map((item) => item.id === id ? { ...item, ...detail } : item));
       setAuthority(snapshot);
       dispatchAuthority({ type: "requestSucceeded", context, scope: "case" });
-      if (snapshot.accepted) dispatchAuthority({ type: "snapshotAccepted", context, snapshotId: snapshot.accepted.id });
       return snapshot;
     } catch (caught) {
       if (requestId !== caseRefresh.current || !matchesAuthority(authorityRef.current, context)) return null;
@@ -749,7 +748,9 @@ export default function Workspace({ destination, children }: { destination?: Des
     // Progress is driven by the persisted graph events: each named event triggers
     // a RunRecord refetch, and `onopen` resyncs whatever a reconnect gap missed.
     source.onopen = refresh;
-    ["run.created", "run.running", "node.running", "node.succeeded", "node.failed", "run.succeeded", "run.failed", "run.paused", "research.plan_ready", "research.plan_approved", "snapshot.accepted"].forEach((name) => source.addEventListener(name, refresh));
+    // Exactly the names storage/runs.py emits; a name the log never carries is a
+    // dead subscription, never a refetch.
+    ["run.created", "run.running", "node.running", "node.succeeded", "run.succeeded", "run.failed", "run.paused", "research.plan_ready", "research.plan_approved"].forEach((name) => source.addEventListener(name, refresh));
     return () => source.close();
     // Event updates only begin after the run has passed its case authority check.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -956,7 +957,6 @@ export default function Workspace({ destination, children }: { destination?: Des
     try {
       const accepted = await request<Snapshot>(`/api/runs/${runId}/accept`, { method: "POST" });
       if (!matchesAuthority(authorityRef.current, context)) return;
-      dispatchAuthority({ type: "snapshotAccepted", context, snapshotId: accepted.id });
       setLocalAccepted({ runId, snapshotId: accepted.id });
       // The id itself is announced by the accepted-authority line this unblocks; naming
       // it twice makes a screen reader read twenty characters of hash for no gain.
@@ -1027,9 +1027,8 @@ export default function Workspace({ destination, children }: { destination?: Des
     const context = requestContext(authorityRef.current);
     if (!context.caseId) return null;
     try {
-      const switched = await request<Snapshot>(`/api/cases/${context.caseId}/snapshot/switch`, { method: "POST", body: JSON.stringify({ snapshot_id: snapshotId }) });
+      await request<Snapshot>(`/api/cases/${context.caseId}/snapshot/switch`, { method: "POST", body: JSON.stringify({ snapshot_id: snapshotId }) });
       if (!matchesAuthority(authorityRef.current, context)) return null;
-      dispatchAuthority({ type: "snapshotAccepted", context, snapshotId: switched.id });
       return refreshCase(context.caseId);
     } catch (caught) {
       if (!matchesAuthority(authorityRef.current, context)) return null;

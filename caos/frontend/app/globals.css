@@ -227,15 +227,9 @@ caption { color: var(--caos-muted); font-size: 10px; font-weight: 600; letter-sp
 .skip-link:focus { transform: translateY(0); }
 dialog { border: 1px solid var(--caos-border-strong); border-radius: var(--radius-xl); background: var(--caos-panel); color: var(--caos-text); padding: 0; box-shadow: var(--shadow-modal); overscroll-behavior: contain; }
 dialog::backdrop { background: rgb(0 0 0 / .6); backdrop-filter: blur(3px); }
-/* Overlays are the one surface the shadow vocabulary animates: a 6px rise and a
-   backdrop fade distinguish "modal above the work" from an in-place panel.
-   Confined to no-preference; the global reduced-motion rule also pins it. */
-@media (prefers-reduced-motion: no-preference) {
-  dialog[open] { animation: caos-dialog-in 180ms var(--ease-out); }
-  dialog[open]::backdrop { animation: caos-fade-in 180ms ease-out; }
-}
-@keyframes caos-dialog-in { from { opacity: .5; transform: translateY(6px); } }
-@keyframes caos-fade-in { from { opacity: 0; } }
+/* Dialogs open without an entrance animation: motion is reserved for live state
+   (DESIGN.md §1 and §6; FE-A0 F16). The shadow and the backdrop carry the
+   "modal above the work" reading on their own. */
 dialog:not(.context-drawer) { width: min(680px, calc(100% - 32px)); max-width: 680px; max-height: min(680px, calc(100dvh - 32px)); }
 .dialog-body { display: grid; gap: 12px; padding: 16px; }
 .dialog-body .panel-header { margin: -16px -16px 0; border-radius: var(--radius-xl) var(--radius-xl) 0 0; }
