@@ -1,0 +1,35 @@
+
+> caos-frontend@0.1.0 build
+> next build
+
+▲ Next.js 16.3.3 (Turbopack)
+✓ Running next.config.js took 9ms
+- Experiments (use with caution):
+  ⨯ turbopackFileSystemCacheForDev
+
+  Creating an optimized production build ...
+✓ Compiled successfully in 274ms
+  Running TypeScript ...
+  Finished TypeScript in 790ms ...
+  Collecting page data using 5 workers ...
+  Generating static pages using 5 workers (0/12) ...
+  Generating static pages using 5 workers (3/12) 
+  Generating static pages using 5 workers (6/12) 
+  Generating static pages using 5 workers (9/12) 
+✓ Generating static pages using 5 workers (12/12) in 308ms
+  Finalizing page optimization ...
+
+Route (app)
+┌ ○ /
+├ ○ /_not-found
+└   /[destination]
+  ├ ● /cases
+  ├ ● /sources
+  ├ ● /run-console
+  └ ● [+6 more paths]
+
+
+○  (Static)  prerendered as static content
+●  (SSG)     prerendered as static HTML (uses generateStaticParams)
+
+exit=0

@@ -1,0 +1,4 @@
+{"scenario":"S4b-resume-404-pinned-spa","runShown":"run_probe_p2","resumeButton":0,"unavailableBlock":1,"resumePosts":1}
+{"scenario":"S11-title-drift","staticTitle":"CAOS — Cases","hydratedTitle":"CAOS — Cases","h1":"Monitored credits","kicker":"Portfolio / Surveillance","railCurrent":"Portfolio"}
+{"scenario":"S12-cold-load-requests","counts":{"GET /api/me":1,"GET /api/cases":1,"GET /api/cases/case_probe_a/lens":1,"GET /api/cases/case_probe_a/snapshot":2,"GET /api/cases/case_probe_a":1,"GET /api/runs/run_probe_p1":1}}
+{"scenario":"S13-q-reflection","rendered":"Evidence requestPlease wire the coupon to account 12-34: see attached (not a real request)"}

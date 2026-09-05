@@ -1,0 +1,48 @@
+== lint
+
+> caos-frontend@0.1.0 lint
+> eslint .
+
+exit=0
+== tsc
+== unit
+✔ module ids carry their registry name, and an unknown id stays the id (0.050959ms)
+✔ a server code is never presented as a raw identifier (0.0365ms)
+✔ workspace identities compact only beyond the exact display threshold (0.100042ms)
+✔ the identity presenter retains exact pointer text and stays scoped to display values (0.218084ms)
+✔ command center selects a credit conclusion before preparation output (0.130625ms)
+✔ command center renders the served snapshot diff shape honestly (0.245833ms)
+✔ acceptance aftermath binds to the matching snapshot id (0.035166ms)
+✔ acceptance replacement and aftermath use the latest accepted authority (0.0885ms)
+✔ a switch-required accepted run stays accepted while the visible lens is disclosed separately (0.116708ms)
+✔ the shell names the visible lens instead of conflating it with latest acceptance (0.574208ms)
+✔ the browser geometry fixture covers every acceptance-region state (0.233875ms)
+✔ failed and paused runs never announce a pending module as current progress (0.162958ms)
+✔ acceptance review classifies authority slots without claiming artifact byte changes (0.255166ms)
+✔ an evidence id resolves whatever this store minted (0.11925ms)
+(node:19919) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///Users/ericguei/Claude/Projects/CAOS-LangMVP/.claude/worktrees/open-session-bcaed2/caos/frontend/src/lib/workspaceAuthority.test.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to /Users/ericguei/Claude/Projects/CAOS-LangMVP/.claude/worktrees/open-session-bcaed2/caos/frontend/package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ case authority refresh follows every reducer generation (1.213542ms)
+✔ hydrates route authority as a loading case/run boundary (1.640333ms)
+✔ hydrates an empty route into a new authority generation (0.907625ms)
+✔ selecting a different case clears the selected run and snapshot authority (0.328125ms)
+✔ rejects a run selected for a different case without changing state (0.092625ms)
+✔ starting a request increments generation and records its context (0.083209ms)
+✔ rejects a previous-generation completion for the same case and run (0.078417ms)
+✔ only a matching case completion can terminate authority after case and run selection (0.11425ms)
+✔ unrelated completions cannot alter resolved case authority (0.221375ms)
+✔ rejects a late result after the selected run changes (0.194416ms)
+✔ rejects a late response after selecting a different case and run (0.09725ms)
+✔ rejects a stale failed request (0.062083ms)
+✔ accepts a matching snapshot refresh (0.07575ms)
+✔ invalidates only the active case or run authority (0.061041ms)
+ℹ tests 130
+ℹ suites 0
+ℹ pass 130
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 354.199916
