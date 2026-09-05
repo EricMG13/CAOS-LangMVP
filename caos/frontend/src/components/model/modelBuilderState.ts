@@ -316,3 +316,19 @@ export function formatModelValue(value: unknown): string {
   if (!Number.isFinite(numeric) || Math.abs(numeric) > Number.MAX_SAFE_INTEGER) return value;
   return round(numeric);
 }
+
+// A blur commits only a change. The scrubber used to commit whatever it held on
+// every blur, so Tab from an untouched input re-keyed every scrubber, unmounted
+// the input that had just taken focus and posted a tornado — one remount and one
+// request per fieldset the analyst tabbed through (FE-A0 F1). Numeric equality,
+// so "5.0" is not a change from "5"; an empty or non-numeric entry reverts.
+export function scrubberCommitDecision(next: string, committed: string): "commit" | "unchanged" | "revert" {
+  const trimmed = next.trim();
+  if (trimmed === "") return "revert";
+  if (trimmed === committed.trim()) return "unchanged";
+  const numeric = (value: string) => value.trim() === "" ? NaN : Number(value);
+  const entered = numeric(trimmed);
+  const current = numeric(committed);
+  if (Number.isFinite(entered) && Number.isFinite(current) && entered === current) return "unchanged";
+  return "commit";
+}

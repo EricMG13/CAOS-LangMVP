@@ -1203,7 +1203,9 @@ try {
     const activeRevision = modelRevisions.find((item) => item.state === "ACTIVE");
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ source_revision_id: requestBody.revision_id, source_build_id: modelBuildId, build_id: modelBuildId, draft_generation: requestBody.draft_generation, compatible: [{ assumption_id: assumptionDefinition.assumption_id }], changed: [{ assumption_id: assumptionDefinition.assumption_id, reason: "SOURCE_CONTEXT_CHANGED" }], invalidated: [], candidate_assumptions: activeRevision?.effective_assumptions || assumptionDefaults, preview: null }) });
   });
+  let tornadoPosts = 0;
   await page.route(tornadoPath, async (route) => {
+    tornadoPosts += 1;
     const requestBody = route.request().postDataJSON();
     assert.equal(requestBody.assumptions.length, assumptionDefaults.length, "tornado did not receive the complete working forecast");
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ build_id: modelBuildId, draft_generation: requestBody.draft_generation, case: requestBody.case, output_period_id: requestBody.output_period_id, output_id: requestBody.output_id, intensity: requestBody.intensity, baseline: "4.2", bars: [
@@ -1268,6 +1270,19 @@ try {
   assert.equal(previewPosts, 1, "forecast edit did not automatically calculate one preview");
   await page.getByRole("group", { name: /Net leverage tornado for BASE/ }).waitFor();
   const secondAssumption = page.getByLabel("Revenue growth, FY2026, BASE", { exact: true });
+  // A blur that changes nothing commits nothing (FE-A0 F1): Tab from the untouched
+  // FY2026 input lands on FY2027 with every input still mounted and no tornado
+  // request. Every blur used to commit, re-key all 23 fieldsets' inputs, unmount
+  // the one that had just taken focus and post a tornado per Tab.
+  const tornadoPostsBeforeTab = tornadoPosts;
+  const previewPostsBeforeTab = previewPosts;
+  await secondAssumption.focus();
+  await page.keyboard.press("Tab");
+  await awaitFocus(page.getByLabel("Revenue growth, FY2027, BASE", { exact: true }), "Tab from an untouched forecast input did not land on the next input");
+  await page.waitForTimeout(500);
+  assert.equal(tornadoPosts, tornadoPostsBeforeTab, "a blur without a change posted a tornado");
+  assert.equal(previewPosts, previewPostsBeforeTab, "a blur without a change requested a preview");
+  assert.equal(await secondAssumption.inputValue(), "0.03", "an unchanged blur altered the forecast input");
   await firstAssumption.fill("3");
   await firstAssumption.press("Enter");
   assert.equal(await firstAssumption.inputValue(), "0.04", "rejected out-of-bounds edit did not revert the controlled input");

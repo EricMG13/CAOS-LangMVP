@@ -10,6 +10,7 @@ import {
   normalizeAssumptions,
   previewMatchesDraft,
   primaryModelAction,
+  scrubberCommitDecision,
   sensitivityPeriodRows,
   worksheetCellAuthority,
   worksheetColumns,
@@ -228,4 +229,15 @@ test("model outputs read as audited numbers whether the wire sends them as numbe
   assert.equal(formatModelValue("12345678901234567890.5"), "12345678901234567890.5");
   assert.equal(formatModelValue("1e309"), "1e309");
   assert.equal(formatModelValue(String(Number.MAX_SAFE_INTEGER)), "9,007,199,254,740,991");
+});
+
+test("a forecast scrubber commits only a changed value", () => {
+  assert.equal(scrubberCommitDecision("0.04", "0.03"), "commit");
+  assert.equal(scrubberCommitDecision("0.03", "0.03"), "unchanged", "blur without a change is not a commit");
+  assert.equal(scrubberCommitDecision(" 0.03 ", "0.03"), "unchanged");
+  assert.equal(scrubberCommitDecision("5.0", "5"), "unchanged", "numeric equality, not text");
+  assert.equal(scrubberCommitDecision("0", "", ), "commit", "a value entered into a mixed scope is a change");
+  assert.equal(scrubberCommitDecision("", "0.03"), "revert");
+  assert.equal(scrubberCommitDecision("   ", "0.03"), "revert");
+  assert.equal(scrubberCommitDecision("abc", "0.03"), "commit", "a non-numeric entry reaches the bounds check and is refused there");
 });
