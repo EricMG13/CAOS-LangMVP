@@ -1,0 +1,3357 @@
+{
+  "baseURL": "http://127.0.0.1:8768",
+  "started": "2026-09-05T09:50:53.245Z",
+  "steps": [
+    {
+      "n": 1,
+      "persona": "analyst",
+      "label": "UX-001 open Portfolio (empty register)",
+      "clicks": 0,
+      "checks": [],
+      "urlBefore": "blank",
+      "url": "/cases/",
+      "shell": {
+        "kicker": "Portfolio / Surveillance",
+        "h1": "Monitored credits",
+        "title": "CAOS — Cases",
+        "authority": "Credit: None selectedVisible snapshot: No case selectedSelected run: NoneSource set: Not applicable",
+        "current": "Portfolio",
+        "primaryButtons": [
+          "Analyze documents",
+          "Create case"
+        ],
+        "statuses": [],
+        "unavailable": []
+      },
+      "destinationChanged": true,
+      "authorityChanged": false,
+      "screenshot": "01-portfolio-empty.png",
+      "ok": true
+    },
+    {
+      "n": 2,
+      "persona": "analyst",
+      "label": "UX-001..UX-007 drop three documents, analyze",
+      "clicks": 2,
+      "checks": [
+        "UX-001",
+        "UX-002",
+        "UX-003",
+        "UX-005",
+        "UX-006",
+        "UX-007"
+      ],
+      "urlBefore": "/cases/",
+      "url": "/cases/?case=case-54b1867495a6422a86e8&run=run-3e22d966c0484c509508",
+      "shell": {
+        "kicker": "Portfolio / Surveillance",
+        "h1": "Monitored credits",
+        "title": "CAOS — Cases",
+        "authority": "Credit: Goldenpack-7d2kd HoldingsVisible snapshot: No visible snapshotSelected run: run-3e22d966…9508run-3e22d966…9508. Full identity: run-3e22d966c0484c509508 · liveSource set: No visible source set",
+        "current": "Portfolio",
+        "primaryButtons": [
+          "Analyze documents",
+          "Open credit"
+        ],
+        "statuses": [
+          "used",
+          "used",
+          "used",
+          "Not accepted",
+          "READY"
+        ],
+        "unavailable": []
+      },
+      "destinationChanged": false,
+      "authorityChanged": true,
+      "screenshot": "02-portfolio-intake-evidence.png",
+      "ok": true
+    },
+    {
+      "n": 3,
+      "persona": "analyst",
+      "label": "UX-010 open the completed review from the intake panel",
+      "clicks": 1,
+      "checks": [
+        "UX-010"
+      ],
+      "urlBefore": "/cases/?case=case-54b1867495a6422a86e8&run=run-3e22d966c0484c509508",
+      "url": "/run-console/?case=case-54b1867495a6422a86e8&run=run-3e22d966c0484c509508",
+      "shell": {
+        "kicker": "Analysis / Execution",
+        "h1": "Run and acceptance",
+        "title": "CAOS — Run and acceptance",
+        "authority": "Credit: Goldenpack-7d2kd HoldingsVisible snapshot: No visible snapshotSelected run: run-3e22d966…9508run-3e22d966…9508. Full identity: run-3e22d966c0484c509508Source set: No visible source set",
+        "current": "Run",
+        "primaryButtons": [
+          "Compile and run",
+          "Accept analytical snapshot"
+        ],
+        "statuses": [
+          "Run status: succeeded",
+          "succeeded",
+          "succeeded",
+          "succeeded",
+          "succeeded",
+          "succeeded",
+          "succeeded",
+          "succeeded",
+          "succeeded",
+          "succeeded",
+          "succeeded",
+          "succeeded"
+        ],
+        "unavailable": []
+      },
+      "destinationChanged": true,
+      "authorityChanged": true,
+      "screenshot": "03-run-console-succeeded-unaccepted.png",
+      "ok": true
+    },
+    {
+      "n": 4,
+      "persona": "analyst",
+      "label": "UX-011 open a module output from the route (DAG tile)",
+      "clicks": 1,
+      "checks": [
+        "UX-011"
+      ],
+      "urlBefore": "/run-console/?case=case-54b1867495a6422a86e8&run=run-3e22d966c0484c509508",
+      "url": "/sources/?case=case-54b1867495a6422a86e8&artifact=art-f50916b678774aa1929b",
+      "shell": {
+        "kicker": "Sources / Evidence",
+        "h1": "Documents, extraction and coverage",
+        "title": "CAOS — Documents, extraction and coverage",
+        "authority": "Credit: Goldenpack-7d2kd HoldingsVisible snapshot: No visible snapshotSelected run: run-3e22d966…9508run-3e22d966…9508. Full identity: run-3e22d966c0484c509508Source set: No visible source set",
+        "current": "Sources",
+        "primaryButtons": [
+          "Upload and version"
+        ],
+        "statuses": [],
+        "unavailable": [
+          "Claim coverage"
+        ]
+      },
+      "destinationChanged": true,
+      "authorityChanged": false,
+      "screenshot": "04-sources-evidence-focus.png",
+      "ok": true
+    },
+    {
+      "n": 5,
+      "persona": "analyst",
+      "label": "UX-011 open a cited source in the evidence drawer",
+      "clicks": 1,
+      "checks": [],
+      "urlBefore": "/sources/?case=case-54b1867495a6422a86e8&artifact=art-f50916b678774aa1929b",
+      "url": "/sources/?case=case-54b1867495a6422a86e8&artifact=art-f50916b678774aa1929b",
+      "shell": {
+        "kicker": "Sources / Evidence",
+        "h1": "Documents, extraction and coverage",
+        "title": "CAOS — Documents, extraction and coverage",
+        "authority": "Credit: Goldenpack-7d2kd HoldingsVisible snapshot: No visible snapshotSelected run: run-3e22d966…9508run-3e22d966…9508. Full identity: run-3e22d966c0484c509508Source set: No visible source set",
+        "current": "Sources",
+        "primaryButtons": [
+          "Upload and version"
+        ],
+        "statuses": [
+          "Extracted",
+          "Extracted",
+          "Extracted"
+        ],
+        "unavailable": [
+          "Claim coverage"
+        ]
+      },
+      "destinationChanged": false,
+      "authorityChanged": false,
+      "screenshot": "05-sources-evidence-drawer-open.png",
+      "ok": true
+    },
+    {
+      "n": 6,
+      "persona": "analyst",
+      "label": "close drawer, browser back to the run console",
+      "clicks": 2,
+      "checks": [],
+      "urlBefore": "/sources/?case=case-54b1867495a6422a86e8&artifact=art-f50916b678774aa1929b",
+      "url": "/run-console/?case=case-54b1867495a6422a86e8&run=run-3e22d966c0484c509508",
+      "shell": {
+        "kicker": "Analysis / Execution",
+        "h1": "Run and acceptance",
+        "title": "CAOS — Run and acceptance",
+        "authority": "Credit: Goldenpack-7d2kd HoldingsVisible snapshot: No visible snapshotSelected run: run-3e22d966…9508run-3e22d966…9508. Full identity: run-3e22d966c0484c509508Source set: No visible source set",
+        "current": "Run",
+        "primaryButtons": [
+          "Compile and run",
+          "Accept analytical snapshot"
+        ],
+        "statuses": [
+          "Run status: succeeded",
+          "succeeded",
+          "succeeded",
+          "succeeded",
+          "succeeded",
+          "succeeded",
+          "succeeded",
+          "succeeded",
+          "succeeded",
+          "succeeded",
+          "succeeded",
+          "succeeded"
+        ],
+        "unavailable": []
+      },
+      "destinationChanged": true,
+      "authorityChanged": false,
+      "screenshot": null,
+      "ok": true
+    },
+    {
+      "n": 7,
+      "persona": "analyst",
+      "label": "open the digest-bound acceptance dialog",
+      "clicks": 1,
+      "checks": [],
+      "urlBefore": "/run-console/?case=case-54b1867495a6422a86e8&run=run-3e22d966c0484c509508",
+      "url": "/run-console/?case=case-54b1867495a6422a86e8&run=run-3e22d966c0484c509508",
+      "shell": {
+        "kicker": "Analysis / Execution",
+        "h1": "Run and acceptance",
+        "title": "CAOS — Run and acceptance",
+        "authority": "Credit: Goldenpack-7d2kd HoldingsVisible snapshot: No visible snapshotSelected run: run-3e22d966…9508run-3e22d966…9508. Full identity: run-3e22d966c0484c509508Source set: No visible source set",
+        "current": "Run",
+        "primaryButtons": [
+          "Compile and run",
+          "Accept analytical snapshot"
+        ],
+        "statuses": [
+          "Run status: succeeded",
+          "succeeded",
+          "succeeded",
+          "succeeded",
+          "succeeded",
+          "succeeded",
+          "succeeded",
+          "succeeded",
+          "succeeded",
+          "succeeded",
+          "succeeded",
+          "succeeded"
+        ],
+        "unavailable": []
+      },
+      "destinationChanged": false,
+      "authorityChanged": false,
+      "screenshot": "06-accept-dialog.png",
+      "ok": true
+    },
+    {
+      "n": 8,
+      "persona": "analyst",
+      "label": "confirm acceptance (governed write)",
+      "clicks": 1,
+      "checks": [],
+      "urlBefore": "/run-console/?case=case-54b1867495a6422a86e8&run=run-3e22d966c0484c509508",
+      "url": "/run-console/?case=case-54b1867495a6422a86e8&run=run-3e22d966c0484c509508",
+      "shell": {
+        "kicker": "Analysis / Execution",
+        "h1": "Run and acceptance",
+        "title": "CAOS — Run and acceptance",
+        "authority": "Credit: Goldenpack-7d2kd HoldingsVisible snapshot: snap-343b23e…82f0snap-343b23e…82f0. Full identity: snap-343b23edea9d440e82f0Selected run: run-3e22d966…9508run-3e22d966…9508. Full identity: run-3e22d966c0484c509508Source set: v1",
+        "current": "Run",
+        "primaryButtons": [
+          "Compile and run"
+        ],
+        "statuses": [
+          "Run status: succeeded",
+          "succeeded",
+          "succeeded",
+          "succeeded",
+          "succeeded",
+          "succeeded",
+          "succeeded",
+          "succeeded",
+          "succeeded",
+          "succeeded",
+          "succeeded",
+          "succeeded"
+        ],
+        "unavailable": []
+      },
+      "destinationChanged": false,
+      "authorityChanged": true,
+      "screenshot": "07-run-console-accepted.png",
+      "ok": true
+    },
+    {
+      "n": 9,
+      "persona": "analyst",
+      "label": "rail: Model",
+      "clicks": 1,
+      "checks": [],
+      "urlBefore": "/run-console/?case=case-54b1867495a6422a86e8&run=run-3e22d966c0484c509508",
+      "url": "/model-builder/?case=case-54b1867495a6422a86e8",
+      "shell": {
+        "kicker": "Model / Forecast",
+        "h1": "Assumptions, lineage and sign-off",
+        "title": "CAOS — Assumptions, lineage and sign-off",
+        "authority": "Credit: Goldenpack-7d2kd HoldingsVisible snapshot: snap-343b23e…82f0snap-343b23e…82f0. Full identity: snap-343b23edea9d440e82f0Selected run: run-3e22d966…9508run-3e22d966…9508. Full identity: run-3e22d966c0484c509508Source set: v1",
+        "current": "Model",
+        "primaryButtons": [],
+        "statuses": [
+          "CANONICAL MODEL INPUTS INVALID"
+        ],
+        "unavailable": []
+      },
+      "destinationChanged": true,
+      "authorityChanged": false,
+      "screenshot": "08-model-ready-to-build.png",
+      "ok": true
+    },
+    {
+      "n": 10,
+      "persona": "analyst",
+      "label": "build the application model (worker)",
+      "clicks": 1,
+      "checks": [],
+      "urlBefore": "/model-builder/?case=case-54b1867495a6422a86e8",
+      "url": "/model-builder/?case=case-54b1867495a6422a86e8",
+      "shell": {
+        "kicker": "Model / Forecast",
+        "h1": "Assumptions, lineage and sign-off",
+        "title": "CAOS — Assumptions, lineage and sign-off",
+        "authority": "Credit: Goldenpack-7d2kd HoldingsVisible snapshot: snap-343b23e…82f0snap-343b23e…82f0. Full identity: snap-343b23edea9d440e82f0Selected run: run-3e22d966…9508run-3e22d966…9508. Full identity: run-3e22d966c0484c509508Source set: v1",
+        "current": "Model",
+        "primaryButtons": [],
+        "statuses": [
+          "CANONICAL MODEL INPUTS INVALID"
+        ],
+        "unavailable": []
+      },
+      "destinationChanged": null,
+      "authorityChanged": null,
+      "screenshot": "09-FAILED-model-ready.png",
+      "ok": false,
+      "error": "locator.click: Timeout 30000ms exceeded.\nCall log:\n  - waiting for locator('[data-primary-model-action=\"BUILD\"]')\n"
+    },
+    {
+      "n": 11,
+      "persona": "analyst",
+      "label": "change one assumption, recalculate, sign off a revision",
+      "clicks": 3,
+      "checks": [],
+      "urlBefore": "/model-builder/?case=case-54b1867495a6422a86e8",
+      "url": "/model-builder/?case=case-54b1867495a6422a86e8",
+      "shell": {
+        "kicker": "Model / Forecast",
+        "h1": "Assumptions, lineage and sign-off",
+        "title": "CAOS — Assumptions, lineage and sign-off",
+        "authority": "Credit: Goldenpack-7d2kd HoldingsVisible snapshot: snap-343b23e…82f0snap-343b23e…82f0. Full identity: snap-343b23edea9d440e82f0Selected run: run-3e22d966…9508run-3e22d966…9508. Full identity: run-3e22d966c0484c509508Source set: v1",
+        "current": "Model",
+        "primaryButtons": [],
+        "statuses": [
+          "CANONICAL MODEL INPUTS INVALID"
+        ],
+        "unavailable": []
+      },
+      "destinationChanged": null,
+      "authorityChanged": null,
+      "screenshot": "10-FAILED-model-signed-off.png",
+      "ok": false,
+      "error": "locator.waitFor: Timeout 10000ms exceeded.\nCall log:\n  - waiting for locator('main fieldset input:not([type=checkbox]):not([type=radio]):not([type=file])').first() to be visible\n"
+    },
+    {
+      "n": 12,
+      "persona": "analyst",
+      "label": "rail: Report (unsigned opinion)",
+      "clicks": 1,
+      "checks": [],
+      "urlBefore": "/model-builder/?case=case-54b1867495a6422a86e8",
+      "url": "/report-studio/?case=case-54b1867495a6422a86e8",
+      "shell": {
+        "kicker": "Report / Publication",
+        "h1": "Compose, freeze and file",
+        "title": "CAOS — Compose, freeze and file",
+        "authority": "Credit: Goldenpack-7d2kd HoldingsVisible snapshot: snap-343b23e…82f0snap-343b23e…82f0. Full identity: snap-343b23edea9d440e82f0Selected run: run-3e22d966…9508run-3e22d966…9508. Full identity: run-3e22d966c0484c509508Source set: v1",
+        "current": "Report",
+        "primaryButtons": [
+          "Freeze saved v—"
+        ],
+        "statuses": [
+          "Ready",
+          "Ready",
+          "Blocked",
+          "Ready",
+          "Blocked",
+          "Blocked"
+        ],
+        "unavailable": []
+      },
+      "destinationChanged": true,
+      "authorityChanged": false,
+      "screenshot": "11-report-unsigned-opinion.png",
+      "ok": true
+    },
+    {
+      "n": 13,
+      "persona": "analyst",
+      "label": "fallback: switch to a model-optional template",
+      "clicks": 1,
+      "checks": [],
+      "urlBefore": "/report-studio/?case=case-54b1867495a6422a86e8",
+      "url": "/report-studio/?case=case-54b1867495a6422a86e8",
+      "shell": {
+        "kicker": "Report / Publication",
+        "h1": "Compose, freeze and file",
+        "title": "CAOS — Compose, freeze and file",
+        "authority": "Credit: Goldenpack-7d2kd HoldingsVisible snapshot: snap-343b23e…82f0snap-343b23e…82f0. Full identity: snap-343b23edea9d440e82f0Selected run: run-3e22d966…9508run-3e22d966…9508. Full identity: run-3e22d966c0484c509508Source set: v1",
+        "current": "Report",
+        "primaryButtons": [
+          "Freeze saved v—"
+        ],
+        "statuses": [
+          "Ready",
+          "Ready",
+          "Blocked",
+          "Ready",
+          "Ready",
+          "Blocked"
+        ],
+        "unavailable": []
+      },
+      "destinationChanged": false,
+      "authorityChanged": false,
+      "screenshot": null,
+      "ok": true
+    },
+    {
+      "n": 14,
+      "persona": "analyst",
+      "label": "compose every required narrative section (autosave)",
+      "clicks": 9,
+      "checks": [],
+      "urlBefore": "/report-studio/?case=case-54b1867495a6422a86e8",
+      "url": "/report-studio/?case=case-54b1867495a6422a86e8",
+      "shell": {
+        "kicker": "Report / Publication",
+        "h1": "Compose, freeze and file",
+        "title": "CAOS — Compose, freeze and file",
+        "authority": "Credit: Goldenpack-7d2kd HoldingsVisible snapshot: snap-343b23e…82f0snap-343b23e…82f0. Full identity: snap-343b23edea9d440e82f0Selected run: run-3e22d966…9508run-3e22d966…9508. Full identity: run-3e22d966c0484c509508Source set: v1",
+        "current": "Report",
+        "primaryButtons": [
+          "Retry save now",
+          "Freeze saved v—"
+        ],
+        "statuses": [
+          "DELIVERABLE PATHWAY AUTHORITY MISMATCH",
+          "Ready",
+          "Blocked",
+          "Ready",
+          "Ready",
+          "Blocked"
+        ],
+        "unavailable": []
+      },
+      "destinationChanged": null,
+      "authorityChanged": null,
+      "screenshot": "12-FAILED-report-draft-saved.png",
+      "ok": false,
+      "error": "locator.waitFor: Timeout 20000ms exceeded.\nCall log:\n  - waiting for getByText(/^Saved v\\d+$/) to be visible\n"
+    },
+    {
+      "n": 15,
+      "persona": "analyst",
+      "label": "UX-016 sign the opinion on the exact saved revision",
+      "clicks": 1,
+      "checks": [
+        "UX-016"
+      ],
+      "urlBefore": "/report-studio/?case=case-54b1867495a6422a86e8",
+      "url": "/report-studio/?case=case-54b1867495a6422a86e8",
+      "shell": {
+        "kicker": "Report / Publication",
+        "h1": "Compose, freeze and file",
+        "title": "CAOS — Compose, freeze and file",
+        "authority": "Credit: Goldenpack-7d2kd HoldingsVisible snapshot: snap-343b23e…82f0snap-343b23e…82f0. Full identity: snap-343b23edea9d440e82f0Selected run: run-3e22d966…9508run-3e22d966…9508. Full identity: run-3e22d966c0484c509508Source set: v1",
+        "current": "Report",
+        "primaryButtons": [
+          "Retry save now",
+          "Freeze saved v—"
+        ],
+        "statuses": [
+          "DELIVERABLE PATHWAY AUTHORITY MISMATCH",
+          "Ready",
+          "Blocked",
+          "Ready",
+          "Ready",
+          "Blocked"
+        ],
+        "unavailable": []
+      },
+      "destinationChanged": null,
+      "authorityChanged": null,
+      "screenshot": "13-FAILED-report-opinion-signed.png",
+      "ok": false,
+      "error": "locator.click: Timeout 30000ms exceeded.\nCall log:\n  - waiting for getByRole('button', { name: /^Sign opinion on saved v/ })\n    - locator resolved to <button disabled type=\"submit\" class=\"button\">Sign opinion on saved v—</button>\n  - attempting click action\n    2 × waiting for element to be visible, enabled and stable\n      - element is not enabled\n    - retrying click action\n    - waiting 20ms\n "
+    },
+    {
+      "n": 16,
+      "persona": "analyst",
+      "label": "freeze the saved revision (worker renders md/pdf/xlsx)",
+      "clicks": 1,
+      "checks": [],
+      "urlBefore": "/report-studio/?case=case-54b1867495a6422a86e8",
+      "url": "/report-studio/?case=case-54b1867495a6422a86e8",
+      "shell": {
+        "kicker": "Report / Publication",
+        "h1": "Compose, freeze and file",
+        "title": "CAOS — Compose, freeze and file",
+        "authority": "Credit: Goldenpack-7d2kd HoldingsVisible snapshot: snap-343b23e…82f0snap-343b23e…82f0. Full identity: snap-343b23edea9d440e82f0Selected run: run-3e22d966…9508run-3e22d966…9508. Full identity: run-3e22d966c0484c509508Source set: v1",
+        "current": "Report",
+        "primaryButtons": [
+          "Retry save now",
+          "Freeze saved v—"
+        ],
+        "statuses": [
+          "DELIVERABLE PATHWAY AUTHORITY MISMATCH",
+          "Ready",
+          "Blocked",
+          "Ready",
+          "Ready",
+          "Blocked"
+        ],
+        "unavailable": []
+      },
+      "destinationChanged": null,
+      "authorityChanged": null,
+      "screenshot": "14-FAILED-report-frozen-pending-approval.png",
+      "ok": false,
+      "error": "locator.click: Timeout 30000ms exceeded.\nCall log:\n  - waiting for getByRole('button', { name: /^Freeze saved v/ })\n    - locator resolved to <button disabled type=\"button\" class=\"button primary\" data-primary-report-action=\"true\">Freeze saved v—</button>\n  - attempting click action\n    2 × waiting for element to be visible, enabled and stable\n      - element is not enabled\n    - retrying click act"
+    },
+    {
+      "n": 17,
+      "persona": "analyst",
+      "label": "UX-016 the signer sees no File control",
+      "clicks": 0,
+      "checks": [
+        "UX-016"
+      ],
+      "urlBefore": "/report-studio/?case=case-54b1867495a6422a86e8",
+      "url": "/report-studio/?case=case-54b1867495a6422a86e8",
+      "shell": {
+        "kicker": "Report / Publication",
+        "h1": "Compose, freeze and file",
+        "title": "CAOS — Compose, freeze and file",
+        "authority": "Credit: Goldenpack-7d2kd HoldingsVisible snapshot: snap-343b23e…82f0snap-343b23e…82f0. Full identity: snap-343b23edea9d440e82f0Selected run: run-3e22d966…9508run-3e22d966…9508. Full identity: run-3e22d966c0484c509508Source set: v1",
+        "current": "Report",
+        "primaryButtons": [
+          "Retry save now",
+          "Freeze saved v—"
+        ],
+        "statuses": [
+          "DELIVERABLE PATHWAY AUTHORITY MISMATCH",
+          "Ready",
+          "Blocked",
+          "Ready",
+          "Ready",
+          "Blocked"
+        ],
+        "unavailable": []
+      },
+      "destinationChanged": false,
+      "authorityChanged": false,
+      "screenshot": null,
+      "ok": true
+    },
+    {
+      "n": 18,
+      "persona": "qa",
+      "label": "QA: provision the independent approver (lives in Report Studio)",
+      "clicks": 2,
+      "checks": [],
+      "urlBefore": "blank",
+      "url": "/report-studio/?case=case-54b1867495a6422a86e8&run=run-3e22d966c0484c509508",
+      "shell": {
+        "kicker": "Report / Publication",
+        "h1": "Compose, freeze and file",
+        "title": "CAOS — Report Studio",
+        "authority": "Credit: Goldenpack-7d2kd HoldingsVisible snapshot: snap-343b23e…82f0snap-343b23e…82f0. Full identity: snap-343b23edea9d440e82f0Selected run: run-3e22d966…9508run-3e22d966…9508. Full identity: run-3e22d966c0484c509508Source set: v1",
+        "current": "Report",
+        "primaryButtons": [
+          "Freeze saved v—"
+        ],
+        "statuses": [
+          "Ready",
+          "Ready",
+          "Blocked",
+          "Ready",
+          "Blocked",
+          "Blocked",
+          "committee-approver provisioned as case APPROVER."
+        ],
+        "unavailable": []
+      },
+      "destinationChanged": true,
+      "authorityChanged": false,
+      "screenshot": "15-report-provision-approver.png",
+      "ok": true
+    },
+    {
+      "n": 19,
+      "persona": "qa",
+      "label": "QA: Admin surface (audit and membership shown as not served)",
+      "clicks": 1,
+      "checks": [],
+      "urlBefore": "/report-studio/?case=case-54b1867495a6422a86e8&run=run-3e22d966c0484c509508",
+      "url": "/admin-studio/?case=case-54b1867495a6422a86e8",
+      "shell": {
+        "kicker": "Admin / Governance",
+        "h1": "Deployment capability",
+        "title": "CAOS — Deployment capability",
+        "authority": "Credit: Goldenpack-7d2kd HoldingsVisible snapshot: snap-343b23e…82f0snap-343b23e…82f0. Full identity: snap-343b23edea9d440e82f0Selected run: run-3e22d966…9508run-3e22d966…9508. Full identity: run-3e22d966c0484c509508Source set: v1",
+        "current": "Admin",
+        "primaryButtons": [],
+        "statuses": [
+          "Not served",
+          "Not served",
+          "Not served",
+          "Not served"
+        ],
+        "unavailable": []
+      },
+      "destinationChanged": true,
+      "authorityChanged": false,
+      "screenshot": "16-admin-unavailable.png",
+      "ok": true
+    },
+    {
+      "n": 20,
+      "persona": "qa",
+      "label": "QA: coverage on Sources (claim coverage unavailable)",
+      "clicks": 1,
+      "checks": [],
+      "urlBefore": "/admin-studio/?case=case-54b1867495a6422a86e8",
+      "url": "/sources/?case=case-54b1867495a6422a86e8",
+      "shell": {
+        "kicker": "Sources / Evidence",
+        "h1": "Documents, extraction and coverage",
+        "title": "CAOS — Documents, extraction and coverage",
+        "authority": "Credit: Goldenpack-7d2kd HoldingsVisible snapshot: snap-343b23e…82f0snap-343b23e…82f0. Full identity: snap-343b23edea9d440e82f0Selected run: run-3e22d966…9508run-3e22d966…9508. Full identity: run-3e22d966c0484c509508Source set: v1",
+        "current": "Sources",
+        "primaryButtons": [
+          "Upload and version"
+        ],
+        "statuses": [
+          "Extracted",
+          "Extracted",
+          "Extracted"
+        ],
+        "unavailable": [
+          "Claim coverage"
+        ]
+      },
+      "destinationChanged": true,
+      "authorityChanged": false,
+      "screenshot": "17-sources-coverage-unavailable.png",
+      "ok": true
+    },
+    {
+      "n": 21,
+      "persona": "qa",
+      "label": "QA: audit package (API only, no surface)",
+      "clicks": 0,
+      "checks": [],
+      "urlBefore": "/sources/?case=case-54b1867495a6422a86e8",
+      "url": "/sources/?case=case-54b1867495a6422a86e8",
+      "shell": {
+        "kicker": "Sources / Evidence",
+        "h1": "Documents, extraction and coverage",
+        "title": "CAOS — Documents, extraction and coverage",
+        "authority": "Credit: Goldenpack-7d2kd HoldingsVisible snapshot: snap-343b23e…82f0snap-343b23e…82f0. Full identity: snap-343b23edea9d440e82f0Selected run: run-3e22d966…9508run-3e22d966…9508. Full identity: run-3e22d966c0484c509508Source set: v1",
+        "current": "Sources",
+        "primaryButtons": [
+          "Upload and version"
+        ],
+        "statuses": [
+          "Extracted",
+          "Extracted",
+          "Extracted"
+        ],
+        "unavailable": [
+          "Claim coverage"
+        ]
+      },
+      "destinationChanged": false,
+      "authorityChanged": false,
+      "screenshot": null,
+      "ok": true
+    },
+    {
+      "n": 22,
+      "persona": "approver",
+      "label": "UX-017 approver opens the exact frozen record",
+      "clicks": 1,
+      "checks": [
+        "UX-017"
+      ],
+      "urlBefore": "blank",
+      "url": "/report-studio/?case=case-54b1867495a6422a86e8&run=run-3e22d966c0484c509508",
+      "shell": {
+        "kicker": "Report / Publication",
+        "h1": "Compose, freeze and file",
+        "title": "CAOS — Report Studio",
+        "authority": "Credit: Goldenpack-7d2kd HoldingsVisible snapshot: snap-343b23e…82f0snap-343b23e…82f0. Full identity: snap-343b23edea9d440e82f0Selected run: run-3e22d966…9508run-3e22d966…9508. Full identity: run-3e22d966c0484c509508Source set: v1",
+        "current": "Report",
+        "primaryButtons": [
+          "Freeze saved v—"
+        ],
+        "statuses": [
+          "Ready",
+          "Ready",
+          "Blocked",
+          "Ready",
+          "Ready",
+          "Blocked"
+        ],
+        "unavailable": []
+      },
+      "destinationChanged": null,
+      "authorityChanged": null,
+      "screenshot": "18-FAILED-report-frozen-approver-view.png",
+      "ok": false,
+      "error": "locator.click: Timeout 30000ms exceeded.\nCall log:\n  - waiting for getByRole('button', { name: /FROZEN · Draft v/ }).first()\n"
+    },
+    {
+      "n": 23,
+      "persona": "approver",
+      "label": "UX-017 file the exact frozen bytes; receipt appears",
+      "clicks": 1,
+      "checks": [
+        "UX-017"
+      ],
+      "urlBefore": "/report-studio/?case=case-54b1867495a6422a86e8&run=run-3e22d966c0484c509508",
+      "url": "/report-studio/?case=case-54b1867495a6422a86e8&run=run-3e22d966c0484c509508",
+      "shell": {
+        "kicker": "Report / Publication",
+        "h1": "Compose, freeze and file",
+        "title": "CAOS — Report Studio",
+        "authority": "Credit: Goldenpack-7d2kd HoldingsVisible snapshot: snap-343b23e…82f0snap-343b23e…82f0. Full identity: snap-343b23edea9d440e82f0Selected run: run-3e22d966…9508run-3e22d966…9508. Full identity: run-3e22d966c0484c509508Source set: v1",
+        "current": "Report",
+        "primaryButtons": [
+          "Freeze saved v—"
+        ],
+        "statuses": [
+          "Ready",
+          "Ready",
+          "Blocked",
+          "Ready",
+          "Ready",
+          "Blocked"
+        ],
+        "unavailable": []
+      },
+      "destinationChanged": null,
+      "authorityChanged": null,
+      "screenshot": "19-FAILED-report-filed-receipt.png",
+      "ok": false,
+      "error": "locator.click: Timeout 30000ms exceeded.\nCall log:\n  - waiting for getByRole('button', { name: 'File exact Frozen version' })\n"
+    },
+    {
+      "n": 24,
+      "persona": "analyst",
+      "label": "Deep Research pack: intake with a brief file",
+      "clicks": 2,
+      "checks": [],
+      "urlBefore": "/report-studio/?case=case-54b1867495a6422a86e8",
+      "url": "/cases/?case=case-63d424affad7458f896b&run=run-a2b92d71585e49a392e7",
+      "shell": {
+        "kicker": "Portfolio / Surveillance",
+        "h1": "Monitored credits",
+        "title": "CAOS — Cases",
+        "authority": "Credit: Researchpack-7d2kd HoldingsVisible snapshot: No visible snapshotSelected run: run-a2b92d71…92e7run-a2b92d71…92e7. Full identity: run-a2b92d71585e49a392e7 · liveSource set: No visible source set",
+        "current": "Portfolio",
+        "primaryButtons": [
+          "Analyze documents",
+          "Open credit",
+          "Open credit"
+        ],
+        "statuses": [
+          "used",
+          "used",
+          "used",
+          "Not accepted",
+          "Accepted",
+          "READY"
+        ],
+        "unavailable": []
+      },
+      "destinationChanged": true,
+      "authorityChanged": true,
+      "screenshot": "20-portfolio-research-intake.png",
+      "ok": true
+    },
+    {
+      "n": 25,
+      "persona": "analyst",
+      "label": "intake panel reports the paused gate",
+      "clicks": 0,
+      "checks": [],
+      "urlBefore": "/cases/?case=case-63d424affad7458f896b&run=run-a2b92d71585e49a392e7",
+      "url": "/cases/?case=case-63d424affad7458f896b&run=run-a2b92d71585e49a392e7",
+      "shell": {
+        "kicker": "Portfolio / Surveillance",
+        "h1": "Monitored credits",
+        "title": "CAOS — Cases",
+        "authority": "Credit: Researchpack-7d2kd HoldingsVisible snapshot: No visible snapshotSelected run: run-a2b92d71…92e7run-a2b92d71…92e7. Full identity: run-a2b92d71585e49a392e7Source set: No visible source set",
+        "current": "Portfolio",
+        "primaryButtons": [
+          "Analyze documents",
+          "Open credit",
+          "Open credit"
+        ],
+        "statuses": [
+          "used",
+          "used",
+          "used",
+          "Not accepted",
+          "Accepted",
+          "READY"
+        ],
+        "unavailable": []
+      },
+      "destinationChanged": false,
+      "authorityChanged": false,
+      "screenshot": "21-portfolio-paused-for-approval.png",
+      "ok": true
+    },
+    {
+      "n": 26,
+      "persona": "analyst",
+      "label": "open the run console at the research-plan approval gate",
+      "clicks": 1,
+      "checks": [],
+      "urlBefore": "/cases/?case=case-63d424affad7458f896b&run=run-a2b92d71585e49a392e7",
+      "url": "/run-console/?case=case-63d424affad7458f896b&run=run-a2b92d71585e49a392e7",
+      "shell": {
+        "kicker": "Analysis / Execution",
+        "h1": "Run and acceptance",
+        "title": "CAOS — Run and acceptance",
+        "authority": "Credit: Researchpack-7d2kd HoldingsVisible snapshot: No visible snapshotSelected run: run-a2b92d71…92e7run-a2b92d71…92e7. Full identity: run-a2b92d71585e49a392e7Source set: No visible source set",
+        "current": "Run",
+        "primaryButtons": [
+          "Compile and run",
+          "Approve research plan"
+        ],
+        "statuses": [
+          "Run status: Pending approval",
+          "succeeded",
+          "succeeded",
+          "pending",
+          "Acceptance blocked"
+        ],
+        "unavailable": []
+      },
+      "destinationChanged": true,
+      "authorityChanged": false,
+      "screenshot": "22-run-console-paused-plan-approval.png",
+      "ok": true
+    },
+    {
+      "n": 27,
+      "persona": "analyst",
+      "label": "approve the research plan (digest-bound)",
+      "clicks": 1,
+      "checks": [],
+      "urlBefore": "/run-console/?case=case-63d424affad7458f896b&run=run-a2b92d71585e49a392e7",
+      "url": "/run-console/?case=case-63d424affad7458f896b&run=run-a2b92d71585e49a392e7",
+      "shell": {
+        "kicker": "Analysis / Execution",
+        "h1": "Run and acceptance",
+        "title": "CAOS — Run and acceptance",
+        "authority": "Credit: Researchpack-7d2kd HoldingsVisible snapshot: No visible snapshotSelected run: run-a2b92d71…92e7run-a2b92d71…92e7. Full identity: run-a2b92d71585e49a392e7Source set: No visible source set",
+        "current": "Run",
+        "primaryButtons": [
+          "Compile and run",
+          "Approving…"
+        ],
+        "statuses": [
+          "Run status: Pending approval",
+          "succeeded",
+          "succeeded",
+          "pending",
+          "Acceptance blocked"
+        ],
+        "unavailable": []
+      },
+      "destinationChanged": false,
+      "authorityChanged": false,
+      "screenshot": "23-run-console-running-after-approval.png",
+      "ok": true
+    },
+    {
+      "n": 28,
+      "persona": "analyst",
+      "label": "research run completes (succeeded, unaccepted)",
+      "clicks": 0,
+      "checks": [],
+      "urlBefore": "/run-console/?case=case-63d424affad7458f896b&run=run-a2b92d71585e49a392e7",
+      "url": "/run-console/?case=case-63d424affad7458f896b&run=run-a2b92d71585e49a392e7",
+      "shell": {
+        "kicker": "Analysis / Execution",
+        "h1": "Run and acceptance",
+        "title": "CAOS — Run and acceptance",
+        "authority": "Credit: Researchpack-7d2kd HoldingsVisible snapshot: No visible snapshotSelected run: run-a2b92d71…92e7run-a2b92d71…92e7. Full identity: run-a2b92d71585e49a392e7Source set: No visible source set",
+        "current": "Run",
+        "primaryButtons": [
+          "Compile and run",
+          "Accept analytical snapshot"
+        ],
+        "statuses": [
+          "Run status: succeeded",
+          "succeeded",
+          "succeeded",
+          "succeeded",
+          "Ready for acceptance"
+        ],
+        "unavailable": []
+      },
+      "destinationChanged": false,
+      "authorityChanged": true,
+      "screenshot": "24-run-console-research-succeeded.png",
+      "ok": true
+    },
+    {
+      "n": 29,
+      "persona": "analyst",
+      "label": "PM: Portfolio register (populated)",
+      "clicks": 0,
+      "checks": [],
+      "urlBefore": "/run-console/?case=case-63d424affad7458f896b&run=run-a2b92d71585e49a392e7",
+      "url": "/cases/?case=case-54b1867495a6422a86e8&run=run-3e22d966c0484c509508",
+      "shell": {
+        "kicker": "Portfolio / Surveillance",
+        "h1": "Monitored credits",
+        "title": "CAOS — Cases",
+        "authority": "Credit: Goldenpack-7d2kd HoldingsVisible snapshot: snap-343b23e…82f0snap-343b23e…82f0. Full identity: snap-343b23edea9d440e82f0Selected run: run-3e22d966…9508run-3e22d966…9508. Full identity: run-3e22d966c0484c509508Source set: v1",
+        "current": "Portfolio",
+        "primaryButtons": [
+          "Analyze documents",
+          "Open credit",
+          "Open credit"
+        ],
+        "statuses": [
+          "used",
+          "used",
+          "used",
+          "Accepted",
+          "Not accepted",
+          "READY"
+        ],
+        "unavailable": []
+      },
+      "destinationChanged": true,
+      "authorityChanged": true,
+      "screenshot": "25-portfolio-populated.png",
+      "ok": true
+    },
+    {
+      "n": 30,
+      "persona": "analyst",
+      "label": "PM: Open credit -> Credit current state",
+      "clicks": 1,
+      "checks": [],
+      "urlBefore": "/cases/?case=case-54b1867495a6422a86e8&run=run-3e22d966c0484c509508",
+      "url": "/command-center/?case=case-54b1867495a6422a86e8",
+      "shell": {
+        "kicker": "Credit / Current state",
+        "h1": "Current state and what changed",
+        "title": "CAOS — Current state and what changed",
+        "authority": "Credit: Goldenpack-7d2kd HoldingsVisible snapshot: snap-343b23e…82f0snap-343b23e…82f0. Full identity: snap-343b23edea9d440e82f0Selected run: run-3e22d966…9508run-3e22d966…9508. Full identity: run-3e22d966c0484c509508Source set: v1",
+        "current": "Credit",
+        "primaryButtons": [
+          "Read accepted analysis"
+        ],
+        "statuses": [
+          "Accepted Sep 5, 2026, 10:50 AM"
+        ],
+        "unavailable": [
+          "Binding measure and claim gaps"
+        ]
+      },
+      "destinationChanged": true,
+      "authorityChanged": false,
+      "screenshot": "26-credit-accepted.png",
+      "ok": true
+    },
+    {
+      "n": 31,
+      "persona": "analyst",
+      "label": "PM: Read accepted analysis -> Analysis reader",
+      "clicks": 1,
+      "checks": [],
+      "urlBefore": "/command-center/?case=case-54b1867495a6422a86e8",
+      "url": "/deep-dive/?case=case-54b1867495a6422a86e8",
+      "shell": {
+        "kicker": "Analysis / Reader",
+        "h1": "Accepted analysis",
+        "title": "CAOS — Accepted analysis",
+        "authority": "Credit: Goldenpack-7d2kd HoldingsVisible snapshot: snap-343b23e…82f0snap-343b23e…82f0. Full identity: snap-343b23edea9d440e82f0Selected run: run-3e22d966…9508run-3e22d966…9508. Full identity: run-3e22d966c0484c509508Source set: v1",
+        "current": "Analysis",
+        "primaryButtons": [],
+        "statuses": [],
+        "unavailable": []
+      },
+      "destinationChanged": true,
+      "authorityChanged": false,
+      "screenshot": "27-deep-dive-accepted.png",
+      "ok": true
+    },
+    {
+      "n": 32,
+      "persona": "analyst",
+      "label": "PM: evidence rail -> Sources with the source selected",
+      "clicks": 1,
+      "checks": [],
+      "urlBefore": "/deep-dive/?case=case-54b1867495a6422a86e8",
+      "url": "/sources/?case=case-54b1867495a6422a86e8&source=src-29ea380df6a84c8daf9d",
+      "shell": {
+        "kicker": "Sources / Evidence",
+        "h1": "Documents, extraction and coverage",
+        "title": "CAOS — Documents, extraction and coverage",
+        "authority": "Credit: Goldenpack-7d2kd HoldingsVisible snapshot: snap-343b23e…82f0snap-343b23e…82f0. Full identity: snap-343b23edea9d440e82f0Selected run: run-3e22d966…9508run-3e22d966…9508. Full identity: run-3e22d966c0484c509508Source set: v1",
+        "current": "Sources",
+        "primaryButtons": [
+          "Upload and version"
+        ],
+        "statuses": [],
+        "unavailable": [
+          "Claim coverage"
+        ]
+      },
+      "destinationChanged": true,
+      "authorityChanged": false,
+      "screenshot": "28-sources-source-selected.png",
+      "ok": true
+    },
+    {
+      "n": 33,
+      "persona": "analyst",
+      "label": "PM: Credit on a credit with no accepted snapshot",
+      "clicks": 0,
+      "checks": [],
+      "urlBefore": "/sources/?case=case-54b1867495a6422a86e8&source=src-29ea380df6a84c8daf9d",
+      "url": "/command-center/?case=case-63d424affad7458f896b&run=run-a2b92d71585e49a392e7",
+      "shell": {
+        "kicker": "Credit / Current state",
+        "h1": "Current state and what changed",
+        "title": "CAOS — Command Center",
+        "authority": "Credit: Researchpack-7d2kd HoldingsVisible snapshot: No visible snapshotSelected run: run-a2b92d71…92e7run-a2b92d71…92e7. Full identity: run-a2b92d71585e49a392e7Source set: No visible source set",
+        "current": "Credit",
+        "primaryButtons": [],
+        "statuses": [],
+        "unavailable": [
+          "Binding measure and claim gaps"
+        ]
+      },
+      "destinationChanged": true,
+      "authorityChanged": true,
+      "screenshot": "29-credit-unavailable-no-snapshot.png",
+      "ok": true
+    },
+    {
+      "n": 34,
+      "persona": "analyst",
+      "label": "second accepted run makes the signed revision stale (API run + accept)",
+      "clicks": 0,
+      "checks": [],
+      "urlBefore": "/command-center/?case=case-63d424affad7458f896b&run=run-a2b92d71585e49a392e7",
+      "url": "/model-builder/?case=case-54b1867495a6422a86e8&run=run-4211024781b14c989af5",
+      "shell": {
+        "kicker": "Model / Forecast",
+        "h1": "Assumptions, lineage and sign-off",
+        "title": "CAOS — Model Builder",
+        "authority": "Credit: Goldenpack-7d2kd HoldingsVisible snapshot: snap-e0177e1…b2c3snap-e0177e1…b2c3. Full identity: snap-e0177e1f14434facb2c3Selected run: run-42110247…9af5run-42110247…9af5. Full identity: run-4211024781b14c989af5Source set: v1",
+        "current": "Model",
+        "primaryButtons": [],
+        "statuses": [
+          "CANONICAL MODEL INPUTS INVALID"
+        ],
+        "unavailable": []
+      },
+      "destinationChanged": true,
+      "authorityChanged": true,
+      "screenshot": "30-model-stale-revision.png",
+      "ok": true
+    },
+    {
+      "n": 35,
+      "persona": "analyst",
+      "label": "Report after the authority moved (stale model identity)",
+      "clicks": 0,
+      "checks": [],
+      "urlBefore": "/model-builder/?case=case-54b1867495a6422a86e8&run=run-4211024781b14c989af5",
+      "url": "/report-studio/?case=case-54b1867495a6422a86e8&run=run-4211024781b14c989af5",
+      "shell": {
+        "kicker": "Report / Publication",
+        "h1": "Compose, freeze and file",
+        "title": "CAOS — Report Studio",
+        "authority": "Credit: Goldenpack-7d2kd HoldingsVisible snapshot: snap-e0177e1…b2c3snap-e0177e1…b2c3. Full identity: snap-e0177e1f14434facb2c3Selected run: run-42110247…9af5run-42110247…9af5. Full identity: run-4211024781b14c989af5Source set: v1",
+        "current": "Report",
+        "primaryButtons": [
+          "Freeze saved v—"
+        ],
+        "statuses": [
+          "Ready",
+          "Ready",
+          "Blocked",
+          "Ready",
+          "Blocked",
+          "Blocked"
+        ],
+        "unavailable": []
+      },
+      "destinationChanged": true,
+      "authorityChanged": false,
+      "screenshot": "31-report-stale-model.png",
+      "ok": true
+    },
+    {
+      "n": 36,
+      "persona": "reader",
+      "label": "UX-015 reader: /cases/",
+      "clicks": 0,
+      "checks": [
+        "UX-015"
+      ],
+      "urlBefore": "blank",
+      "url": "/cases/?case=case-54b1867495a6422a86e8&run=run-4211024781b14c989af5",
+      "shell": {
+        "kicker": "Portfolio / Surveillance",
+        "h1": "Monitored credits",
+        "title": "CAOS — Cases",
+        "authority": "Credit: Goldenpack-7d2kd HoldingsVisible snapshot: snap-e0177e1…b2c3snap-e0177e1…b2c3. Full identity: snap-e0177e1f14434facb2c3Selected run: run-42110247…9af5run-42110247…9af5. Full identity: run-4211024781b14c989af5Source set: v1",
+        "current": "Portfolio",
+        "primaryButtons": [
+          "Open credit",
+          "Open credit"
+        ],
+        "statuses": [
+          "used",
+          "used",
+          "used",
+          "Accepted",
+          "Not accepted",
+          "READY"
+        ],
+        "unavailable": []
+      },
+      "destinationChanged": true,
+      "authorityChanged": false,
+      "screenshot": null,
+      "ok": true
+    },
+    {
+      "n": 37,
+      "persona": "reader",
+      "label": "UX-015 reader: /command-center/",
+      "clicks": 0,
+      "checks": [
+        "UX-015"
+      ],
+      "urlBefore": "/cases/?case=case-54b1867495a6422a86e8&run=run-4211024781b14c989af5",
+      "url": "/command-center/?case=case-54b1867495a6422a86e8&run=run-4211024781b14c989af5",
+      "shell": {
+        "kicker": "Credit / Current state",
+        "h1": "Current state and what changed",
+        "title": "CAOS — Command Center",
+        "authority": "Credit: Goldenpack-7d2kd HoldingsVisible snapshot: snap-e0177e1…b2c3snap-e0177e1…b2c3. Full identity: snap-e0177e1f14434facb2c3Selected run: run-42110247…9af5run-42110247…9af5. Full identity: run-4211024781b14c989af5Source set: v1",
+        "current": "Credit",
+        "primaryButtons": [
+          "Read accepted analysis"
+        ],
+        "statuses": [
+          "Accepted Sep 5, 2026, 10:54 AM"
+        ],
+        "unavailable": [
+          "Binding measure and claim gaps"
+        ]
+      },
+      "destinationChanged": true,
+      "authorityChanged": false,
+      "screenshot": null,
+      "ok": true
+    },
+    {
+      "n": 38,
+      "persona": "reader",
+      "label": "UX-015 reader: /sources/",
+      "clicks": 0,
+      "checks": [
+        "UX-015"
+      ],
+      "urlBefore": "/command-center/?case=case-54b1867495a6422a86e8&run=run-4211024781b14c989af5",
+      "url": "/sources/?case=case-54b1867495a6422a86e8&run=run-4211024781b14c989af5",
+      "shell": {
+        "kicker": "Sources / Evidence",
+        "h1": "Documents, extraction and coverage",
+        "title": "CAOS — Sources",
+        "authority": "Credit: Goldenpack-7d2kd HoldingsVisible snapshot: snap-e0177e1…b2c3snap-e0177e1…b2c3. Full identity: snap-e0177e1f14434facb2c3Selected run: run-42110247…9af5run-42110247…9af5. Full identity: run-4211024781b14c989af5Source set: v1",
+        "current": "Sources",
+        "primaryButtons": [],
+        "statuses": [
+          "Extracted",
+          "Extracted",
+          "Extracted"
+        ],
+        "unavailable": [
+          "Claim coverage"
+        ]
+      },
+      "destinationChanged": true,
+      "authorityChanged": false,
+      "screenshot": null,
+      "ok": true
+    },
+    {
+      "n": 39,
+      "persona": "reader",
+      "label": "UX-015 reader: /run-console/",
+      "clicks": 0,
+      "checks": [
+        "UX-015"
+      ],
+      "urlBefore": "/sources/?case=case-54b1867495a6422a86e8&run=run-4211024781b14c989af5",
+      "url": "/run-console/?case=case-54b1867495a6422a86e8&run=run-3e22d966c0484c509508",
+      "shell": {
+        "kicker": "Analysis / Execution",
+        "h1": "Run and acceptance",
+        "title": "CAOS — Run Console",
+        "authority": "Credit: Goldenpack-7d2kd HoldingsVisible snapshot: snap-e0177e1…b2c3snap-e0177e1…b2c3. Full identity: snap-e0177e1f14434facb2c3Selected run: run-3e22d966…9508run-3e22d966…9508. Full identity: run-3e22d966c0484c509508Source set: v1",
+        "current": "Run",
+        "primaryButtons": [],
+        "statuses": [
+          "Run status: succeeded",
+          "succeeded",
+          "succeeded",
+          "succeeded",
+          "succeeded",
+          "succeeded",
+          "succeeded",
+          "succeeded",
+          "succeeded",
+          "succeeded",
+          "succeeded",
+          "succeeded"
+        ],
+        "unavailable": []
+      },
+      "destinationChanged": true,
+      "authorityChanged": true,
+      "screenshot": "32-reader-run-console.png",
+      "ok": true
+    },
+    {
+      "n": 40,
+      "persona": "reader",
+      "label": "UX-015 reader: /deep-dive/",
+      "clicks": 0,
+      "checks": [
+        "UX-015"
+      ],
+      "urlBefore": "/run-console/?case=case-54b1867495a6422a86e8&run=run-3e22d966c0484c509508",
+      "url": "/deep-dive/?case=case-54b1867495a6422a86e8&run=run-4211024781b14c989af5",
+      "shell": {
+        "kicker": "Analysis / Reader",
+        "h1": "Accepted analysis",
+        "title": "CAOS — Deep-Dive",
+        "authority": "Credit: Goldenpack-7d2kd HoldingsVisible snapshot: snap-e0177e1…b2c3snap-e0177e1…b2c3. Full identity: snap-e0177e1f14434facb2c3Selected run: run-42110247…9af5run-42110247…9af5. Full identity: run-4211024781b14c989af5Source set: v1",
+        "current": "Analysis",
+        "primaryButtons": [],
+        "statuses": [],
+        "unavailable": []
+      },
+      "destinationChanged": true,
+      "authorityChanged": true,
+      "screenshot": null,
+      "ok": true
+    },
+    {
+      "n": 41,
+      "persona": "reader",
+      "label": "UX-015 reader: /rv-screener/",
+      "clicks": 0,
+      "checks": [
+        "UX-015"
+      ],
+      "urlBefore": "/deep-dive/?case=case-54b1867495a6422a86e8&run=run-4211024781b14c989af5",
+      "url": "/rv-screener/?case=case-54b1867495a6422a86e8&run=run-4211024781b14c989af5",
+      "shell": {
+        "kicker": "Market / Comparison",
+        "h1": "Governed loan universe",
+        "title": "CAOS — RV Screener",
+        "authority": "Credit: Goldenpack-7d2kd HoldingsVisible snapshot: snap-e0177e1…b2c3snap-e0177e1…b2c3. Full identity: snap-e0177e1f14434facb2c3Selected run: run-42110247…9af5run-42110247…9af5. Full identity: run-4211024781b14c989af5Source set: v1",
+        "current": "Market",
+        "primaryButtons": [],
+        "statuses": [],
+        "unavailable": []
+      },
+      "destinationChanged": true,
+      "authorityChanged": false,
+      "screenshot": null,
+      "ok": true
+    },
+    {
+      "n": 42,
+      "persona": "reader",
+      "label": "UX-015 reader: /model-builder/",
+      "clicks": 0,
+      "checks": [
+        "UX-015"
+      ],
+      "urlBefore": "/rv-screener/?case=case-54b1867495a6422a86e8&run=run-4211024781b14c989af5",
+      "url": "/model-builder/?case=case-54b1867495a6422a86e8&run=run-4211024781b14c989af5",
+      "shell": {
+        "kicker": "Model / Forecast",
+        "h1": "Assumptions, lineage and sign-off",
+        "title": "CAOS — Model Builder",
+        "authority": "Credit: Goldenpack-7d2kd HoldingsVisible snapshot: snap-e0177e1…b2c3snap-e0177e1…b2c3. Full identity: snap-e0177e1f14434facb2c3Selected run: run-42110247…9af5run-42110247…9af5. Full identity: run-4211024781b14c989af5Source set: v1",
+        "current": "Model",
+        "primaryButtons": [],
+        "statuses": [
+          "CANONICAL MODEL INPUTS INVALID"
+        ],
+        "unavailable": []
+      },
+      "destinationChanged": true,
+      "authorityChanged": false,
+      "screenshot": null,
+      "ok": true
+    },
+    {
+      "n": 43,
+      "persona": "reader",
+      "label": "UX-015 reader: /report-studio/",
+      "clicks": 0,
+      "checks": [
+        "UX-015"
+      ],
+      "urlBefore": "/model-builder/?case=case-54b1867495a6422a86e8&run=run-4211024781b14c989af5",
+      "url": "/report-studio/?case=case-54b1867495a6422a86e8&run=run-4211024781b14c989af5",
+      "shell": {
+        "kicker": "Report / Publication",
+        "h1": "Compose, freeze and file",
+        "title": "CAOS — Report Studio",
+        "authority": "Credit: Goldenpack-7d2kd HoldingsVisible snapshot: snap-e0177e1…b2c3snap-e0177e1…b2c3. Full identity: snap-e0177e1f14434facb2c3Selected run: run-42110247…9af5run-42110247…9af5. Full identity: run-4211024781b14c989af5Source set: v1",
+        "current": "Report",
+        "primaryButtons": [],
+        "statuses": [
+          "Ready",
+          "Blocked",
+          "Blocked",
+          "Ready",
+          "Blocked",
+          "Blocked",
+          "Reader mode · Freeze is an analyst action"
+        ],
+        "unavailable": []
+      },
+      "destinationChanged": true,
+      "authorityChanged": false,
+      "screenshot": "33-reader-report.png",
+      "ok": true
+    },
+    {
+      "n": 44,
+      "persona": "reader",
+      "label": "UX-015 reader: /admin-studio/",
+      "clicks": 0,
+      "checks": [
+        "UX-015"
+      ],
+      "urlBefore": "/report-studio/?case=case-54b1867495a6422a86e8&run=run-4211024781b14c989af5",
+      "url": "/admin-studio/?case=case-54b1867495a6422a86e8&run=run-4211024781b14c989af5",
+      "shell": {
+        "kicker": "Admin / Governance",
+        "h1": "Deployment capability",
+        "title": "CAOS — Admin Studio",
+        "authority": "Credit: Goldenpack-7d2kd HoldingsVisible snapshot: snap-e0177e1…b2c3snap-e0177e1…b2c3. Full identity: snap-e0177e1f14434facb2c3Selected run: run-42110247…9af5run-42110247…9af5. Full identity: run-4211024781b14c989af5Source set: v1",
+        "current": "Admin",
+        "primaryButtons": [],
+        "statuses": [
+          "Not served",
+          "Not served",
+          "Not served",
+          "Not served"
+        ],
+        "unavailable": []
+      },
+      "destinationChanged": true,
+      "authorityChanged": false,
+      "screenshot": null,
+      "ok": true
+    },
+    {
+      "n": 45,
+      "persona": "analyst",
+      "label": "shell at 720 (200 % zoom): run console",
+      "clicks": 0,
+      "checks": [],
+      "urlBefore": "/report-studio/?case=case-54b1867495a6422a86e8&run=run-4211024781b14c989af5",
+      "url": "/run-console/?case=case-54b1867495a6422a86e8&run=run-3e22d966c0484c509508",
+      "shell": {
+        "kicker": "Analysis / Execution",
+        "h1": "Run and acceptance",
+        "title": "CAOS — Run Console",
+        "authority": "Credit: Goldenpack-7d2kd HoldingsVisible snapshot: snap-e0177e1…b2c3snap-e0177e1…b2c3. Full identity: snap-e0177e1f14434facb2c3Selected run: run-3e22d966…9508run-3e22d966…9508. Full identity: run-3e22d966c0484c509508Source set: v1",
+        "current": "Run",
+        "primaryButtons": [
+          "Compile and run",
+          "Accept analytical snapshot"
+        ],
+        "statuses": [
+          "Run status: succeeded",
+          "succeeded",
+          "succeeded",
+          "succeeded",
+          "succeeded",
+          "succeeded",
+          "succeeded",
+          "succeeded",
+          "succeeded",
+          "succeeded",
+          "succeeded",
+          "succeeded"
+        ],
+        "unavailable": []
+      },
+      "destinationChanged": true,
+      "authorityChanged": true,
+      "screenshot": "34-shell-720-run-console.png",
+      "ok": true
+    },
+    {
+      "n": 46,
+      "persona": "analyst",
+      "label": "shell at 720: report",
+      "clicks": 0,
+      "checks": [],
+      "urlBefore": "/run-console/?case=case-54b1867495a6422a86e8&run=run-3e22d966c0484c509508",
+      "url": "/report-studio/?case=case-54b1867495a6422a86e8&run=run-4211024781b14c989af5",
+      "shell": {
+        "kicker": "Report / Publication",
+        "h1": "Compose, freeze and file",
+        "title": "CAOS — Report Studio",
+        "authority": "Credit: Goldenpack-7d2kd HoldingsVisible snapshot: snap-e0177e1…b2c3snap-e0177e1…b2c3. Full identity: snap-e0177e1f14434facb2c3Selected run: run-42110247…9af5run-42110247…9af5. Full identity: run-4211024781b14c989af5Source set: v1",
+        "current": "Report",
+        "primaryButtons": [
+          "Freeze saved v—"
+        ],
+        "statuses": [
+          "Ready",
+          "Ready",
+          "Blocked",
+          "Ready",
+          "Blocked",
+          "Blocked"
+        ],
+        "unavailable": []
+      },
+      "destinationChanged": true,
+      "authorityChanged": true,
+      "screenshot": "35-shell-720-report.png",
+      "ok": true
+    },
+    {
+      "n": 47,
+      "persona": "analyst",
+      "label": "shell at 720: portfolio with intake",
+      "clicks": 0,
+      "checks": [],
+      "urlBefore": "/report-studio/?case=case-54b1867495a6422a86e8&run=run-4211024781b14c989af5",
+      "url": "/cases/?case=case-54b1867495a6422a86e8&run=run-4211024781b14c989af5",
+      "shell": {
+        "kicker": "Portfolio / Surveillance",
+        "h1": "Monitored credits",
+        "title": "CAOS — Cases",
+        "authority": "Credit: Goldenpack-7d2kd HoldingsVisible snapshot: snap-e0177e1…b2c3snap-e0177e1…b2c3. Full identity: snap-e0177e1f14434facb2c3Selected run: run-42110247…9af5run-42110247…9af5. Full identity: run-4211024781b14c989af5Source set: v1",
+        "current": "Portfolio",
+        "primaryButtons": [
+          "Analyze documents",
+          "Open credit",
+          "Open credit"
+        ],
+        "statuses": [
+          "used",
+          "used",
+          "used",
+          "Accepted",
+          "Not accepted",
+          "READY"
+        ],
+        "unavailable": []
+      },
+      "destinationChanged": true,
+      "authorityChanged": false,
+      "screenshot": "36-shell-720-portfolio.png",
+      "ok": true
+    },
+    {
+      "n": 48,
+      "persona": "analyst",
+      "label": "WEB-003 unknown route keeps the shell",
+      "clicks": 0,
+      "checks": [],
+      "urlBefore": "/cases/?case=case-54b1867495a6422a86e8&run=run-4211024781b14c989af5",
+      "url": "/nope/?case=case-54b1867495a6422a86e8&run=run-4211024781b14c989af5",
+      "shell": {
+        "kicker": "Portfolio / Surveillance",
+        "h1": "Page not found",
+        "title": "CAOS — Page not found",
+        "authority": "Credit: Goldenpack-7d2kd HoldingsVisible snapshot: snap-e0177e1…b2c3snap-e0177e1…b2c3. Full identity: snap-e0177e1f14434facb2c3Selected run: run-42110247…9af5run-42110247…9af5. Full identity: run-4211024781b14c989af5Source set: v1",
+        "current": "Portfolio",
+        "primaryButtons": [],
+        "statuses": [],
+        "unavailable": []
+      },
+      "destinationChanged": true,
+      "authorityChanged": false,
+      "screenshot": "37-unknown-route.png",
+      "ok": true
+    },
+    {
+      "n": 49,
+      "persona": "analyst",
+      "label": "command palette (Meta+K) on Credit",
+      "clicks": 1,
+      "checks": [],
+      "urlBefore": "/nope/?case=case-54b1867495a6422a86e8&run=run-4211024781b14c989af5",
+      "url": "/command-center/?case=case-54b1867495a6422a86e8&run=run-4211024781b14c989af5",
+      "shell": {
+        "kicker": "Credit / Current state",
+        "h1": "Current state and what changed",
+        "title": "CAOS — Command Center",
+        "authority": "Credit: Goldenpack-7d2kd HoldingsVisible snapshot: snap-e0177e1…b2c3snap-e0177e1…b2c3. Full identity: snap-e0177e1f14434facb2c3Selected run: run-42110247…9af5run-42110247…9af5. Full identity: run-4211024781b14c989af5Source set: v1",
+        "current": "Credit",
+        "primaryButtons": [
+          "Read accepted analysis"
+        ],
+        "statuses": [
+          "Accepted Sep 5, 2026, 10:54 AM"
+        ],
+        "unavailable": [
+          "Binding measure and claim gaps"
+        ]
+      },
+      "destinationChanged": true,
+      "authorityChanged": false,
+      "screenshot": "38-command-palette.png",
+      "ok": true
+    }
+  ],
+  "navigations": [
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:50:53.492Z",
+      "url": "/cases/"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:50:53.542Z",
+      "url": "/cases/"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:50:53.568Z",
+      "url": "/cases/"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:50:53.574Z",
+      "url": "/cases/"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:50:53.577Z",
+      "url": "/cases/"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:50:55.375Z",
+      "url": "/cases/?case=case-54b1867495a6422a86e8&run=run-3e22d966c0484c509508"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:50:55.376Z",
+      "url": "/cases/?case=case-54b1867495a6422a86e8&run=run-3e22d966c0484c509508"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:50:55.376Z",
+      "url": "/cases/?case=case-54b1867495a6422a86e8&run=run-3e22d966c0484c509508"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:50:57.035Z",
+      "url": "/run-console/?case=case-54b1867495a6422a86e8&run=run-3e22d966c0484c509508"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:50:57.039Z",
+      "url": "/run-console/?case=case-54b1867495a6422a86e8&run=run-3e22d966c0484c509508"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:50:57.150Z",
+      "url": "/sources/?case=case-54b1867495a6422a86e8&artifact=art-f50916b678774aa1929b"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:50:57.154Z",
+      "url": "/sources/?case=case-54b1867495a6422a86e8&artifact=art-f50916b678774aa1929b"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:50:57.520Z",
+      "url": "/run-console/?case=case-54b1867495a6422a86e8&run=run-3e22d966c0484c509508"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:50:57.522Z",
+      "url": "/run-console/?case=case-54b1867495a6422a86e8&run=run-3e22d966c0484c509508"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:50:58.042Z",
+      "url": "/model-builder/?case=case-54b1867495a6422a86e8"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:50:58.043Z",
+      "url": "/model-builder/?case=case-54b1867495a6422a86e8"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:51:39.000Z",
+      "url": "/report-studio/?case=case-54b1867495a6422a86e8"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:51:39.002Z",
+      "url": "/report-studio/?case=case-54b1867495a6422a86e8"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:51:39.677Z",
+      "url": "/report-studio/?case=case-54b1867495a6422a86e8"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:51:39.677Z",
+      "url": "/report-studio/?case=case-54b1867495a6422a86e8"
+    },
+    {
+      "persona": "qa",
+      "at": "2026-09-05T09:53:00.517Z",
+      "url": "/report-studio/?case=case-54b1867495a6422a86e8"
+    },
+    {
+      "persona": "qa",
+      "at": "2026-09-05T09:53:00.572Z",
+      "url": "/report-studio/?case=case-54b1867495a6422a86e8"
+    },
+    {
+      "persona": "qa",
+      "at": "2026-09-05T09:53:00.594Z",
+      "url": "/report-studio/?case=case-54b1867495a6422a86e8"
+    },
+    {
+      "persona": "qa",
+      "at": "2026-09-05T09:53:00.600Z",
+      "url": "/report-studio/?case=case-54b1867495a6422a86e8"
+    },
+    {
+      "persona": "qa",
+      "at": "2026-09-05T09:53:00.603Z",
+      "url": "/report-studio/?case=case-54b1867495a6422a86e8"
+    },
+    {
+      "persona": "qa",
+      "at": "2026-09-05T09:53:00.610Z",
+      "url": "/report-studio/?case=case-54b1867495a6422a86e8&run=run-3e22d966c0484c509508"
+    },
+    {
+      "persona": "qa",
+      "at": "2026-09-05T09:53:00.612Z",
+      "url": "/report-studio/?case=case-54b1867495a6422a86e8&run=run-3e22d966c0484c509508"
+    },
+    {
+      "persona": "qa",
+      "at": "2026-09-05T09:53:00.614Z",
+      "url": "/report-studio/?case=case-54b1867495a6422a86e8&run=run-3e22d966c0484c509508"
+    },
+    {
+      "persona": "qa",
+      "at": "2026-09-05T09:53:01.392Z",
+      "url": "/admin-studio/?case=case-54b1867495a6422a86e8"
+    },
+    {
+      "persona": "qa",
+      "at": "2026-09-05T09:53:01.395Z",
+      "url": "/admin-studio/?case=case-54b1867495a6422a86e8"
+    },
+    {
+      "persona": "qa",
+      "at": "2026-09-05T09:53:01.465Z",
+      "url": "/sources/?case=case-54b1867495a6422a86e8"
+    },
+    {
+      "persona": "qa",
+      "at": "2026-09-05T09:53:01.469Z",
+      "url": "/sources/?case=case-54b1867495a6422a86e8"
+    },
+    {
+      "persona": "approver",
+      "at": "2026-09-05T09:53:01.654Z",
+      "url": "/report-studio/?case=case-54b1867495a6422a86e8"
+    },
+    {
+      "persona": "approver",
+      "at": "2026-09-05T09:53:01.707Z",
+      "url": "/report-studio/?case=case-54b1867495a6422a86e8"
+    },
+    {
+      "persona": "approver",
+      "at": "2026-09-05T09:53:01.729Z",
+      "url": "/report-studio/?case=case-54b1867495a6422a86e8"
+    },
+    {
+      "persona": "approver",
+      "at": "2026-09-05T09:53:01.735Z",
+      "url": "/report-studio/?case=case-54b1867495a6422a86e8"
+    },
+    {
+      "persona": "approver",
+      "at": "2026-09-05T09:53:01.738Z",
+      "url": "/report-studio/?case=case-54b1867495a6422a86e8"
+    },
+    {
+      "persona": "approver",
+      "at": "2026-09-05T09:53:01.743Z",
+      "url": "/report-studio/?case=case-54b1867495a6422a86e8&run=run-3e22d966c0484c509508"
+    },
+    {
+      "persona": "approver",
+      "at": "2026-09-05T09:53:01.744Z",
+      "url": "/report-studio/?case=case-54b1867495a6422a86e8&run=run-3e22d966c0484c509508"
+    },
+    {
+      "persona": "approver",
+      "at": "2026-09-05T09:53:01.744Z",
+      "url": "/report-studio/?case=case-54b1867495a6422a86e8&run=run-3e22d966c0484c509508"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:02.474Z",
+      "url": "/cases/"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:02.489Z",
+      "url": "/cases/"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:02.494Z",
+      "url": "/cases/"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:02.496Z",
+      "url": "/cases/"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:02.498Z",
+      "url": "/cases/"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:02.508Z",
+      "url": "/cases/?case=case-54b1867495a6422a86e8&run=run-3e22d966c0484c509508"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:02.511Z",
+      "url": "/cases/?case=case-54b1867495a6422a86e8&run=run-3e22d966c0484c509508"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:02.512Z",
+      "url": "/cases/?case=case-54b1867495a6422a86e8&run=run-3e22d966c0484c509508"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:03.137Z",
+      "url": "/cases/?case=case-63d424affad7458f896b&run=run-a2b92d71585e49a392e7"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:03.138Z",
+      "url": "/cases/?case=case-63d424affad7458f896b&run=run-a2b92d71585e49a392e7"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:03.138Z",
+      "url": "/cases/?case=case-63d424affad7458f896b&run=run-a2b92d71585e49a392e7"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:03.391Z",
+      "url": "/run-console/?case=case-63d424affad7458f896b&run=run-a2b92d71585e49a392e7"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:03.395Z",
+      "url": "/run-console/?case=case-63d424affad7458f896b&run=run-a2b92d71585e49a392e7"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:04.508Z",
+      "url": "/cases/"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:04.515Z",
+      "url": "/cases/"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:04.519Z",
+      "url": "/cases/"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:04.521Z",
+      "url": "/cases/"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:04.521Z",
+      "url": "/cases/"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:04.530Z",
+      "url": "/cases/?case=case-54b1867495a6422a86e8&run=run-3e22d966c0484c509508"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:04.534Z",
+      "url": "/cases/?case=case-54b1867495a6422a86e8&run=run-3e22d966c0484c509508"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:04.536Z",
+      "url": "/cases/?case=case-54b1867495a6422a86e8&run=run-3e22d966c0484c509508"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:05.207Z",
+      "url": "/command-center/?case=case-54b1867495a6422a86e8"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:05.210Z",
+      "url": "/command-center/?case=case-54b1867495a6422a86e8"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:06.048Z",
+      "url": "/deep-dive/?case=case-54b1867495a6422a86e8"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:06.050Z",
+      "url": "/deep-dive/?case=case-54b1867495a6422a86e8"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:06.932Z",
+      "url": "/sources/?case=case-54b1867495a6422a86e8&source=src-29ea380df6a84c8daf9d"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:06.935Z",
+      "url": "/sources/?case=case-54b1867495a6422a86e8&source=src-29ea380df6a84c8daf9d"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:06.990Z",
+      "url": "/command-center/?case=case-63d424affad7458f896b"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:06.997Z",
+      "url": "/command-center/?case=case-63d424affad7458f896b"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:07.000Z",
+      "url": "/command-center/?case=case-63d424affad7458f896b"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:07.002Z",
+      "url": "/command-center/?case=case-63d424affad7458f896b"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:07.002Z",
+      "url": "/command-center/?case=case-63d424affad7458f896b"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:07.009Z",
+      "url": "/command-center/?case=case-63d424affad7458f896b&run=run-a2b92d71585e49a392e7"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:07.009Z",
+      "url": "/command-center/?case=case-63d424affad7458f896b&run=run-a2b92d71585e49a392e7"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:07.009Z",
+      "url": "/command-center/?case=case-63d424affad7458f896b&run=run-a2b92d71585e49a392e7"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:08.979Z",
+      "url": "/model-builder/?case=case-54b1867495a6422a86e8"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:08.985Z",
+      "url": "/model-builder/?case=case-54b1867495a6422a86e8"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:08.989Z",
+      "url": "/model-builder/?case=case-54b1867495a6422a86e8"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:08.991Z",
+      "url": "/model-builder/?case=case-54b1867495a6422a86e8"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:08.992Z",
+      "url": "/model-builder/?case=case-54b1867495a6422a86e8"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:09.001Z",
+      "url": "/model-builder/?case=case-54b1867495a6422a86e8&run=run-4211024781b14c989af5"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:09.002Z",
+      "url": "/model-builder/?case=case-54b1867495a6422a86e8&run=run-4211024781b14c989af5"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:09.003Z",
+      "url": "/model-builder/?case=case-54b1867495a6422a86e8&run=run-4211024781b14c989af5"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:11.206Z",
+      "url": "/report-studio/?case=case-54b1867495a6422a86e8"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:11.212Z",
+      "url": "/report-studio/?case=case-54b1867495a6422a86e8"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:11.217Z",
+      "url": "/report-studio/?case=case-54b1867495a6422a86e8"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:11.219Z",
+      "url": "/report-studio/?case=case-54b1867495a6422a86e8"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:11.220Z",
+      "url": "/report-studio/?case=case-54b1867495a6422a86e8"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:11.225Z",
+      "url": "/report-studio/?case=case-54b1867495a6422a86e8&run=run-4211024781b14c989af5"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:11.225Z",
+      "url": "/report-studio/?case=case-54b1867495a6422a86e8&run=run-4211024781b14c989af5"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:11.226Z",
+      "url": "/report-studio/?case=case-54b1867495a6422a86e8&run=run-4211024781b14c989af5"
+    },
+    {
+      "persona": "reader",
+      "at": "2026-09-05T09:54:12.960Z",
+      "url": "/cases/?case=case-54b1867495a6422a86e8"
+    },
+    {
+      "persona": "reader",
+      "at": "2026-09-05T09:54:13.010Z",
+      "url": "/cases/?case=case-54b1867495a6422a86e8"
+    },
+    {
+      "persona": "reader",
+      "at": "2026-09-05T09:54:13.036Z",
+      "url": "/cases/?case=case-54b1867495a6422a86e8"
+    },
+    {
+      "persona": "reader",
+      "at": "2026-09-05T09:54:13.042Z",
+      "url": "/cases/?case=case-54b1867495a6422a86e8"
+    },
+    {
+      "persona": "reader",
+      "at": "2026-09-05T09:54:13.046Z",
+      "url": "/cases/?case=case-54b1867495a6422a86e8"
+    },
+    {
+      "persona": "reader",
+      "at": "2026-09-05T09:54:13.050Z",
+      "url": "/cases/?case=case-54b1867495a6422a86e8&run=run-4211024781b14c989af5"
+    },
+    {
+      "persona": "reader",
+      "at": "2026-09-05T09:54:13.052Z",
+      "url": "/cases/?case=case-54b1867495a6422a86e8&run=run-4211024781b14c989af5"
+    },
+    {
+      "persona": "reader",
+      "at": "2026-09-05T09:54:13.053Z",
+      "url": "/cases/?case=case-54b1867495a6422a86e8&run=run-4211024781b14c989af5"
+    },
+    {
+      "persona": "reader",
+      "at": "2026-09-05T09:54:14.839Z",
+      "url": "/command-center/?case=case-54b1867495a6422a86e8"
+    },
+    {
+      "persona": "reader",
+      "at": "2026-09-05T09:54:14.852Z",
+      "url": "/command-center/?case=case-54b1867495a6422a86e8"
+    },
+    {
+      "persona": "reader",
+      "at": "2026-09-05T09:54:14.858Z",
+      "url": "/command-center/?case=case-54b1867495a6422a86e8"
+    },
+    {
+      "persona": "reader",
+      "at": "2026-09-05T09:54:14.860Z",
+      "url": "/command-center/?case=case-54b1867495a6422a86e8"
+    },
+    {
+      "persona": "reader",
+      "at": "2026-09-05T09:54:14.861Z",
+      "url": "/command-center/?case=case-54b1867495a6422a86e8"
+    },
+    {
+      "persona": "reader",
+      "at": "2026-09-05T09:54:14.868Z",
+      "url": "/command-center/?case=case-54b1867495a6422a86e8&run=run-4211024781b14c989af5"
+    },
+    {
+      "persona": "reader",
+      "at": "2026-09-05T09:54:14.868Z",
+      "url": "/command-center/?case=case-54b1867495a6422a86e8&run=run-4211024781b14c989af5"
+    },
+    {
+      "persona": "reader",
+      "at": "2026-09-05T09:54:14.869Z",
+      "url": "/command-center/?case=case-54b1867495a6422a86e8&run=run-4211024781b14c989af5"
+    },
+    {
+      "persona": "reader",
+      "at": "2026-09-05T09:54:17.142Z",
+      "url": "/sources/?case=case-54b1867495a6422a86e8"
+    },
+    {
+      "persona": "reader",
+      "at": "2026-09-05T09:54:17.151Z",
+      "url": "/sources/?case=case-54b1867495a6422a86e8"
+    },
+    {
+      "persona": "reader",
+      "at": "2026-09-05T09:54:17.156Z",
+      "url": "/sources/?case=case-54b1867495a6422a86e8"
+    },
+    {
+      "persona": "reader",
+      "at": "2026-09-05T09:54:17.160Z",
+      "url": "/sources/?case=case-54b1867495a6422a86e8"
+    },
+    {
+      "persona": "reader",
+      "at": "2026-09-05T09:54:17.162Z",
+      "url": "/sources/?case=case-54b1867495a6422a86e8"
+    },
+    {
+      "persona": "reader",
+      "at": "2026-09-05T09:54:17.172Z",
+      "url": "/sources/?case=case-54b1867495a6422a86e8&run=run-4211024781b14c989af5"
+    },
+    {
+      "persona": "reader",
+      "at": "2026-09-05T09:54:17.175Z",
+      "url": "/sources/?case=case-54b1867495a6422a86e8&run=run-4211024781b14c989af5"
+    },
+    {
+      "persona": "reader",
+      "at": "2026-09-05T09:54:17.175Z",
+      "url": "/sources/?case=case-54b1867495a6422a86e8&run=run-4211024781b14c989af5"
+    },
+    {
+      "persona": "reader",
+      "at": "2026-09-05T09:54:18.925Z",
+      "url": "/run-console/?case=case-54b1867495a6422a86e8&run=run-3e22d966c0484c509508"
+    },
+    {
+      "persona": "reader",
+      "at": "2026-09-05T09:54:18.932Z",
+      "url": "/run-console/?case=case-54b1867495a6422a86e8&run=run-3e22d966c0484c509508"
+    },
+    {
+      "persona": "reader",
+      "at": "2026-09-05T09:54:18.936Z",
+      "url": "/run-console/?case=case-54b1867495a6422a86e8&run=run-3e22d966c0484c509508"
+    },
+    {
+      "persona": "reader",
+      "at": "2026-09-05T09:54:18.937Z",
+      "url": "/run-console/?case=case-54b1867495a6422a86e8&run=run-3e22d966c0484c509508"
+    },
+    {
+      "persona": "reader",
+      "at": "2026-09-05T09:54:18.939Z",
+      "url": "/run-console/?case=case-54b1867495a6422a86e8&run=run-3e22d966c0484c509508"
+    },
+    {
+      "persona": "reader",
+      "at": "2026-09-05T09:54:20.791Z",
+      "url": "/deep-dive/?case=case-54b1867495a6422a86e8"
+    },
+    {
+      "persona": "reader",
+      "at": "2026-09-05T09:54:20.797Z",
+      "url": "/deep-dive/?case=case-54b1867495a6422a86e8"
+    },
+    {
+      "persona": "reader",
+      "at": "2026-09-05T09:54:20.801Z",
+      "url": "/deep-dive/?case=case-54b1867495a6422a86e8"
+    },
+    {
+      "persona": "reader",
+      "at": "2026-09-05T09:54:20.802Z",
+      "url": "/deep-dive/?case=case-54b1867495a6422a86e8"
+    },
+    {
+      "persona": "reader",
+      "at": "2026-09-05T09:54:20.803Z",
+      "url": "/deep-dive/?case=case-54b1867495a6422a86e8"
+    },
+    {
+      "persona": "reader",
+      "at": "2026-09-05T09:54:20.810Z",
+      "url": "/deep-dive/?case=case-54b1867495a6422a86e8&run=run-4211024781b14c989af5"
+    },
+    {
+      "persona": "reader",
+      "at": "2026-09-05T09:54:20.810Z",
+      "url": "/deep-dive/?case=case-54b1867495a6422a86e8&run=run-4211024781b14c989af5"
+    },
+    {
+      "persona": "reader",
+      "at": "2026-09-05T09:54:20.810Z",
+      "url": "/deep-dive/?case=case-54b1867495a6422a86e8&run=run-4211024781b14c989af5"
+    },
+    {
+      "persona": "reader",
+      "at": "2026-09-05T09:54:23.074Z",
+      "url": "/rv-screener/?case=case-54b1867495a6422a86e8"
+    },
+    {
+      "persona": "reader",
+      "at": "2026-09-05T09:54:23.083Z",
+      "url": "/rv-screener/?case=case-54b1867495a6422a86e8"
+    },
+    {
+      "persona": "reader",
+      "at": "2026-09-05T09:54:23.087Z",
+      "url": "/rv-screener/?case=case-54b1867495a6422a86e8"
+    },
+    {
+      "persona": "reader",
+      "at": "2026-09-05T09:54:23.090Z",
+      "url": "/rv-screener/?case=case-54b1867495a6422a86e8"
+    },
+    {
+      "persona": "reader",
+      "at": "2026-09-05T09:54:23.092Z",
+      "url": "/rv-screener/?case=case-54b1867495a6422a86e8"
+    },
+    {
+      "persona": "reader",
+      "at": "2026-09-05T09:54:23.108Z",
+      "url": "/rv-screener/?case=case-54b1867495a6422a86e8&run=run-4211024781b14c989af5"
+    },
+    {
+      "persona": "reader",
+      "at": "2026-09-05T09:54:23.110Z",
+      "url": "/rv-screener/?case=case-54b1867495a6422a86e8&run=run-4211024781b14c989af5"
+    },
+    {
+      "persona": "reader",
+      "at": "2026-09-05T09:54:23.111Z",
+      "url": "/rv-screener/?case=case-54b1867495a6422a86e8&run=run-4211024781b14c989af5"
+    },
+    {
+      "persona": "reader",
+      "at": "2026-09-05T09:54:24.854Z",
+      "url": "/model-builder/?case=case-54b1867495a6422a86e8"
+    },
+    {
+      "persona": "reader",
+      "at": "2026-09-05T09:54:24.859Z",
+      "url": "/model-builder/?case=case-54b1867495a6422a86e8"
+    },
+    {
+      "persona": "reader",
+      "at": "2026-09-05T09:54:24.863Z",
+      "url": "/model-builder/?case=case-54b1867495a6422a86e8"
+    },
+    {
+      "persona": "reader",
+      "at": "2026-09-05T09:54:24.865Z",
+      "url": "/model-builder/?case=case-54b1867495a6422a86e8"
+    },
+    {
+      "persona": "reader",
+      "at": "2026-09-05T09:54:24.867Z",
+      "url": "/model-builder/?case=case-54b1867495a6422a86e8"
+    },
+    {
+      "persona": "reader",
+      "at": "2026-09-05T09:54:24.875Z",
+      "url": "/model-builder/?case=case-54b1867495a6422a86e8&run=run-4211024781b14c989af5"
+    },
+    {
+      "persona": "reader",
+      "at": "2026-09-05T09:54:24.877Z",
+      "url": "/model-builder/?case=case-54b1867495a6422a86e8&run=run-4211024781b14c989af5"
+    },
+    {
+      "persona": "reader",
+      "at": "2026-09-05T09:54:24.878Z",
+      "url": "/model-builder/?case=case-54b1867495a6422a86e8&run=run-4211024781b14c989af5"
+    },
+    {
+      "persona": "reader",
+      "at": "2026-09-05T09:54:26.722Z",
+      "url": "/report-studio/?case=case-54b1867495a6422a86e8"
+    },
+    {
+      "persona": "reader",
+      "at": "2026-09-05T09:54:26.730Z",
+      "url": "/report-studio/?case=case-54b1867495a6422a86e8"
+    },
+    {
+      "persona": "reader",
+      "at": "2026-09-05T09:54:26.735Z",
+      "url": "/report-studio/?case=case-54b1867495a6422a86e8"
+    },
+    {
+      "persona": "reader",
+      "at": "2026-09-05T09:54:26.737Z",
+      "url": "/report-studio/?case=case-54b1867495a6422a86e8"
+    },
+    {
+      "persona": "reader",
+      "at": "2026-09-05T09:54:26.738Z",
+      "url": "/report-studio/?case=case-54b1867495a6422a86e8"
+    },
+    {
+      "persona": "reader",
+      "at": "2026-09-05T09:54:26.745Z",
+      "url": "/report-studio/?case=case-54b1867495a6422a86e8&run=run-4211024781b14c989af5"
+    },
+    {
+      "persona": "reader",
+      "at": "2026-09-05T09:54:26.746Z",
+      "url": "/report-studio/?case=case-54b1867495a6422a86e8&run=run-4211024781b14c989af5"
+    },
+    {
+      "persona": "reader",
+      "at": "2026-09-05T09:54:26.747Z",
+      "url": "/report-studio/?case=case-54b1867495a6422a86e8&run=run-4211024781b14c989af5"
+    },
+    {
+      "persona": "reader",
+      "at": "2026-09-05T09:54:28.600Z",
+      "url": "/admin-studio/"
+    },
+    {
+      "persona": "reader",
+      "at": "2026-09-05T09:54:28.606Z",
+      "url": "/admin-studio/"
+    },
+    {
+      "persona": "reader",
+      "at": "2026-09-05T09:54:28.610Z",
+      "url": "/admin-studio/"
+    },
+    {
+      "persona": "reader",
+      "at": "2026-09-05T09:54:28.612Z",
+      "url": "/admin-studio/"
+    },
+    {
+      "persona": "reader",
+      "at": "2026-09-05T09:54:28.612Z",
+      "url": "/admin-studio/"
+    },
+    {
+      "persona": "reader",
+      "at": "2026-09-05T09:54:28.622Z",
+      "url": "/admin-studio/?case=case-54b1867495a6422a86e8&run=run-4211024781b14c989af5"
+    },
+    {
+      "persona": "reader",
+      "at": "2026-09-05T09:54:28.625Z",
+      "url": "/admin-studio/?case=case-54b1867495a6422a86e8&run=run-4211024781b14c989af5"
+    },
+    {
+      "persona": "reader",
+      "at": "2026-09-05T09:54:28.625Z",
+      "url": "/admin-studio/?case=case-54b1867495a6422a86e8&run=run-4211024781b14c989af5"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:30.386Z",
+      "url": "/run-console/?case=case-54b1867495a6422a86e8&run=run-3e22d966c0484c509508"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:30.395Z",
+      "url": "/run-console/?case=case-54b1867495a6422a86e8&run=run-3e22d966c0484c509508"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:30.400Z",
+      "url": "/run-console/?case=case-54b1867495a6422a86e8&run=run-3e22d966c0484c509508"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:30.402Z",
+      "url": "/run-console/?case=case-54b1867495a6422a86e8&run=run-3e22d966c0484c509508"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:30.403Z",
+      "url": "/run-console/?case=case-54b1867495a6422a86e8&run=run-3e22d966c0484c509508"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:31.041Z",
+      "url": "/report-studio/?case=case-54b1867495a6422a86e8"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:31.046Z",
+      "url": "/report-studio/?case=case-54b1867495a6422a86e8"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:31.050Z",
+      "url": "/report-studio/?case=case-54b1867495a6422a86e8"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:31.052Z",
+      "url": "/report-studio/?case=case-54b1867495a6422a86e8"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:31.052Z",
+      "url": "/report-studio/?case=case-54b1867495a6422a86e8"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:31.058Z",
+      "url": "/report-studio/?case=case-54b1867495a6422a86e8&run=run-4211024781b14c989af5"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:31.059Z",
+      "url": "/report-studio/?case=case-54b1867495a6422a86e8&run=run-4211024781b14c989af5"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:31.059Z",
+      "url": "/report-studio/?case=case-54b1867495a6422a86e8&run=run-4211024781b14c989af5"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:31.689Z",
+      "url": "/cases/?case=case-54b1867495a6422a86e8"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:31.694Z",
+      "url": "/cases/?case=case-54b1867495a6422a86e8"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:31.700Z",
+      "url": "/cases/?case=case-54b1867495a6422a86e8"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:31.702Z",
+      "url": "/cases/?case=case-54b1867495a6422a86e8"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:31.702Z",
+      "url": "/cases/?case=case-54b1867495a6422a86e8"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:31.709Z",
+      "url": "/cases/?case=case-54b1867495a6422a86e8&run=run-4211024781b14c989af5"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:31.710Z",
+      "url": "/cases/?case=case-54b1867495a6422a86e8&run=run-4211024781b14c989af5"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:31.710Z",
+      "url": "/cases/?case=case-54b1867495a6422a86e8&run=run-4211024781b14c989af5"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:32.351Z",
+      "url": "/nope/?case=case-54b1867495a6422a86e8"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:32.357Z",
+      "url": "/nope/?case=case-54b1867495a6422a86e8"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:32.361Z",
+      "url": "/nope/?case=case-54b1867495a6422a86e8"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:32.362Z",
+      "url": "/nope/?case=case-54b1867495a6422a86e8"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:32.365Z",
+      "url": "/nope/?case=case-54b1867495a6422a86e8"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:32.370Z",
+      "url": "/nope/?case=case-54b1867495a6422a86e8&run=run-4211024781b14c989af5"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:32.371Z",
+      "url": "/nope/?case=case-54b1867495a6422a86e8&run=run-4211024781b14c989af5"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:32.372Z",
+      "url": "/nope/?case=case-54b1867495a6422a86e8&run=run-4211024781b14c989af5"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:32.970Z",
+      "url": "/command-center/?case=case-54b1867495a6422a86e8"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:32.977Z",
+      "url": "/command-center/?case=case-54b1867495a6422a86e8"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:32.981Z",
+      "url": "/command-center/?case=case-54b1867495a6422a86e8"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:32.983Z",
+      "url": "/command-center/?case=case-54b1867495a6422a86e8"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:32.986Z",
+      "url": "/command-center/?case=case-54b1867495a6422a86e8"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:32.994Z",
+      "url": "/command-center/?case=case-54b1867495a6422a86e8&run=run-4211024781b14c989af5"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:32.995Z",
+      "url": "/command-center/?case=case-54b1867495a6422a86e8&run=run-4211024781b14c989af5"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:32.995Z",
+      "url": "/command-center/?case=case-54b1867495a6422a86e8&run=run-4211024781b14c989af5"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:34.190Z",
+      "url": "/cases/?case=case-54b1867495a6422a86e8"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:34.196Z",
+      "url": "/cases/?case=case-54b1867495a6422a86e8"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:34.201Z",
+      "url": "/cases/?case=case-54b1867495a6422a86e8"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:34.203Z",
+      "url": "/cases/?case=case-54b1867495a6422a86e8"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:34.204Z",
+      "url": "/cases/?case=case-54b1867495a6422a86e8"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:34.210Z",
+      "url": "/cases/?case=case-54b1867495a6422a86e8&run=run-4211024781b14c989af5"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:34.212Z",
+      "url": "/cases/?case=case-54b1867495a6422a86e8&run=run-4211024781b14c989af5"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:34.212Z",
+      "url": "/cases/?case=case-54b1867495a6422a86e8&run=run-4211024781b14c989af5"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:35.577Z",
+      "url": "/command-center/?case=case-54b1867495a6422a86e8"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:35.583Z",
+      "url": "/command-center/?case=case-54b1867495a6422a86e8"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:35.587Z",
+      "url": "/command-center/?case=case-54b1867495a6422a86e8"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:35.589Z",
+      "url": "/command-center/?case=case-54b1867495a6422a86e8"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:35.591Z",
+      "url": "/command-center/?case=case-54b1867495a6422a86e8"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:35.600Z",
+      "url": "/command-center/?case=case-54b1867495a6422a86e8&run=run-4211024781b14c989af5"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:35.601Z",
+      "url": "/command-center/?case=case-54b1867495a6422a86e8&run=run-4211024781b14c989af5"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:35.602Z",
+      "url": "/command-center/?case=case-54b1867495a6422a86e8&run=run-4211024781b14c989af5"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:37.397Z",
+      "url": "/sources/?case=case-54b1867495a6422a86e8"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:37.403Z",
+      "url": "/sources/?case=case-54b1867495a6422a86e8"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:37.408Z",
+      "url": "/sources/?case=case-54b1867495a6422a86e8"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:37.410Z",
+      "url": "/sources/?case=case-54b1867495a6422a86e8"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:37.410Z",
+      "url": "/sources/?case=case-54b1867495a6422a86e8"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:37.418Z",
+      "url": "/sources/?case=case-54b1867495a6422a86e8&run=run-4211024781b14c989af5"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:37.418Z",
+      "url": "/sources/?case=case-54b1867495a6422a86e8&run=run-4211024781b14c989af5"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:37.418Z",
+      "url": "/sources/?case=case-54b1867495a6422a86e8&run=run-4211024781b14c989af5"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:38.737Z",
+      "url": "/run-console/?case=case-54b1867495a6422a86e8&run=run-3e22d966c0484c509508"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:38.743Z",
+      "url": "/run-console/?case=case-54b1867495a6422a86e8&run=run-3e22d966c0484c509508"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:38.747Z",
+      "url": "/run-console/?case=case-54b1867495a6422a86e8&run=run-3e22d966c0484c509508"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:38.750Z",
+      "url": "/run-console/?case=case-54b1867495a6422a86e8&run=run-3e22d966c0484c509508"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:38.751Z",
+      "url": "/run-console/?case=case-54b1867495a6422a86e8&run=run-3e22d966c0484c509508"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:40.085Z",
+      "url": "/deep-dive/?case=case-54b1867495a6422a86e8"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:40.091Z",
+      "url": "/deep-dive/?case=case-54b1867495a6422a86e8"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:40.095Z",
+      "url": "/deep-dive/?case=case-54b1867495a6422a86e8"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:40.098Z",
+      "url": "/deep-dive/?case=case-54b1867495a6422a86e8"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:40.100Z",
+      "url": "/deep-dive/?case=case-54b1867495a6422a86e8"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:40.111Z",
+      "url": "/deep-dive/?case=case-54b1867495a6422a86e8&run=run-4211024781b14c989af5"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:40.111Z",
+      "url": "/deep-dive/?case=case-54b1867495a6422a86e8&run=run-4211024781b14c989af5"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:40.112Z",
+      "url": "/deep-dive/?case=case-54b1867495a6422a86e8&run=run-4211024781b14c989af5"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:42.056Z",
+      "url": "/rv-screener/?case=case-54b1867495a6422a86e8"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:42.063Z",
+      "url": "/rv-screener/?case=case-54b1867495a6422a86e8"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:42.067Z",
+      "url": "/rv-screener/?case=case-54b1867495a6422a86e8"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:42.069Z",
+      "url": "/rv-screener/?case=case-54b1867495a6422a86e8"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:42.069Z",
+      "url": "/rv-screener/?case=case-54b1867495a6422a86e8"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:42.077Z",
+      "url": "/rv-screener/?case=case-54b1867495a6422a86e8&run=run-4211024781b14c989af5"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:42.078Z",
+      "url": "/rv-screener/?case=case-54b1867495a6422a86e8&run=run-4211024781b14c989af5"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:42.080Z",
+      "url": "/rv-screener/?case=case-54b1867495a6422a86e8&run=run-4211024781b14c989af5"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:43.386Z",
+      "url": "/model-builder/?case=case-54b1867495a6422a86e8"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:43.392Z",
+      "url": "/model-builder/?case=case-54b1867495a6422a86e8"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:43.396Z",
+      "url": "/model-builder/?case=case-54b1867495a6422a86e8"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:43.398Z",
+      "url": "/model-builder/?case=case-54b1867495a6422a86e8"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:43.401Z",
+      "url": "/model-builder/?case=case-54b1867495a6422a86e8"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:43.408Z",
+      "url": "/model-builder/?case=case-54b1867495a6422a86e8&run=run-4211024781b14c989af5"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:43.410Z",
+      "url": "/model-builder/?case=case-54b1867495a6422a86e8&run=run-4211024781b14c989af5"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:43.410Z",
+      "url": "/model-builder/?case=case-54b1867495a6422a86e8&run=run-4211024781b14c989af5"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:44.789Z",
+      "url": "/report-studio/?case=case-54b1867495a6422a86e8"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:44.795Z",
+      "url": "/report-studio/?case=case-54b1867495a6422a86e8"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:44.800Z",
+      "url": "/report-studio/?case=case-54b1867495a6422a86e8"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:44.801Z",
+      "url": "/report-studio/?case=case-54b1867495a6422a86e8"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:44.802Z",
+      "url": "/report-studio/?case=case-54b1867495a6422a86e8"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:44.808Z",
+      "url": "/report-studio/?case=case-54b1867495a6422a86e8&run=run-4211024781b14c989af5"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:44.810Z",
+      "url": "/report-studio/?case=case-54b1867495a6422a86e8&run=run-4211024781b14c989af5"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:44.810Z",
+      "url": "/report-studio/?case=case-54b1867495a6422a86e8&run=run-4211024781b14c989af5"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:46.134Z",
+      "url": "/admin-studio/?case=case-54b1867495a6422a86e8"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:46.140Z",
+      "url": "/admin-studio/?case=case-54b1867495a6422a86e8"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:46.145Z",
+      "url": "/admin-studio/?case=case-54b1867495a6422a86e8"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:46.148Z",
+      "url": "/admin-studio/?case=case-54b1867495a6422a86e8"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:46.150Z",
+      "url": "/admin-studio/?case=case-54b1867495a6422a86e8"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:46.157Z",
+      "url": "/admin-studio/?case=case-54b1867495a6422a86e8&run=run-4211024781b14c989af5"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:46.157Z",
+      "url": "/admin-studio/?case=case-54b1867495a6422a86e8&run=run-4211024781b14c989af5"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T09:54:46.158Z",
+      "url": "/admin-studio/?case=case-54b1867495a6422a86e8&run=run-4211024781b14c989af5"
+    }
+  ],
+  "failures": [
+    {
+      "step": 10,
+      "label": "build the application model (worker)",
+      "error": "locator.click: Timeout 30000ms exceeded.\nCall log:\n  - waiting for locator('[data-primary-model-action=\"BUILD\"]')\n"
+    },
+    {
+      "step": 11,
+      "label": "change one assumption, recalculate, sign off a revision",
+      "error": "locator.waitFor: Timeout 10000ms exceeded.\nCall log:\n  - waiting for locator('main fieldset input:not([type=checkbox]):not([type=radio]):not([type=file])').first() to be visible\n"
+    },
+    {
+      "step": 14,
+      "label": "compose every required narrative section (autosave)",
+      "error": "locator.waitFor: Timeout 20000ms exceeded.\nCall log:\n  - waiting for getByText(/^Saved v\\d+$/) to be visible\n"
+    },
+    {
+      "step": 15,
+      "label": "UX-016 sign the opinion on the exact saved revision",
+      "error": "locator.click: Timeout 30000ms exceeded.\nCall log:\n  - waiting for getByRole('button', { name: /^Sign opinion on saved v/ })\n    - locator resolved to <button disabled type=\"submit\" class=\"button\">Sign opinion on saved v—</button>\n  - attempting click action\n    2 × waiting for element to be visible, enabled and stable\n      - element is not enabled\n    - retrying click action\n    - waiting 20ms\n "
+    },
+    {
+      "step": 16,
+      "label": "freeze the saved revision (worker renders md/pdf/xlsx)",
+      "error": "locator.click: Timeout 30000ms exceeded.\nCall log:\n  - waiting for getByRole('button', { name: /^Freeze saved v/ })\n    - locator resolved to <button disabled type=\"button\" class=\"button primary\" data-primary-report-action=\"true\">Freeze saved v—</button>\n  - attempting click action\n    2 × waiting for element to be visible, enabled and stable\n      - element is not enabled\n    - retrying click act"
+    },
+    {
+      "step": 22,
+      "label": "UX-017 approver opens the exact frozen record",
+      "error": "locator.click: Timeout 30000ms exceeded.\nCall log:\n  - waiting for getByRole('button', { name: /FROZEN · Draft v/ }).first()\n"
+    },
+    {
+      "step": 23,
+      "label": "UX-017 file the exact frozen bytes; receipt appears",
+      "error": "locator.click: Timeout 30000ms exceeded.\nCall log:\n  - waiting for getByRole('button', { name: 'File exact Frozen version' })\n"
+    }
+  ],
+  "routes": [
+    {
+      "slug": "cases",
+      "kicker": "Portfolio / Surveillance",
+      "h1": "Monitored credits",
+      "title": "CAOS — Cases",
+      "authority": "Credit: Goldenpack-7d2kd HoldingsVisible snapshot: snap-e0177e1…b2c3snap-e0177e1…b2c3. Full identity: snap-e0177e1f14434facb2c3Selected run: run-42110247…9af5run-42110247…9af5. Full identity: run-4211024781b14c989af5Source set: v1",
+      "current": "Portfolio",
+      "primaryButtons": [
+        "Analyze documents",
+        "Open credit",
+        "Open credit"
+      ],
+      "statuses": [
+        "used",
+        "used",
+        "used",
+        "Accepted",
+        "Not accepted",
+        "READY"
+      ],
+      "unavailable": [],
+      "topbarLinks": [
+        "Sources & evidence"
+      ],
+      "mainLinks": [
+        "Open review -> /run-console/?case=…&run=…",
+        "Open credit -> /command-center/?case=…"
+      ],
+      "railCurrent": [
+        "Portfolio"
+      ],
+      "screenshot": "39-route-cases.png"
+    },
+    {
+      "slug": "command-center",
+      "kicker": "Credit / Current state",
+      "h1": "Current state and what changed",
+      "title": "CAOS — Command Center",
+      "authority": "Credit: Goldenpack-7d2kd HoldingsVisible snapshot: snap-e0177e1…b2c3snap-e0177e1…b2c3. Full identity: snap-e0177e1f14434facb2c3Selected run: run-42110247…9af5run-42110247…9af5. Full identity: run-4211024781b14c989af5Source set: v1",
+      "current": "Credit",
+      "primaryButtons": [
+        "Read accepted analysis"
+      ],
+      "statuses": [
+        "Accepted Sep 5, 2026, 10:54 AM"
+      ],
+      "unavailable": [
+        "Binding measure and claim gaps"
+      ],
+      "topbarLinks": [
+        "Sources & evidence",
+        "Read accepted analysis",
+        "Review latest run"
+      ],
+      "mainLinks": [
+        "Read accepted analysis -> /deep-dive/?case=…",
+        "Review latest run -> /run-console/?case=…"
+      ],
+      "railCurrent": [
+        "Credit"
+      ],
+      "screenshot": "40-route-command-center.png"
+    },
+    {
+      "slug": "sources",
+      "kicker": "Sources / Evidence",
+      "h1": "Documents, extraction and coverage",
+      "title": "CAOS — Sources",
+      "authority": "Credit: Goldenpack-7d2kd HoldingsVisible snapshot: snap-e0177e1…b2c3snap-e0177e1…b2c3. Full identity: snap-e0177e1f14434facb2c3Selected run: run-42110247…9af5run-42110247…9af5. Full identity: run-4211024781b14c989af5Source set: v1",
+      "current": "Sources",
+      "primaryButtons": [
+        "Upload and version"
+      ],
+      "statuses": [
+        "Extracted",
+        "Extracted",
+        "Extracted"
+      ],
+      "unavailable": [
+        "Claim coverage"
+      ],
+      "topbarLinks": [],
+      "mainLinks": [],
+      "railCurrent": [
+        "Sources"
+      ],
+      "screenshot": "41-route-sources.png"
+    },
+    {
+      "slug": "run-console",
+      "kicker": "Analysis / Execution",
+      "h1": "Run and acceptance",
+      "title": "CAOS — Run Console",
+      "authority": "Credit: Goldenpack-7d2kd HoldingsVisible snapshot: snap-e0177e1…b2c3snap-e0177e1…b2c3. Full identity: snap-e0177e1f14434facb2c3Selected run: run-3e22d966…9508run-3e22d966…9508. Full identity: run-3e22d966c0484c509508Source set: v1",
+      "current": "Run",
+      "primaryButtons": [
+        "Compile and run",
+        "Accept analytical snapshot"
+      ],
+      "statuses": [
+        "Run status: succeeded",
+        "succeeded",
+        "succeeded",
+        "succeeded",
+        "succeeded",
+        "succeeded",
+        "succeeded",
+        "succeeded",
+        "succeeded",
+        "succeeded",
+        "succeeded",
+        "succeeded"
+      ],
+      "unavailable": [],
+      "topbarLinks": [
+        "Sources & evidence"
+      ],
+      "mainLinks": [
+        "CP-PARSEsucceededOpen output -> /sources/?case=…&artifact=…",
+        "Source ReadinessCP-0succeededOpen output -> /sources/?case=…&artifact=…",
+        "Canonical Data FoundationCP-1succeededOpen output -> /sources/?case=…&artifact=…",
+        "Business Transaction Fact PackCP-1AsucceededOpen output -> /sources/?case=…&artifact=…",
+        "Earnings DeltaCP-1BsucceededOpen output -> /sources/?case=…&artifact=…",
+        "Earnings QualityCP-1DsucceededOpen output -> /sources/?case=…&artifact=…",
+        "Peer BenchmarkCP-1CsucceededOpen output -> /sources/?case=…&artifact=…",
+        "Fundamental Credit SynthesizerCP-2succeededOpen output -> /sources/?case=…&artifact=…",
+        "Downside PathwayCP-2AsucceededOpen output -> /sources/?case=…&artifact=…",
+        "Forward Credit ModelCP-2GsucceededOpen output -> /sources/?case=…&artifact=…",
+        "Macro FX Hedging SensitivityCP-2EsucceededOpen output -> /sources/?case=…&artifact=…",
+        "Ratings Migration TriggerCP-2HsucceededOpen output -> /sources/?case=…&artifact=…",
+        "Relative Value Security SelectionCP-3succeededOpen output -> /sources/?case=…&artifact=…",
+        "Legal Covenant InterpreterCP-4succeededOpen output -> /sources/?case=…&artifact=…",
+        "Restructuring FulcrumCP-4CsucceededOpen output -> /sources/?case=…&artifact=…",
+        "Evidence Trace ValidatorCP-5succeededOpen output -> /sources/?case=…&artifact=…",
+        "IC Debate ChallengeCP-6succeededOpen output -> /sources/?case=…&artifact=…"
+      ],
+      "railCurrent": [
+        "Run"
+      ],
+      "screenshot": "42-route-run-console.png"
+    },
+    {
+      "slug": "deep-dive",
+      "kicker": "Analysis / Reader",
+      "h1": "Accepted analysis",
+      "title": "CAOS — Deep-Dive",
+      "authority": "Credit: Goldenpack-7d2kd HoldingsVisible snapshot: snap-e0177e1…b2c3snap-e0177e1…b2c3. Full identity: snap-e0177e1f14434facb2c3Selected run: run-42110247…9af5run-42110247…9af5. Full identity: run-4211024781b14c989af5Source set: v1",
+      "current": "Analysis",
+      "primaryButtons": [],
+      "statuses": [],
+      "unavailable": [],
+      "topbarLinks": [
+        "Sources & evidence"
+      ],
+      "mainLinks": [
+        "Open selected run -> /run-console/?case=…&run=…",
+        "src-29ea380df6a84c8daf9d -> /sources/?case=…&source=…",
+        "src-5480a6871ffe4806bf76 -> /sources/?case=…&source=…",
+        "src-ceffa2556df4407aac86 -> /sources/?case=…&source=…"
+      ],
+      "railCurrent": [
+        "Analysis"
+      ],
+      "screenshot": "43-route-deep-dive.png"
+    },
+    {
+      "slug": "rv-screener",
+      "kicker": "Market / Comparison",
+      "h1": "Governed loan universe",
+      "title": "CAOS — RV Screener",
+      "authority": "Credit: Goldenpack-7d2kd HoldingsVisible snapshot: snap-e0177e1…b2c3snap-e0177e1…b2c3. Full identity: snap-e0177e1f14434facb2c3Selected run: run-42110247…9af5run-42110247…9af5. Full identity: run-4211024781b14c989af5Source set: v1",
+      "current": "Market",
+      "primaryButtons": [
+        "Upload CP-3 workbook"
+      ],
+      "statuses": [],
+      "unavailable": [],
+      "topbarLinks": [
+        "Sources & evidence"
+      ],
+      "mainLinks": [],
+      "railCurrent": [
+        "Market"
+      ],
+      "screenshot": "44-route-rv-screener.png"
+    },
+    {
+      "slug": "model-builder",
+      "kicker": "Model / Forecast",
+      "h1": "Assumptions, lineage and sign-off",
+      "title": "CAOS — Model Builder",
+      "authority": "Credit: Goldenpack-7d2kd HoldingsVisible snapshot: snap-e0177e1…b2c3snap-e0177e1…b2c3. Full identity: snap-e0177e1f14434facb2c3Selected run: run-42110247…9af5run-42110247…9af5. Full identity: run-4211024781b14c989af5Source set: v1",
+      "current": "Model",
+      "primaryButtons": [],
+      "statuses": [
+        "CANONICAL MODEL INPUTS INVALID"
+      ],
+      "unavailable": [],
+      "topbarLinks": [
+        "Sources & evidence"
+      ],
+      "mainLinks": [],
+      "railCurrent": [
+        "Model"
+      ],
+      "screenshot": "45-route-model-builder.png"
+    },
+    {
+      "slug": "report-studio",
+      "kicker": "Report / Publication",
+      "h1": "Compose, freeze and file",
+      "title": "CAOS — Report Studio",
+      "authority": "Credit: Goldenpack-7d2kd HoldingsVisible snapshot: snap-e0177e1…b2c3snap-e0177e1…b2c3. Full identity: snap-e0177e1f14434facb2c3Selected run: run-42110247…9af5run-42110247…9af5. Full identity: run-4211024781b14c989af5Source set: v1",
+      "current": "Report",
+      "primaryButtons": [
+        "Freeze saved v—"
+      ],
+      "statuses": [
+        "Ready",
+        "Ready",
+        "Blocked",
+        "Ready",
+        "Blocked",
+        "Blocked"
+      ],
+      "unavailable": [],
+      "topbarLinks": [
+        "Sources & evidence"
+      ],
+      "mainLinks": [
+        "Open Run Console -> /run-console/?case=…"
+      ],
+      "railCurrent": [
+        "Report"
+      ],
+      "screenshot": "46-route-report-studio.png"
+    },
+    {
+      "slug": "admin-studio",
+      "kicker": "Admin / Governance",
+      "h1": "Deployment capability",
+      "title": "CAOS — Admin Studio",
+      "authority": "Credit: Goldenpack-7d2kd HoldingsVisible snapshot: snap-e0177e1…b2c3snap-e0177e1…b2c3. Full identity: snap-e0177e1f14434facb2c3Selected run: run-42110247…9af5run-42110247…9af5. Full identity: run-4211024781b14c989af5Source set: v1",
+      "current": "Admin",
+      "primaryButtons": [],
+      "statuses": [
+        "Not served",
+        "Not served",
+        "Not served",
+        "Not served"
+      ],
+      "unavailable": [],
+      "topbarLinks": [
+        "Sources & evidence"
+      ],
+      "mainLinks": [],
+      "railCurrent": [
+        "Admin"
+      ],
+      "screenshot": "47-route-admin-studio.png"
+    }
+  ],
+  "notes": [
+    {
+      "caseId": "case-54b1867495a6422a86e8",
+      "issuer": "Goldenpack-7d2kd Holdings"
+    },
+    {
+      "signerSeesFileControl": 0
+    },
+    {
+      "seed": "seeded case-54b1867495a6422a86e8 qa-lead"
+    },
+    {
+      "adminRows": [
+        "BUNDLE INTEGRITY\tSigned build manifest and file verification\tNot served",
+        "AUDIT TRAIL\tImmutable, exportable actor and action events\tNot served",
+        "MEMBERSHIP\tIdentity-to-case role assignments\tNot served",
+        "STEP-UP\tServer-verified privileged-session state\tNot served"
+      ]
+    },
+    {
+      "auditPackage": {
+        "status": 200,
+        "sha256": "a35be72cc9c6a779c9a9e488e8aef5bfe7fb592502aca9153f319328a04f1dc0",
+        "contentType": "application/zip",
+        "bytes": 37638
+      }
+    },
+    {
+      "whatChanged": "What changed\nSnapshot diff\n\nNo material module or source-set change is present in the served snapshot diff."
+    },
+    {
+      "reader": "/cases/",
+      "fileInputs": 0,
+      "primaryButtons": [
+        "Open credit",
+        "Open credit"
+      ],
+      "readerCopy": [
+        "Analyze documentsLast intake Sep 5, 2026, 10:50 AMReader access: document intake is an analyst action.Host classification — machine suggestions for reviewIssuerGoldenpack-7d2kd Holdings (high confidence)RouteFULL CREDIT · full depth selected by host classificationWhy this routeDefault governed route: financial statements and legal instruments together support a full credit assessment.Period coverageFY2024, FY2025-Q3 · gaps FY2025-Q1, FY2025-Q2DocumentTypePeriodDispositionReasongoldenpack-7d2kd-10k-fy2024.txtannual reportFY2024usedannual report admitted as evidencegoldenpack-7d2kd-10q-q3.txtquarterly reportFY2025-Q3usedquarterly report admitted as evidencegoldenpack-7d2kd-credit-agreement.txtcredit agreement—usedcredit agreement admitted as evidenceAnalysis complete — review itThe route finished on the admitted evidence. Open the run console to inspect every module output and decide whether to accept it; nothing is accepted on your behalf.Open reviewMonitored credits2 of 2Search creditsAuthorityAll creditsAccepted authorityNo accepted authorityCreditCaseEvidenceAuthorityActionGoldenpack-7d2kd HoldingsUnclassifiedGoldenpack-7d2kd Holdings intake 2026-09-053 sourcesAcceptedOpen creditResearchpack-7d2kd HoldingsUnclassifiedResearchpack-7d2kd Holdings intake 2026-09-053 sourcesNot acceptedOpen creditCreate caseReader access: case creation is an analyst action.Pathway fitREADYSource coverage supports pathway selection.Portfolio ordering is not yet governed.The register is unranked until the server supplies threshold distance, freshness, and material-change scores.",
+        "Reader access: document intake is an analyst action.",
+        "Reader access: case creation is an analyst action.",
+        "Reader access: case creation is an analyst action."
+      ]
+    },
+    {
+      "reader": "/command-center/",
+      "fileInputs": 0,
+      "primaryButtons": [
+        "Read accepted analysis"
+      ],
+      "readerCopy": []
+    },
+    {
+      "reader": "/sources/",
+      "fileInputs": 0,
+      "primaryButtons": [],
+      "readerCopy": [
+        "Search documentsReader access: governed source intake is an analyst action.Source register3 / 3goldenpack-7d2kd-10k-fy2024.txtsrc-29ea380df6a84c8daf9d · 8 blocksExtractedgoldenpack-7d2kd-10q-q3.txtsrc-5480a6871ffe4806bf76 · 7 blocksExtractedgoldenpack-7d2kd-credit-agreement.txtsrc-ceffa2556df4407aac86 · 5 blocksExtractedsrc-29ea380df6a84c8daf9d · immutable source objectgoldenpack-7d2kd-10k-fy2024.txtb00001 · line 1Goldenpack-7d2kd Holdingsb00002 · line 2FORM 10-Kb00003 · line 3ANNUAL REPORTb00004 · line 4For the fiscal year ended November 30, 2024b00005 · line 5Goldenpack-7d2kd Holdings reports consolidated results for fiscal 2024.b00006 · line 6Revenue 1,160b00007 · line 7EBITDA 222b00008 · line 8Total debt 3,400Evidence supportSelected source authoritySourcesrc-29ea380df6a84c8daf9dSHA-2569110adc5a16e…586d9110adc5a16e…586d. Full identity: 9110adc5a16e30e5c7d56dda08c2babf5369578dbcb56bceff0690552ac3586dBlocks8Selected blockb00001Locatorline 1Open evidence contextClaim coverageNot available in this deployment.A normalized claim-to-source map is not served by this deployment. Source blocks remain readable above.",
+        "Search documentsReader access: governed source intake is an analyst action.",
+        "Reader access: governed source intake is an analyst action."
+      ]
+    },
+    {
+      "reader": "/run-console/",
+      "fileInputs": 0,
+      "primaryButtons": [],
+      "readerCopy": [
+        "Compile routeImmutable planReader access: compiling a route is an analyst action.Every route begins by parsing your sources; the readiness check then runs against that exact parse.Execution routeRun status: succeeded17 of 17 modules complete.Execution complete17/17CP-PARSEsucceededOpen output→Source ReadinessCP-0succeededOpen output→Canonical Data FoundationCP-1succeededOpen output→Business Transaction Fact PackCP-1AsucceededOpen output→Earnings DeltaCP-1BsucceededOpen output→Earnings QualityCP-1DsucceededOpen output→Peer BenchmarkCP-1CsucceededOpen output→Fundamental Credit SynthesizerCP-2succeededOpen output→Downside PathwayCP-2AsucceededOpen output→Forward Credit ModelCP-2GsucceededOpen output→Macro FX Hedging SensitivityCP-2EsucceededOpen output→Ratings Migration TriggerCP-2HsucceededOpen output→Relative Value Security SelectionCP-3succeededOpen output→Legal Covenant InterpreterCP-4succeededOpen output→Restructuring FulcrumCP-4CsucceededOpen output→Evidence Trace ValidatorCP-5succeededOpen output→IC Debate ChallengeCP-6succeededOpen outputReady for acceptanceReview the exact authority change, then accept this analytical snapshot.Acceptance is an analyst action.",
+        "Reader access: compiling a route is an analyst action.",
+        "17 of 17 modules complete.Execution complete17/17CP-PARSEsucceededOpen output→Source ReadinessCP-0succeededOpen output→Canonical Data FoundationCP-1succeededOpen output→Business Transaction Fact PackCP-1AsucceededOpen output→Earnings DeltaCP-1BsucceededOpen output→Earnings QualityCP-1DsucceededOpen output→Peer BenchmarkCP-1CsucceededOpen output→Fundamental Credit SynthesizerCP-2succeededOpen output→Downside PathwayCP-2AsucceededOpen output→Forward Credit ModelCP-2GsucceededOpen output→Macro FX Hedging SensitivityCP-2EsucceededOpen output→Ratings Migration TriggerCP-2HsucceededOpen output→Relative Value Security SelectionCP-3succeededOpen output→Legal Covenant InterpreterCP-4succeededOpen output→Restructuring FulcrumCP-4CsucceededOpen output→Evidence Trace ValidatorCP-5succeededOpen output→IC Debate ChallengeCP-6succeededOpen outputReady for acceptanceReview the exact authority change, then accept this analytical snapshot.Acceptance is an analyst action.",
+        "Acceptance is an analyst action."
+      ]
+    },
+    {
+      "reader": "/deep-dive/",
+      "fileInputs": 0,
+      "primaryButtons": [],
+      "readerCopy": []
+    },
+    {
+      "reader": "/rv-screener/",
+      "fileInputs": 0,
+      "primaryButtons": [],
+      "readerCopy": [
+        "Leveraged-loan universeSource data · unanalyzedReader access: importing a CP-3 workbook is an analyst action.All visible sector tabs are ingested. Values remain in workbook units: prices and changes in points, margin and discount margin in bps, yield in percent.Loan screener0 / 0 instrumentsIssuer / IDSectorAllRatingAllRankingAllLoan typeAllAdvanced date and numeric filtersMaturity fromMaturity toMin margin (bps)Max margin (bps)Min 3Y DM (bps)Max 3Y DM (bps)Upload the fixed CP-3 workbook to activate a leveraged-loan universe.Relative percentile unavailableThe active universe serves exact source fields and filters, but no governed relative-position score. The browser does not infer one.",
+        "Reader access: importing a CP-3 workbook is an analyst action."
+      ]
+    },
+    {
+      "reader": "/model-builder/",
+      "fileInputs": 0,
+      "primaryButtons": [],
+      "readerCopy": []
+    },
+    {
+      "reader": "/report-studio/",
+      "fileInputs": 0,
+      "primaryButtons": [],
+      "readerCopy": [
+        "Structurecaos.deliverable-template.v1Pathway templateFull CreditEarnings UpdateCovenant & RefinancingRelative ValueDistressed & RestructuringDeep Research01Credit SnapshotRequired02RecommendationRequired03Thesis and Variant ViewRequired04Business and IndustryRequired05Capital StructureRequired06Base and Downside ModelRequired07Liquidity and CovenantsRequired08Risks, Catalysts, and FalsifiersRequired09MonitoringRequired10Evidence RegisterRequiredOptional compositionAdd generated metricAdd generated tableAdd generated chartAdd scenario exhibitAdd model appendixAdd limitationsDraft revisionsFrozen / FiledComposeReadyCredit Snapshot0 / 20,000Claim authorityEvidence-boundAnalyst judgmentModel authorityNo model selectedDeliverable modelEvidence search and citations 3 sourcesFind filenames, source IDs, block text or locatorsgoldenpack-7d2kd-10k-fy2024.txtsrc-29ea380df6a84c8daf9dGoldenpack-7d2kd HoldingsCite blockFORM 10-KCite blockANNUAL REPORTCite blockFor the fiscal year ended November 30, 2024Cite blockGoldenpack-7d2kd Holdings reports consolidated results for fiscal 2024.Cite blockRevenue 1,160Cite blockEBITDA 222Cite blockTotal debt 3,400Cite blockgoldenpack-7d2kd-10q-q3.txtsrc-5480a6871ffe4806bf76Goldenpack-7d2kd HoldingsCite blockFORM 10-QCite blockQUARTERLY REPORTCite blockFor the quarterly period ended August 31, 2025Cite blockThree months ended August 31, 2025Cite blockRevenue 310Cite blockEBITDA 61Cite blockgoldenpack-7d2kd-credit-agreement.txtsrc-ceffa2556df4407aac86CREDIT AGREEMENTCite blockdated as of March 15, 2023Cite blockamong Goldenpack-7d2kd Holdings, as Borrower,Cite blockthe Lenders party hereto and the Administrative Agent.Cite blockSection 6.10 Financial Covenants. Term Loan B. Revolving Credit Facility.Cite blockWhat will bindExact saved Draft revision as an immutable DeliverableDraft authorityvUnavailableWrite accessBlockedExact saved revisionBlockedWait for the shared Draft to finish saving at this exact version.Current model selectionReadyRequired model availabilityBlockedOpen Run Console to establish the required model prerequisite.Current opinion sign-offBlockedNo signed opinion yet. The analyst signs the opinion, limitations, material overrides and rationale on the exact saved revision.Reader mode · Freeze is an analyst actionFreeze revalidates the saved revision, the signed opinion and current authority on the server; the worker publishes every export before the frozen record exists.CCAOS · Full Credit · DraftDRAFT · PAGE 1 OF 1Goldenpack-7d2kd Holdings — Goldenpack-7d2kd Holdings intake 2026-09-05Investment Committee Credit MemoCredit SnapshotAnalyst judgmentNot yet drafted.RecommendationAnalyst judgmentNot yet drafted.Thesis and Variant ViewAnalyst judgmentNot yet drafted.Business and IndustryAnalyst judgmentNot yet drafted.Capital StructureAnalyst judgmentNot yet drafted.Base and Downside ModelAnalyst judgmentNot yet drafted.Liquidity and CovenantsAnalyst judgmentNot yet drafted.Risks, Catalysts, and FalsifiersAnalyst judgmentNot yet drafted.MonitoringAnalyst judgmentNot yet drafted.Generated by CAOS · governed documentInternal committee use only",
+        "Reader mode · Freeze is an analyst action"
+      ]
+    },
+    {
+      "reader": "/admin-studio/",
+      "fileInputs": 0,
+      "primaryButtons": [],
+      "readerCopy": []
+    },
+    {
+      "overflow720RunConsole": false
+    },
+    {
+      "overflow720Report": false
+    },
+    {
+      "paletteGroups": [
+        "CASES",
+        "WORKFLOWS",
+        "TOOLS"
+      ],
+      "paletteOptions": [
+        "Goldenpack-7d2kd Holdings / Goldenpack-7d2kd Holdings intake 2026-09-05\nUnclassified",
+        "Researchpack-7d2kd Holdings / Researchpack-7d2kd Holdings intake 2026-09-05\nUnclassified",
+        "Open Portfolio",
+        "Open Credit",
+        "Open Sources",
+        "Open Analysis",
+        "Open Market",
+        "Open Model",
+        "Open Report",
+        "Open Run"
+      ]
+    }
+  ],
+  "consoleErrors": [
+    "Failed to load resource: the server responded with a status of 422 (Unprocessable Content)",
+    "Failed to load resource: the server responded with a status of 422 (Unprocessable Content)",
+    "Failed to load resource: the server responded with a status of 422 (Unprocessable Content)",
+    "Failed to load resource: the server responded with a status of 422 (Unprocessable Content)",
+    "Failed to load resource: the server responded with a status of 422 (Unprocessable Content)",
+    "Failed to load resource: the server responded with a status of 422 (Unprocessable Content)",
+    "Failed to load resource: the server responded with a status of 422 (Unprocessable Content)",
+    "Failed to load resource: the server responded with a status of 422 (Unprocessable Content)",
+    "Failed to load resource: the server responded with a status of 422 (Unprocessable Content)",
+    "Failed to load resource: the server responded with a status of 422 (Unprocessable Content)",
+    "Failed to load resource: the server responded with a status of 422 (Unprocessable Content)",
+    "Failed to load resource: the server responded with a status of 422 (Unprocessable Content)",
+    "Failed to load resource: the server responded with a status of 422 (Unprocessable Content)",
+    "Failed to load resource: the server responded with a status of 422 (Unprocessable Content)",
+    "Failed to load resource: the server responded with a status of 422 (Unprocessable Content)",
+    "Failed to load resource: the server responded with a status of 422 (Unprocessable Content)",
+    "Failed to load resource: the server responded with a status of 422 (Unprocessable Content)",
+    "Failed to load resource: the server responded with a status of 422 (Unprocessable Content)",
+    "Failed to load resource: the server responded with a status of 422 (Unprocessable Content)",
+    "Failed to load resource: the server responded with a status of 422 (Unprocessable Content)",
+    "Failed to load resource: the server responded with a status of 422 (Unprocessable Content)",
+    "Failed to load resource: the server responded with a status of 422 (Unprocessable Content)",
+    "Failed to load resource: the server responded with a status of 422 (Unprocessable Content)",
+    "Failed to load resource: the server responded with a status of 422 (Unprocessable Content)",
+    "Failed to load resource: the server responded with a status of 422 (Unprocessable Content)",
+    "Failed to load resource: the server responded with a status of 422 (Unprocessable Content)",
+    "Failed to load resource: the server responded with a status of 422 (Unprocessable Content)",
+    "Failed to load resource: the server responded with a status of 422 (Unprocessable Content)",
+    "Failed to load resource: the server responded with a status of 404 (Not Found)"
+  ],
+  "finished": "2026-09-05T09:54:47.444Z",
+  "caseId": "case-54b1867495a6422a86e8",
+  "runId": "run-3e22d966c0484c509508",
+  "researchCaseId": "case-63d424affad7458f896b",
+  "researchRunId": "run-a2b92d71585e49a392e7",
+  "modelReady": false,
+  "reportPathway": "DEEP_RESEARCH"
+}

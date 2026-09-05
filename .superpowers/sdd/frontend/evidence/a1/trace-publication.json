@@ -1,0 +1,913 @@
+{
+  "baseURL": "http://127.0.0.1:8768",
+  "corpus": "/Users/ericguei/Claude/Projects/CAOS-LangMVP/caos/tests/corpus/documents",
+  "started": "2026-09-05T10:07:39.456Z",
+  "steps": [
+    {
+      "n": 1,
+      "persona": "analyst",
+      "label": "Sources register after the uploads",
+      "clicks": 1,
+      "checks": [],
+      "urlBefore": "blank",
+      "url": "/sources/?case=case-4002c83606ad4989be48",
+      "shell": {
+        "kicker": "Sources / Evidence",
+        "h1": "Documents, extraction and coverage",
+        "title": "CAOS — Sources",
+        "authority": "Credit: Carnival CorporationVisible snapshot: No visible snapshotSelected run: NoneSource set: No visible source set",
+        "primaryButtons": [
+          "Upload and version"
+        ],
+        "statuses": [
+          "Extracted",
+          "Extracted",
+          "Extracted",
+          "Extracted",
+          "Extracted",
+          "Extracted",
+          "Extracted",
+          "Extracted",
+          "Extracted",
+          "Extracted",
+          "Extracted",
+          "Extracted",
+          "Extracted",
+          "Extracted"
+        ],
+        "unavailable": [
+          "Claim coverage"
+        ]
+      },
+      "destinationChanged": true,
+      "authorityChanged": false,
+      "screenshot": null,
+      "ok": true,
+      "startedAt": "2026-09-05T10:07:39.622Z",
+      "finishedAt": "2026-09-05T10:07:42.327Z"
+    },
+    {
+      "n": 2,
+      "persona": "analyst",
+      "label": "rail from Sources: no Run entry; go Analysis first",
+      "clicks": 1,
+      "checks": [],
+      "urlBefore": "/sources/?case=case-4002c83606ad4989be48",
+      "url": "/deep-dive/?case=case-4002c83606ad4989be48",
+      "shell": {
+        "kicker": "Analysis / Reader",
+        "h1": "Accepted analysis",
+        "title": "CAOS — Accepted analysis",
+        "authority": "Credit: Carnival CorporationVisible snapshot: No visible snapshotSelected run: NoneSource set: No visible source set",
+        "primaryButtons": [],
+        "statuses": [],
+        "unavailable": []
+      },
+      "destinationChanged": true,
+      "authorityChanged": false,
+      "screenshot": "p01-deep-dive-no-snapshot-from-sources.png",
+      "ok": true,
+      "startedAt": "2026-09-05T10:07:42.329Z",
+      "finishedAt": "2026-09-05T10:07:42.432Z"
+    },
+    {
+      "n": 3,
+      "persona": "analyst",
+      "label": "advanced path: compile Full Credit at full depth from the Run tool",
+      "clicks": 4,
+      "checks": [],
+      "urlBefore": "/deep-dive/?case=case-4002c83606ad4989be48",
+      "url": "/run-console/?case=case-4002c83606ad4989be48&run=run-a7444ba636634f2fb9db",
+      "shell": {
+        "kicker": "Analysis / Execution",
+        "h1": "Run and acceptance",
+        "title": "CAOS — Run and acceptance",
+        "authority": "Credit: Carnival CorporationVisible snapshot: No visible snapshotSelected run: run-a7444ba6…b9dbrun-a7444ba6…b9db. Full identity: run-a7444ba636634f2fb9db · liveSource set: No visible source set",
+        "primaryButtons": [
+          "Compile and run"
+        ],
+        "statuses": [
+          "Run status: running",
+          "pending",
+          "pending",
+          "pending",
+          "pending",
+          "pending",
+          "pending",
+          "pending",
+          "pending",
+          "pending",
+          "pending",
+          "pending",
+          "pending",
+          "pending"
+        ],
+        "unavailable": []
+      },
+      "destinationChanged": true,
+      "authorityChanged": true,
+      "screenshot": "p02-run-console-carnival-compiled.png",
+      "ok": true,
+      "startedAt": "2026-09-05T10:07:42.434Z",
+      "finishedAt": "2026-09-05T10:07:43.324Z"
+    },
+    {
+      "n": 4,
+      "persona": "analyst",
+      "label": "run console while the route runs",
+      "clicks": 0,
+      "checks": [],
+      "urlBefore": "/run-console/?case=case-4002c83606ad4989be48&run=run-a7444ba636634f2fb9db",
+      "url": "/run-console/?case=case-4002c83606ad4989be48&run=run-a7444ba636634f2fb9db",
+      "shell": {
+        "kicker": "Analysis / Execution",
+        "h1": "Run and acceptance",
+        "title": "CAOS — Run and acceptance",
+        "authority": "Credit: Carnival CorporationVisible snapshot: No visible snapshotSelected run: run-a7444ba6…b9dbrun-a7444ba6…b9db. Full identity: run-a7444ba636634f2fb9db · liveSource set: No visible source set",
+        "primaryButtons": [
+          "Compile and run"
+        ],
+        "statuses": [
+          "Run status: running",
+          "pending",
+          "pending",
+          "pending",
+          "pending",
+          "pending",
+          "pending",
+          "pending",
+          "pending",
+          "pending",
+          "pending",
+          "pending",
+          "pending",
+          "pending"
+        ],
+        "unavailable": []
+      },
+      "destinationChanged": false,
+      "authorityChanged": false,
+      "screenshot": "p03-run-console-carnival-running.png",
+      "ok": true,
+      "startedAt": "2026-09-05T10:07:43.325Z",
+      "finishedAt": "2026-09-05T10:07:43.382Z"
+    },
+    {
+      "n": 5,
+      "persona": "analyst",
+      "label": "UX-010 route succeeded (unaccepted)",
+      "clicks": 0,
+      "checks": [
+        "UX-010"
+      ],
+      "urlBefore": "/run-console/?case=case-4002c83606ad4989be48&run=run-a7444ba636634f2fb9db",
+      "url": "/run-console/?case=case-4002c83606ad4989be48&run=run-a7444ba636634f2fb9db",
+      "shell": {
+        "kicker": "Analysis / Execution",
+        "h1": "Run and acceptance",
+        "title": "CAOS — Run and acceptance",
+        "authority": "Credit: Carnival CorporationVisible snapshot: No visible snapshotSelected run: run-a7444ba6…b9dbrun-a7444ba6…b9db. Full identity: run-a7444ba636634f2fb9dbSource set: No visible source set",
+        "primaryButtons": [
+          "Compile and run",
+          "Accept analytical snapshot"
+        ],
+        "statuses": [
+          "Run status: succeeded",
+          "succeeded",
+          "succeeded",
+          "succeeded",
+          "succeeded",
+          "succeeded",
+          "succeeded",
+          "succeeded",
+          "succeeded",
+          "succeeded",
+          "succeeded",
+          "succeeded",
+          "succeeded",
+          "succeeded"
+        ],
+        "unavailable": []
+      },
+      "destinationChanged": false,
+      "authorityChanged": true,
+      "screenshot": "p04-run-console-carnival-succeeded-unaccepted.png",
+      "ok": true,
+      "startedAt": "2026-09-05T10:07:43.383Z",
+      "finishedAt": "2026-09-05T10:07:48.261Z"
+    },
+    {
+      "n": 6,
+      "persona": "analyst",
+      "label": "accept (dialog + confirm)",
+      "clicks": 2,
+      "checks": [],
+      "urlBefore": "/run-console/?case=case-4002c83606ad4989be48&run=run-a7444ba636634f2fb9db",
+      "url": "/run-console/?case=case-4002c83606ad4989be48&run=run-a7444ba636634f2fb9db",
+      "shell": {
+        "kicker": "Analysis / Execution",
+        "h1": "Run and acceptance",
+        "title": "CAOS — Run and acceptance",
+        "authority": "Credit: Carnival CorporationVisible snapshot: snap-471b00d…95f8snap-471b00d…95f8. Full identity: snap-471b00d4a0554c7495f8Selected run: run-a7444ba6…b9dbrun-a7444ba6…b9db. Full identity: run-a7444ba636634f2fb9dbSource set: v30",
+        "primaryButtons": [
+          "Compile and run"
+        ],
+        "statuses": [
+          "Run status: succeeded",
+          "succeeded",
+          "succeeded",
+          "succeeded",
+          "succeeded",
+          "succeeded",
+          "succeeded",
+          "succeeded",
+          "succeeded",
+          "succeeded",
+          "succeeded",
+          "succeeded",
+          "succeeded",
+          "succeeded"
+        ],
+        "unavailable": []
+      },
+      "destinationChanged": false,
+      "authorityChanged": true,
+      "screenshot": "p05-run-console-carnival-accepted.png",
+      "ok": true,
+      "startedAt": "2026-09-05T10:07:48.262Z",
+      "finishedAt": "2026-09-05T10:07:48.910Z"
+    },
+    {
+      "n": 7,
+      "persona": "analyst",
+      "label": "rail: Model (ready to build)",
+      "clicks": 1,
+      "checks": [],
+      "urlBefore": "/run-console/?case=case-4002c83606ad4989be48&run=run-a7444ba636634f2fb9db",
+      "url": "/model-builder/?case=case-4002c83606ad4989be48",
+      "shell": {
+        "kicker": "Model / Forecast",
+        "h1": "Assumptions, lineage and sign-off",
+        "title": "CAOS — Assumptions, lineage and sign-off",
+        "authority": "Credit: Carnival CorporationVisible snapshot: snap-471b00d…95f8snap-471b00d…95f8. Full identity: snap-471b00d4a0554c7495f8Selected run: run-a7444ba6…b9dbrun-a7444ba6…b9db. Full identity: run-a7444ba636634f2fb9dbSource set: v30",
+        "primaryButtons": [],
+        "statuses": [
+          "CANONICAL MODEL INPUTS INVALID"
+        ],
+        "unavailable": []
+      },
+      "destinationChanged": null,
+      "authorityChanged": null,
+      "screenshot": "p06-FAILED-model-ready-to-build.png",
+      "ok": false,
+      "startedAt": "2026-09-05T10:07:48.911Z",
+      "error": "locator.waitFor: Timeout 30000ms exceeded.\nCall log:\n  - waiting for locator('[data-primary-model-action=\"BUILD\"]') to be visible\n",
+      "finishedAt": "2026-09-05T10:08:18.968Z"
+    },
+    {
+      "n": 8,
+      "persona": "analyst",
+      "label": "build the application model (worker)",
+      "clicks": 1,
+      "checks": [],
+      "urlBefore": "/model-builder/?case=case-4002c83606ad4989be48",
+      "url": "/model-builder/?case=case-4002c83606ad4989be48",
+      "shell": {
+        "kicker": "Model / Forecast",
+        "h1": "Assumptions, lineage and sign-off",
+        "title": "CAOS — Assumptions, lineage and sign-off",
+        "authority": "Credit: Carnival CorporationVisible snapshot: snap-471b00d…95f8snap-471b00d…95f8. Full identity: snap-471b00d4a0554c7495f8Selected run: run-a7444ba6…b9dbrun-a7444ba6…b9db. Full identity: run-a7444ba636634f2fb9dbSource set: v30",
+        "primaryButtons": [],
+        "statuses": [
+          "CANONICAL MODEL INPUTS INVALID"
+        ],
+        "unavailable": []
+      },
+      "destinationChanged": null,
+      "authorityChanged": null,
+      "screenshot": "p07-FAILED-model-ready.png",
+      "ok": false,
+      "startedAt": "2026-09-05T10:08:18.969Z",
+      "error": "locator.click: Timeout 30000ms exceeded.\nCall log:\n  - waiting for locator('[data-primary-model-action=\"BUILD\"]')\n",
+      "finishedAt": "2026-09-05T10:08:49.017Z"
+    },
+    {
+      "n": 9,
+      "persona": "analyst",
+      "label": "change one assumption, recalculate, sign off R1",
+      "clicks": 3,
+      "checks": [],
+      "urlBefore": "/model-builder/?case=case-4002c83606ad4989be48",
+      "url": "/model-builder/?case=case-4002c83606ad4989be48",
+      "shell": {
+        "kicker": "Model / Forecast",
+        "h1": "Assumptions, lineage and sign-off",
+        "title": "CAOS — Assumptions, lineage and sign-off",
+        "authority": "Credit: Carnival CorporationVisible snapshot: snap-471b00d…95f8snap-471b00d…95f8. Full identity: snap-471b00d4a0554c7495f8Selected run: run-a7444ba6…b9dbrun-a7444ba6…b9db. Full identity: run-a7444ba636634f2fb9dbSource set: v30",
+        "primaryButtons": [],
+        "statuses": [
+          "CANONICAL MODEL INPUTS INVALID"
+        ],
+        "unavailable": []
+      },
+      "destinationChanged": null,
+      "authorityChanged": null,
+      "screenshot": "p08-FAILED-model-signed-off.png",
+      "ok": false,
+      "startedAt": "2026-09-05T10:08:49.018Z",
+      "error": "locator.waitFor: Timeout 15000ms exceeded.\nCall log:\n  - waiting for locator('main fieldset input:not([type=checkbox]):not([type=radio]):not([type=file])').first() to be visible\n",
+      "finishedAt": "2026-09-05T10:09:04.071Z"
+    },
+    {
+      "n": 10,
+      "persona": "analyst",
+      "label": "rail: Report (unsigned opinion, model selected)",
+      "clicks": 1,
+      "checks": [],
+      "urlBefore": "/model-builder/?case=case-4002c83606ad4989be48",
+      "url": "/report-studio/?case=case-4002c83606ad4989be48",
+      "shell": {
+        "kicker": "Report / Publication",
+        "h1": "Compose, freeze and file",
+        "title": "CAOS — Compose, freeze and file",
+        "authority": "Credit: Carnival CorporationVisible snapshot: snap-471b00d…95f8snap-471b00d…95f8. Full identity: snap-471b00d4a0554c7495f8Selected run: run-a7444ba6…b9dbrun-a7444ba6…b9db. Full identity: run-a7444ba636634f2fb9dbSource set: v30",
+        "primaryButtons": [
+          "Freeze saved v—"
+        ],
+        "statuses": [
+          "Ready",
+          "Ready",
+          "Blocked",
+          "Ready",
+          "Blocked",
+          "Blocked"
+        ],
+        "unavailable": []
+      },
+      "destinationChanged": true,
+      "authorityChanged": false,
+      "screenshot": "p09-report-unsigned-opinion.png",
+      "ok": true,
+      "startedAt": "2026-09-05T10:09:04.072Z",
+      "finishedAt": "2026-09-05T10:09:04.452Z"
+    },
+    {
+      "n": 11,
+      "persona": "analyst",
+      "label": "compose the nine required sections (autosave)",
+      "clicks": 9,
+      "checks": [],
+      "urlBefore": "/report-studio/?case=case-4002c83606ad4989be48",
+      "url": "/report-studio/?case=case-4002c83606ad4989be48",
+      "shell": {
+        "kicker": "Report / Publication",
+        "h1": "Compose, freeze and file",
+        "title": "CAOS — Compose, freeze and file",
+        "authority": "Credit: Carnival CorporationVisible snapshot: snap-471b00d…95f8snap-471b00d…95f8. Full identity: snap-471b00d4a0554c7495f8Selected run: run-a7444ba6…b9dbrun-a7444ba6…b9db. Full identity: run-a7444ba636634f2fb9dbSource set: v30",
+        "primaryButtons": [
+          "Retry save now",
+          "Freeze saved v—"
+        ],
+        "statuses": [
+          "MODEL REQUIRED",
+          "Ready",
+          "Blocked",
+          "Ready",
+          "Blocked",
+          "Blocked"
+        ],
+        "unavailable": []
+      },
+      "destinationChanged": null,
+      "authorityChanged": null,
+      "screenshot": "p10-FAILED-report-draft-saved.png",
+      "ok": false,
+      "startedAt": "2026-09-05T10:09:04.454Z",
+      "error": "locator.waitFor: Timeout 30000ms exceeded.\nCall log:\n  - waiting for getByText(/^Saved v\\d+$/) to be visible\n",
+      "finishedAt": "2026-09-05T10:09:35.132Z"
+    },
+    {
+      "n": 12,
+      "persona": "analyst",
+      "label": "UX-016 sign the opinion on the saved revision",
+      "clicks": 1,
+      "checks": [
+        "UX-016"
+      ],
+      "urlBefore": "/report-studio/?case=case-4002c83606ad4989be48",
+      "url": "/report-studio/?case=case-4002c83606ad4989be48",
+      "shell": {
+        "kicker": "Report / Publication",
+        "h1": "Compose, freeze and file",
+        "title": "CAOS — Compose, freeze and file",
+        "authority": "Credit: Carnival CorporationVisible snapshot: snap-471b00d…95f8snap-471b00d…95f8. Full identity: snap-471b00d4a0554c7495f8Selected run: run-a7444ba6…b9dbrun-a7444ba6…b9db. Full identity: run-a7444ba636634f2fb9dbSource set: v30",
+        "primaryButtons": [
+          "Retry save now",
+          "Freeze saved v—"
+        ],
+        "statuses": [
+          "MODEL REQUIRED",
+          "Ready",
+          "Blocked",
+          "Ready",
+          "Blocked",
+          "Blocked"
+        ],
+        "unavailable": []
+      },
+      "destinationChanged": null,
+      "authorityChanged": null,
+      "screenshot": "p11-FAILED-report-opinion-signed.png",
+      "ok": false,
+      "startedAt": "2026-09-05T10:09:35.134Z",
+      "error": "locator.click: Timeout 30000ms exceeded.\nCall log:\n  - waiting for getByRole('button', { name: /^Sign opinion on saved v/ })\n    - locator resolved to <button disabled type=\"submit\" class=\"button\">Sign opinion on saved v—</button>\n  - attempting click action\n    2 × waiting for element to be visible, enabled and stable\n      - element is not enabled\n    - retrying click action\n    - waiting 20ms\n    2 × waiting for element to be visible, enabled and stable\n      - element is not enabled\n    - re",
+      "finishedAt": "2026-09-05T10:10:05.247Z"
+    },
+    {
+      "n": 13,
+      "persona": "analyst",
+      "label": "freeze (worker renders md/pdf/xlsx)",
+      "clicks": 1,
+      "checks": [],
+      "urlBefore": "/report-studio/?case=case-4002c83606ad4989be48",
+      "url": "/report-studio/?case=case-4002c83606ad4989be48",
+      "shell": {
+        "kicker": "Report / Publication",
+        "h1": "Compose, freeze and file",
+        "title": "CAOS — Compose, freeze and file",
+        "authority": "Credit: Carnival CorporationVisible snapshot: snap-471b00d…95f8snap-471b00d…95f8. Full identity: snap-471b00d4a0554c7495f8Selected run: run-a7444ba6…b9dbrun-a7444ba6…b9db. Full identity: run-a7444ba636634f2fb9dbSource set: v30",
+        "primaryButtons": [
+          "Retry save now",
+          "Freeze saved v—"
+        ],
+        "statuses": [
+          "MODEL REQUIRED",
+          "Ready",
+          "Blocked",
+          "Ready",
+          "Blocked",
+          "Blocked"
+        ],
+        "unavailable": []
+      },
+      "destinationChanged": null,
+      "authorityChanged": null,
+      "screenshot": "p12-FAILED-report-frozen-pending-approval.png",
+      "ok": false,
+      "startedAt": "2026-09-05T10:10:05.248Z",
+      "error": "locator.click: Timeout 30000ms exceeded.\nCall log:\n  - waiting for getByRole('button', { name: /^Freeze saved v/ })\n    - locator resolved to <button disabled type=\"button\" class=\"button primary\" data-primary-report-action=\"true\">Freeze saved v—</button>\n  - attempting click action\n    2 × waiting for element to be visible, enabled and stable\n      - element is not enabled\n    - retrying click action\n    - waiting 20ms\n    2 × waiting for element to be visible, enabled and stable\n      - element",
+      "finishedAt": "2026-09-05T10:10:35.342Z"
+    },
+    {
+      "n": 14,
+      "persona": "qa",
+      "label": "QA: provision the independent approver in Report Studio",
+      "clicks": 2,
+      "checks": [],
+      "urlBefore": "blank",
+      "url": "/report-studio/?case=case-4002c83606ad4989be48&run=run-a7444ba636634f2fb9db",
+      "shell": {
+        "kicker": "Report / Publication",
+        "h1": "Compose, freeze and file",
+        "title": "CAOS — Report Studio",
+        "authority": "Credit: Carnival CorporationVisible snapshot: snap-471b00d…95f8snap-471b00d…95f8. Full identity: snap-471b00d4a0554c7495f8Selected run: run-a7444ba6…b9dbrun-a7444ba6…b9db. Full identity: run-a7444ba636634f2fb9dbSource set: v30",
+        "primaryButtons": [
+          "Freeze saved v—"
+        ],
+        "statuses": [
+          "Ready",
+          "Ready",
+          "Blocked",
+          "Ready",
+          "Blocked",
+          "Blocked",
+          "committee-approver provisioned as case APPROVER."
+        ],
+        "unavailable": []
+      },
+      "destinationChanged": true,
+      "authorityChanged": false,
+      "screenshot": "p13-report-provision-approver.png",
+      "ok": true,
+      "startedAt": "2026-09-05T10:10:35.724Z",
+      "finishedAt": "2026-09-05T10:10:37.858Z"
+    },
+    {
+      "n": 15,
+      "persona": "approver",
+      "label": "UX-017 approver opens the exact frozen record",
+      "clicks": 1,
+      "checks": [
+        "UX-017"
+      ],
+      "urlBefore": "blank",
+      "url": "/report-studio/?case=case-4002c83606ad4989be48&run=run-a7444ba636634f2fb9db",
+      "shell": {
+        "kicker": "Report / Publication",
+        "h1": "Compose, freeze and file",
+        "title": "CAOS — Report Studio",
+        "authority": "Credit: Carnival CorporationVisible snapshot: snap-471b00d…95f8snap-471b00d…95f8. Full identity: snap-471b00d4a0554c7495f8Selected run: run-a7444ba6…b9dbrun-a7444ba6…b9db. Full identity: run-a7444ba636634f2fb9dbSource set: v30",
+        "primaryButtons": [
+          "Freeze saved v—"
+        ],
+        "statuses": [
+          "Ready",
+          "Ready",
+          "Blocked",
+          "Ready",
+          "Blocked",
+          "Blocked"
+        ],
+        "unavailable": []
+      },
+      "destinationChanged": null,
+      "authorityChanged": null,
+      "screenshot": "p14-FAILED-report-frozen-approver-view.png",
+      "ok": false,
+      "startedAt": "2026-09-05T10:10:37.897Z",
+      "error": "locator.click: Timeout 30000ms exceeded.\nCall log:\n  - waiting for getByRole('button', { name: /FROZEN · Draft v/ }).first()\n",
+      "finishedAt": "2026-09-05T10:11:08.944Z"
+    },
+    {
+      "n": 16,
+      "persona": "approver",
+      "label": "UX-017 file; detached receipt and exports",
+      "clicks": 1,
+      "checks": [
+        "UX-017"
+      ],
+      "urlBefore": "/report-studio/?case=case-4002c83606ad4989be48&run=run-a7444ba636634f2fb9db",
+      "url": "/report-studio/?case=case-4002c83606ad4989be48&run=run-a7444ba636634f2fb9db",
+      "shell": {
+        "kicker": "Report / Publication",
+        "h1": "Compose, freeze and file",
+        "title": "CAOS — Report Studio",
+        "authority": "Credit: Carnival CorporationVisible snapshot: snap-471b00d…95f8snap-471b00d…95f8. Full identity: snap-471b00d4a0554c7495f8Selected run: run-a7444ba6…b9dbrun-a7444ba6…b9db. Full identity: run-a7444ba636634f2fb9dbSource set: v30",
+        "primaryButtons": [
+          "Freeze saved v—"
+        ],
+        "statuses": [
+          "Ready",
+          "Ready",
+          "Blocked",
+          "Ready",
+          "Blocked",
+          "Blocked"
+        ],
+        "unavailable": []
+      },
+      "destinationChanged": null,
+      "authorityChanged": null,
+      "screenshot": "p15-FAILED-report-filed-receipt.png",
+      "ok": false,
+      "startedAt": "2026-09-05T10:11:08.945Z",
+      "error": "locator.click: Timeout 30000ms exceeded.\nCall log:\n  - waiting for getByRole('button', { name: 'File exact Frozen version' })\n",
+      "finishedAt": "2026-09-05T10:11:39.010Z"
+    },
+    {
+      "n": 17,
+      "persona": "qa",
+      "label": "QA: audit package after filing (API only)",
+      "clicks": 0,
+      "checks": [],
+      "urlBefore": "/report-studio/?case=case-4002c83606ad4989be48&run=run-a7444ba636634f2fb9db",
+      "url": "/report-studio/?case=case-4002c83606ad4989be48&run=run-a7444ba636634f2fb9db",
+      "shell": {
+        "kicker": "Report / Publication",
+        "h1": "Compose, freeze and file",
+        "title": "CAOS — Report Studio",
+        "authority": "Credit: Carnival CorporationVisible snapshot: snap-471b00d…95f8snap-471b00d…95f8. Full identity: snap-471b00d4a0554c7495f8Selected run: run-a7444ba6…b9dbrun-a7444ba6…b9db. Full identity: run-a7444ba636634f2fb9dbSource set: v30",
+        "primaryButtons": [
+          "Freeze saved v—"
+        ],
+        "statuses": [
+          "Ready",
+          "Ready",
+          "Blocked",
+          "Ready",
+          "Blocked",
+          "Blocked",
+          "committee-approver provisioned as case APPROVER."
+        ],
+        "unavailable": []
+      },
+      "destinationChanged": false,
+      "authorityChanged": false,
+      "screenshot": null,
+      "ok": true,
+      "startedAt": "2026-09-05T10:11:39.011Z",
+      "finishedAt": "2026-09-05T10:11:39.099Z"
+    },
+    {
+      "n": 18,
+      "persona": "analyst",
+      "label": "second accepted Full Credit run (API) makes R1 stale",
+      "clicks": 0,
+      "checks": [],
+      "urlBefore": "/report-studio/?case=case-4002c83606ad4989be48",
+      "url": "/model-builder/?case=case-4002c83606ad4989be48&run=run-ee48e4dc30ed48f48231",
+      "shell": {
+        "kicker": "Model / Forecast",
+        "h1": "Assumptions, lineage and sign-off",
+        "title": "CAOS — Model Builder",
+        "authority": "Credit: Carnival CorporationVisible snapshot: snap-c077465…8d98snap-c077465…8d98. Full identity: snap-c077465a68494a018d98Selected run: run-ee48e4dc…8231run-ee48e4dc…8231. Full identity: run-ee48e4dc30ed48f48231Source set: v30",
+        "primaryButtons": [],
+        "statuses": [
+          "CANONICAL MODEL INPUTS INVALID"
+        ],
+        "unavailable": []
+      },
+      "destinationChanged": null,
+      "authorityChanged": null,
+      "screenshot": "p16-FAILED-model-stale-revision.png",
+      "ok": false,
+      "startedAt": "2026-09-05T10:11:39.101Z",
+      "error": "locator.waitFor: Timeout 30000ms exceeded.\nCall log:\n  - waiting for getByRole('region', { name: 'Model versions' }) to be visible\n",
+      "finishedAt": "2026-09-05T10:12:16.104Z"
+    },
+    {
+      "n": 19,
+      "persona": "analyst",
+      "label": "Report after the authority moved (stale model identity)",
+      "clicks": 0,
+      "checks": [],
+      "urlBefore": "/model-builder/?case=case-4002c83606ad4989be48&run=run-ee48e4dc30ed48f48231",
+      "url": "/report-studio/?case=case-4002c83606ad4989be48&run=run-ee48e4dc30ed48f48231",
+      "shell": {
+        "kicker": "Report / Publication",
+        "h1": "Compose, freeze and file",
+        "title": "CAOS — Report Studio",
+        "authority": "Credit: Carnival CorporationVisible snapshot: snap-c077465…8d98snap-c077465…8d98. Full identity: snap-c077465a68494a018d98Selected run: run-ee48e4dc…8231run-ee48e4dc…8231. Full identity: run-ee48e4dc30ed48f48231Source set: v30",
+        "primaryButtons": [
+          "Retry save now",
+          "Freeze saved v—"
+        ],
+        "statuses": [
+          "Ready",
+          "Ready",
+          "Blocked",
+          "Ready",
+          "Blocked",
+          "Blocked"
+        ],
+        "unavailable": []
+      },
+      "destinationChanged": null,
+      "authorityChanged": null,
+      "screenshot": "p17-FAILED-report-stale-model.png",
+      "ok": false,
+      "startedAt": "2026-09-05T10:12:16.105Z",
+      "error": "locator.waitFor: Timeout 30000ms exceeded.\nCall log:\n  - waiting for getByText('Stale model identity', { exact: true }) to be visible\n",
+      "finishedAt": "2026-09-05T10:12:47.527Z"
+    }
+  ],
+  "navigations": [
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T10:07:39.663Z",
+      "url": "/sources/?case=case-4002c83606ad4989be48"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T10:07:39.722Z",
+      "url": "/sources/?case=case-4002c83606ad4989be48"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T10:07:39.746Z",
+      "url": "/sources/?case=case-4002c83606ad4989be48"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T10:07:39.751Z",
+      "url": "/sources/?case=case-4002c83606ad4989be48"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T10:07:39.754Z",
+      "url": "/sources/?case=case-4002c83606ad4989be48"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T10:07:42.359Z",
+      "url": "/deep-dive/?case=case-4002c83606ad4989be48"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T10:07:42.360Z",
+      "url": "/deep-dive/?case=case-4002c83606ad4989be48"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T10:07:42.456Z",
+      "url": "/run-console/?case=case-4002c83606ad4989be48"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T10:07:42.459Z",
+      "url": "/run-console/?case=case-4002c83606ad4989be48"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T10:07:42.877Z",
+      "url": "/run-console/?case=case-4002c83606ad4989be48&run=run-a7444ba636634f2fb9db"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T10:07:42.878Z",
+      "url": "/run-console/?case=case-4002c83606ad4989be48&run=run-a7444ba636634f2fb9db"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T10:07:42.879Z",
+      "url": "/run-console/?case=case-4002c83606ad4989be48&run=run-a7444ba636634f2fb9db"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T10:07:48.931Z",
+      "url": "/model-builder/?case=case-4002c83606ad4989be48"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T10:07:48.935Z",
+      "url": "/model-builder/?case=case-4002c83606ad4989be48"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T10:09:04.090Z",
+      "url": "/report-studio/?case=case-4002c83606ad4989be48"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T10:09:04.091Z",
+      "url": "/report-studio/?case=case-4002c83606ad4989be48"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T10:09:04.479Z",
+      "url": "/report-studio/?case=case-4002c83606ad4989be48"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T10:09:04.479Z",
+      "url": "/report-studio/?case=case-4002c83606ad4989be48"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T10:11:45.272Z",
+      "url": "/model-builder/?case=case-4002c83606ad4989be48"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T10:11:45.287Z",
+      "url": "/model-builder/?case=case-4002c83606ad4989be48"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T10:11:45.292Z",
+      "url": "/model-builder/?case=case-4002c83606ad4989be48"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T10:11:45.294Z",
+      "url": "/model-builder/?case=case-4002c83606ad4989be48"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T10:11:45.295Z",
+      "url": "/model-builder/?case=case-4002c83606ad4989be48"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T10:11:45.307Z",
+      "url": "/model-builder/?case=case-4002c83606ad4989be48&run=run-ee48e4dc30ed48f48231"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T10:11:45.308Z",
+      "url": "/model-builder/?case=case-4002c83606ad4989be48&run=run-ee48e4dc30ed48f48231"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T10:11:45.309Z",
+      "url": "/model-builder/?case=case-4002c83606ad4989be48&run=run-ee48e4dc30ed48f48231"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T10:12:16.115Z",
+      "url": "/report-studio/?case=case-4002c83606ad4989be48"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T10:12:16.122Z",
+      "url": "/report-studio/?case=case-4002c83606ad4989be48"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T10:12:16.127Z",
+      "url": "/report-studio/?case=case-4002c83606ad4989be48"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T10:12:16.131Z",
+      "url": "/report-studio/?case=case-4002c83606ad4989be48"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T10:12:16.133Z",
+      "url": "/report-studio/?case=case-4002c83606ad4989be48"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T10:12:16.143Z",
+      "url": "/report-studio/?case=case-4002c83606ad4989be48&run=run-ee48e4dc30ed48f48231"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T10:12:16.144Z",
+      "url": "/report-studio/?case=case-4002c83606ad4989be48&run=run-ee48e4dc30ed48f48231"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T10:12:16.147Z",
+      "url": "/report-studio/?case=case-4002c83606ad4989be48&run=run-ee48e4dc30ed48f48231"
+    }
+  ],
+  "failures": [
+    {
+      "step": 7,
+      "label": "rail: Model (ready to build)",
+      "error": "locator.waitFor: Timeout 30000ms exceeded.\nCall log:\n  - waiting for locator('[data-primary-model-action=\"BUILD\"]') to be visible\n"
+    },
+    {
+      "step": 8,
+      "label": "build the application model (worker)",
+      "error": "locator.click: Timeout 30000ms exceeded.\nCall log:\n  - waiting for locator('[data-primary-model-action=\"BUILD\"]')\n"
+    },
+    {
+      "step": 9,
+      "label": "change one assumption, recalculate, sign off R1",
+      "error": "locator.waitFor: Timeout 15000ms exceeded.\nCall log:\n  - waiting for locator('main fieldset input:not([type=checkbox]):not([type=radio]):not([type=file])').first() to be visible\n"
+    },
+    {
+      "step": 11,
+      "label": "compose the nine required sections (autosave)",
+      "error": "locator.waitFor: Timeout 30000ms exceeded.\nCall log:\n  - waiting for getByText(/^Saved v\\d+$/) to be visible\n"
+    },
+    {
+      "step": 12,
+      "label": "UX-016 sign the opinion on the saved revision",
+      "error": "locator.click: Timeout 30000ms exceeded.\nCall log:\n  - waiting for getByRole('button', { name: /^Sign opinion on saved v/ })\n    - locator resolved to <button disabled type=\"submit\" class=\"button\">Sign opinion on saved v—</button>\n  - attempting click action\n    2 × waiting for element to be visible, enabled and stable\n      - element is not enabled\n    - retrying click action\n    - waiting 20ms\n    2 × waiting for element to be visible, enabled and stable\n      - element is not enabled\n    - re"
+    },
+    {
+      "step": 13,
+      "label": "freeze (worker renders md/pdf/xlsx)",
+      "error": "locator.click: Timeout 30000ms exceeded.\nCall log:\n  - waiting for getByRole('button', { name: /^Freeze saved v/ })\n    - locator resolved to <button disabled type=\"button\" class=\"button primary\" data-primary-report-action=\"true\">Freeze saved v—</button>\n  - attempting click action\n    2 × waiting for element to be visible, enabled and stable\n      - element is not enabled\n    - retrying click action\n    - waiting 20ms\n    2 × waiting for element to be visible, enabled and stable\n      - element"
+    },
+    {
+      "step": 15,
+      "label": "UX-017 approver opens the exact frozen record",
+      "error": "locator.click: Timeout 30000ms exceeded.\nCall log:\n  - waiting for getByRole('button', { name: /FROZEN · Draft v/ }).first()\n"
+    },
+    {
+      "step": 16,
+      "label": "UX-017 file; detached receipt and exports",
+      "error": "locator.click: Timeout 30000ms exceeded.\nCall log:\n  - waiting for getByRole('button', { name: 'File exact Frozen version' })\n"
+    },
+    {
+      "step": 18,
+      "label": "second accepted Full Credit run (API) makes R1 stale",
+      "error": "locator.waitFor: Timeout 30000ms exceeded.\nCall log:\n  - waiting for getByRole('region', { name: 'Model versions' }) to be visible\n"
+    },
+    {
+      "step": 19,
+      "label": "Report after the authority moved (stale model identity)",
+      "error": "locator.waitFor: Timeout 30000ms exceeded.\nCall log:\n  - waiting for getByText('Stale model identity', { exact: true }) to be visible\n"
+    }
+  ],
+  "notes": [
+    {
+      "corpusFiles": 30
+    },
+    {
+      "resumedFromCase": "case-4002c83606ad4989be48"
+    },
+    {
+      "runToolVisibleOnSources": 0
+    },
+    {
+      "seed": "seeded case-4002c83606ad4989be48 qa-lead"
+    },
+    {
+      "auditPackage": {
+        "status": 200,
+        "sha256": "89d0fc816313fd893e123520652139503c472b9ee0333f52b50279deeb41e383",
+        "contentType": "application/zip",
+        "bytes": 116593
+      }
+    }
+  ],
+  "finished": "2026-09-05T10:12:47.527Z",
+  "caseId": "case-4002c83606ad4989be48",
+  "runId": "run-a7444ba636634f2fb9db"
+}

@@ -1,0 +1,440 @@
+{
+  "baseURL": "http://127.0.0.1:8768",
+  "caseId": "case-63d424affad7458f896b",
+  "runId": "run-a2b92d71585e49a392e7",
+  "pathway": "DEEP_RESEARCH",
+  "started": "2026-09-05T10:15:53.749Z",
+  "steps": [
+    {
+      "n": 1,
+      "persona": "analyst",
+      "label": "accept the succeeded research run through the UI",
+      "clicks": 2,
+      "checks": [],
+      "urlBefore": "blank",
+      "url": "/run-console/?case=case-63d424affad7458f896b&run=run-a2b92d71585e49a392e7",
+      "shell": {
+        "kicker": "Analysis / Execution",
+        "h1": "Run and acceptance",
+        "title": "CAOS — Run Console",
+        "authority": "Credit: Researchpack-7d2kd HoldingsVisible snapshot: snap-febf243…b648snap-febf243…b648. Full identity: snap-febf243e9a12431eb648Selected run: run-a2b92d71…92e7run-a2b92d71…92e7. Full identity: run-a2b92d71585e49a392e7Source set: v1",
+        "primaryButtons": [
+          "Compile and run"
+        ],
+        "statuses": [
+          "Run status: succeeded",
+          "succeeded",
+          "succeeded",
+          "succeeded",
+          "Latest accepted authority"
+        ]
+      },
+      "destinationChanged": true,
+      "authorityChanged": false,
+      "screenshot": "r01-run-console-research-accepted.png",
+      "ok": true,
+      "startedAt": "2026-09-05T10:15:53.926Z",
+      "finishedAt": "2026-09-05T10:15:55.124Z"
+    },
+    {
+      "n": 2,
+      "persona": "analyst",
+      "label": "rail: Report; choose the Deep Research template (unsigned opinion)",
+      "clicks": 2,
+      "checks": [],
+      "urlBefore": "/run-console/?case=case-63d424affad7458f896b&run=run-a2b92d71585e49a392e7",
+      "url": "/report-studio/?case=case-63d424affad7458f896b",
+      "shell": {
+        "kicker": "Report / Publication",
+        "h1": "Compose, freeze and file",
+        "title": "CAOS — Compose, freeze and file",
+        "authority": "Credit: Researchpack-7d2kd HoldingsVisible snapshot: snap-febf243…b648snap-febf243…b648. Full identity: snap-febf243e9a12431eb648Selected run: run-a2b92d71…92e7run-a2b92d71…92e7. Full identity: run-a2b92d71585e49a392e7Source set: v1",
+        "primaryButtons": [
+          "Freeze saved v—"
+        ],
+        "statuses": [
+          "Ready",
+          "Ready",
+          "Blocked",
+          "Ready",
+          "Ready",
+          "Blocked"
+        ]
+      },
+      "destinationChanged": true,
+      "authorityChanged": false,
+      "screenshot": "r02-report-research-unsigned-opinion.png",
+      "ok": true,
+      "startedAt": "2026-09-05T10:15:55.125Z",
+      "finishedAt": "2026-09-05T10:15:56.090Z"
+    },
+    {
+      "n": 3,
+      "persona": "analyst",
+      "label": "compose the required sections, omit the model (autosave)",
+      "clicks": 7,
+      "checks": [],
+      "urlBefore": "/report-studio/?case=case-63d424affad7458f896b",
+      "url": "/report-studio/?case=case-63d424affad7458f896b",
+      "shell": {
+        "kicker": "Report / Publication",
+        "h1": "Compose, freeze and file",
+        "title": "CAOS — Compose, freeze and file",
+        "authority": "Credit: Researchpack-7d2kd HoldingsVisible snapshot: snap-febf243…b648snap-febf243…b648. Full identity: snap-febf243e9a12431eb648Selected run: run-a2b92d71…92e7run-a2b92d71…92e7. Full identity: run-a2b92d71585e49a392e7Source set: v1",
+        "primaryButtons": [
+          "Freeze saved v1"
+        ],
+        "statuses": [
+          "Saved v1",
+          "Ready",
+          "Ready",
+          "Ready",
+          "Ready",
+          "Blocked"
+        ]
+      },
+      "destinationChanged": false,
+      "authorityChanged": false,
+      "screenshot": "r03-report-research-draft-saved.png",
+      "ok": true,
+      "startedAt": "2026-09-05T10:15:56.091Z",
+      "finishedAt": "2026-09-05T10:15:57.659Z"
+    },
+    {
+      "n": 4,
+      "persona": "analyst",
+      "label": "UX-016 sign the opinion on the saved revision",
+      "clicks": 1,
+      "checks": [
+        "UX-016"
+      ],
+      "urlBefore": "/report-studio/?case=case-63d424affad7458f896b",
+      "url": "/report-studio/?case=case-63d424affad7458f896b",
+      "shell": {
+        "kicker": "Report / Publication",
+        "h1": "Compose, freeze and file",
+        "title": "CAOS — Compose, freeze and file",
+        "authority": "Credit: Researchpack-7d2kd HoldingsVisible snapshot: snap-febf243…b648snap-febf243…b648. Full identity: snap-febf243e9a12431eb648Selected run: run-a2b92d71…92e7run-a2b92d71…92e7. Full identity: run-a2b92d71585e49a392e7Source set: v1",
+        "primaryButtons": [
+          "Freeze saved v1"
+        ],
+        "statuses": [
+          "Saved v1",
+          "Ready",
+          "Ready",
+          "Ready",
+          "Ready",
+          "Ready",
+          "Opinion signed on saved Draft v1."
+        ]
+      },
+      "destinationChanged": false,
+      "authorityChanged": false,
+      "screenshot": "r04-report-research-opinion-signed.png",
+      "ok": true,
+      "startedAt": "2026-09-05T10:15:57.660Z",
+      "finishedAt": "2026-09-05T10:15:57.782Z"
+    },
+    {
+      "n": 5,
+      "persona": "analyst",
+      "label": "freeze (worker renders md/pdf/xlsx)",
+      "clicks": 1,
+      "checks": [],
+      "urlBefore": "/report-studio/?case=case-63d424affad7458f896b",
+      "url": "/report-studio/?case=case-63d424affad7458f896b",
+      "shell": {
+        "kicker": "Report / Publication",
+        "h1": "Compose, freeze and file",
+        "title": "CAOS — Compose, freeze and file",
+        "authority": "Credit: Researchpack-7d2kd HoldingsVisible snapshot: snap-febf243…b648snap-febf243…b648. Full identity: snap-febf243e9a12431eb648Selected run: run-a2b92d71…92e7run-a2b92d71…92e7. Full identity: run-a2b92d71585e49a392e7Source set: v1",
+        "primaryButtons": [],
+        "statuses": [
+          "Saved v1",
+          "Immutable FROZEN review · Draft v1",
+          "Frozen exact Draft v1: every export was published and verified by the worker."
+        ]
+      },
+      "destinationChanged": false,
+      "authorityChanged": false,
+      "screenshot": "r05-report-research-frozen-pending-approval.png",
+      "ok": true,
+      "startedAt": "2026-09-05T10:15:57.784Z",
+      "finishedAt": "2026-09-05T10:16:00.188Z"
+    },
+    {
+      "n": 6,
+      "persona": "qa",
+      "label": "QA: provision the independent approver in Report Studio",
+      "clicks": 3,
+      "checks": [],
+      "urlBefore": "blank",
+      "url": "/report-studio/?case=case-63d424affad7458f896b&run=run-a2b92d71585e49a392e7",
+      "shell": {
+        "kicker": "Report / Publication",
+        "h1": "Compose, freeze and file",
+        "title": "CAOS — Report Studio",
+        "authority": "Credit: Researchpack-7d2kd HoldingsVisible snapshot: snap-febf243…b648snap-febf243…b648. Full identity: snap-febf243e9a12431eb648Selected run: run-a2b92d71…92e7run-a2b92d71…92e7. Full identity: run-a2b92d71585e49a392e7Source set: v1",
+        "primaryButtons": [
+          "Freeze saved v1"
+        ],
+        "statuses": [
+          "Saved v1",
+          "Ready",
+          "Ready",
+          "Ready",
+          "Ready",
+          "Ready",
+          "committee-approver provisioned as case APPROVER."
+        ]
+      },
+      "destinationChanged": true,
+      "authorityChanged": false,
+      "screenshot": "r06-report-research-provision-approver.png",
+      "ok": true,
+      "startedAt": "2026-09-05T10:16:00.563Z",
+      "finishedAt": "2026-09-05T10:16:01.533Z"
+    },
+    {
+      "n": 7,
+      "persona": "approver",
+      "label": "UX-017 approver opens the exact frozen record",
+      "clicks": 2,
+      "checks": [
+        "UX-017"
+      ],
+      "urlBefore": "blank",
+      "url": "/report-studio/?case=case-63d424affad7458f896b&run=run-a2b92d71585e49a392e7",
+      "shell": {
+        "kicker": "Report / Publication",
+        "h1": "Compose, freeze and file",
+        "title": "CAOS — Report Studio",
+        "authority": "Credit: Researchpack-7d2kd HoldingsVisible snapshot: snap-febf243…b648snap-febf243…b648. Full identity: snap-febf243e9a12431eb648Selected run: run-a2b92d71…92e7run-a2b92d71…92e7. Full identity: run-a2b92d71585e49a392e7Source set: v1",
+        "primaryButtons": [
+          "File exact Frozen version"
+        ],
+        "statuses": [
+          "Saved v1",
+          "Immutable FROZEN review · Draft v1"
+        ]
+      },
+      "destinationChanged": true,
+      "authorityChanged": false,
+      "screenshot": "r07-report-research-frozen-approver-view.png",
+      "ok": true,
+      "startedAt": "2026-09-05T10:16:01.573Z",
+      "finishedAt": "2026-09-05T10:16:02.508Z"
+    },
+    {
+      "n": 8,
+      "persona": "approver",
+      "label": "UX-017 file; detached receipt and exports",
+      "clicks": 1,
+      "checks": [
+        "UX-017"
+      ],
+      "urlBefore": "/report-studio/?case=case-63d424affad7458f896b&run=run-a2b92d71585e49a392e7",
+      "url": "/report-studio/?case=case-63d424affad7458f896b&run=run-a2b92d71585e49a392e7",
+      "shell": {
+        "kicker": "Report / Publication",
+        "h1": "Compose, freeze and file",
+        "title": "CAOS — Report Studio",
+        "authority": "Credit: Researchpack-7d2kd HoldingsVisible snapshot: snap-febf243…b648snap-febf243…b648. Full identity: snap-febf243e9a12431eb648Selected run: run-a2b92d71…92e7run-a2b92d71…92e7. Full identity: run-a2b92d71585e49a392e7Source set: v1",
+        "primaryButtons": [],
+        "statuses": [
+          "Saved v1",
+          "Immutable FILED review · Draft v1",
+          "Exact Frozen Deliverable filed; the detached receipt records the approver."
+        ]
+      },
+      "destinationChanged": false,
+      "authorityChanged": false,
+      "screenshot": "r08-report-research-filed-receipt.png",
+      "ok": true,
+      "startedAt": "2026-09-05T10:16:02.509Z",
+      "finishedAt": "2026-09-05T10:16:02.683Z"
+    },
+    {
+      "n": 9,
+      "persona": "qa",
+      "label": "QA: audit package after filing (API only, no surface)",
+      "clicks": 0,
+      "checks": [],
+      "urlBefore": "/report-studio/?case=case-63d424affad7458f896b&run=run-a2b92d71585e49a392e7",
+      "url": "/report-studio/?case=case-63d424affad7458f896b&run=run-a2b92d71585e49a392e7",
+      "shell": {
+        "kicker": "Report / Publication",
+        "h1": "Compose, freeze and file",
+        "title": "CAOS — Report Studio",
+        "authority": "Credit: Researchpack-7d2kd HoldingsVisible snapshot: snap-febf243…b648snap-febf243…b648. Full identity: snap-febf243e9a12431eb648Selected run: run-a2b92d71…92e7run-a2b92d71…92e7. Full identity: run-a2b92d71585e49a392e7Source set: v1",
+        "primaryButtons": [
+          "Freeze saved v1"
+        ],
+        "statuses": [
+          "Saved v1",
+          "Ready",
+          "Ready",
+          "Ready",
+          "Ready",
+          "Ready",
+          "committee-approver provisioned as case APPROVER."
+        ]
+      },
+      "destinationChanged": false,
+      "authorityChanged": false,
+      "screenshot": null,
+      "ok": true,
+      "startedAt": "2026-09-05T10:16:02.684Z",
+      "finishedAt": "2026-09-05T10:16:02.707Z"
+    },
+    {
+      "n": 10,
+      "persona": "analyst",
+      "label": "analyst returns: filed record visible in Frozen / Filed history",
+      "clicks": 1,
+      "checks": [],
+      "urlBefore": "/report-studio/?case=case-63d424affad7458f896b",
+      "url": "/report-studio/?case=case-63d424affad7458f896b&run=run-a2b92d71585e49a392e7",
+      "shell": {
+        "kicker": "Report / Publication",
+        "h1": "Compose, freeze and file",
+        "title": "CAOS — Report Studio",
+        "authority": "Credit: Researchpack-7d2kd HoldingsVisible snapshot: snap-febf243…b648snap-febf243…b648. Full identity: snap-febf243e9a12431eb648Selected run: run-a2b92d71…92e7run-a2b92d71…92e7. Full identity: run-a2b92d71585e49a392e7Source set: v1",
+        "primaryButtons": [],
+        "statuses": [
+          "Saved v1",
+          "Immutable FILED review · Draft v1"
+        ]
+      },
+      "destinationChanged": false,
+      "authorityChanged": false,
+      "screenshot": "r09-report-research-filed-analyst-view.png",
+      "ok": true,
+      "startedAt": "2026-09-05T10:16:02.708Z",
+      "finishedAt": "2026-09-05T10:16:03.497Z"
+    }
+  ],
+  "navigations": [
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T10:15:53.963Z",
+      "url": "/run-console/?case=case-63d424affad7458f896b&run=run-a2b92d71585e49a392e7"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T10:15:54.018Z",
+      "url": "/run-console/?case=case-63d424affad7458f896b&run=run-a2b92d71585e49a392e7"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T10:15:54.041Z",
+      "url": "/run-console/?case=case-63d424affad7458f896b&run=run-a2b92d71585e49a392e7"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T10:15:54.047Z",
+      "url": "/run-console/?case=case-63d424affad7458f896b&run=run-a2b92d71585e49a392e7"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T10:15:54.050Z",
+      "url": "/run-console/?case=case-63d424affad7458f896b&run=run-a2b92d71585e49a392e7"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T10:15:55.151Z",
+      "url": "/report-studio/?case=case-63d424affad7458f896b"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T10:15:55.152Z",
+      "url": "/report-studio/?case=case-63d424affad7458f896b"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T10:15:56.114Z",
+      "url": "/report-studio/?case=case-63d424affad7458f896b"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T10:15:56.114Z",
+      "url": "/report-studio/?case=case-63d424affad7458f896b"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T10:15:57.163Z",
+      "url": "/report-studio/?case=case-63d424affad7458f896b"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T10:15:57.163Z",
+      "url": "/report-studio/?case=case-63d424affad7458f896b"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T10:16:02.717Z",
+      "url": "/report-studio/?case=case-63d424affad7458f896b"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T10:16:02.728Z",
+      "url": "/report-studio/?case=case-63d424affad7458f896b"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T10:16:02.735Z",
+      "url": "/report-studio/?case=case-63d424affad7458f896b"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T10:16:02.736Z",
+      "url": "/report-studio/?case=case-63d424affad7458f896b"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T10:16:02.749Z",
+      "url": "/report-studio/?case=case-63d424affad7458f896b&run=run-a2b92d71585e49a392e7"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T10:16:02.751Z",
+      "url": "/report-studio/?case=case-63d424affad7458f896b&run=run-a2b92d71585e49a392e7"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T10:16:02.752Z",
+      "url": "/report-studio/?case=case-63d424affad7458f896b&run=run-a2b92d71585e49a392e7"
+    }
+  ],
+  "failures": [],
+  "notes": [
+    {
+      "sections": 7,
+      "saveLabel": "Saved v1"
+    },
+    {
+      "signerSeesFileControl": 0,
+      "separationNote": 0
+    },
+    {
+      "seed": "seeded case-63d424affad7458f896b qa-lead"
+    },
+    {
+      "receipt": "rcpt-76104fd7b52542aab2fe · 75b19639f5b0f8dbabeba2877013be613b13c7c23cc24e01a6989dd971a9442a",
+      "exports": [
+        "/api/cases/case-63d424affad7458f896b/deliverables/by-id/dlv-ebd071c4d3b222ef20dadb37d7f8c68d107fed14b95fa1d2e2c908afd3d245f6/export/md",
+        "/api/cases/case-63d424affad7458f896b/deliverables/by-id/dlv-ebd071c4d3b222ef20dadb37d7f8c68d107fed14b95fa1d2e2c908afd3d245f6/export/pdf",
+        "/api/cases/case-63d424affad7458f896b/deliverables/by-id/dlv-ebd071c4d3b222ef20dadb37d7f8c68d107fed14b95fa1d2e2c908afd3d245f6/export/xlsx"
+      ]
+    },
+    {
+      "auditPackage": {
+        "status": 200,
+        "sha256": "f561c7d3dca10a3756b336ddb08d5fd767060f41715c91ff29c6936843d94b62",
+        "contentType": "application/zip",
+        "bytes": 172283
+      }
+    }
+  ],
+  "finished": "2026-09-05T10:16:03.498Z"
+}
