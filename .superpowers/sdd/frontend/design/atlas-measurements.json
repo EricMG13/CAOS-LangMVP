@@ -1,0 +1,2203 @@
+{
+  "cases": {
+    "accepted": "case-2247b39badc7411d9ef8",
+    "acceptedRun": "run-1665b1c475f3437f90b5",
+    "artifactId": "art-131b3f4882ff4ce1b022",
+    "rvCase": "case-728f972f3f2f4af9b835",
+    "unaccepted": [
+      {
+        "caseId": "case-62084f0c54a54452ac6c",
+        "runId": "run-7bce609d275649bbae06",
+        "pathway": "FULL_CREDIT"
+      },
+      {
+        "caseId": "case-728f972f3f2f4af9b835",
+        "runId": "run-28f835aa1419462a8624",
+        "pathway": "RELATIVE_VALUE"
+      },
+      {
+        "caseId": "case-79cdc4e8ed084c83a22c",
+        "runId": "run-6cad53268b064f138676",
+        "pathway": "EARNINGS_UPDATE"
+      },
+      {
+        "caseId": "case-97d241d851d24eeba10e",
+        "runId": "run-4784775eaf624a98908d",
+        "pathway": "DISTRESSED_RESTRUCTURING"
+      },
+      {
+        "caseId": "case-d2d681338a274edda602",
+        "runId": "run-dd72c699492a424eba2c",
+        "pathway": "EARNINGS_UPDATE"
+      }
+    ]
+  },
+  "shots": [
+    "1440-01-cases",
+    "1440-c-rail",
+    "1440-c-wordmark",
+    "1440-c-topbar",
+    "1440-c-authority-strip",
+    "1440-c-panel-register-table",
+    "1440-c-panel-create-form-inputs",
+    "1440-c-intake-dropzone",
+    "1440-c-panel-fit-status",
+    "1440-c-context-strip",
+    "1440-c-nav-hover",
+    "1440-c-input-focus",
+    "1440-c-button-focus-ring",
+    "1440-02-cases-intake-refusal",
+    "1440-c-state-critical-intake-refusal",
+    "1440-03-sources-evidence-focus",
+    "1440-c-panel-artifact-reader-chips",
+    "1440-c-evidence-chips",
+    "1440-c-source-workspace",
+    "1440-c-state-unavailable-coverage",
+    "1440-c-evidence-chip-hover-linked",
+    "1440-04-evidence-drawer",
+    "1440-c-drawer",
+    "1440-05-run-console-accepted",
+    "1440-c-panel-execution-route-dag",
+    "1440-c-dag-tiles",
+    "1440-c-run-progress",
+    "1440-c-panel-compile-form-selects",
+    "1440-c-callout-neutral",
+    "1440-c-approval-panel-accepted",
+    "1440-c-research-brief-fieldset",
+    "1440-06-run-console-ready-for-acceptance",
+    "1440-c-approval-panel-ready",
+    "1440-07-accept-dialog",
+    "1440-c-dialog-accept",
+    "1440-08-run-console-receipt",
+    "1440-c-mutation-receipt",
+    "1440-09-run-console-paused-plan-approval",
+    "1440-c-research-plan",
+    "1440-c-approval-panel-blocked",
+    "1440-10-deep-dive",
+    "1440-c-analysis-toc",
+    "1440-c-analysis-evidence-rail",
+    "1440-11-rv-screener",
+    "1440-c-loan-table",
+    "1440-c-loan-filters",
+    "1440-c-loan-authority",
+    "1440-12-command-center",
+    "1440-c-standing-answer",
+    "1440-c-authority-metrics",
+    "1440-c-credit-proof",
+    "1440-c-buttons-primary-secondary",
+    "1440-13-model-builder-ready",
+    "1440-c-worksheet-grid",
+    "1440-c-worksheet-tabs",
+    "1440-c-cell-lineage",
+    "1440-c-forecast-assumptions-scrubber",
+    "1440-c-tornado",
+    "1440-c-approval-panel-model-dirty",
+    "1440-14-model-builder-dirty",
+    "1440-15-report-studio",
+    "1440-c-report-outline",
+    "1440-c-report-compose",
+    "1440-c-paper-draft",
+    "1440-c-paper-masthead",
+    "1440-c-approval-panel-freeze",
+    "1440-c-report-authority-strip",
+    "1440-16-discard-dialog",
+    "1440-c-dialog-discard",
+    "1440-17-admin-studio",
+    "1440-c-admin-intro-flag",
+    "1440-c-admin-contracts-table",
+    "1440-18-not-found",
+    "1440-19-command-palette",
+    "1440-c-dialog-palette",
+    "1440-20-command-palette-query",
+    "1440-21-state-loading-skeleton",
+    "1440-c-state-skeleton",
+    "1440-c-authority-strip-loading",
+    "1440-22-state-error",
+    "1440-c-state-critical-error-retry",
+    "1440-c-authority-strip-error",
+    "1440-23-state-stale-switch-required",
+    "1440-c-callout-warning-stale",
+    "1440-c-authority-strip-stale",
+    "1440-24-command-center-what-changed",
+    "1440-c-what-changed-list",
+    "1440-25-state-empty-no-case",
+    "1440-c-state-empty-panel",
+    "1440-26-cases-empty-register",
+    "1440-27-run-console-reader",
+    "1440-c-state-write-blocked",
+    "720-01-cases",
+    "720-c-rail",
+    "720-c-topbar",
+    "720-c-authority-strip",
+    "720-02-cases-intake-refusal",
+    "720-c-state-critical-intake-refusal",
+    "720-03-sources-evidence-focus",
+    "720-04-evidence-drawer",
+    "720-05-run-console-accepted",
+    "720-06-run-console-ready-for-acceptance",
+    "720-07-accept-dialog",
+    "720-08-run-console-receipt",
+    "720-09-run-console-paused-plan-approval",
+    "720-10-deep-dive",
+    "720-11-rv-screener",
+    "720-12-command-center",
+    "720-13-model-builder-ready",
+    "720-15-report-studio",
+    "720-16-discard-dialog",
+    "720-17-admin-studio",
+    "720-18-not-found",
+    "720-19-command-palette",
+    "720-20-command-palette-query",
+    "720-21-state-loading-skeleton",
+    "720-22-state-error",
+    "720-23-state-stale-switch-required",
+    "720-24-command-center-what-changed",
+    "720-25-state-empty-no-case",
+    "720-26-cases-empty-register",
+    "720-27-run-console-reader"
+  ],
+  "measurements": {
+    "body": {
+      "fontFamily": "-apple-system, \"system-ui\", \"Segoe UI\", Roboto, Helvetica, Arial, sans-serif, ui-sans-serif, system-ui, sans-serif",
+      "fontSize": "14px",
+      "fontWeight": "400",
+      "lineHeight": "21.7px",
+      "letterSpacing": "normal",
+      "textTransform": "none",
+      "color": "rgb(233, 237, 244)",
+      "backgroundColor": "rgb(10, 12, 16)",
+      "borderColor": "rgb(233, 237, 244)",
+      "borderRadius": "0px",
+      "boxShadow": "none",
+      "minHeight": "100%",
+      "padding": "0px",
+      "fontVariantNumeric": "normal",
+      "outlineColor": "rgb(233, 237, 244)",
+      "box": {
+        "w": 1440,
+        "h": 2158
+      },
+      "text": "(self.__next_f=self.__next_f||[]).push(["
+    },
+    ".wordmark": {
+      "fontFamily": "\"Avenir Next\", \"Segoe UI\", system-ui, sans-serif, -apple-system, \"system-ui\", \"Segoe UI\", Roboto, Helvetica, Arial, sans-serif, ui-sans-serif, sans-serif",
+      "fontSize": "17px",
+      "fontWeight": "600",
+      "lineHeight": "17px",
+      "letterSpacing": "1.7px",
+      "textTransform": "none",
+      "color": "rgb(233, 237, 244)",
+      "backgroundColor": "rgba(0, 0, 0, 0)",
+      "borderColor": "rgb(233, 237, 244)",
+      "borderRadius": "0px",
+      "boxShadow": "none",
+      "minHeight": "auto",
+      "padding": "0px 8px",
+      "fontVariantNumeric": "normal",
+      "outlineColor": "rgb(233, 237, 244)",
+      "box": {
+        "w": 199,
+        "h": 34
+      },
+      "text": "CAOSCredit Agent OS"
+    },
+    ".wordmark small": {
+      "fontFamily": "-apple-system, \"system-ui\", \"Segoe UI\", Roboto, Helvetica, Arial, sans-serif, ui-sans-serif, sans-serif",
+      "fontSize": "9.5px",
+      "fontWeight": "500",
+      "lineHeight": "12.35px",
+      "letterSpacing": "1.14px",
+      "textTransform": "uppercase",
+      "color": "rgb(153, 163, 180)",
+      "backgroundColor": "rgba(0, 0, 0, 0)",
+      "borderColor": "rgb(153, 163, 180)",
+      "borderRadius": "0px",
+      "boxShadow": "none",
+      "minHeight": "0px",
+      "padding": "0px",
+      "fontVariantNumeric": "normal",
+      "outlineColor": "rgb(153, 163, 180)",
+      "box": {
+        "w": 105,
+        "h": 12
+      },
+      "text": "Credit Agent OS"
+    },
+    ".brand-mark": {
+      "fontFamily": "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, \"Liberation Mono\", \"Courier New\", monospace, ui-monospace, monospace",
+      "fontSize": "12px",
+      "fontWeight": "700",
+      "lineHeight": "12px",
+      "letterSpacing": "1.7px",
+      "textTransform": "none",
+      "color": "rgb(139, 147, 248)",
+      "backgroundColor": "rgba(0, 0, 0, 0)",
+      "borderColor": "rgb(139, 147, 248)",
+      "borderRadius": "8px",
+      "boxShadow": "none",
+      "minHeight": "auto",
+      "padding": "0px",
+      "fontVariantNumeric": "normal",
+      "outlineColor": "rgb(139, 147, 248)",
+      "box": {
+        "w": 30,
+        "h": 30
+      },
+      "text": ""
+    },
+    ".nav-label": {
+      "fontFamily": "-apple-system, \"system-ui\", \"Segoe UI\", Roboto, Helvetica, Arial, sans-serif, ui-sans-serif, system-ui, sans-serif",
+      "fontSize": "10px",
+      "fontWeight": "700",
+      "lineHeight": "15.5px",
+      "letterSpacing": "1.4px",
+      "textTransform": "uppercase",
+      "color": "rgb(153, 163, 180)",
+      "backgroundColor": "rgba(0, 0, 0, 0)",
+      "borderColor": "rgb(153, 163, 180)",
+      "borderRadius": "0px",
+      "boxShadow": "none",
+      "minHeight": "auto",
+      "padding": "12px 10px 4px",
+      "fontVariantNumeric": "normal",
+      "outlineColor": "rgb(153, 163, 180)",
+      "box": {
+        "w": 199,
+        "h": 32
+      },
+      "text": "Workspace"
+    },
+    ".nav-link": {
+      "fontFamily": "-apple-system, \"system-ui\", \"Segoe UI\", Roboto, Helvetica, Arial, sans-serif, ui-sans-serif, system-ui, sans-serif",
+      "fontSize": "14px",
+      "fontWeight": "400",
+      "lineHeight": "21.7px",
+      "letterSpacing": "normal",
+      "textTransform": "none",
+      "color": "rgb(165, 171, 250)",
+      "backgroundColor": "rgb(24, 29, 40)",
+      "borderColor": "rgb(36, 43, 56)",
+      "borderRadius": "8px",
+      "boxShadow": "none",
+      "minHeight": "38px",
+      "padding": "8px 10px",
+      "fontVariantNumeric": "normal",
+      "outlineColor": "rgb(165, 171, 250)",
+      "box": {
+        "w": 199,
+        "h": 40
+      },
+      "text": "Portfolio"
+    },
+    ".rail-meta": {
+      "fontFamily": "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, \"Liberation Mono\", \"Courier New\", monospace, ui-monospace, monospace",
+      "fontSize": "10px",
+      "fontWeight": "400",
+      "lineHeight": "15px",
+      "letterSpacing": "normal",
+      "textTransform": "none",
+      "color": "rgb(153, 163, 180)",
+      "backgroundColor": "rgba(0, 0, 0, 0)",
+      "borderColor": "rgb(36, 43, 56) rgb(153, 163, 180) rgb(153, 163, 180)",
+      "borderRadius": "0px",
+      "boxShadow": "none",
+      "minHeight": "auto",
+      "padding": "12px 8px 0px",
+      "fontVariantNumeric": "normal",
+      "outlineColor": "rgb(153, 163, 180)",
+      "box": {
+        "w": 199,
+        "h": 81
+      },
+      "text": "AnalystApiGoldenpack-7e597e74 HoldingsDe"
+    },
+    ".topbar h1": {
+      "fontFamily": "\"Avenir Next\", \"Segoe UI\", system-ui, sans-serif, -apple-system, \"system-ui\", \"Segoe UI\", Roboto, Helvetica, Arial, sans-serif, ui-sans-serif, sans-serif",
+      "fontSize": "21px",
+      "fontWeight": "600",
+      "lineHeight": "25.2px",
+      "letterSpacing": "-0.21px",
+      "textTransform": "none",
+      "color": "rgb(233, 237, 244)",
+      "backgroundColor": "rgba(0, 0, 0, 0)",
+      "borderColor": "rgb(233, 237, 244)",
+      "borderRadius": "0px",
+      "boxShadow": "none",
+      "minHeight": "0px",
+      "padding": "0px",
+      "fontVariantNumeric": "normal",
+      "outlineColor": "rgb(233, 237, 244)",
+      "box": {
+        "w": 616,
+        "h": 25
+      },
+      "text": "Monitored credits"
+    },
+    ".meta-label": {
+      "fontFamily": "-apple-system, \"system-ui\", \"Segoe UI\", Roboto, Helvetica, Arial, sans-serif, ui-sans-serif, system-ui, sans-serif",
+      "fontSize": "11px",
+      "fontWeight": "650",
+      "lineHeight": "14.85px",
+      "letterSpacing": "normal",
+      "textTransform": "none",
+      "color": "rgb(153, 163, 180)",
+      "backgroundColor": "rgba(0, 0, 0, 0)",
+      "borderColor": "rgb(153, 163, 180)",
+      "borderRadius": "0px",
+      "boxShadow": "none",
+      "minHeight": "0px",
+      "padding": "0px",
+      "fontVariantNumeric": "normal",
+      "outlineColor": "rgb(153, 163, 180)",
+      "box": {
+        "w": 125,
+        "h": 13
+      },
+      "text": "Portfolio / Surveillance"
+    },
+    ".authority-strip": {
+      "fontFamily": "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, \"Liberation Mono\", \"Courier New\", monospace, ui-monospace, monospace",
+      "fontSize": "11px",
+      "fontWeight": "400",
+      "lineHeight": "15.4px",
+      "letterSpacing": "normal",
+      "textTransform": "none",
+      "color": "rgb(153, 163, 180)",
+      "backgroundColor": "rgb(10, 12, 16)",
+      "borderColor": "rgb(153, 163, 180) rgb(153, 163, 180) rgb(36, 43, 56)",
+      "borderRadius": "0px",
+      "boxShadow": "none",
+      "minHeight": "36px",
+      "padding": "6px 28px",
+      "fontVariantNumeric": "normal",
+      "outlineColor": "rgb(153, 163, 180)",
+      "box": {
+        "w": 1216,
+        "h": 36
+      },
+      "text": "Credit: ApiGoldenpack-7e597e74 HoldingsV"
+    },
+    ".authority-strip b": {
+      "fontFamily": "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, \"Liberation Mono\", \"Courier New\", monospace, ui-monospace, monospace",
+      "fontSize": "11px",
+      "fontWeight": "600",
+      "lineHeight": "15.4px",
+      "letterSpacing": "normal",
+      "textTransform": "none",
+      "color": "rgb(233, 237, 244)",
+      "backgroundColor": "rgba(0, 0, 0, 0)",
+      "borderColor": "rgb(233, 237, 244)",
+      "borderRadius": "0px",
+      "boxShadow": "none",
+      "minHeight": "0px",
+      "padding": "0px",
+      "fontVariantNumeric": "normal",
+      "outlineColor": "rgb(233, 237, 244)",
+      "box": {
+        "w": 46,
+        "h": 13
+      },
+      "text": "Credit:"
+    },
+    ".panel-header h2": {
+      "fontFamily": "-apple-system, \"system-ui\", \"Segoe UI\", Roboto, Helvetica, Arial, sans-serif, ui-sans-serif, system-ui, sans-serif",
+      "fontSize": "13px",
+      "fontWeight": "600",
+      "lineHeight": "20.15px",
+      "letterSpacing": "normal",
+      "textTransform": "none",
+      "color": "rgb(233, 237, 244)",
+      "backgroundColor": "rgba(0, 0, 0, 0)",
+      "borderColor": "rgb(233, 237, 244)",
+      "borderRadius": "0px",
+      "boxShadow": "none",
+      "minHeight": "auto",
+      "padding": "0px",
+      "fontVariantNumeric": "normal",
+      "outlineColor": "rgb(233, 237, 244)",
+      "box": {
+        "w": 124,
+        "h": 20
+      },
+      "text": "Analyze documents"
+    },
+    ".panel-meta": {
+      "fontFamily": "-apple-system, \"system-ui\", \"Segoe UI\", Roboto, Helvetica, Arial, sans-serif, ui-sans-serif, system-ui, sans-serif",
+      "fontSize": "10px",
+      "fontWeight": "600",
+      "lineHeight": "13.5px",
+      "letterSpacing": "normal",
+      "textTransform": "none",
+      "color": "rgb(153, 163, 180)",
+      "backgroundColor": "rgba(0, 0, 0, 0)",
+      "borderColor": "rgb(153, 163, 180)",
+      "borderRadius": "0px",
+      "boxShadow": "none",
+      "minHeight": "auto",
+      "padding": "0px",
+      "fontVariantNumeric": "normal",
+      "outlineColor": "rgb(153, 163, 180)",
+      "box": {
+        "w": 172,
+        "h": 14
+      },
+      "text": "Last intake Sep 5, 2026, 10:46 AM"
+    },
+    ".button.primary": {
+      "fontFamily": "-apple-system, \"system-ui\", \"Segoe UI\", Roboto, Helvetica, Arial, sans-serif, ui-sans-serif, system-ui, sans-serif",
+      "fontSize": "14px",
+      "fontWeight": "700",
+      "lineHeight": "21.7px",
+      "letterSpacing": "normal",
+      "textTransform": "none",
+      "color": "rgb(10, 12, 16)",
+      "backgroundColor": "rgb(139, 147, 248)",
+      "borderColor": "rgb(139, 147, 248)",
+      "borderRadius": "8px",
+      "boxShadow": "none",
+      "minHeight": "36px",
+      "padding": "8px 12px",
+      "fontVariantNumeric": "normal",
+      "outlineColor": "rgb(10, 12, 16)",
+      "box": {
+        "w": 162,
+        "h": 40
+      },
+      "text": "Analyze documents"
+    },
+    ".button.small": {
+      "fontFamily": "-apple-system, \"system-ui\", \"Segoe UI\", Roboto, Helvetica, Arial, sans-serif, ui-sans-serif, system-ui, sans-serif",
+      "fontSize": "11px",
+      "fontWeight": "400",
+      "lineHeight": "17.05px",
+      "letterSpacing": "normal",
+      "textTransform": "none",
+      "color": "rgb(233, 237, 244)",
+      "backgroundColor": "rgb(24, 29, 40)",
+      "borderColor": "rgb(96, 107, 126)",
+      "borderRadius": "6px",
+      "boxShadow": "none",
+      "minHeight": "30px",
+      "padding": "4px 8px",
+      "fontVariantNumeric": "normal",
+      "outlineColor": "rgb(233, 237, 244)",
+      "box": {
+        "w": 97,
+        "h": 30
+      },
+      "text": "Command ⌘K"
+    },
+    ".top-actions kbd": {
+      "fontFamily": "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, \"Liberation Mono\", \"Courier New\", monospace, ui-monospace, monospace",
+      "fontSize": "10px",
+      "fontWeight": "600",
+      "lineHeight": "14px",
+      "letterSpacing": "normal",
+      "textTransform": "none",
+      "color": "rgb(233, 237, 244)",
+      "backgroundColor": "rgb(10, 12, 16)",
+      "borderColor": "rgb(36, 43, 56)",
+      "borderRadius": "6px",
+      "boxShadow": "none",
+      "minHeight": "auto",
+      "padding": "1px 4px",
+      "fontVariantNumeric": "normal",
+      "outlineColor": "rgb(233, 237, 244)",
+      "box": {
+        "w": 22,
+        "h": 18
+      },
+      "text": "⌘K"
+    },
+    ".field label": {
+      "fontFamily": "-apple-system, \"system-ui\", \"Segoe UI\", Roboto, Helvetica, Arial, sans-serif, ui-sans-serif, system-ui, sans-serif",
+      "fontSize": "14px",
+      "fontWeight": "400",
+      "lineHeight": "21.7px",
+      "letterSpacing": "normal",
+      "textTransform": "none",
+      "color": "rgb(233, 237, 244)",
+      "backgroundColor": "rgba(0, 0, 0, 0)",
+      "borderColor": "rgb(233, 237, 244)",
+      "borderRadius": "0px",
+      "boxShadow": "none",
+      "minHeight": "auto",
+      "padding": "0px",
+      "fontVariantNumeric": "normal",
+      "outlineColor": "rgb(233, 237, 244)",
+      "box": {
+        "w": 1134,
+        "h": 43
+      },
+      "text": "Add to ApiGoldenpack-7e597e74 Holdings /"
+    },
+    ".field input": {
+      "fontFamily": "-apple-system, \"system-ui\", \"Segoe UI\", Roboto, Helvetica, Arial, sans-serif, ui-sans-serif, system-ui, sans-serif",
+      "fontSize": "14px",
+      "fontWeight": "400",
+      "lineHeight": "21.7px",
+      "letterSpacing": "normal",
+      "textTransform": "none",
+      "color": "rgb(233, 237, 244)",
+      "backgroundColor": "rgb(10, 12, 16)",
+      "borderColor": "rgb(233, 237, 244)",
+      "borderRadius": "0px",
+      "boxShadow": "none",
+      "minHeight": "auto",
+      "padding": "0px",
+      "fontVariantNumeric": "normal",
+      "outlineColor": "rgb(233, 237, 244)",
+      "box": {
+        "w": 620,
+        "h": 13
+      },
+      "text": ""
+    },
+    "th": {
+      "fontFamily": "-apple-system, \"system-ui\", \"Segoe UI\", Roboto, Helvetica, Arial, sans-serif, ui-sans-serif, system-ui, sans-serif",
+      "fontSize": "10px",
+      "fontWeight": "700",
+      "lineHeight": "15.5px",
+      "letterSpacing": "0.9px",
+      "textTransform": "uppercase",
+      "color": "rgb(153, 163, 180)",
+      "backgroundColor": "rgba(0, 0, 0, 0)",
+      "borderColor": "rgb(153, 163, 180) rgb(153, 163, 180) rgb(36, 43, 56)",
+      "borderRadius": "0px",
+      "boxShadow": "none",
+      "minHeight": "0px",
+      "padding": "8px",
+      "fontVariantNumeric": "normal",
+      "outlineColor": "rgb(153, 163, 180)",
+      "box": {
+        "w": 447,
+        "h": 32
+      },
+      "text": "Document"
+    },
+    "td": {
+      "fontFamily": "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, \"Liberation Mono\", \"Courier New\", monospace, ui-monospace, monospace",
+      "fontSize": "14px",
+      "fontWeight": "400",
+      "lineHeight": "21.7px",
+      "letterSpacing": "normal",
+      "textTransform": "none",
+      "color": "rgb(233, 237, 244)",
+      "backgroundColor": "rgba(0, 0, 0, 0)",
+      "borderColor": "rgb(233, 237, 244) rgb(233, 237, 244) rgb(36, 43, 56)",
+      "borderRadius": "0px",
+      "boxShadow": "none",
+      "minHeight": "0px",
+      "padding": "8px",
+      "fontVariantNumeric": "normal",
+      "outlineColor": "rgb(233, 237, 244)",
+      "box": {
+        "w": 447,
+        "h": 40
+      },
+      "text": "apigoldenpack-7e597e74-10k-fy2024.txt"
+    },
+    ".status": {
+      "fontFamily": "-apple-system, \"system-ui\", \"Segoe UI\", Roboto, Helvetica, Arial, sans-serif, ui-sans-serif, system-ui, sans-serif",
+      "fontSize": "14px",
+      "fontWeight": "700",
+      "lineHeight": "21.7px",
+      "letterSpacing": "normal",
+      "textTransform": "none",
+      "color": "rgb(52, 211, 153)",
+      "backgroundColor": "rgba(0, 0, 0, 0)",
+      "borderColor": "rgb(52, 211, 153)",
+      "borderRadius": "0px",
+      "boxShadow": "none",
+      "minHeight": "0px",
+      "padding": "0px",
+      "fontVariantNumeric": "normal",
+      "outlineColor": "rgb(52, 211, 153)",
+      "box": {
+        "w": 47,
+        "h": 22
+      },
+      "text": "used"
+    },
+    ".mono": {
+      "fontFamily": "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, \"Liberation Mono\", \"Courier New\", monospace, ui-monospace, monospace",
+      "fontSize": "14px",
+      "fontWeight": "400",
+      "lineHeight": "21.7px",
+      "letterSpacing": "normal",
+      "textTransform": "none",
+      "color": "rgb(233, 237, 244)",
+      "backgroundColor": "rgba(0, 0, 0, 0)",
+      "borderColor": "rgb(233, 237, 244) rgb(233, 237, 244) rgb(36, 43, 56)",
+      "borderRadius": "0px",
+      "boxShadow": "none",
+      "minHeight": "0px",
+      "padding": "8px",
+      "fontVariantNumeric": "normal",
+      "outlineColor": "rgb(233, 237, 244)",
+      "box": {
+        "w": 447,
+        "h": 40
+      },
+      "text": "apigoldenpack-7e597e74-10k-fy2024.txt"
+    },
+    ".muted": {
+      "fontFamily": "-apple-system, \"system-ui\", \"Segoe UI\", Roboto, Helvetica, Arial, sans-serif, ui-sans-serif, system-ui, sans-serif",
+      "fontSize": "12px",
+      "fontWeight": "400",
+      "lineHeight": "18.6px",
+      "letterSpacing": "normal",
+      "textTransform": "none",
+      "color": "rgb(153, 163, 180)",
+      "backgroundColor": "rgba(0, 0, 0, 0)",
+      "borderColor": "rgb(153, 163, 180)",
+      "borderRadius": "0px",
+      "boxShadow": "none",
+      "minHeight": "auto",
+      "padding": "0px",
+      "fontVariantNumeric": "normal",
+      "outlineColor": "rgb(153, 163, 180)",
+      "box": {
+        "w": 1100,
+        "h": 37
+      },
+      "text": "Annual and quarterly reports, earnings r"
+    },
+    ".dropzone": {
+      "fontFamily": "-apple-system, \"system-ui\", \"Segoe UI\", Roboto, Helvetica, Arial, sans-serif, ui-sans-serif, system-ui, sans-serif",
+      "fontSize": "14px",
+      "fontWeight": "400",
+      "lineHeight": "21.7px",
+      "letterSpacing": "normal",
+      "textTransform": "none",
+      "color": "rgb(233, 237, 244)",
+      "backgroundColor": "rgb(10, 12, 16)",
+      "borderColor": "rgb(96, 107, 126)",
+      "borderRadius": "10px",
+      "boxShadow": "none",
+      "minHeight": "auto",
+      "padding": "16px",
+      "fontVariantNumeric": "normal",
+      "outlineColor": "rgb(233, 237, 244)",
+      "box": {
+        "w": 1134,
+        "h": 157
+      },
+      "text": "Drop documents here, or choose filesAnnu"
+    },
+    ".dropzone label span": {
+      "fontFamily": "-apple-system, \"system-ui\", \"Segoe UI\", Roboto, Helvetica, Arial, sans-serif, ui-sans-serif, system-ui, sans-serif",
+      "fontSize": "12px",
+      "fontWeight": "400",
+      "lineHeight": "18.6px",
+      "letterSpacing": "normal",
+      "textTransform": "none",
+      "color": "rgb(153, 163, 180)",
+      "backgroundColor": "rgba(0, 0, 0, 0)",
+      "borderColor": "rgb(153, 163, 180)",
+      "borderRadius": "0px",
+      "boxShadow": "none",
+      "minHeight": "auto",
+      "padding": "0px",
+      "fontVariantNumeric": "normal",
+      "outlineColor": "rgb(153, 163, 180)",
+      "box": {
+        "w": 1100,
+        "h": 37
+      },
+      "text": "Annual and quarterly reports, earnings r"
+    },
+    ".button": {
+      "fontFamily": "-apple-system, \"system-ui\", \"Segoe UI\", Roboto, Helvetica, Arial, sans-serif, ui-sans-serif, system-ui, sans-serif",
+      "fontSize": "14px",
+      "fontWeight": "400",
+      "lineHeight": "21.7px",
+      "letterSpacing": "normal",
+      "textTransform": "none",
+      "color": "rgb(233, 237, 244)",
+      "backgroundColor": "rgb(24, 29, 40)",
+      "borderColor": "rgb(96, 107, 126)",
+      "borderRadius": "8px",
+      "boxShadow": "none",
+      "minHeight": "36px",
+      "padding": "8px 12px",
+      "fontVariantNumeric": "normal",
+      "outlineColor": "rgb(233, 237, 244)",
+      "box": {
+        "w": 103,
+        "h": 40
+      },
+      "text": "Create case"
+    },
+    ".evidence-chip": {
+      "fontFamily": "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, \"Liberation Mono\", \"Courier New\", monospace, ui-monospace, monospace",
+      "fontSize": "10px",
+      "fontWeight": "400",
+      "lineHeight": "13px",
+      "letterSpacing": "normal",
+      "textTransform": "none",
+      "color": "rgb(165, 171, 250)",
+      "backgroundColor": "color(srgb 0.545098 0.576471 0.972549 / 0.07)",
+      "borderColor": "color(srgb 0.403726 0.433726 0.70902)",
+      "borderRadius": "999px",
+      "boxShadow": "none",
+      "minHeight": "24px",
+      "padding": "3px 8px",
+      "fontVariantNumeric": "normal",
+      "outlineColor": "rgb(165, 171, 250)",
+      "box": {
+        "w": 163,
+        "h": 24
+      },
+      "text": "src-04a7d88ca23d4bb5a140"
+    },
+    ".source-reader h2": {
+      "fontFamily": "-apple-system, \"system-ui\", \"Segoe UI\", Roboto, Helvetica, Arial, sans-serif, ui-sans-serif, system-ui, sans-serif",
+      "fontSize": "22px",
+      "fontWeight": "700",
+      "lineHeight": "34.1px",
+      "letterSpacing": "normal",
+      "textTransform": "none",
+      "color": "rgb(233, 237, 244)",
+      "backgroundColor": "rgba(0, 0, 0, 0)",
+      "borderColor": "rgb(233, 237, 244)",
+      "borderRadius": "0px",
+      "boxShadow": "none",
+      "minHeight": "0px",
+      "padding": "0px",
+      "fontVariantNumeric": "normal",
+      "outlineColor": "rgb(233, 237, 244)",
+      "box": {
+        "w": 444,
+        "h": 34
+      },
+      "text": "apigoldenpack-7e597e74-10k-fy2024.txt"
+    },
+    ".source-region-head h2": {
+      "fontFamily": "-apple-system, \"system-ui\", \"Segoe UI\", Roboto, Helvetica, Arial, sans-serif, ui-sans-serif, system-ui, sans-serif",
+      "fontSize": "15px",
+      "fontWeight": "700",
+      "lineHeight": "23.25px",
+      "letterSpacing": "normal",
+      "textTransform": "none",
+      "color": "rgb(233, 237, 244)",
+      "backgroundColor": "rgba(0, 0, 0, 0)",
+      "borderColor": "rgb(233, 237, 244)",
+      "borderRadius": "0px",
+      "boxShadow": "none",
+      "minHeight": "auto",
+      "padding": "0px",
+      "fontVariantNumeric": "normal",
+      "outlineColor": "rgb(233, 237, 244)",
+      "box": {
+        "w": 113,
+        "h": 23
+      },
+      "text": "Source register"
+    },
+    ".source-document-block button": {
+      "fontFamily": "-apple-system, \"system-ui\", \"Segoe UI\", Roboto, Helvetica, Arial, sans-serif, ui-sans-serif, system-ui, sans-serif",
+      "fontSize": "14px",
+      "fontWeight": "400",
+      "lineHeight": "23.8px",
+      "letterSpacing": "normal",
+      "textTransform": "none",
+      "color": "rgb(233, 237, 244)",
+      "backgroundColor": "rgb(24, 29, 40)",
+      "borderColor": "rgb(233, 237, 244)",
+      "borderRadius": "0px",
+      "boxShadow": "none",
+      "minHeight": "0px",
+      "padding": "12px",
+      "fontVariantNumeric": "normal",
+      "outlineColor": "rgb(233, 237, 244)",
+      "box": {
+        "w": 444,
+        "h": 71
+      },
+      "text": "b00001 · line 1ApiGoldenpack-7e597e74 Ho"
+    },
+    ".state-block": {
+      "fontFamily": "-apple-system, \"system-ui\", \"Segoe UI\", Roboto, Helvetica, Arial, sans-serif, ui-sans-serif, system-ui, sans-serif",
+      "fontSize": "14px",
+      "fontWeight": "400",
+      "lineHeight": "21px",
+      "letterSpacing": "normal",
+      "textTransform": "none",
+      "color": "rgb(153, 163, 180)",
+      "backgroundColor": "rgba(0, 0, 0, 0)",
+      "borderColor": "rgb(153, 163, 180)",
+      "borderRadius": "0px",
+      "boxShadow": "none",
+      "minHeight": "0px",
+      "padding": "0px",
+      "fontVariantNumeric": "normal",
+      "outlineColor": "rgb(153, 163, 180)",
+      "box": {
+        "w": 287,
+        "h": 133
+      },
+      "text": "Claim coverageNot available in this depl"
+    },
+    ".drawer-header h2": {
+      "fontFamily": "-apple-system, \"system-ui\", \"Segoe UI\", Roboto, Helvetica, Arial, sans-serif, ui-sans-serif, system-ui, sans-serif",
+      "fontSize": "16px",
+      "fontWeight": "700",
+      "lineHeight": "24.8px",
+      "letterSpacing": "normal",
+      "textTransform": "none",
+      "color": "rgb(233, 237, 244)",
+      "backgroundColor": "rgba(0, 0, 0, 0)",
+      "borderColor": "rgb(233, 237, 244)",
+      "borderRadius": "0px",
+      "boxShadow": "none",
+      "minHeight": "auto",
+      "padding": "0px",
+      "fontVariantNumeric": "normal",
+      "outlineColor": "rgb(233, 237, 244)",
+      "box": {
+        "w": 287,
+        "h": 25
+      },
+      "text": "apigoldenpack-7e597e74-10q-q3.txt"
+    },
+    "dialog": {
+      "fontFamily": "-apple-system, \"system-ui\", \"Segoe UI\", Roboto, Helvetica, Arial, sans-serif, ui-sans-serif, system-ui, sans-serif",
+      "fontSize": "14px",
+      "fontWeight": "400",
+      "lineHeight": "21.7px",
+      "letterSpacing": "normal",
+      "textTransform": "none",
+      "color": "rgb(233, 237, 244)",
+      "backgroundColor": "rgb(16, 19, 25)",
+      "borderColor": "rgb(96, 107, 126)",
+      "borderRadius": "14px 0px 0px 14px",
+      "boxShadow": "rgba(0, 0, 0, 0.85) 0px 24px 80px -24px",
+      "minHeight": "0px",
+      "padding": "0px",
+      "fontVariantNumeric": "normal",
+      "outlineColor": "rgb(233, 237, 244)",
+      "box": {
+        "w": 440,
+        "h": 1000
+      },
+      "text": "apigoldenpack-7e597e74-10q-q3.txtCloseSo"
+    },
+    ".dag-edge": {
+      "fontFamily": "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, \"Liberation Mono\", \"Courier New\", monospace, ui-monospace, monospace",
+      "fontSize": "12px",
+      "fontWeight": "400",
+      "lineHeight": "12px",
+      "letterSpacing": "normal",
+      "textTransform": "none",
+      "color": "rgb(153, 163, 180)",
+      "backgroundColor": "rgba(0, 0, 0, 0)",
+      "borderColor": "rgb(153, 163, 180)",
+      "borderRadius": "0px",
+      "boxShadow": "none",
+      "minHeight": "auto",
+      "padding": "0px",
+      "fontVariantNumeric": "normal",
+      "outlineColor": "rgb(153, 163, 180)",
+      "box": {
+        "w": 7,
+        "h": 12
+      },
+      "text": "→"
+    },
+    ".dag-node": {
+      "fontFamily": "-apple-system, \"system-ui\", \"Segoe UI\", Roboto, Helvetica, Arial, sans-serif, ui-sans-serif, system-ui, sans-serif",
+      "fontSize": "14px",
+      "fontWeight": "400",
+      "lineHeight": "21.7px",
+      "letterSpacing": "normal",
+      "textTransform": "none",
+      "color": "rgb(233, 237, 244)",
+      "backgroundColor": "rgb(10, 12, 16)",
+      "borderColor": "rgb(36, 43, 56)",
+      "borderRadius": "8px",
+      "boxShadow": "none",
+      "minHeight": "auto",
+      "padding": "8px",
+      "fontVariantNumeric": "normal",
+      "outlineColor": "rgb(233, 237, 244)",
+      "box": {
+        "w": 179,
+        "h": 124
+      },
+      "text": "CP-PARSEsucceededOpen output"
+    },
+    ".dag-node-open": {
+      "fontFamily": "-apple-system, \"system-ui\", \"Segoe UI\", Roboto, Helvetica, Arial, sans-serif, ui-sans-serif, system-ui, sans-serif",
+      "fontSize": "10px",
+      "fontWeight": "700",
+      "lineHeight": "15.5px",
+      "letterSpacing": "0.6px",
+      "textTransform": "uppercase",
+      "color": "rgb(139, 147, 248)",
+      "backgroundColor": "rgba(0, 0, 0, 0)",
+      "borderColor": "rgb(139, 147, 248)",
+      "borderRadius": "0px",
+      "boxShadow": "none",
+      "minHeight": "0px",
+      "padding": "0px",
+      "fontVariantNumeric": "normal",
+      "outlineColor": "rgb(139, 147, 248)",
+      "box": {
+        "w": 161,
+        "h": 16
+      },
+      "text": "Open output"
+    },
+    ".callout": {
+      "fontFamily": "-apple-system, \"system-ui\", \"Segoe UI\", Roboto, Helvetica, Arial, sans-serif, ui-sans-serif, system-ui, sans-serif",
+      "fontSize": "14px",
+      "fontWeight": "400",
+      "lineHeight": "21.7px",
+      "letterSpacing": "normal",
+      "textTransform": "none",
+      "color": "rgb(233, 237, 244)",
+      "backgroundColor": "color(srgb 0.121176 0.14149 0.205804)",
+      "borderColor": "color(srgb 0.363333 0.392941 0.633726)",
+      "borderRadius": "10px",
+      "boxShadow": "none",
+      "minHeight": "auto",
+      "padding": "12px",
+      "fontVariantNumeric": "normal",
+      "outlineColor": "rgb(233, 237, 244)",
+      "box": {
+        "w": 350,
+        "h": 91
+      },
+      "text": "Every route begins by parsing your sourc"
+    },
+    ".run-progress-track": {
+      "fontFamily": "-apple-system, \"system-ui\", \"Segoe UI\", Roboto, Helvetica, Arial, sans-serif, ui-sans-serif, system-ui, sans-serif",
+      "fontSize": "14px",
+      "fontWeight": "400",
+      "lineHeight": "21.7px",
+      "letterSpacing": "normal",
+      "textTransform": "none",
+      "color": "rgb(233, 237, 244)",
+      "backgroundColor": "rgb(36, 43, 56)",
+      "borderColor": "rgb(233, 237, 244)",
+      "borderRadius": "999px",
+      "boxShadow": "none",
+      "minHeight": "auto",
+      "padding": "0px",
+      "fontVariantNumeric": "normal",
+      "outlineColor": "rgb(233, 237, 244)",
+      "box": {
+        "w": 742,
+        "h": 4
+      },
+      "text": ""
+    },
+    ".mutation-receipt": {
+      "fontFamily": "-apple-system, \"system-ui\", \"Segoe UI\", Roboto, Helvetica, Arial, sans-serif, ui-sans-serif, system-ui, sans-serif",
+      "fontSize": "14px",
+      "fontWeight": "400",
+      "lineHeight": "21.7px",
+      "letterSpacing": "normal",
+      "textTransform": "none",
+      "color": "rgb(233, 237, 244)",
+      "backgroundColor": "color(srgb 0.0523922 0.10949 0.105725)",
+      "borderColor": "color(srgb 0.175686 0.53098 0.428824)",
+      "borderRadius": "10px",
+      "boxShadow": "none",
+      "minHeight": "0px",
+      "padding": "8px 12px",
+      "fontVariantNumeric": "normal",
+      "outlineColor": "rgb(233, 237, 244)",
+      "box": {
+        "w": 1160,
+        "h": 40
+      },
+      "text": "✓Snapshot accepted as the latest authori"
+    },
+    ".mutation-receipt > :first-child": {
+      "fontFamily": "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, \"Liberation Mono\", \"Courier New\", monospace, ui-monospace, monospace",
+      "fontSize": "12px",
+      "fontWeight": "700",
+      "lineHeight": "12px",
+      "letterSpacing": "normal",
+      "textTransform": "none",
+      "color": "rgb(52, 211, 153)",
+      "backgroundColor": "rgba(0, 0, 0, 0)",
+      "borderColor": "rgb(52, 211, 153)",
+      "borderRadius": "0px",
+      "boxShadow": "none",
+      "minHeight": "auto",
+      "padding": "0px",
+      "fontVariantNumeric": "normal",
+      "outlineColor": "rgb(52, 211, 153)",
+      "box": {
+        "w": 7,
+        "h": 12
+      },
+      "text": "✓"
+    },
+    ".research-workstreams h5": {
+      "fontFamily": "-apple-system, \"system-ui\", \"Segoe UI\", Roboto, Helvetica, Arial, sans-serif, ui-sans-serif, system-ui, sans-serif",
+      "fontSize": "12px",
+      "fontWeight": "700",
+      "lineHeight": "18.6px",
+      "letterSpacing": "normal",
+      "textTransform": "none",
+      "color": "rgb(233, 237, 244)",
+      "backgroundColor": "rgba(0, 0, 0, 0)",
+      "borderColor": "rgb(233, 237, 244)",
+      "borderRadius": "0px",
+      "boxShadow": "none",
+      "minHeight": "0px",
+      "padding": "0px",
+      "fontVariantNumeric": "normal",
+      "outlineColor": "rgb(233, 237, 244)",
+      "box": {
+        "w": 718,
+        "h": 19
+      },
+      "text": "WS-1 · topical"
+    },
+    ".analysis-reader h2": {
+      "fontFamily": "\"Avenir Next\", \"Segoe UI\", system-ui, sans-serif, -apple-system, \"system-ui\", \"Segoe UI\", Roboto, Helvetica, Arial, sans-serif, ui-sans-serif, sans-serif",
+      "fontSize": "30px",
+      "fontWeight": "600",
+      "lineHeight": "31.5px",
+      "letterSpacing": "normal",
+      "textTransform": "none",
+      "color": "rgb(233, 237, 244)",
+      "backgroundColor": "rgba(0, 0, 0, 0)",
+      "borderColor": "rgb(233, 237, 244)",
+      "borderRadius": "0px",
+      "boxShadow": "none",
+      "minHeight": "0px",
+      "padding": "0px",
+      "fontVariantNumeric": "normal",
+      "outlineColor": "rgb(233, 237, 244)",
+      "box": {
+        "w": 562,
+        "h": 32
+      },
+      "text": "Fundamental Credit Synthesizer"
+    },
+    ".analysis-lead": {
+      "fontFamily": "-apple-system, \"system-ui\", \"Segoe UI\", Roboto, Helvetica, Arial, sans-serif, ui-sans-serif, system-ui, sans-serif",
+      "fontSize": "16px",
+      "fontWeight": "400",
+      "lineHeight": "24.8px",
+      "letterSpacing": "normal",
+      "textTransform": "none",
+      "color": "rgb(153, 163, 180)",
+      "backgroundColor": "rgba(0, 0, 0, 0)",
+      "borderColor": "rgb(153, 163, 180)",
+      "borderRadius": "0px",
+      "boxShadow": "none",
+      "minHeight": "0px",
+      "padding": "0px",
+      "fontVariantNumeric": "normal",
+      "outlineColor": "rgb(153, 163, 180)",
+      "box": {
+        "w": 562,
+        "h": 25
+      },
+      "text": "Host-control orchestration proof; not an"
+    },
+    ".analysis-copy p": {
+      "fontFamily": "-apple-system, \"system-ui\", \"Segoe UI\", Roboto, Helvetica, Arial, sans-serif, ui-sans-serif, system-ui, sans-serif",
+      "fontSize": "14px",
+      "fontWeight": "400",
+      "lineHeight": "24.08px",
+      "letterSpacing": "normal",
+      "textTransform": "none",
+      "color": "rgb(233, 237, 244)",
+      "backgroundColor": "rgba(0, 0, 0, 0)",
+      "borderColor": "rgb(233, 237, 244)",
+      "borderRadius": "0px",
+      "boxShadow": "none",
+      "minHeight": "auto",
+      "padding": "0px",
+      "fontVariantNumeric": "normal",
+      "outlineColor": "rgb(233, 237, 244)",
+      "box": {
+        "w": 562,
+        "h": 24
+      },
+      "text": "Host-control orchestration proof; not an"
+    },
+    ".analysis-copy h3": {
+      "fontFamily": "-apple-system, \"system-ui\", \"Segoe UI\", Roboto, Helvetica, Arial, sans-serif, ui-sans-serif, system-ui, sans-serif",
+      "fontSize": "16px",
+      "fontWeight": "700",
+      "lineHeight": "24.8px",
+      "letterSpacing": "normal",
+      "textTransform": "none",
+      "color": "rgb(233, 237, 244)",
+      "backgroundColor": "rgba(0, 0, 0, 0)",
+      "borderColor": "rgb(233, 237, 244)",
+      "borderRadius": "0px",
+      "boxShadow": "none",
+      "minHeight": "auto",
+      "padding": "0px",
+      "fontVariantNumeric": "normal",
+      "outlineColor": "rgb(233, 237, 244)",
+      "box": {
+        "w": 562,
+        "h": 25
+      },
+      "text": "Audit Summary"
+    },
+    ".analysis-toc button": {
+      "fontFamily": "-apple-system, \"system-ui\", \"Segoe UI\", Roboto, Helvetica, Arial, sans-serif, ui-sans-serif, system-ui, sans-serif",
+      "fontSize": "14px",
+      "fontWeight": "400",
+      "lineHeight": "21.7px",
+      "letterSpacing": "normal",
+      "textTransform": "none",
+      "color": "rgb(153, 163, 180)",
+      "backgroundColor": "rgba(0, 0, 0, 0)",
+      "borderColor": "rgba(0, 0, 0, 0)",
+      "borderRadius": "8px",
+      "boxShadow": "none",
+      "minHeight": "auto",
+      "padding": "8px",
+      "fontVariantNumeric": "normal",
+      "outlineColor": "rgb(153, 163, 180)",
+      "box": {
+        "w": 165,
+        "h": 56
+      },
+      "text": "CP-PARSECP-PARSE"
+    },
+    ".analysis-evidence h2": {
+      "fontFamily": "-apple-system, \"system-ui\", \"Segoe UI\", Roboto, Helvetica, Arial, sans-serif, ui-sans-serif, system-ui, sans-serif",
+      "fontSize": "15px",
+      "fontWeight": "700",
+      "lineHeight": "23.25px",
+      "letterSpacing": "normal",
+      "textTransform": "none",
+      "color": "rgb(233, 237, 244)",
+      "backgroundColor": "rgba(0, 0, 0, 0)",
+      "borderColor": "rgb(233, 237, 244)",
+      "borderRadius": "0px",
+      "boxShadow": "none",
+      "minHeight": "0px",
+      "padding": "0px",
+      "fontVariantNumeric": "normal",
+      "outlineColor": "rgb(233, 237, 244)",
+      "box": {
+        "w": 287,
+        "h": 23
+      },
+      "text": "3 cited sources"
+    },
+    ".loan-table": {
+      "fontFamily": "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, \"Liberation Mono\", \"Courier New\", monospace, ui-monospace, monospace",
+      "fontSize": "10px",
+      "fontWeight": "400",
+      "lineHeight": "13.5px",
+      "letterSpacing": "normal",
+      "textTransform": "none",
+      "color": "rgb(233, 237, 244)",
+      "backgroundColor": "rgba(0, 0, 0, 0)",
+      "borderColor": "rgb(233, 237, 244)",
+      "borderRadius": "0px",
+      "boxShadow": "none",
+      "minHeight": "0px",
+      "padding": "0px",
+      "fontVariantNumeric": "tabular-nums",
+      "outlineColor": "rgb(233, 237, 244)",
+      "box": {
+        "w": 2545,
+        "h": 111
+      },
+      "text": "27 columns. Scroll horizontally to revie"
+    },
+    ".loan-table th": {
+      "fontFamily": "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, \"Liberation Mono\", \"Courier New\", monospace, ui-monospace, monospace",
+      "fontSize": "10px",
+      "fontWeight": "700",
+      "lineHeight": "13.5px",
+      "letterSpacing": "0.9px",
+      "textTransform": "uppercase",
+      "color": "rgb(233, 237, 244)",
+      "backgroundColor": "rgb(10, 12, 16)",
+      "borderColor": "rgb(233, 237, 244) rgb(36, 43, 56) rgb(36, 43, 56) rgb(233, 237, 244)",
+      "borderRadius": "0px",
+      "boxShadow": "none",
+      "minHeight": "0px",
+      "padding": "5px 7px",
+      "fontVariantNumeric": "tabular-nums",
+      "outlineColor": "rgb(233, 237, 244)",
+      "box": {
+        "w": 811,
+        "h": 26
+      },
+      "text": "Issuer profile"
+    },
+    ".loan-groups th": {
+      "fontFamily": "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, \"Liberation Mono\", \"Courier New\", monospace, ui-monospace, monospace",
+      "fontSize": "10px",
+      "fontWeight": "700",
+      "lineHeight": "13.5px",
+      "letterSpacing": "0.9px",
+      "textTransform": "uppercase",
+      "color": "rgb(233, 237, 244)",
+      "backgroundColor": "rgb(10, 12, 16)",
+      "borderColor": "rgb(233, 237, 244) rgb(36, 43, 56) rgb(36, 43, 56) rgb(233, 237, 244)",
+      "borderRadius": "0px",
+      "boxShadow": "none",
+      "minHeight": "0px",
+      "padding": "5px 7px",
+      "fontVariantNumeric": "tabular-nums",
+      "outlineColor": "rgb(233, 237, 244)",
+      "box": {
+        "w": 811,
+        "h": 26
+      },
+      "text": "Issuer profile"
+    },
+    ".standing-answer h2": {
+      "fontFamily": "\"Avenir Next\", \"Segoe UI\", system-ui, sans-serif, -apple-system, \"system-ui\", \"Segoe UI\", Roboto, Helvetica, Arial, sans-serif, ui-sans-serif, sans-serif",
+      "fontSize": "30px",
+      "fontWeight": "600",
+      "lineHeight": "31.2px",
+      "letterSpacing": "-0.3px",
+      "textTransform": "none",
+      "color": "rgb(233, 237, 244)",
+      "backgroundColor": "rgba(0, 0, 0, 0)",
+      "borderColor": "rgb(233, 237, 244)",
+      "borderRadius": "0px",
+      "boxShadow": "none",
+      "minHeight": "0px",
+      "padding": "0px",
+      "fontVariantNumeric": "normal",
+      "outlineColor": "rgb(233, 237, 244)",
+      "box": {
+        "w": 549,
+        "h": 62
+      },
+      "text": "Host-control orchestration proof; not an"
+    },
+    ".authority-metrics strong": {
+      "fontFamily": "-apple-system, \"system-ui\", \"Segoe UI\", Roboto, Helvetica, Arial, sans-serif, ui-sans-serif, system-ui, sans-serif",
+      "fontSize": "16px",
+      "fontWeight": "700",
+      "lineHeight": "24.8px",
+      "letterSpacing": "normal",
+      "textTransform": "none",
+      "color": "rgb(233, 237, 244)",
+      "backgroundColor": "rgba(0, 0, 0, 0)",
+      "borderColor": "rgb(233, 237, 244)",
+      "borderRadius": "0px",
+      "boxShadow": "none",
+      "minHeight": "0px",
+      "padding": "0px",
+      "fontVariantNumeric": "normal",
+      "outlineColor": "rgb(233, 237, 244)",
+      "box": {
+        "w": 184,
+        "h": 26
+      },
+      "text": "snap-7c017ff…867asnap-7c017ff…867a. Full"
+    },
+    ".proof-register strong": {
+      "fontFamily": "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, \"Liberation Mono\", \"Courier New\", monospace, ui-monospace, monospace",
+      "fontSize": "22px",
+      "fontWeight": "700",
+      "lineHeight": "34.1px",
+      "letterSpacing": "normal",
+      "textTransform": "none",
+      "color": "rgb(139, 147, 248)",
+      "backgroundColor": "rgba(0, 0, 0, 0)",
+      "borderColor": "rgb(139, 147, 248)",
+      "borderRadius": "0px",
+      "boxShadow": "none",
+      "minHeight": "0px",
+      "padding": "0px",
+      "fontVariantNumeric": "tabular-nums",
+      "outlineColor": "rgb(139, 147, 248)",
+      "box": {
+        "w": 27,
+        "h": 25
+      },
+      "text": "17"
+    },
+    ".credit-authority-head h2": {
+      "fontFamily": "-apple-system, \"system-ui\", \"Segoe UI\", Roboto, Helvetica, Arial, sans-serif, ui-sans-serif, system-ui, sans-serif",
+      "fontSize": "18px",
+      "fontWeight": "700",
+      "lineHeight": "27.9px",
+      "letterSpacing": "normal",
+      "textTransform": "none",
+      "color": "rgb(233, 237, 244)",
+      "backgroundColor": "rgba(0, 0, 0, 0)",
+      "borderColor": "rgb(233, 237, 244)",
+      "borderRadius": "0px",
+      "boxShadow": "none",
+      "minHeight": "0px",
+      "padding": "0px",
+      "fontVariantNumeric": "normal",
+      "outlineColor": "rgb(233, 237, 244)",
+      "box": {
+        "w": 418,
+        "h": 28
+      },
+      "text": "Accepted conclusion and exact module aut"
+    },
+    ".credit-proof h2": {
+      "fontFamily": "-apple-system, \"system-ui\", \"Segoe UI\", Roboto, Helvetica, Arial, sans-serif, ui-sans-serif, system-ui, sans-serif",
+      "fontSize": "15px",
+      "fontWeight": "700",
+      "lineHeight": "23.25px",
+      "letterSpacing": "normal",
+      "textTransform": "none",
+      "color": "rgb(233, 237, 244)",
+      "backgroundColor": "rgba(0, 0, 0, 0)",
+      "borderColor": "rgb(233, 237, 244)",
+      "borderRadius": "0px",
+      "boxShadow": "none",
+      "minHeight": "0px",
+      "padding": "0px",
+      "fontVariantNumeric": "normal",
+      "outlineColor": "rgb(233, 237, 244)",
+      "box": {
+        "w": 261,
+        "h": 23
+      },
+      "text": "Accepted support"
+    },
+    ".worksheet-tab": {
+      "fontFamily": "-apple-system, \"system-ui\", \"Segoe UI\", Roboto, Helvetica, Arial, sans-serif, ui-sans-serif, system-ui, sans-serif",
+      "fontSize": "10px",
+      "fontWeight": "700",
+      "lineHeight": "15.5px",
+      "letterSpacing": "0.8px",
+      "textTransform": "uppercase",
+      "color": "rgb(233, 237, 244)",
+      "backgroundColor": "rgb(24, 29, 40)",
+      "borderColor": "rgb(233, 237, 244) rgb(36, 43, 56) rgb(139, 147, 248) rgb(233, 237, 244)",
+      "borderRadius": "0px",
+      "boxShadow": "none",
+      "minHeight": "auto",
+      "padding": "8px 16px",
+      "fontVariantNumeric": "normal",
+      "outlineColor": "rgb(233, 237, 244)",
+      "box": {
+        "w": 144,
+        "h": 34
+      },
+      "text": "Credit Snapshot"
+    },
+    ".worksheet-grid": {
+      "fontFamily": "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, \"Liberation Mono\", \"Courier New\", monospace, ui-monospace, monospace",
+      "fontSize": "10px",
+      "fontWeight": "400",
+      "lineHeight": "13px",
+      "letterSpacing": "normal",
+      "textTransform": "none",
+      "color": "rgb(233, 237, 244)",
+      "backgroundColor": "rgba(0, 0, 0, 0)",
+      "borderColor": "rgb(233, 237, 244)",
+      "borderRadius": "0px",
+      "boxShadow": "none",
+      "minHeight": "0px",
+      "padding": "0px",
+      "fontVariantNumeric": "tabular-nums",
+      "outlineColor": "rgb(233, 237, 244)",
+      "box": {
+        "w": 628,
+        "h": 208
+      },
+      "text": "Read-only Credit Snapshot worksheet. For"
+    },
+    ".worksheet-grid td": {
+      "fontFamily": "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, \"Liberation Mono\", \"Courier New\", monospace, ui-monospace, monospace",
+      "fontSize": "10px",
+      "fontWeight": "750",
+      "lineHeight": "13px",
+      "letterSpacing": "normal",
+      "textTransform": "none",
+      "color": "rgb(233, 237, 244)",
+      "backgroundColor": "color(srgb 0.197804 0.215059 0.342902)",
+      "borderColor": "rgb(233, 237, 244) rgb(36, 43, 56) rgb(36, 43, 56) rgb(233, 237, 244)",
+      "borderRadius": "0px",
+      "boxShadow": "none",
+      "minHeight": "0px",
+      "padding": "3px 6px",
+      "fontVariantNumeric": "tabular-nums",
+      "outlineColor": "rgb(233, 237, 244)",
+      "box": {
+        "w": 192,
+        "h": 23
+      },
+      "text": "Credit Snapshot"
+    },
+    ".worksheet-authority-note": {
+      "fontFamily": "-apple-system, \"system-ui\", \"Segoe UI\", Roboto, Helvetica, Arial, sans-serif, ui-sans-serif, system-ui, sans-serif",
+      "fontSize": "11px",
+      "fontWeight": "400",
+      "lineHeight": "17.05px",
+      "letterSpacing": "normal",
+      "textTransform": "none",
+      "color": "rgb(153, 163, 180)",
+      "backgroundColor": "rgb(24, 29, 40)",
+      "borderColor": "rgb(153, 163, 180) rgb(153, 163, 180) rgb(36, 43, 56)",
+      "borderRadius": "0px",
+      "boxShadow": "none",
+      "minHeight": "0px",
+      "padding": "8px 16px",
+      "fontVariantNumeric": "normal",
+      "outlineColor": "rgb(153, 163, 180)",
+      "box": {
+        "w": 628,
+        "h": 51
+      },
+      "text": "Historical and calculated cells are lock"
+    },
+    ".lineage-code": {
+      "fontFamily": "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, \"Liberation Mono\", \"Courier New\", monospace, ui-monospace, monospace",
+      "fontSize": "14px",
+      "fontWeight": "400",
+      "lineHeight": "21.7px",
+      "letterSpacing": "normal",
+      "textTransform": "none",
+      "color": "rgb(165, 171, 250)",
+      "backgroundColor": "rgb(10, 12, 16)",
+      "borderColor": "rgb(36, 43, 56)",
+      "borderRadius": "8px",
+      "boxShadow": "none",
+      "minHeight": "0px",
+      "padding": "8px",
+      "fontVariantNumeric": "normal",
+      "outlineColor": "rgb(165, 171, 250)",
+      "box": {
+        "w": 596,
+        "h": 40
+      },
+      "text": "=C3*(1+D5)"
+    },
+    ".model-builder-command-body p": {
+      "fontFamily": "-apple-system, \"system-ui\", \"Segoe UI\", Roboto, Helvetica, Arial, sans-serif, ui-sans-serif, system-ui, sans-serif",
+      "fontSize": "14px",
+      "fontWeight": "400",
+      "lineHeight": "21.7px",
+      "letterSpacing": "normal",
+      "textTransform": "none",
+      "color": "rgb(153, 163, 180)",
+      "backgroundColor": "rgba(0, 0, 0, 0)",
+      "borderColor": "rgb(153, 163, 180)",
+      "borderRadius": "0px",
+      "boxShadow": "none",
+      "minHeight": "0px",
+      "padding": "0px",
+      "fontVariantNumeric": "normal",
+      "outlineColor": "rgb(153, 163, 180)",
+      "box": {
+        "w": 758,
+        "h": 22
+      },
+      "text": "Built from the accepted application and "
+    },
+    ".report-section-nav button": {
+      "fontFamily": "-apple-system, \"system-ui\", \"Segoe UI\", Roboto, Helvetica, Arial, sans-serif, ui-sans-serif, system-ui, sans-serif",
+      "fontSize": "14px",
+      "fontWeight": "400",
+      "lineHeight": "21.7px",
+      "letterSpacing": "normal",
+      "textTransform": "none",
+      "color": "rgb(139, 147, 248)",
+      "backgroundColor": "rgb(24, 29, 40)",
+      "borderColor": "rgb(36, 43, 56) rgb(36, 43, 56) rgb(36, 43, 56) rgb(139, 147, 248)",
+      "borderRadius": "8px",
+      "boxShadow": "none",
+      "minHeight": "auto",
+      "padding": "7px",
+      "fontVariantNumeric": "normal",
+      "outlineColor": "rgb(139, 147, 248)",
+      "box": {
+        "w": 211,
+        "h": 54
+      },
+      "text": "01Credit SnapshotRequired"
+    },
+    ".report-section-nav small": {
+      "fontFamily": "-apple-system, \"system-ui\", \"Segoe UI\", Roboto, Helvetica, Arial, sans-serif, ui-sans-serif, system-ui, sans-serif",
+      "fontSize": "9px",
+      "fontWeight": "400",
+      "lineHeight": "13.95px",
+      "letterSpacing": "0.72px",
+      "textTransform": "uppercase",
+      "color": "rgb(153, 163, 180)",
+      "backgroundColor": "rgba(0, 0, 0, 0)",
+      "borderColor": "rgb(153, 163, 180)",
+      "borderRadius": "0px",
+      "boxShadow": "none",
+      "minHeight": "auto",
+      "padding": "0px",
+      "fontVariantNumeric": "normal",
+      "outlineColor": "rgb(153, 163, 180)",
+      "box": {
+        "w": 163,
+        "h": 14
+      },
+      "text": "Required"
+    },
+    ".report-history h3": {
+      "fontFamily": "-apple-system, \"system-ui\", \"Segoe UI\", Roboto, Helvetica, Arial, sans-serif, ui-sans-serif, system-ui, sans-serif",
+      "fontSize": "10px",
+      "fontWeight": "700",
+      "lineHeight": "15.5px",
+      "letterSpacing": "1.2px",
+      "textTransform": "uppercase",
+      "color": "rgb(153, 163, 180)",
+      "backgroundColor": "rgba(0, 0, 0, 0)",
+      "borderColor": "rgb(153, 163, 180)",
+      "borderRadius": "0px",
+      "boxShadow": "none",
+      "minHeight": "auto",
+      "padding": "0px",
+      "fontVariantNumeric": "normal",
+      "outlineColor": "rgb(153, 163, 180)",
+      "box": {
+        "w": 211,
+        "h": 16
+      },
+      "text": "Draft revisions"
+    },
+    ".report-optional summary": {
+      "fontFamily": "-apple-system, \"system-ui\", \"Segoe UI\", Roboto, Helvetica, Arial, sans-serif, ui-sans-serif, system-ui, sans-serif",
+      "fontSize": "10px",
+      "fontWeight": "600",
+      "lineHeight": "15.5px",
+      "letterSpacing": "0.8px",
+      "textTransform": "uppercase",
+      "color": "rgb(153, 163, 180)",
+      "backgroundColor": "rgba(0, 0, 0, 0)",
+      "borderColor": "rgb(153, 163, 180)",
+      "borderRadius": "0px",
+      "boxShadow": "none",
+      "minHeight": "0px",
+      "padding": "0px",
+      "fontVariantNumeric": "normal",
+      "outlineColor": "rgb(153, 163, 180)",
+      "box": {
+        "w": 211,
+        "h": 16
+      },
+      "text": "Optional composition"
+    },
+    ".rd-mast-brand": {
+      "fontFamily": "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, \"Liberation Mono\", \"Courier New\", monospace, ui-monospace, monospace",
+      "fontSize": "10px",
+      "fontWeight": "700",
+      "lineHeight": "13.5px",
+      "letterSpacing": "1.5px",
+      "textTransform": "uppercase",
+      "color": "rgb(25, 25, 34)",
+      "backgroundColor": "rgba(0, 0, 0, 0)",
+      "borderColor": "rgb(25, 25, 34)",
+      "borderRadius": "0px",
+      "boxShadow": "none",
+      "minHeight": "auto",
+      "padding": "0px",
+      "fontVariantNumeric": "normal",
+      "outlineColor": "rgb(25, 25, 34)",
+      "box": {
+        "w": 217,
+        "h": 14
+      },
+      "text": "CCAOS · Full Credit · Draft"
+    },
+    ".rd-mark": {
+      "fontFamily": "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, \"Liberation Mono\", \"Courier New\", monospace, ui-monospace, monospace",
+      "fontSize": "10px",
+      "fontWeight": "700",
+      "lineHeight": "10px",
+      "letterSpacing": "normal",
+      "textTransform": "uppercase",
+      "color": "rgb(247, 244, 236)",
+      "backgroundColor": "rgb(25, 25, 34)",
+      "borderColor": "rgb(247, 244, 236)",
+      "borderRadius": "2px",
+      "boxShadow": "none",
+      "minHeight": "auto",
+      "padding": "0px",
+      "fontVariantNumeric": "normal",
+      "outlineColor": "rgb(247, 244, 236)",
+      "box": {
+        "w": 14,
+        "h": 14
+      },
+      "text": "C"
+    },
+    ".rd-mast-meta": {
+      "fontFamily": "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, \"Liberation Mono\", \"Courier New\", monospace, ui-monospace, monospace",
+      "fontSize": "9px",
+      "fontWeight": "600",
+      "lineHeight": "12.15px",
+      "letterSpacing": "0.9px",
+      "textTransform": "uppercase",
+      "color": "rgb(93, 93, 104)",
+      "backgroundColor": "rgba(0, 0, 0, 0)",
+      "borderColor": "rgb(93, 93, 104)",
+      "borderRadius": "0px",
+      "boxShadow": "none",
+      "minHeight": "auto",
+      "padding": "0px",
+      "fontVariantNumeric": "normal",
+      "outlineColor": "rgb(93, 93, 104)",
+      "box": {
+        "w": 120,
+        "h": 12
+      },
+      "text": "DRAFT · PAGE 1 OF 1"
+    },
+    ".rd-title": {
+      "fontFamily": "-apple-system, \"system-ui\", \"Segoe UI\", Roboto, Helvetica, Arial, sans-serif, ui-sans-serif, system-ui, sans-serif",
+      "fontSize": "21px",
+      "fontWeight": "650",
+      "lineHeight": "25.2px",
+      "letterSpacing": "-0.21px",
+      "textTransform": "none",
+      "color": "rgb(25, 25, 34)",
+      "backgroundColor": "rgba(0, 0, 0, 0)",
+      "borderColor": "rgb(25, 25, 34)",
+      "borderRadius": "0px",
+      "boxShadow": "none",
+      "minHeight": "0px",
+      "padding": "0px",
+      "fontVariantNumeric": "normal",
+      "outlineColor": "rgb(25, 25, 34)",
+      "box": {
+        "w": 377,
+        "h": 76
+      },
+      "text": "ApiGoldenpack-7e597e74 Holdings — ApiGol"
+    },
+    ".rd-subtitle": {
+      "fontFamily": "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, \"Liberation Mono\", \"Courier New\", monospace, ui-monospace, monospace",
+      "fontSize": "10px",
+      "fontWeight": "600",
+      "lineHeight": "15px",
+      "letterSpacing": "normal",
+      "textTransform": "none",
+      "color": "rgb(93, 93, 104)",
+      "backgroundColor": "rgba(0, 0, 0, 0)",
+      "borderColor": "rgb(93, 93, 104)",
+      "borderRadius": "0px",
+      "boxShadow": "none",
+      "minHeight": "0px",
+      "padding": "0px",
+      "fontVariantNumeric": "normal",
+      "outlineColor": "rgb(93, 93, 104)",
+      "box": {
+        "w": 377,
+        "h": 15
+      },
+      "text": "Investment Committee Credit Memo"
+    },
+    ".rd-h": {
+      "fontFamily": "-apple-system, \"system-ui\", \"Segoe UI\", Roboto, Helvetica, Arial, sans-serif, ui-sans-serif, system-ui, sans-serif",
+      "fontSize": "11px",
+      "fontWeight": "700",
+      "lineHeight": "17.05px",
+      "letterSpacing": "0.88px",
+      "textTransform": "uppercase",
+      "color": "rgb(25, 25, 34)",
+      "backgroundColor": "rgba(0, 0, 0, 0)",
+      "borderColor": "rgb(25, 25, 34)",
+      "borderRadius": "0px",
+      "boxShadow": "none",
+      "minHeight": "0px",
+      "padding": "0px 0px 3px",
+      "fontVariantNumeric": "normal",
+      "outlineColor": "rgb(25, 25, 34)",
+      "box": {
+        "w": 377,
+        "h": 21
+      },
+      "text": "Credit SnapshotAnalyst judgment"
+    },
+    ".rd-h-sub": {
+      "fontFamily": "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, \"Liberation Mono\", \"Courier New\", monospace, ui-monospace, monospace",
+      "fontSize": "8px",
+      "fontWeight": "600",
+      "lineHeight": "11.2px",
+      "letterSpacing": "0.32px",
+      "textTransform": "none",
+      "color": "rgb(93, 93, 104)",
+      "backgroundColor": "rgba(0, 0, 0, 0)",
+      "borderColor": "rgb(93, 93, 104)",
+      "borderRadius": "0px",
+      "boxShadow": "none",
+      "minHeight": "auto",
+      "padding": "0px",
+      "fontVariantNumeric": "normal",
+      "outlineColor": "rgb(93, 93, 104)",
+      "box": {
+        "w": 82,
+        "h": 11
+      },
+      "text": "Analyst judgment"
+    },
+    ".rd-body": {
+      "fontFamily": "-apple-system, \"system-ui\", \"Segoe UI\", Roboto, Helvetica, Arial, sans-serif, ui-sans-serif, system-ui, sans-serif",
+      "fontSize": "12px",
+      "fontWeight": "400",
+      "lineHeight": "19.44px",
+      "letterSpacing": "normal",
+      "textTransform": "none",
+      "color": "rgb(25, 25, 34)",
+      "backgroundColor": "rgba(0, 0, 0, 0)",
+      "borderColor": "rgb(25, 25, 34)",
+      "borderRadius": "0px",
+      "boxShadow": "none",
+      "minHeight": "0px",
+      "padding": "0px",
+      "fontVariantNumeric": "normal",
+      "outlineColor": "rgb(25, 25, 34)",
+      "box": {
+        "w": 377,
+        "h": 19
+      },
+      "text": "Not yet drafted."
+    },
+    ".rd-foot": {
+      "fontFamily": "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, \"Liberation Mono\", \"Courier New\", monospace, ui-monospace, monospace",
+      "fontSize": "8px",
+      "fontWeight": "600",
+      "lineHeight": "11.2px",
+      "letterSpacing": "0.48px",
+      "textTransform": "uppercase",
+      "color": "rgb(93, 93, 104)",
+      "backgroundColor": "rgba(0, 0, 0, 0)",
+      "borderColor": "rgb(25, 25, 34) rgb(93, 93, 104) rgb(93, 93, 104)",
+      "borderRadius": "0px",
+      "boxShadow": "none",
+      "minHeight": "0px",
+      "padding": "6px 0px 0px",
+      "fontVariantNumeric": "normal",
+      "outlineColor": "rgb(93, 93, 104)",
+      "box": {
+        "w": 377,
+        "h": 18
+      },
+      "text": "Generated by CAOS · governed documentInt"
+    },
+    ".deliverable-document": {
+      "fontFamily": "-apple-system, \"system-ui\", \"Segoe UI\", Roboto, Helvetica, Arial, sans-serif, ui-sans-serif, system-ui, sans-serif",
+      "fontSize": "14px",
+      "fontWeight": "400",
+      "lineHeight": "21.7px",
+      "letterSpacing": "normal",
+      "textTransform": "none",
+      "color": "rgb(25, 25, 34)",
+      "backgroundColor": "rgb(247, 244, 236)",
+      "borderColor": "rgb(168, 164, 152)",
+      "borderRadius": "6px",
+      "boxShadow": "rgba(0, 0, 0, 0.8) 0px 24px 70px -24px",
+      "minHeight": "100%",
+      "padding": "40px 46px 26px",
+      "fontVariantNumeric": "normal",
+      "outlineColor": "rgb(25, 25, 34)",
+      "box": {
+        "w": 471,
+        "h": 816
+      },
+      "text": "CCAOS · Full Credit · DraftDRAFT · PAGE "
+    },
+    ".admin-intro h2": {
+      "fontFamily": "\"Avenir Next\", \"Segoe UI\", system-ui, sans-serif, -apple-system, \"system-ui\", \"Segoe UI\", Roboto, Helvetica, Arial, sans-serif, ui-sans-serif, sans-serif",
+      "fontSize": "30px",
+      "fontWeight": "600",
+      "lineHeight": "31.5px",
+      "letterSpacing": "normal",
+      "textTransform": "none",
+      "color": "rgb(233, 237, 244)",
+      "backgroundColor": "rgba(0, 0, 0, 0)",
+      "borderColor": "rgb(233, 237, 244)",
+      "borderRadius": "0px",
+      "boxShadow": "none",
+      "minHeight": "0px",
+      "padding": "0px",
+      "fontVariantNumeric": "normal",
+      "outlineColor": "rgb(233, 237, 244)",
+      "box": {
+        "w": 586,
+        "h": 63
+      },
+      "text": "Administrative authority is not served b"
+    },
+    ".flag": {
+      "fontFamily": "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, \"Liberation Mono\", \"Courier New\", monospace, ui-monospace, monospace",
+      "fontSize": "10px",
+      "fontWeight": "700",
+      "lineHeight": "10px",
+      "letterSpacing": "0.8px",
+      "textTransform": "none",
+      "color": "rgb(251, 191, 36)",
+      "backgroundColor": "rgba(0, 0, 0, 0)",
+      "borderColor": "rgb(251, 191, 36)",
+      "borderRadius": "0px",
+      "boxShadow": "none",
+      "minHeight": "auto",
+      "padding": "0px",
+      "fontVariantNumeric": "normal",
+      "outlineColor": "rgb(251, 191, 36)",
+      "box": {
+        "w": 75,
+        "h": 10
+      },
+      "text": "UNAVAILABLE"
+    },
+    ".palette-hint": {
+      "fontFamily": "-apple-system, \"system-ui\", \"Segoe UI\", Roboto, Helvetica, Arial, sans-serif, ui-sans-serif, system-ui, sans-serif",
+      "fontSize": "10px",
+      "fontWeight": "400",
+      "lineHeight": "15.5px",
+      "letterSpacing": "normal",
+      "textTransform": "none",
+      "color": "rgb(153, 163, 180)",
+      "backgroundColor": "rgba(0, 0, 0, 0)",
+      "borderColor": "rgb(153, 163, 180)",
+      "borderRadius": "0px",
+      "boxShadow": "none",
+      "minHeight": "auto",
+      "padding": "0px",
+      "fontVariantNumeric": "normal",
+      "outlineColor": "rgb(153, 163, 180)",
+      "box": {
+        "w": 646,
+        "h": 18
+      },
+      "text": "↑↓ Navigate↵ OpenEsc Close"
+    },
+    ".palette-hint kbd": {
+      "fontFamily": "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, \"Liberation Mono\", \"Courier New\", monospace, ui-monospace, monospace",
+      "fontSize": "10px",
+      "fontWeight": "600",
+      "lineHeight": "14px",
+      "letterSpacing": "normal",
+      "textTransform": "none",
+      "color": "rgb(153, 163, 180)",
+      "backgroundColor": "rgb(10, 12, 16)",
+      "borderColor": "rgb(36, 43, 56)",
+      "borderRadius": "6px",
+      "boxShadow": "none",
+      "minHeight": "auto",
+      "padding": "1px 4px",
+      "fontVariantNumeric": "normal",
+      "outlineColor": "rgb(153, 163, 180)",
+      "box": {
+        "w": 16,
+        "h": 18
+      },
+      "text": "↑"
+    },
+    ".empty": {
+      "fontFamily": "-apple-system, \"system-ui\", \"Segoe UI\", Roboto, Helvetica, Arial, sans-serif, ui-sans-serif, system-ui, sans-serif",
+      "fontSize": "14px",
+      "fontWeight": "400",
+      "lineHeight": "21.7px",
+      "letterSpacing": "normal",
+      "textTransform": "none",
+      "color": "rgb(153, 163, 180)",
+      "backgroundColor": "rgba(0, 0, 0, 0)",
+      "borderColor": "rgb(153, 163, 180)",
+      "borderRadius": "0px",
+      "boxShadow": "none",
+      "minHeight": "0px",
+      "padding": "24px 10px",
+      "fontVariantNumeric": "normal",
+      "outlineColor": "rgb(153, 163, 180)",
+      "box": {
+        "w": 866,
+        "h": 149
+      },
+      "text": "Unable to load this view.STORE UNAVAILAB"
+    },
+    "reduced-motion": {
+      "skeleton": null,
+      "button": {
+        "animationDuration": "1e-05s",
+        "animationIterationCount": "1",
+        "animationPlayState": "paused",
+        "transitionDuration": "1e-05s",
+        "minHeight": "44px",
+        "backgroundImage": "none"
+      },
+      "navLink": {
+        "animationDuration": "1e-05s",
+        "animationIterationCount": "1",
+        "animationPlayState": "paused",
+        "transitionDuration": "1e-05s",
+        "minHeight": "44px",
+        "backgroundImage": "none"
+      },
+      "coarsePointer": true,
+      "reduced": true
+    }
+  },
+  "fonts": {
+    ".wordmark > span": [],
+    ".topbar-heading h1": [
+      "Avenir Next Demi Bold (AvenirNext-DemiBold) ×17"
+    ],
+    ".panel-body p": [
+      ".SF NS (.SFNS-Regular) ×151"
+    ],
+    ".authority-strip": [
+      "Menlo (Menlo-Regular) ×37"
+    ],
+    ".rail-meta span": [
+      "Menlo (Menlo-Regular) ×7"
+    ],
+    ".panel-header h2": [
+      ".SF NS (.SFNS-Bold) ×17"
+    ],
+    ".standing-answer > h2": [
+      "Avenir Next Demi Bold (AvenirNext-DemiBold) ×46"
+    ],
+    ".authority-metrics strong": [],
+    ".standing-answer > p": [
+      "Menlo (Menlo-Regular) ×33"
+    ],
+    ".rd-title": [
+      ".SF NS (.SFNS-Regular_wdth_opsz150000_GRAD_wght28A0000) ×81"
+    ],
+    ".rd-body": [
+      ".SF NS (.SFNS-Regular) ×16"
+    ],
+    ".rd-mast-brand": [
+      "Menlo (Menlo-Bold) ×26"
+    ],
+    ".rd-h": [
+      "Menlo (Menlo-Bold) ×16",
+      ".SF NS (.SFNS-Bold) ×15"
+    ]
+  },
+  "geometry": {
+    "720": {
+      ".rail": {
+        "x": 0,
+        "y": 0,
+        "w": 720,
+        "h": 136
+      },
+      ".wordmark": {
+        "x": 12,
+        "y": 45,
+        "w": 110,
+        "h": 30
+      },
+      ".brand-mark": {
+        "x": 20,
+        "y": 45,
+        "w": 30,
+        "h": 30
+      },
+      ".topbar": {
+        "x": 0,
+        "y": 136,
+        "w": 720,
+        "h": 123
+      },
+      ".topbar h1": {
+        "x": 12,
+        "y": 173,
+        "w": 696,
+        "h": 25
+      },
+      ".authority-strip": {
+        "x": 0,
+        "y": 259,
+        "w": 720,
+        "h": 36
+      },
+      ".content": {
+        "x": 0,
+        "y": 295,
+        "w": 720,
+        "h": 2693
+      },
+      ".panel-header": {
+        "x": 13,
+        "y": 312,
+        "w": 694,
+        "h": 46
+      },
+      ".cases-intake": {
+        "x": 12,
+        "y": 311,
+        "w": 696,
+        "h": 925
+      },
+      ".cases-register": {
+        "x": 12,
+        "y": 1252,
+        "w": 696,
+        "h": 1088
+      },
+      ".cases-create": {
+        "x": 12,
+        "y": 2355,
+        "w": 696,
+        "h": 344
+      },
+      ".button.primary": {
+        "x": 533,
+        "y": 637,
+        "w": 162,
+        "h": 40
+      },
+      "#case-select": {
+        "x": 174,
+        "y": 208,
+        "w": 428,
+        "h": 36
+      },
+      "#command-palette-trigger": {
+        "x": 611,
+        "y": 211,
+        "w": 97,
+        "h": 30
+      },
+      ".dropzone": {
+        "x": 25,
+        "y": 370,
+        "w": 670,
+        "h": 178
+      },
+      ".worklist-toolbar": {
+        "x": 13,
+        "y": 1299,
+        "w": 694,
+        "h": 82
+      },
+      ".nav-link": {
+        "x": 233,
+        "y": 48,
+        "w": 98,
+        "h": 40
+      },
+      ".rail-meta": {
+        "x": 1113,
+        "y": 16,
+        "w": 100,
+        "h": 111
+      }
+    },
+    "1440": {
+      ".rail": {
+        "x": 0,
+        "y": 0,
+        "w": 224,
+        "h": 1000
+      },
+      ".wordmark": {
+        "x": 12,
+        "y": 24,
+        "w": 199,
+        "h": 34
+      },
+      ".brand-mark": {
+        "x": 20,
+        "y": 26,
+        "w": 30,
+        "h": 30
+      },
+      ".topbar": {
+        "x": 224,
+        "y": 0,
+        "w": 1216,
+        "h": 83
+      },
+      ".topbar h1": {
+        "x": 252,
+        "y": 41,
+        "w": 616,
+        "h": 25
+      },
+      ".authority-strip": {
+        "x": 224,
+        "y": 83,
+        "w": 1216,
+        "h": 36
+      },
+      ".content": {
+        "x": 224,
+        "y": 119,
+        "w": 1216,
+        "h": 2039
+      },
+      ".panel-header": {
+        "x": 253,
+        "y": 144,
+        "w": 1158,
+        "h": 46
+      },
+      ".cases-intake": {
+        "x": 252,
+        "y": 143,
+        "w": 1160,
+        "h": 778
+      },
+      ".cases-register": {
+        "x": 252,
+        "y": 937,
+        "w": 866,
+        "h": 1088
+      },
+      ".cases-create": {
+        "x": 1134,
+        "y": 937,
+        "w": 278,
+        "h": 344
+      },
+      ".button.primary": {
+        "x": 1237,
+        "y": 426,
+        "w": 162,
+        "h": 40
+      },
+      "#case-select": {
+        "x": 1047,
+        "y": 23,
+        "w": 260,
+        "h": 36
+      },
+      "#command-palette-trigger": {
+        "x": 1315,
+        "y": 26,
+        "w": 97,
+        "h": 30
+      },
+      ".dropzone": {
+        "x": 265,
+        "y": 202,
+        "w": 1134,
+        "h": 157
+      },
+      ".worklist-toolbar": {
+        "x": 253,
+        "y": 984,
+        "w": 864,
+        "h": 82
+      },
+      ".nav-link": {
+        "x": 12,
+        "y": 116,
+        "w": 199,
+        "h": 40
+      },
+      ".rail-meta": {
+        "x": 12,
+        "y": 903,
+        "w": 199,
+        "h": 81
+      }
+    }
+  },
+  "notes": []
+}
