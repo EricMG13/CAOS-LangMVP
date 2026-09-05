@@ -330,6 +330,9 @@ export default function Workspace({ destination, children }: { destination?: Des
     setRunError("");
     setError("");
     setIntakeRefusal(null);
+    // The intake record is case-scoped: a switch clears it and the read below
+    // refetches only when the new case names one (FE-A0 F6).
+    setIntake(null);
   }, [cases, dispatchAuthority]);
 
   const selectCase = useCallback((nextCaseId: string, availableCases = cases, trigger?: HTMLElement | null) => {
@@ -1131,7 +1134,7 @@ function IntakePanel({ writeAccess, selectedCase, caseId, pendingAction, intake,
     const files = Array.from(event.dataTransfer.files);
     if (files.length) submitIntake(files, targetCaseId);
   };
-  const meta = busy ? "Analyzing…" : intake ? `Last intake ${formatDate(intake.created_at)}` : "Creates or resolves the credit from the documents";
+  const meta = busy ? "Analyzing…" : intake && intake.case_id === caseId ? `Last intake ${formatDate(intake.created_at)}` : "Creates or resolves the credit from the documents";
   return <section className="panel cases-intake" aria-labelledby="intake-heading">
     <div className="panel-header"><h2 id="intake-heading">Analyze documents</h2><span className="panel-meta">{meta}</span></div>
     <div className="panel-body flow">

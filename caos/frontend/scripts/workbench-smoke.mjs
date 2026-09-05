@@ -641,6 +641,14 @@ try {
       await page.goto(`${baseURL}/cases/`, { waitUntil: "networkidle" });
     }
   }
+  // The intake header is fenced to the selected case (FE-A0 F6): a switch to a
+  // case with no intake shows the idle sentence, never the previous case's date.
+  const intakeHeader = page.getByRole("region", { name: "Analyze documents" });
+  await intakeHeader.getByText(/^Last intake /).waitFor();
+  await page.getByRole("combobox", { name: "Select case" }).selectOption(idleCase.id);
+  await intakeHeader.getByText("Creates or resolves the credit from the documents", { exact: true }).waitFor();
+  assert.equal(await intakeHeader.getByText(/^Last intake /).count(), 0, "the intake header carried the previous case's last intake across a case switch");
+
   // A refused pack: one malformed PDF refuses the whole pack and creates nothing.
   await page.goto(`${baseURL}/cases/`, { waitUntil: "networkidle" });
   const refusedPanel = page.getByRole("region", { name: "Analyze documents" });
