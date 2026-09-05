@@ -187,6 +187,34 @@ test("DAG nodes use neutral containers and shape-coded visible statuses", async 
   assert.match(styles, /\.status\.running::before\s*\{/);
 });
 
+test("every custom property the stylesheets read is declared on :root", () => {
+  // An undefined var() is invalid at computed-value time and the declaration
+  // silently inherits: masthead fact values rendered in label grey because the
+  // rule read `--caos-paper-ink` where the token is `--caos-ink` (FE-A2 F-11).
+  const moduleStyles = readFileSync(new URL("../components/model/ModelBuilder.module.css", import.meta.url), "utf8");
+  const declared = new Set([...styles.matchAll(/^\s*(--[a-z0-9-]+)\s*:/gm)].map((match) => match[1]));
+  const read = new Set([...`${styles}\n${moduleStyles}`.matchAll(/var\((--[a-z0-9-]+)/g)].map((match) => match[1]));
+  assert.deepEqual([...read].filter((token) => !declared.has(token)), []);
+});
+
+test("a pressed toggle button is visibly distinct from its siblings", () => {
+  // Base/Downside and the tornado swing set aria-pressed and `is-active` on
+  // `.button.small`; without this rule the pressed toggle looked identical to the
+  // others (FE-A2 F-01).
+  const rule = /\.button\.is-active\s*\{([^}]*)\}/.exec(styles);
+  assert.ok(rule, "no .button.is-active rule");
+  assert.match(rule[1], /border-color:/);
+  assert.match(rule[1], /background:/);
+  assert.match(modelBuilder, /"button small is-active"/);
+});
+
+test("the report panels' header row takes the header's own height", () => {
+  // A fixed 32px row under a 46px min-height header overlapped the body by 14px (FE-A2 F-12).
+  const rule = /\.report-outline, \.report-compose\s*\{([^}]*)\}/.exec(styles);
+  assert.ok(rule, "no .report-outline/.report-compose rule");
+  assert.match(rule[1], /grid-template-rows:\s*auto minmax\(0, 1fr\)/);
+});
+
 test("every route path keeps its trailing slash", () => {
   assert.equal(withQuery("/run-console", { case: "case_1" }), "/run-console/?case=case_1");
   assert.equal(withQuery("/sources/", { case: "case_1" }), "/sources/?case=case_1");
