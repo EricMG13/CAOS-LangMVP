@@ -2,227 +2,189 @@
 name: "CAOS - Credit Agent OS"
 description: "A precise, defensible, alert leveraged-finance credit workspace."
 colors:
-  workspace-bg: "#0a0a0f"
-  panel: "#11131d"
-  elevated: "#1d2030"
-  border: "#34384a"
-  text: "#e6e6ef"
-  muted: "#a1a1b5"
-  accent: "#63a1ff"
-  consumer: "#c4b5fd"
-  warning: "#f5a524"
-  critical: "#ef4444"
-  success: "#22c55e"
-  idle: "#3f3f46"
-  success-bright: "#4ade80"
-  warning-bright: "#fbbf24"
-  critical-bright: "#f87171"
-  scroll-shadow: "rgba(0, 0, 0, 0.5)"
-  tranche-1l: "#2dd4bf"
-  tranche-2l: "#4f8cff"
-  tranche-unsec: "#f5a524"
-  tranche-sub: "#a855f7"
-  tranche-eq: "#64748b"
-  paper: "#f7f5ee"
-  paper-ink: "#16161e"
-  paper-meta: "#5c5c66"
-  paper-note: "#6c6c76"
-  paper-rule: "#9c998e"
+  # The live tokens are caos/frontend/app/globals.css :root; this block names them
+  # minus the `--caos-` prefix (FE-A2 §1.2). When the two disagree, the CSS is truth.
+  bg: "#0a0c10"
+  panel: "#101319"
+  elevated: "#181d28"
+  subtle: "#202632"
+  border: "#242b38"
+  border-strong: "#606b7e"
+  text: "#e9edf4"
+  muted: "#99a3b4"
+  accent: "#8b93f8"
+  accent-strong: "#a5abfa"
+  warning: "#fbbf24"
+  critical: "#f87171"
+  success: "#34d399"
+  paper: "#f7f4ec"
+  ink: "#191922"
+  paper-meta: "#5d5d68"
+  paper-rule: "#a8a498"
   paper-rule-strong: "#6f6c62"
-  paper-subhead: "#44444e"
-  paper-link: "#1f4fa0"
+  paper-link: "#2f54c9"
   paper-soft: "#6a6a72"
-  paper-warning: "#a24310"
   paper-success: "#166534"
+  paper-warning: "#a24310"
   paper-watermark: "#be5410"
   paper-critical: "#b91c1c"
 typography:
+  # All families are native stacks (enterprise Task 3 removed the web fonts):
+  # --font-display "Avenir Next", "Segoe UI", system-ui; --font-sans the platform
+  # sans; --font-mono the platform mono. Sizes are what globals.css renders.
   display:
-    fontFamily: "var(--font-sans), system-ui, sans-serif"
+    fontFamily: "var(--font-display), system-ui, sans-serif"
     fontSize: "30px"
-    fontWeight: 700
+    fontWeight: 600
     lineHeight: 1.04
     letterSpacing: "-0.01em"
+    note: "Standing answer. The reader and admin display headings use 1.05 with no tracking."
   headline:
-    fontFamily: "var(--font-sans), system-ui, sans-serif"
-    fontSize: "22px"
+    fontFamily: "var(--font-display), system-ui, sans-serif"
+    fontSize: "21px"
     fontWeight: 600
-    lineHeight: 1.1
+    lineHeight: 1.2
+    letterSpacing: "-0.01em"
+    note: "Page title."
   title:
     fontFamily: "var(--font-sans), system-ui, sans-serif"
-    fontSize: "16px"
+    fontSize: "13px"
     fontWeight: 600
-    lineHeight: 1.15
+    lineHeight: 1.55
+    note: "Panel header, sentence case."
   body:
     fontFamily: "var(--font-sans), system-ui, sans-serif"
-    fontSize: "12px"
+    fontSize: "14px"
+    fontWeight: 400
+    lineHeight: 1.55
+  label:
+    fontFamily: "var(--font-sans), system-ui, sans-serif"
+    fontSize: "11px"
+    fontWeight: 650
+    lineHeight: 1.35
+    note: "Kicker (.meta-label) and field labels, sentence case."
+  label-uppercase:
+    fontFamily: "var(--font-sans), system-ui, sans-serif"
+    fontSize: "10px"
+    fontWeight: 700
+    lineHeight: 1.35
+    letterSpacing: "0.09em"
+    note: "Table heads and rail group labels; tracking runs .09–.14em by site. Chrome floor is 9px (TOC ids, evidence digests, forecast labels)."
+  mono-meta:
+    fontFamily: "var(--font-mono), ui-monospace, monospace"
+    fontSize: "10px"
     fontWeight: 400
     lineHeight: 1.5
-  label:
-    fontFamily: "var(--font-mono), ui-monospace, SFMono-Regular, monospace"
-    fontSize: "11px"
-    fontWeight: 500
-    lineHeight: 1.5
-    letterSpacing: "0.08em"
-  micro:
-    fontFamily: "var(--font-mono), ui-monospace, SFMono-Regular, monospace"
-    fontSize: "10px"
-    fontWeight: 600
-    lineHeight: 1.35
-    letterSpacing: "0.06em"
+    note: "Authority strip, ids, chips, rail meta; 10–11px by site. Mono is for identifiers, digests, timestamps and numerics, never for labels."
   output-title:
     fontFamily: "var(--font-sans), system-ui, sans-serif"
     fontSize: "21px"
     fontWeight: 650
     lineHeight: 1.2
+    letterSpacing: "-0.01em"
   output-section:
     fontFamily: "var(--font-sans), system-ui, sans-serif"
-    fontSize: "14px"
-    fontWeight: 650
-    lineHeight: 1.3
-  output-body:
-    fontFamily: "var(--font-sans), system-ui, sans-serif"
-    fontSize: "13px"
-    fontWeight: 400
-    lineHeight: 1.6
-  output-subtitle:
-    fontFamily: "var(--font-mono), ui-monospace, SFMono-Regular, monospace"
-    fontSize: "9.5px"
-    fontWeight: 600
-    lineHeight: 1.45
-  output-prose:
-    fontFamily: "var(--font-sans), system-ui, sans-serif"
-    fontSize: "9.4px"
-    fontWeight: 400
-    lineHeight: 1.62
-  output-table-body:
-    fontFamily: "var(--font-sans), system-ui, sans-serif"
-    fontSize: "9.3px"
-    fontWeight: 400
-    lineHeight: 1.45
-  output-list:
-    fontFamily: "var(--font-sans), system-ui, sans-serif"
-    fontSize: "9.2px"
-    fontWeight: 400
-    lineHeight: 1.5
-  output-meta:
-    fontFamily: "var(--font-mono), ui-monospace, SFMono-Regular, monospace"
-    fontSize: "8.5px"
-    fontWeight: 500
-    lineHeight: 1.45
-    letterSpacing: "0.08em"
-  output-table-label:
-    fontFamily: "var(--font-mono), ui-monospace, SFMono-Regular, monospace"
-    fontSize: "7.8px"
-    fontWeight: 600
-    lineHeight: 1.25
-  appendix-title:
-    fontFamily: "var(--font-sans), system-ui, sans-serif"
-    fontSize: "14px"
-    fontWeight: 650
-    lineHeight: 1.1
-  appendix-meta:
-    fontFamily: "var(--font-mono), ui-monospace, SFMono-Regular, monospace"
-    fontSize: "7px"
-    fontWeight: 500
-    lineHeight: 1.1
-  appendix-submeta:
-    fontFamily: "var(--font-mono), ui-monospace, SFMono-Regular, monospace"
-    fontSize: "6.5px"
-    fontWeight: 500
-    lineHeight: 1.1
-  appendix-table-head:
-    fontFamily: "var(--font-mono), ui-monospace, SFMono-Regular, monospace"
-    fontSize: "5.2px"
-    fontWeight: 600
-    lineHeight: 1.05
-  appendix-table-body:
-    fontFamily: "var(--font-sans), system-ui, sans-serif"
-    fontSize: "5.7px"
-    fontWeight: 400
-    lineHeight: 1.08
-  appendix-number:
-    fontFamily: "var(--font-mono), ui-monospace, SFMono-Regular, monospace"
-    fontSize: "5.3px"
-    fontWeight: 500
-    lineHeight: 1.08
-  appendix-emphasis:
-    fontFamily: "var(--font-sans), system-ui, sans-serif"
-    fontSize: "5.9px"
-    fontWeight: 600
-    lineHeight: 1.08
-  appendix-indent-label:
-    fontFamily: "var(--font-mono), ui-monospace, SFMono-Regular, monospace"
-    fontSize: "5.4px"
-    fontWeight: 500
-    lineHeight: 1.08
-  emergency-title:
-    fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace"
-    fontSize: "1.125rem"
+    fontSize: "11px"
     fontWeight: 700
-    lineHeight: 1.2
-  emergency-action:
-    fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace"
-    fontSize: "0.875rem"
-    fontWeight: 600
-    lineHeight: 1.2
-  emergency-body:
-    fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace"
-    fontSize: "0.75rem"
-    fontWeight: 400
-    lineHeight: 1.5
-  mobile-readable-min:
+    lineHeight: 1.3
+    letterSpacing: "0.08em"
+    note: "Uppercase."
+  output-body:
     fontFamily: "var(--font-sans), system-ui, sans-serif"
     fontSize: "12px"
     fontWeight: 400
-    lineHeight: 1.5
-  narrative-subhead:
-    fontFamily: "var(--font-sans), system-ui, sans-serif"
-    fontSize: "0.95rem"
+    lineHeight: 1.62
+  output-subtitle:
+    fontFamily: "var(--font-mono), ui-monospace, monospace"
+    fontSize: "10px"
     fontWeight: 600
-    lineHeight: 1.3
+    lineHeight: 1.5
+  output-meta:
+    fontFamily: "var(--font-mono), ui-monospace, monospace"
+    fontSize: "8.5px"
+    fontWeight: 500
+    lineHeight: 1.45
+  output-table-label:
+    fontFamily: "var(--font-sans), system-ui, sans-serif"
+    fontSize: "9px"
+    fontWeight: 650
+    lineHeight: 1.25
+    letterSpacing: "0.06em"
+    note: "Uppercase."
+  output-table-body:
+    fontFamily: "var(--font-sans), system-ui, sans-serif"
+    fontSize: "10px"
+    fontWeight: 400
+    lineHeight: 1.4
+  output-list:
+    fontFamily: "var(--font-sans), system-ui, sans-serif"
+    fontSize: "11px"
+    fontWeight: 400
+    lineHeight: 1.5
   output-watermark:
-    fontFamily: "var(--font-mono), ui-monospace, SFMono-Regular, monospace"
+    fontFamily: "var(--font-mono), ui-monospace, monospace"
     fontSize: "26px"
     fontWeight: 700
     lineHeight: 1
+    letterSpacing: "0.32em"
+    note: "16 % alpha, rotated −16°. The full-model appendix scale belongs to the worker's PDF/XLSX renderers and is not in globals.css."
 rounded:
-  sm: "2px"
-  md: "6px"
+  sm: "6px"
+  md: "8px"
+  lg: "10px"
+  xl: "14px"
   pill: "999px"
+  note: "2px survives only on the paper's .rd-mark and the critical status square."
 spacing:
-  hairline: "1px"
   xs: "4px"
   sm: "8px"
   md: "12px"
   lg: "16px"
   xl: "24px"
+  2xl: "32px"
+  note: "--space-2xl is declared and read by no rule; hairlines are the literal 1px; the page gutter is the literal 28px."
 components:
   panel:
     backgroundColor: "{colors.panel}"
     textColor: "{colors.text}"
-    rounded: "{rounded.md}"
-    padding: "0"
+    rounded: "{rounded.lg}"
+    padding: "12px"
+    note: "Hairline border, --shadow-panel, 46px min-height sentence-case header (13px/600) with 10px 14px padding."
   button-primary:
     backgroundColor: "{colors.accent}"
-    textColor: "{colors.workspace-bg}"
+    textColor: "{colors.bg}"
     rounded: "{rounded.md}"
-    padding: "4px 8px"
-  button-ghost:
-    backgroundColor: "{colors.panel}"
+    padding: "8px 12px"
+    note: "min-height 36px (renders 40px), weight 700; hover moves to accent-strong; disabled is 55 % opacity (2.96:1, FE-A2 F-04)."
+  button-quiet:
+    backgroundColor: "{colors.elevated}"
     textColor: "{colors.muted}"
     rounded: "{rounded.md}"
+    padding: "8px 12px"
+  button-small:
+    backgroundColor: "{colors.elevated}"
+    textColor: "{colors.text}"
+    rounded: "{rounded.sm}"
     padding: "4px 8px"
+    note: "min-height 30px, 11px text. A pressed toggle (.is-active, aria-pressed) takes an accent border on a 16 % accent tint with accent-strong text."
   input:
-    backgroundColor: "{colors.workspace-bg}"
+    backgroundColor: "{colors.bg}"
     textColor: "{colors.text}"
     rounded: "{rounded.md}"
-    padding: "6px 10px"
-  chip-active:
-    backgroundColor: "{colors.accent}"
-    textColor: "{colors.workspace-bg}"
+    padding: "8px"
+    note: "Border {colors.border-strong}; focus is an accent border plus a 3px accent-22 % halo."
+  chip-linked:
+    backgroundColor: "{colors.accent} at 16%"
+    textColor: "{colors.accent-strong}"
+    rounded: "{rounded.pill}"
+    padding: "0 8px"
+    note: "24px evidence chips, mono 10px; at rest accent-strong on a 7 % accent tint with a 65 % accent border; linked adds a 2px accent outline. Chips never invert."
+  nav-link-active:
+    backgroundColor: "{colors.elevated}"
+    textColor: "{colors.accent-strong}"
     rounded: "{rounded.md}"
-    padding: "4px 8px"
+    padding: "8px 10px"
+    note: "Hairline border and a 2px accent leading bar; every rail link shows its 14px stroke glyph and label at every width."
 ---
 
 # Design System: CAOS - Credit Agent OS
@@ -238,7 +200,7 @@ The workspace is dark, dense, and single-mode. Density is earned with fixed pane
 CAOS explicitly rejects friendly consumer SaaS, oversized marketing dashboards, pastel card layouts, decorative gradients, glow effects, and raw terminal dumps. The product can be dense, but it must always be organized.
 
 **Key Characteristics:**
-- Dense analytical hierarchy with a 32px panel header as the structural unit.
+- Dense analytical hierarchy with a 46px sentence-case panel header (13px/600) as the structural unit.
 - Color reserved for state, selection, seniority, and evidence lineage.
 - Mono numerics and small uppercase labels for desk-readable precision.
 - Motion only for live, running, selected, or changed state.
@@ -246,19 +208,19 @@ CAOS explicitly rejects friendly consumer SaaS, oversized marketing dashboards, 
 
 ## 2. Colors
 
-The palette is a restrained dark desk: black workspace, cool panels, hairline borders, one blue accent, and semantic colors used only as signal.
+The palette is a restrained dark desk: graphite workspace, cool panels, hairline borders, one iris accent (`accent`, with `accent-strong` for text on elevated surfaces), and semantic colors used only as signal.
 
 ### Primary
 - **Desk Accent**: Primary action, current selection, active navigation, linked lineage, and live-query affordance.
 
 ### Secondary
-- **Downstream Consumer**: Downstream lineage and consumer-side graph semantics. Use sparingly beside Desk Accent.
+- **Downstream Consumer**: not implemented — no token and no rule exists in the code (FE-A2 §11). Do not draw it until a token lands in `globals.css`.
 
 ### Tertiary
-- **Tranche Ramp**: 1L, 2L, unsecured, subordinated, and equity categories. These hues identify security type and must not be repurposed for decoration.
+- **Tranche Ramp**: not implemented — seniority is text in the loan table; no tranche colour ramp exists in the code (FE-A2 §11).
 
 ### Neutral
-- **Black Workspace**: Page background and deepest table/model canvas.
+- **Graphite Workspace** (`bg`): Page background and deepest table/model canvas.
 - **Panel Surface**: Primary framed work surface.
 - **Elevated Surface**: Hover, selected resting state, menu background, and nested tools.
 - **Hairline Border**: Panel, table, chip, modal, and nav separation.
@@ -276,22 +238,24 @@ The palette is a restrained dark desk: black workspace, cool panels, hairline bo
 
 ## 3. Typography
 
-**Display Font:** Inter via `var(--font-sans)` with system fallback.
-**Body Font:** Inter via `var(--font-sans)` with system fallback.
-**Label/Mono Font:** JetBrains Mono via `var(--font-mono)` with ui-monospace fallback.
+**Display Font:** `--font-display` (Avenir Next on macOS, Segoe UI on Windows, `system-ui` elsewhere) — wordmark, page title, standing answer, reader and admin display headings.
+**Body Font:** `--font-sans` (`-apple-system` … `sans-serif`, the platform sans).
+**Label/Mono Font:** `--font-mono` (`ui-monospace` … `monospace`, the platform mono).
 
-**Character:** One technical sans plus one mono. The sans carries all UI prose; the mono carries numerics, labels, ids, timestamps, and desk metadata.
+No web font is shipped (enterprise Task 3 removed the external font dependency; `workbench.test.ts` forbids Google-hosted fonts).
+
+**Character:** One platform sans plus one platform mono. The sans carries all UI prose and labels; the mono carries numerics, ids, digests, timestamps, and desk metadata.
 
 ### Hierarchy
-- **Display** (700, 30px, 1.04): Single focal answer on a surface, such as verdicts or anchor metrics. Never use for routine labels.
-- **Headline** (600, 22px, 1.1): Page-level or report title where the interface has room.
-- **Title** (600, 16px, 1.15): Major row, modal, or paper-section titles.
-- **Body** (400, 12px, 1.5): Dense workspace copy, state detail, rail text, and tool bodies.
-- **Label** (500, 11px, uppercase, tracked): Captions, headers, ids, and metadata. Pair with tabular numerics. Micro metadata may use the explicit 10px floor on desktop.
+- **Display** (600, 30px, 1.04, −.01em, display face): Single focal answer on a surface — the standing answer. Never use for routine labels.
+- **Headline** (600, 21px, 1.2, −.01em, display face): The page title.
+- **Title** (600, 13px, 1.55, sentence case): Panel headers, dialog headings.
+- **Body** (400, 14px, 1.55): Workspace copy, state detail, rail text, and tool bodies.
+- **Label** (sans, 10–11px): sentence case at 11px/650 for kickers and field labels; uppercase and tracked (.09–.14em) at 10px/700 for table heads, rail group labels, worksheet tabs and report rail labels. Mono is for identifiers, digests, timestamps and numerics, not for labels. The chrome floor is 9px (TOC ids, evidence digests, forecast labels — FE-A2 F-06).
 
 ### Filed Output Scale
 
-Report Studio, research exhibits, print views, and research deliverables use a deliberate paper scale rather than workspace labels: **Output Title** (650, 21px), **Output Section** (650, 14px), **Output Body** (400, 13px, 1.6), **Output Meta** (500, 8.5px, mono), **Output Table Label** (600, 7.8px, mono), and a 26px filed-copy watermark. The full-model appendix is an intentional fit-to-page exception with a 14px title, 7px metadata, 6.5px submetadata, and a 5.2–5.9px table scale. These sizes are valid only inside paper/output roots; they must not leak into navigation, buttons, panel headers, or analytical tables. On phone layouts, 12px is the minimum forced size for compact labels. Narrative Markdown may use a 0.95rem semantic subhead. The CSS-independent fatal error boundary separately uses 1.125rem title, 0.75rem body, and 0.875rem action text so it remains legible if the application stylesheet fails.
+Report Studio, research exhibits, print views, and research deliverables use a deliberate paper scale rather than workspace labels: **Output Title** (650, 21px, −.01em), **Output Section** (700, 11px, uppercase, .08em), **Output Body** (400, 12px, 1.62), **Output Subtitle** (600, 10px, mono), **Output Meta** (500, 8.5px, mono), **Output Table Label** (650, 9px, uppercase), **Output Table Body** (400, 10px), **Output List** (400, 11px), and a 26px/700 mono filed-copy watermark at 16 % alpha rotated −16°. The full-model appendix scale belongs to the worker's PDF/XLSX renderers and is not in `globals.css`. These sizes are valid only inside paper/output roots; they must not leak into navigation, buttons, panel headers, or analytical tables.
 
 ### Named Rules
 
@@ -303,60 +267,63 @@ Report Studio, research exhibits, print views, and research deliverables use a d
 
 ## 4. Elevation
 
-CAOS is flat by default and uses tonal layering before shadow. Depth is created by background steps, hairline borders, sticky layers, and focus/selection rings. Shadows are reserved for overlays and floating tools, not panels or ordinary cards.
+Depth comes from the `bg` → `panel` → `elevated` → `subtle` ramp, hairlines, 2px inset accent selection bars, and one faint resting panel shadow; the larger shadows mean the object floats above the workflow.
 
 ### Shadow Vocabulary
-- **Modal Shadow** (`0 24px 80px -24px rgba(0, 0, 0, 0.9)`): Dialogs and large evidence modals.
-- **Popover Shadow** (`0 8px 28px -10px rgba(0, 0, 0, 0.8)`): Filters, menus, and compact floating tools.
-- **Paper Shadow** (`0 24px 70px -24px rgba(0,0,0,0.85)`): Report Studio and research document sheets over the dark gutter.
+- **Panel Shadow** (`--shadow-panel`, `0 1px 2px rgb(0 0 0 / .25)`): every resting panel.
+- **Modal Shadow** (`--shadow-modal`, `0 24px 80px -24px rgb(0 0 0 / .85)`): dialogs and the context drawer. Dialog backdrops are 60 % black with a 3px blur.
+- **Popover Shadow** (`--shadow-pop`, `0 12px 32px -12px rgb(0 0 0 / .7)`): declared for a popover the product does not have; no rule reads it.
+- **Paper Shadow** (`--shadow-paper`, `0 24px 70px -24px rgb(0 0 0 / .8)`): Report Studio and research document sheets over the dark gutter.
 
 ### Named Rules
 
-**The Flat-Until-Floating Rule.** A resting panel gets a border, not a shadow. Shadow means the object floats above the workflow.
+**The Resting Panel Rule.** A resting panel carries a hairline and `--shadow-panel`, nothing larger; a larger shadow means the object floats above the workflow. (Supersedes the Flat-Until-Floating rule, retired by the 31 Aug addendum.)
 
 ## 5. Components
 
 ### Buttons
-- **Shape:** Compact rectangular controls with modest corners (6px).
-- **Primary:** Accent background with dark text for active navigation and committed actions.
-- **Hover / Focus:** 160ms color, border, shadow, and transform channels; visible `focus-ring` for keyboard users.
-- **Secondary / Ghost:** Border plus muted text at rest, text brightens and border shifts toward accent on hover.
+- **Shape:** Compact rectangular controls with 8px corners (6px for `.button.small`, 30px tall with 11px text).
+- **Primary:** Accent fill with `bg`-coloured 700 text for committed actions; hover moves to `accent-strong`.
+- **Hover / Focus:** 160ms border, background and transform channels; visible focus ring for keyboard users.
+- **Quiet:** `.button.quiet` keeps the elevated fill and mutes the text.
+- **Pressed toggle:** `.button.is-active` (with `aria-pressed`) takes an accent border on a 16 % accent tint with `accent-strong` text — the linked-chip idiom.
+- **Disabled:** 55 % opacity; the primary variant reads 2.96:1 (exempt from 1.4.3, below this document's own "remains readable" bar — FE-A2 F-04, open).
 
 ### Chips
-- **Style:** Navigation chips and status chips use mono text, small SVG glyphs when available, hairline borders, and compact padding.
-- **State:** Selected chips invert to accent background and dark text. Inactive chips stay muted and bordered.
+- **Style:** Evidence chips are 24px pills in mono 10px: `accent-strong` on a 7 % accent tint with a 65 % accent border.
+- **State:** The linked state adds a 2px accent outline and a 16 % tint. Chips never invert. Status is a shape glyph plus a 700 label.
 
 ### Cards / Containers
-- **Corner Style:** Gently curved institutional containers (6px).
-- **Background:** Panels use Panel Surface; contained tools may use Black Workspace or Elevated Surface.
-- **Shadow Strategy:** No shadow at rest. Modal, popover, and paper surfaces use the shadow vocabulary.
+- **Corner Style:** 10px corners, hairline border, `--shadow-panel`.
+- **Background:** Panels use Panel Surface; contained tools may use the workspace ground or Elevated Surface.
+- **Shadow Strategy:** `--shadow-panel` at rest. Modal, drawer, and paper surfaces use the larger shadow vocabulary.
 - **Border:** Hairline Border is mandatory for framed panels.
-- **Internal Padding:** Dense by default: 8px to 16px depending on scan density.
+- **Internal Padding:** 12px body; 46px header.
 
 ### Inputs / Fields
-- **Style:** Black Workspace fill, Hairline Border, Desk Text, muted placeholder, compact radius.
-- **Focus:** Accent border plus visible focus ring. The focus treatment must survive dark panels and scrollable containers.
-- **Error / Disabled:** Error is semantic Critical with text or glyph. Disabled lowers opacity only when the control remains readable.
+- **Style:** Workspace-ground fill, `border-strong` border, Desk Text, muted placeholder, 8px radius, 8px padding.
+- **Focus:** Accent border plus a 3px accent-22 % halo (no outline); hover shifts the border 55 % toward text. The focus treatment must survive dark panels and scrollable containers.
+- **Error / Disabled:** Error is semantic Critical with text or glyph. Disabled is 55 % opacity (the primary button reads 2.96:1 — FE-A2 F-04).
 
 ### Navigation
-- **Style:** Concept navigation is compact chip navigation with inline SVG marks. Compact headers show only the active label; inactive concepts rely on icon plus tooltip.
-- **Typography:** Mono, small, tabular, and uppercase where the surrounding header requires it.
-- **State:** Active equals Accent fill. Hover brightens text and border without changing layout.
+- **Style:** Rail links show a 14px stroke glyph and the label at every width; no tooltips. Below 900px the rail is a horizontally scrolling strip (Model, Report, Governance and the rail meta sit off-canvas at 720px — FE-A2 F-07, open).
+- **Typography:** Sans; the group labels are 10px uppercase tracked; the rail meta is mono 10px.
+- **State:** Active is elevated fill, hairline border, `accent-strong` text and a 2px accent leading bar. Hover is elevated fill and text colour without changing layout.
 
 ### Enterprise Workbench Anatomy
 
-Every route uses the same ordered contract: identity and source status, exactly one page-level primary action, optional collapsible decision context, one dominant work region, contextual evidence, and an optional sticky finalization bar. Surface kinds preserve specialist behavior: worklists own batch/filter anatomy; analytical objects own conclusion state; Model Builder and Report Studio retain their editor overflow.
+Every route uses the same ordered contract: the authority strip (credit, visible snapshot, selected run, source set), exactly one page-level primary action, one dominant work region, contextual evidence (evidence chips open the context drawer; Deep-Dive and Command Center carry evidence rails), and sticky approval panels where a governed action waits. Surface kinds preserve specialist behavior: worklists own filter anatomy; analytical objects own conclusion state; Model Builder and Report Studio retain their editor overflow.
 
-- **Decision states:** `loading`, `ready`, `observed-empty`, `stale`, `partial`, `offline`, `error`, and `unavailable` are visually and semantically distinct. “No material change” is legal only for a successful timestamped `observed-empty` response.
-- **Authority:** Every ready conclusion carries observation time, origin, method, approval/ratification, and freshness. `LIVE` describes source origin only.
-- **Worklists:** Shared toolbar order is title/count, search, filters, selection/batch state, then actions. Five actions are visible at most; lower-frequency actions move to overflow.
-- **Utilities:** Simulation, layout, export and other low-frequency controls live in a labeled utility drawer. Escape closes it and focus returns to its trigger.
-- **Evidence Atlas:** Claim lineage, sources, recovery, glossary and downstream consumers share one contextual inspector. Native editor evidence panes remain valid; never show a duplicate inspector.
-- **Role composition:** Always label the presentation preference `View: Analyst / PM / QA`. It never grants permission or approval authority.
+- **Decision states:** `loading` (skeleton), `observed-empty`, `error`, `unavailable` (observed 404), `stale` (Model and Report authority changed) and `offline` (a request that never reached the server renders one sentence in the page-level alert, never engine text — FE-G1) render distinctly. `ready` carries no marker of its own, and `partial` renders through warning statuses and inline notes; neither has a dedicated component (FE-A2 F-08). "No material change" is legal only for a successful timestamped `observed-empty` response.
+- **Authority:** Every ready conclusion carries observation time, origin, method, approval/ratification, and freshness. `LIVE` describes source origin only. Every surface on a screen renders the shell's one snapshot; no surface mints a second accepted identity (FE-G1).
+- **Worklists:** The Cases toolbar is search plus one filter, one action per row; the five-action toolbar and batch state are not implemented (FE-A2 §11; FE-G4 decides whether the rule or the product moves).
+- **Utilities:** Not implemented — there is no utility drawer; the one drawer is the evidence context drawer, whose opener is passed from the click and regains focus on Escape.
+- **Evidence Atlas:** Not implemented as one inspector; the context drawer and the per-surface evidence rails are what exist. Never show a duplicate inspector.
+- **Role composition:** Not implemented — the rail shows the served role read-only; there is no `View: Analyst / PM / QA` switch and it must never grant permission or approval authority if drawn.
 
 ### Panel
 
-The shared panel is the signature CAOS frame: Panel Surface, Hairline Border, 6px radius, 32px uppercase header, and a focusable scrollable body. A panel is a section, not a decorative card.
+The shared panel is the signature CAOS frame: Panel Surface, hairline border, 10px radius, `--shadow-panel`, a 46px sentence-case header (13px/600), a 12px body, and — where a region is declared — a focusable scrollable body (`table-wrap`, the worksheet, the loan table are `role="region"` containers). A panel is a section, not a decorative card.
 
 ### Status Glyphs
 
@@ -365,18 +332,18 @@ Status meaning must never be color alone. Pair severity color with a drawn glyph
 ## 6. Do's and Don'ts
 
 ### Do:
-- **Do** use `workspace-bg`, `panel`, `elevated`, and `border` as the core surface ladder.
+- **Do** use `bg`, `panel`, `elevated`, `subtle` and `border` as the core surface ladder.
 - **Do** keep dense financial values in mono tabular type.
 - **Do** pair every semantic color with a label, glyph, or spatial convention.
-- **Do** use the shared Panel, TextInput, ScopeToggle, StatusGlyph, and ConceptNav patterns before inventing new chrome.
-- **Do** honor reduced motion. Running pulse and flash cues must stop under `prefers-reduced-motion`.
+- **Do** use the shared class idioms — `.panel`, `.field`, `.status`, `.button`, `.nav-link`, `.evidence-chip`, `.state-block` — and the `StateBlock`, `StateNote`, `LoadState`, `Unavailable` and `MutationReceipt` components before inventing new chrome.
+- **Do** honor reduced motion. The only animation is the loading shimmer, confined to `prefers-reduced-motion: no-preference`; the only non-hover transition is the live progress width. There is no running pulse, no flash cue and no dialog entrance motion.
 - **Do** reserve Paper Surface and Paper Ink for Report Studio and research deliverables.
 
 ### Don't:
 - **Don't** drift toward friendly consumer SaaS.
 - **Don't** create oversized marketing dashboards.
 - **Don't** use pastel card layouts.
-- **Don't** add decorative gradients, glow effects, or glassmorphism.
+- **Don't** add decorative gradients, glow effects, or glassmorphism (the 3px dialog backdrop blur is the one sanctioned blur).
 - **Don't** ship raw terminal dumps. Density must stay organized.
 - **Don't** encode status or tranche meaning by color alone.
 - **Don't** use emoji in product chrome.
@@ -388,8 +355,9 @@ Status meaning must never be color alone. Pair severity color with a drawn glyph
 At the product owner's instruction the workspace moved to the **modern dark
 terminal**: a graphite ramp (`#0a0c10` → `#101319` → `#181d28`), iris accent
 `#8b93f8`, retuned semantics (emerald `#34d399`, amber `#fbbf24`, red
-`#f87171`), a 6–14px radius scale, faint resting panel shadows, Space Grotesk
-as the display face (wordmark, page titles, display headings only), and
+`#f87171`), a 6–14px radius scale, faint resting panel shadows, `--font-display`
+(`"Avenir Next", "Segoe UI", system-ui`; no web font since enterprise Task 3) as
+the display face (wordmark, page titles, display headings only), and
 severity-*shaped* status glyphs (disc / triangle / rounded square / flat dot).
 
 This addendum supersedes, for the current design: the all-square geometry, the

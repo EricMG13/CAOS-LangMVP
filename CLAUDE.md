@@ -184,10 +184,6 @@ engine, the bundle, or the routes.
   `GZipMiddleware` (`minimum_size=1024`), and its content-type exclusions are
   load-bearing: `text/event-stream` keeps the run-events tail streaming and the
   XLSX media type is excluded because a workbook is already a zip.
-- Next emits a `noModule` legacy polyfill bundle (112,594 B, byte-identical to
-  `next/dist/build/polyfills/polyfill-nomodule.js`) that every route's HTML
-  references. There is no config switch for it and no browser with ES-module
-  support fetches it — do not "optimize" it away by deleting build output.
 - The run console has exactly one home. Portfolio links into a credit and
   Deep-Dive reads accepted artifacts; neither renders the compile form or the
   accept control. Run progress, compilation and acceptance stay in
