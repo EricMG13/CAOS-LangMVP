@@ -115,7 +115,7 @@ def test_the_script_reviews_this_repository_head_without_a_block(tmp_path):
     diff = subprocess.run(["git", "diff", "HEAD~1", "HEAD", "--unified=0"], cwd=REPO,
                           capture_output=True, text=True, check=True).stdout
     names = subprocess.run(["git", "diff", "HEAD~1", "HEAD", "--name-only"], cwd=REPO,
-                           capture_output=True, text=True, check=True).stdout.split()
+                           capture_output=True, text=True, check=True).stdout.splitlines()
     payload, code = recorded_review.record(diff, base="HEAD~1", head="HEAD")
     assert payload["files_examined"] == len(names), (payload["files_examined"], len(names))
     assert code != 2

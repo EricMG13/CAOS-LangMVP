@@ -1,0 +1,312 @@
+{
+  "title": "CAOS Workbench Directions",
+  "series": "FE-D1",
+  "date": "2026-09-05",
+  "brief": ".superpowers/sdd/frontend/ia-design-brief.md",
+  "audit": ".superpowers/sdd/frontend/frontend-a1-ia-audit.md",
+  "report": ".superpowers/sdd/frontend/frontend-d1-directions.md",
+  "matched": "Matched from source at afb93ab: caos/frontend/app/globals.css (the :root tokens and every rule the drawn classes use, copied verbatim and scoped to the frame; the 900px block re-emitted for the 720 frame), WorkbenchShell.tsx (rail order, glyphs, top bar, authority strip), Workspace.tsx (the Credit, Run and reader markup) and states.tsx (IdentityValue, Unavailable, MutationReceipt), with the running app's own copy.",
+  "source": {
+    "commit": "afb93ab",
+    "stylesheet": "caos/frontend/app/globals.css",
+    "shell": "caos/frontend/src/components/WorkbenchShell.tsx",
+    "states": "caos/frontend/src/components/states.tsx",
+    "surfaces": "caos/frontend/src/components/Workspace.tsx"
+  },
+  "recommended": "Align",
+  "chosen": "Align",
+  "decision": {
+    "date": "2026-09-05",
+    "by": "decision owner",
+    "words": "Align, no changes — record it and commit",
+    "changes": []
+  },
+  "size": {
+    "width": 3400
+  },
+  "pages": [
+    {
+      "name": "Directions",
+      "file": "Main.dc.html",
+      "height": 4680,
+      "notes": [
+        {
+          "name": "Canvas header",
+          "x": 0,
+          "y": 0,
+          "width": 980
+        },
+        {
+          "name": "Must not",
+          "x": 1080,
+          "y": 0,
+          "width": 560,
+          "source": "ia-design-brief.md §6"
+        },
+        {
+          "name": "Align — note",
+          "x": 0,
+          "y": 560,
+          "width": 340,
+          "source": "frontend-a1-ia-audit.md §5, ia-design-brief.md §4"
+        }
+      ],
+      "artboards": [
+        {
+          "name": "Align — Shell 1440",
+          "file": "Align - Shell 1440.dc.html",
+          "direction": "Align",
+          "surface": "shell-1440",
+          "width": 1440,
+          "height": 1000,
+          "x": 400,
+          "y": 560,
+          "tab": "CAOS — Credit",
+          "url": "/credit/?case=case-54b1867495a6422a86e8"
+        },
+        {
+          "name": "Align — Shell 720",
+          "file": "Align - Shell 720.dc.html",
+          "direction": "Align",
+          "surface": "shell-720",
+          "width": 720,
+          "height": 900,
+          "x": 1900,
+          "y": 560,
+          "tab": "CAOS — Credit",
+          "url": "/credit/?case=case-54b1867495a6422a86e8"
+        },
+        {
+          "name": "Align — Analysis paused",
+          "file": "Align - Analysis paused.dc.html",
+          "direction": "Align",
+          "surface": "analysis-paused",
+          "width": 1440,
+          "height": null,
+          "x": 400,
+          "y": 1740,
+          "tab": "CAOS — Run",
+          "url": "/run/?case=case-63d424affad7458f896b&run=run-a2b92d71585e49a392e7"
+        }
+      ]
+    },
+    {
+      "name": "Alternatives",
+      "file": "Alternatives.dc.html",
+      "height": 12560,
+      "notes": [
+        {
+          "name": "Page 2 header",
+          "x": 0,
+          "y": 0,
+          "width": 980
+        },
+        {
+          "name": "Absorb — note",
+          "x": 0,
+          "y": 200,
+          "width": 340,
+          "source": "frontend-a1-ia-audit.md §5, ia-design-brief.md §4"
+        },
+        {
+          "name": "Lifecycle — note",
+          "x": 0,
+          "y": 4320,
+          "width": 340,
+          "source": "frontend-a1-ia-audit.md §5, ia-design-brief.md §4"
+        },
+        {
+          "name": "Labels — note",
+          "x": 0,
+          "y": 8440,
+          "width": 340,
+          "source": "frontend-a1-ia-audit.md §5, ia-design-brief.md §4"
+        }
+      ],
+      "artboards": [
+        {
+          "name": "Absorb — Shell 1440",
+          "file": "Absorb - Shell 1440.dc.html",
+          "direction": "Absorb",
+          "surface": "shell-1440",
+          "width": 1440,
+          "height": 1000,
+          "x": 400,
+          "y": 200,
+          "tab": "CAOS — Credit",
+          "url": "/credit/?case=case-54b1867495a6422a86e8"
+        },
+        {
+          "name": "Absorb — Shell 720",
+          "file": "Absorb - Shell 720.dc.html",
+          "direction": "Absorb",
+          "surface": "shell-720",
+          "width": 720,
+          "height": 900,
+          "x": 1900,
+          "y": 200,
+          "tab": "CAOS — Credit",
+          "url": "/credit/?case=case-54b1867495a6422a86e8"
+        },
+        {
+          "name": "Absorb — Analysis paused",
+          "file": "Absorb - Analysis paused.dc.html",
+          "direction": "Absorb",
+          "surface": "analysis-paused",
+          "width": 1440,
+          "height": null,
+          "x": 400,
+          "y": 1380,
+          "tab": "CAOS — Analysis",
+          "url": "/analysis/?case=case-63d424affad7458f896b&run=run-a2b92d71585e49a392e7"
+        },
+        {
+          "name": "Absorb — Analysis reader",
+          "file": "Absorb - Analysis reader.dc.html",
+          "direction": "Absorb",
+          "surface": "analysis-reader",
+          "width": 1440,
+          "height": null,
+          "x": 1900,
+          "y": 1380,
+          "tab": "CAOS — Analysis",
+          "url": "/analysis/?case=case-54b1867495a6422a86e8"
+        },
+        {
+          "name": "Lifecycle — Shell 1440",
+          "file": "Lifecycle - Shell 1440.dc.html",
+          "direction": "Lifecycle",
+          "surface": "shell-1440",
+          "width": 1440,
+          "height": 1000,
+          "x": 400,
+          "y": 4320,
+          "tab": "CAOS — Credit",
+          "url": "/credit/?case=case-54b1867495a6422a86e8"
+        },
+        {
+          "name": "Lifecycle — Shell 720",
+          "file": "Lifecycle - Shell 720.dc.html",
+          "direction": "Lifecycle",
+          "surface": "shell-720",
+          "width": 720,
+          "height": 900,
+          "x": 1900,
+          "y": 4320,
+          "tab": "CAOS — Credit",
+          "url": "/credit/?case=case-54b1867495a6422a86e8"
+        },
+        {
+          "name": "Lifecycle — Analysis paused",
+          "file": "Lifecycle - Analysis paused.dc.html",
+          "direction": "Lifecycle",
+          "surface": "analysis-paused",
+          "width": 1440,
+          "height": null,
+          "x": 400,
+          "y": 5500,
+          "tab": "CAOS — Run",
+          "url": "/run/?case=case-63d424affad7458f896b&run=run-a2b92d71585e49a392e7"
+        },
+        {
+          "name": "Labels — Shell 1440",
+          "file": "Labels - Shell 1440.dc.html",
+          "direction": "Labels",
+          "surface": "shell-1440",
+          "width": 1440,
+          "height": 1000,
+          "x": 400,
+          "y": 8440,
+          "tab": "CAOS — Credit",
+          "url": "/command-center/?case=case-54b1867495a6422a86e8"
+        },
+        {
+          "name": "Labels — Shell 720",
+          "file": "Labels - Shell 720.dc.html",
+          "direction": "Labels",
+          "surface": "shell-720",
+          "width": 720,
+          "height": 900,
+          "x": 1900,
+          "y": 8440,
+          "tab": "CAOS — Credit",
+          "url": "/command-center/?case=case-54b1867495a6422a86e8"
+        },
+        {
+          "name": "Labels — Analysis paused",
+          "file": "Labels - Analysis paused.dc.html",
+          "direction": "Labels",
+          "surface": "analysis-paused",
+          "width": 1440,
+          "height": null,
+          "x": 400,
+          "y": 9620,
+          "tab": "CAOS — Run",
+          "url": "/run-console/?case=case-63d424affad7458f896b&run=run-a2b92d71585e49a392e7"
+        }
+      ]
+    }
+  ],
+  "directions": {
+    "Align": {
+      "page": 1,
+      "summary": "Eight destinations plus one tool, one vocabulary end to end: URL, rail, kicker, page title and browser tab all use the same word. Nothing merges; every surface keeps its interior.",
+      "motivation": "The audit found four vocabularies for nine surfaces and the rail's is already the approved one; renaming closes the seam without redrawing a single interior, and every human gate keeps the home it has today.",
+      "tradeoff": "Analysis stays two surfaces (reader and run), so the PM's “Review latest run” still leaves the reader, and the analyst still arrives at a run console whose compile form shows defaults unrelated to the run on screen.",
+      "drawn": "Drawn with D11 (the compile form collapsed to “Advanced: compile a route” because the run came from intake) and D12 (the Run tool on every surface). “Review latest run” leaves the reader for /run/.",
+      "artboards": [
+        "Align — Shell 1440",
+        "Align — Shell 720",
+        "Align — Analysis paused"
+      ]
+    },
+    "Absorb": {
+      "page": 2,
+      "summary": "The 31 August plan taken literally: eight destinations, no tool. Analysis is one surface with two modes chosen by the authority in the strip. Run progress, compilation and acceptance keep exactly one home: Analysis.",
+      "motivation": "One word, one route, one place for the analyst's whole review-and-accept loop; the reader and the run stop competing for the name “Analysis”.",
+      "tradeoff": "The surface's primary mode is chosen by data (which run is selected, whether it is accepted), so the artboard set must show the mode switch explicitly and the implementation must merge two views and move twelve smoke steps and the accessibility fixture; the riskiest of the four.",
+      "drawn": "Drawn with the mode chosen by the strip: the selected run is paused, so Analysis shows execution and the gate; the reader artboard is the same route with an accepted visible snapshot and no unaccepted run selected. The kicker follows the mode. The Run tool leaves the rail and the palette.",
+      "artboards": [
+        "Absorb — Shell 1440",
+        "Absorb — Shell 720",
+        "Absorb — Analysis paused",
+        "Absorb — Analysis reader"
+      ]
+    },
+    "Lifecycle": {
+      "page": 2,
+      "summary": "“Align” plus two moves: Market becomes a tool under Sources (“Loan universe”), and the served governance controls move to Admin. The unserved Admin rows stay “Not served”.",
+      "motivation": "The rail reads as the workflow in order (Portfolio → Credit → Sources → Analysis → Model → Report → Admin) and QA's tasks stop being scattered across Report and the API.",
+      "tradeoff": "Relative Value analysts lose a one-click Market destination, and Admin stops being purely “unavailable”, so its state design must distinguish served from unserved rows honestly.",
+      "drawn": "Align’s artboards plus the rail change: “Loan universe” is a Sources tool at /market/ (kicker “Sources / Loan universe”) and, like Run, renders on every surface. D7’s Admin controls (Provision member, Download audit package) are not on these three artboards.",
+      "artboards": [
+        "Lifecycle — Shell 1440",
+        "Lifecycle — Shell 720",
+        "Lifecycle — Analysis paused"
+      ]
+    },
+    "Labels": {
+      "page": 2,
+      "summary": "No route change. Kickers, page titles and tab titles adopt the rail's words; slugs stay as they are (/run-console/, /deep-dive/, …).",
+      "motivation": "Cheapest close of the visible seam, zero risk to retained deep links.",
+      "tradeoff": "The URL is what an analyst pastes to a colleague, and it keeps saying Deep-Dive, Command Center and RV Screener.",
+      "drawn": "No slug changes: /command-center/ and /run-console/ keep their names while kicker, title and tab adopt the rail’s words. The Run tool stays Analysis-scoped, as today, so it is absent from the Credit shell.",
+      "artboards": [
+        "Labels — Shell 1440",
+        "Labels — Shell 720",
+        "Labels — Analysis paused"
+      ]
+    }
+  },
+  "mustNot": [
+    "Must not give run progress, compilation or acceptance more than one home.",
+    "Must not add any field to the intake surface: it posts files and nothing else. Issuer, label, document types, periods, dispositions and the route are labelled machine suggestions.",
+    "Must not merge, hide or rename away any human gate: research-plan approval, acceptance, opinion sign-off, freeze and filing each keep a visible identity and their digest-bound facts.",
+    "Must not draw a control for a route the server does not serve (attention ordering, claim coverage, binding measure, relative percentile, audit rows, bundle integrity, step-up, one-way sensitivity where absent).",
+    "Must not remove the authority strip (Credit, Visible snapshot, Selected run, Source set) from any surface, or let navigation imply a change of authority.",
+    "Must not redesign the visual language: the dark workspace and the light paper counterpoint are settled; tokens stay in caos/frontend/app/globals.css.",
+    "Must not turn Analyst / PM / QA into roles, tabs that grant anything, or a selector that changes what a user may do.",
+    "Must not encode status by colour alone, use emoji in chrome, or add motion that is not live state.",
+    "Must not use placeholder text; every string is product copy from section 7 or from the running app."
+  ]
+}
