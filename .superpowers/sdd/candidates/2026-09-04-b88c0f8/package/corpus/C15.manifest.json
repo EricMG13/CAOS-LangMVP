@@ -1,0 +1,126 @@
+{
+  "schema_version": "caos.corpus-pack.v1",
+  "pack_id": "C15",
+  "version": "1.0.0",
+  "title": "Malformed files, polyglots, archive bombs, traversal paths, duplicate members, corrupted packages, malware signature",
+  "purpose": "C15: every file is refused with a typed reason at the source boundary, and the whole pack is refused at intake with nothing admitted.",
+  "kind": "negative",
+  "stage": "ingest",
+  "issuer": "Northstar Cruise Holdings Inc",
+  "licence_class": "synthetic",
+  "provenance": "caos/tests/corpus/synthetic.py",
+  "bytes": {
+    "source": "synthetic",
+    "location": "caos/tests/corpus/synthetic.py",
+    "owner": null,
+    "artifact": null
+  },
+  "documents": [
+    {
+      "filename": "polyglot.pdf",
+      "sha256": "30cdefe4e3eed62117c43c368a7c16e32b2db5e0548acc94b075c901944f415e",
+      "media_type": "application/pdf",
+      "document_type": "other",
+      "period": null,
+      "supersession": "current",
+      "provenance": "caos/tests/corpus/synthetic.py::c15_malformed",
+      "disposition": "used",
+      "analytical_role": "invalid",
+      "reason": "PDF header over zip bytes; invalid PDF"
+    },
+    {
+      "filename": "bomb.xlsx",
+      "sha256": "af5427081266c54e6ce1f3431f4153de73580172ba09dab791a4dbd3349970fc",
+      "media_type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      "document_type": "other",
+      "period": null,
+      "supersession": "current",
+      "provenance": "caos/tests/corpus/synthetic.py::c15_malformed",
+      "disposition": "used",
+      "analytical_role": "invalid",
+      "reason": "64 MB of zeros in one deflated member"
+    },
+    {
+      "filename": "traversal.xlsx",
+      "sha256": "73a487cd425ec62125bd3e8bd2387571051982a73369250d130000792d03e064",
+      "media_type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      "document_type": "other",
+      "period": null,
+      "supersession": "current",
+      "provenance": "caos/tests/corpus/synthetic.py::c15_malformed",
+      "disposition": "used",
+      "analytical_role": "invalid",
+      "reason": "archive member path escapes the root"
+    },
+    {
+      "filename": "duplicate-members.xlsx",
+      "sha256": "97dddcb43a6464f7a3c2b1643960b1b89e1b2eeb869c084e56d1bcada1f2dadc",
+      "media_type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      "document_type": "other",
+      "period": null,
+      "supersession": "current",
+      "provenance": "caos/tests/corpus/synthetic.py::c15_malformed",
+      "disposition": "used",
+      "analytical_role": "invalid",
+      "reason": "two members with one name"
+    },
+    {
+      "filename": "archive.zip",
+      "sha256": "73a487cd425ec62125bd3e8bd2387571051982a73369250d130000792d03e064",
+      "media_type": "application/octet-stream",
+      "document_type": "other",
+      "period": null,
+      "supersession": "current",
+      "provenance": "caos/tests/corpus/synthetic.py::c15_malformed",
+      "disposition": "used",
+      "analytical_role": "invalid",
+      "reason": "unsupported suffix"
+    },
+    {
+      "filename": "corrupt.xlsx",
+      "sha256": "a613d00477e28751a19d0387a16e13659880826182dd634b4c72306c1642305f",
+      "media_type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      "document_type": "other",
+      "period": null,
+      "supersession": "current",
+      "provenance": "caos/tests/corpus/synthetic.py::c15_malformed",
+      "disposition": "used",
+      "analytical_role": "invalid",
+      "reason": "PK signature over garbage"
+    },
+    {
+      "filename": "eicar.txt",
+      "sha256": "275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f",
+      "media_type": "text/plain",
+      "document_type": "other",
+      "period": null,
+      "supersession": "current",
+      "provenance": "caos/tests/corpus/synthetic.py::c15_malformed",
+      "disposition": "used",
+      "analytical_role": "invalid",
+      "reason": "malware test signature"
+    }
+  ],
+  "documents_from": null,
+  "applies_to": [
+    {
+      "pathway": "FULL_CREDIT",
+      "depth": "full",
+      "outcome": "ingest",
+      "proves_pathway": false
+    }
+  ],
+  "answer_key": {
+    "file": "answer_key.json",
+    "version": "1.0.0",
+    "sha256": "ed4f6ed43382dae0f83e5ed1e85aec02b6fa18e5625e449b5f22b87c52c68f3c",
+    "approvals": [
+      {
+        "scope": "host_control",
+        "reviewer": "Claude Fable 5.1 (ER-G6 implementer)",
+        "approved_at": "2026-09-03",
+        "note": "host-control attestation of the draft key: orchestration proof only, never analysis"
+      }
+    ]
+  }
+}

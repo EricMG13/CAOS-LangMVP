@@ -1,0 +1,90 @@
+{
+  "schema_version": "caos.corpus-pack.v1",
+  "pack_id": "C14",
+  "version": "1.0.0",
+  "title": "Unicode pack: normalization variants, bidi controls, confusables, control characters",
+  "purpose": "C14: two spellings of one issuer name, a right-to-left override, a confusable and control characters; the boundary keeps them out of every artifact.",
+  "kind": "negative",
+  "stage": "run",
+  "issuer": "Société Générale Croisières S.A.",
+  "licence_class": "synthetic",
+  "provenance": "caos/tests/corpus/synthetic.py",
+  "bytes": {
+    "source": "synthetic",
+    "location": "caos/tests/corpus/synthetic.py",
+    "owner": null,
+    "artifact": null
+  },
+  "documents": [
+    {
+      "filename": "sgc-10k-fy2024.txt",
+      "sha256": "9c045bb4b528215b9ccfa5318b851204e73a3121db3c7bf5cdfc9e9cf8dcfacc",
+      "media_type": "text/plain",
+      "document_type": "annual_report",
+      "period": "FY2024",
+      "supersession": "current",
+      "provenance": "caos/tests/corpus/synthetic.py::c14_unicode",
+      "disposition": "used",
+      "analytical_role": "relevant",
+      "reason": "NFC-normalized non-English issuer name"
+    },
+    {
+      "filename": "sgc-10q-q3-2025.txt",
+      "sha256": "9848dd84e84c4bbb9526ee011921165511ba69171c34b173e40f73195a4f51f4",
+      "media_type": "text/plain",
+      "document_type": "quarterly_report",
+      "period": "FY2025-Q3",
+      "supersession": "current",
+      "provenance": "caos/tests/corpus/synthetic.py::c14_unicode",
+      "disposition": "used",
+      "analytical_role": "relevant",
+      "reason": "NFD spelling of the same issuer name"
+    },
+    {
+      "filename": "sgc-bidi-note.txt",
+      "sha256": "8a24e7db4bfd4c3c25192ccf7db8e5f409c256a2acf62b240651e0cd47a15e6f",
+      "media_type": "text/plain",
+      "document_type": "other",
+      "period": null,
+      "supersession": "current",
+      "provenance": "caos/tests/corpus/synthetic.py::c14_unicode",
+      "disposition": "used",
+      "analytical_role": "hostile",
+      "reason": "right-to-left override and a Cyrillic confusable; admitted as untrusted data"
+    },
+    {
+      "filename": "sgc-control-note.txt",
+      "sha256": "da47daa3e70f988b5028462a470bea76745775a0beaf3911a6689c2474783f1a",
+      "media_type": "text/plain",
+      "document_type": "other",
+      "period": null,
+      "supersession": "current",
+      "provenance": "caos/tests/corpus/synthetic.py::c14_unicode",
+      "disposition": "used",
+      "analytical_role": "hostile",
+      "reason": "control characters in the text; admitted as untrusted data"
+    }
+  ],
+  "documents_from": null,
+  "applies_to": [
+    {
+      "pathway": "FULL_CREDIT",
+      "depth": "full",
+      "outcome": "succeeded",
+      "proves_pathway": false
+    }
+  ],
+  "answer_key": {
+    "file": "answer_key.json",
+    "version": "1.0.0",
+    "sha256": "6da2991f6be0699aac5012d17f1fa9abf4177acacba0785ad07dbdb3d79454b2",
+    "approvals": [
+      {
+        "scope": "host_control",
+        "reviewer": "Claude Fable 5.1 (ER-G6 implementer)",
+        "approved_at": "2026-09-03",
+        "note": "host-control attestation of the draft key: orchestration proof only, never analysis"
+      }
+    ]
+  }
+}

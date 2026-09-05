@@ -1,0 +1,90 @@
+{
+  "schema_version": "caos.corpus-pack.v1",
+  "pack_id": "C13",
+  "version": "1.0.0",
+  "title": "Boundary pack at the file-size, line-length and empty-source limits",
+  "purpose": "C13: exactly-admitted and just-refused uploads at the size, line-length and empty boundaries (block-count, row, column and sheet limits are exercised in C08 and the spec suite).",
+  "kind": "negative",
+  "stage": "ingest",
+  "issuer": "Northstar Cruise Holdings Inc",
+  "licence_class": "synthetic",
+  "provenance": "caos/tests/corpus/synthetic.py",
+  "bytes": {
+    "source": "synthetic",
+    "location": "caos/tests/corpus/synthetic.py",
+    "owner": null,
+    "artifact": null
+  },
+  "documents": [
+    {
+      "filename": "northstar-10k-fy2024.txt",
+      "sha256": "7e3da1da91e6959fb7ef339d78c20df171b467016b68c2bf7a65ba4f8b6641ef",
+      "media_type": "text/plain",
+      "document_type": "annual_report",
+      "period": "FY2024",
+      "supersession": "current",
+      "provenance": "caos/tests/corpus/synthetic.py::c13_boundary",
+      "disposition": "used",
+      "analytical_role": "relevant",
+      "reason": "ordinary document"
+    },
+    {
+      "filename": "northstar-wide-line.txt",
+      "sha256": "b51ffb6d2b614b1a45466ef2e9be3ed665644d834419330a1ecce94e78cd8fb3",
+      "media_type": "text/plain",
+      "document_type": "other",
+      "period": null,
+      "supersession": "current",
+      "provenance": "caos/tests/corpus/synthetic.py::c13_boundary",
+      "disposition": "used",
+      "analytical_role": "relevant",
+      "reason": "one line wider than MAX_BLOCK_CHARS; split, not refused"
+    },
+    {
+      "filename": "northstar-oversize.txt",
+      "sha256": "1b55f713d105dc0e7be77b11a4b2db46534405560d7dfe4265d1e6dac74441aa",
+      "media_type": "text/plain",
+      "document_type": "other",
+      "period": null,
+      "supersession": "current",
+      "provenance": "caos/tests/corpus/synthetic.py::c13_boundary",
+      "disposition": "used",
+      "analytical_role": "invalid",
+      "reason": "one byte over max_source_bytes; refused before scanning"
+    },
+    {
+      "filename": "northstar-empty.txt",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "media_type": "text/plain",
+      "document_type": "other",
+      "period": null,
+      "supersession": "current",
+      "provenance": "caos/tests/corpus/synthetic.py::c13_boundary",
+      "disposition": "used",
+      "analytical_role": "invalid",
+      "reason": "empty upload; refused"
+    }
+  ],
+  "documents_from": null,
+  "applies_to": [
+    {
+      "pathway": "FULL_CREDIT",
+      "depth": "full",
+      "outcome": "ingest",
+      "proves_pathway": false
+    }
+  ],
+  "answer_key": {
+    "file": "answer_key.json",
+    "version": "1.0.0",
+    "sha256": "83ede20f75e4de55b203c4fa2f35a628b952be10cfd2f87ea125e37f348d9fc5",
+    "approvals": [
+      {
+        "scope": "host_control",
+        "reviewer": "Claude Fable 5.1 (ER-G6 implementer)",
+        "approved_at": "2026-09-03",
+        "note": "host-control attestation of the draft key: orchestration proof only, never analysis"
+      }
+    ]
+  }
+}

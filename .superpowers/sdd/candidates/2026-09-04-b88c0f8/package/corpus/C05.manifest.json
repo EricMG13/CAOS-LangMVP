@@ -1,0 +1,78 @@
+{
+  "schema_version": "caos.corpus-pack.v1",
+  "pack_id": "C05",
+  "version": "1.0.0",
+  "title": "Multi-currency issuer with explicit and missing foreign-exchange rates",
+  "purpose": "C05: euro annual accounts with a disclosed EUR/USD rate, a dollar interim statement and a sterling facility with no rate; the missing rate is a named gap.",
+  "kind": "negative",
+  "stage": "run",
+  "issuer": "Northstar Cruise Holdings Inc",
+  "licence_class": "synthetic",
+  "provenance": "caos/tests/corpus/synthetic.py",
+  "bytes": {
+    "source": "synthetic",
+    "location": "caos/tests/corpus/synthetic.py",
+    "owner": null,
+    "artifact": null
+  },
+  "documents": [
+    {
+      "filename": "northstar-10k-fy2024-eur.txt",
+      "sha256": "954fbe9c2d6650a35fc89946d1e34ce3b376bbe712738c6ae9d6740c1d86800c",
+      "media_type": "text/plain",
+      "document_type": "annual_report",
+      "period": "FY2024",
+      "supersession": "current",
+      "provenance": "caos/tests/corpus/synthetic.py::c05_multi_currency",
+      "disposition": "used",
+      "analytical_role": "relevant",
+      "reason": "euro-reporting annual report with a disclosed EUR/USD rate"
+    },
+    {
+      "filename": "northstar-10q-q3-2025.txt",
+      "sha256": "7458166d6519ec586964abf904c640de7eb7fe4e29d6b91d87fc1381782f7f6a",
+      "media_type": "text/plain",
+      "document_type": "quarterly_report",
+      "period": "FY2025-Q3",
+      "supersession": "current",
+      "provenance": "caos/tests/corpus/synthetic.py::c05_multi_currency",
+      "disposition": "used",
+      "analytical_role": "relevant",
+      "reason": "US-dollar interim statement"
+    },
+    {
+      "filename": "northstar-credit-agreement.txt",
+      "sha256": "d8e07f5fee49f0ea46df09beed10d8493e315476bdbca273c573862bf5e81223",
+      "media_type": "text/plain",
+      "document_type": "credit_agreement",
+      "period": null,
+      "supersession": "current",
+      "provenance": "caos/tests/corpus/synthetic.py::c05_multi_currency",
+      "disposition": "used",
+      "analytical_role": "relevant",
+      "reason": "covenant terms"
+    }
+  ],
+  "documents_from": null,
+  "applies_to": [
+    {
+      "pathway": "FULL_CREDIT",
+      "depth": "full",
+      "outcome": "succeeded",
+      "proves_pathway": false
+    }
+  ],
+  "answer_key": {
+    "file": "answer_key.json",
+    "version": "1.0.0",
+    "sha256": "29438b30f8ec7202f7e9ffda8b05409a647f51d75c7fbf9c56c0d22c44fbb62d",
+    "approvals": [
+      {
+        "scope": "host_control",
+        "reviewer": "Claude Fable 5.1 (ER-G6 implementer)",
+        "approved_at": "2026-09-03",
+        "note": "host-control attestation of the draft key: orchestration proof only, never analysis"
+      }
+    ]
+  }
+}

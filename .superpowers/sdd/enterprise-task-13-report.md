@@ -1,5 +1,10 @@
 # Enterprise Task 13 report — freeze the candidate and run the automated gates (first half, ER-G9)
 
+> **Second half (ER-G10, 2026-09-04):** the evidence package, the check map, the
+> golden-journey driver and the signability verdict are in
+> `enterprise-task-13b-report.md`. This file is the ER-G9 record and is unchanged
+> below this note.
+
 > **Two candidates.** Candidate `2026-09-03-c4f0270` (tag
 > `enterprise-candidate-2026-09-03`) was frozen first and is SUPERSEDED: its
 > capacity harness could not run the declared soak, and the decision owner
