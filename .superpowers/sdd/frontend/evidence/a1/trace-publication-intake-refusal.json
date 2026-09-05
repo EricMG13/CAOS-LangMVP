@@ -1,0 +1,548 @@
+{
+  "baseURL": "http://127.0.0.1:8768",
+  "corpus": "/Users/ericguei/Claude/Projects/CAOS-LangMVP/caos/tests/corpus/documents",
+  "started": "2026-09-05T10:01:55.731Z",
+  "steps": [
+    {
+      "n": 1,
+      "persona": "analyst",
+      "label": "UX-001 Carnival pack unbound: 30 documents refused (issuer ambiguity)",
+      "clicks": 2,
+      "checks": [
+        "UX-001",
+        "UX-002",
+        "UX-004"
+      ],
+      "urlBefore": "blank",
+      "url": "/cases/?case=case-54b1867495a6422a86e8&run=run-4211024781b14c989af5",
+      "shell": {
+        "kicker": "Portfolio / Surveillance",
+        "h1": "Monitored credits",
+        "title": "CAOS — Cases",
+        "authority": "Credit: Goldenpack-7d2kd HoldingsVisible snapshot: snap-e0177e1…b2c3snap-e0177e1…b2c3. Full identity: snap-e0177e1f14434facb2c3Selected run: run-42110247…9af5run-42110247…9af5. Full identity: run-4211024781b14c989af5Source set: v1",
+        "primaryButtons": [
+          "Analyze documents",
+          "Open credit",
+          "Open credit"
+        ],
+        "statuses": [
+          "used",
+          "used",
+          "used",
+          "Accepted",
+          "Not accepted",
+          "READY"
+        ],
+        "unavailable": []
+      },
+      "destinationChanged": true,
+      "authorityChanged": false,
+      "screenshot": "p01-portfolio-carnival-refused-ambiguous.png",
+      "ok": true,
+      "startedAt": "2026-09-05T10:01:55.901Z",
+      "finishedAt": "2026-09-05T10:02:50.334Z"
+    },
+    {
+      "n": 2,
+      "persona": "analyst",
+      "label": "advanced control: create the case by hand so the pack can be bound",
+      "clicks": 4,
+      "checks": [],
+      "urlBefore": "/cases/?case=case-54b1867495a6422a86e8&run=run-4211024781b14c989af5",
+      "url": "/cases/?case=case-4002c83606ad4989be48",
+      "shell": {
+        "kicker": "Portfolio / Surveillance",
+        "h1": "Monitored credits",
+        "title": "CAOS — Cases",
+        "authority": "Credit: Carnival CorporationVisible snapshot: No visible snapshotSelected run: NoneSource set: No visible source set",
+        "primaryButtons": [
+          "Analyze documents",
+          "Open credit",
+          "Open credit",
+          "Open credit"
+        ],
+        "statuses": [
+          "Not accepted",
+          "Accepted",
+          "Not accepted",
+          "NEEDS SOURCE"
+        ],
+        "unavailable": []
+      },
+      "destinationChanged": false,
+      "authorityChanged": true,
+      "screenshot": "p02-portfolio-create-case-form.png",
+      "ok": true,
+      "startedAt": "2026-09-05T10:02:50.335Z",
+      "finishedAt": "2026-09-05T10:02:50.451Z"
+    },
+    {
+      "n": 3,
+      "persona": "analyst",
+      "label": "UX-001 Carnival pack bound to the created case: still refused (ambiguity precedes binding)",
+      "clicks": 3,
+      "checks": [
+        "UX-001",
+        "UX-002",
+        "UX-004"
+      ],
+      "urlBefore": "/cases/?case=case-4002c83606ad4989be48",
+      "url": "/cases/?case=case-4002c83606ad4989be48",
+      "shell": {
+        "kicker": "Portfolio / Surveillance",
+        "h1": "Monitored credits",
+        "title": "CAOS — Cases",
+        "authority": "Credit: Carnival CorporationVisible snapshot: No visible snapshotSelected run: NoneSource set: No visible source set",
+        "primaryButtons": [
+          "Analyze documents",
+          "Open credit",
+          "Open credit",
+          "Open credit"
+        ],
+        "statuses": [
+          "Not accepted",
+          "Accepted",
+          "Not accepted",
+          "NEEDS SOURCE"
+        ],
+        "unavailable": []
+      },
+      "destinationChanged": false,
+      "authorityChanged": false,
+      "screenshot": "p03-portfolio-carnival-bound-refused.png",
+      "ok": true,
+      "startedAt": "2026-09-05T10:02:50.452Z",
+      "finishedAt": "2026-09-05T10:03:44.096Z"
+    },
+    {
+      "n": 4,
+      "persona": "analyst",
+      "label": "advanced path: 30 governed source uploads (POST /sources, one per document, as the Sources form does)",
+      "clicks": 30,
+      "checks": [],
+      "urlBefore": "/cases/?case=case-4002c83606ad4989be48",
+      "url": "/cases/?case=case-4002c83606ad4989be48",
+      "shell": {
+        "kicker": "Portfolio / Surveillance",
+        "h1": "Monitored credits",
+        "title": "CAOS — Cases",
+        "authority": "Credit: Carnival CorporationVisible snapshot: No visible snapshotSelected run: NoneSource set: No visible source set",
+        "primaryButtons": [
+          "Analyze documents",
+          "Open credit",
+          "Open credit",
+          "Open credit"
+        ],
+        "statuses": [
+          "Not accepted",
+          "Accepted",
+          "Not accepted",
+          "NEEDS SOURCE"
+        ],
+        "unavailable": []
+      },
+      "destinationChanged": false,
+      "authorityChanged": false,
+      "screenshot": null,
+      "ok": true,
+      "startedAt": "2026-09-05T10:03:44.097Z",
+      "finishedAt": "2026-09-05T10:04:36.928Z"
+    },
+    {
+      "n": 5,
+      "persona": "analyst",
+      "label": "Sources register after the uploads",
+      "clicks": 1,
+      "checks": [],
+      "urlBefore": "/cases/?case=case-4002c83606ad4989be48",
+      "url": "/sources/?case=case-4002c83606ad4989be48",
+      "shell": {
+        "kicker": "Sources / Evidence",
+        "h1": "Documents, extraction and coverage",
+        "title": "CAOS — Documents, extraction and coverage",
+        "authority": "Credit: Carnival CorporationVisible snapshot: No visible snapshotSelected run: NoneSource set: No visible source set",
+        "primaryButtons": [
+          "Upload and version"
+        ],
+        "statuses": [
+          "Extracted",
+          "Extracted",
+          "Extracted",
+          "Extracted",
+          "Extracted",
+          "Extracted",
+          "Extracted",
+          "Extracted",
+          "Extracted",
+          "Extracted",
+          "Extracted",
+          "Extracted",
+          "Extracted",
+          "Extracted"
+        ],
+        "unavailable": [
+          "Claim coverage"
+        ]
+      },
+      "destinationChanged": true,
+      "authorityChanged": false,
+      "screenshot": "p04-sources-carnival-register.png",
+      "ok": true,
+      "startedAt": "2026-09-05T10:04:36.930Z",
+      "finishedAt": "2026-09-05T10:04:40.012Z"
+    },
+    {
+      "n": 6,
+      "persona": "analyst",
+      "label": "advanced path: compile Full Credit at full depth from the Run tool",
+      "clicks": 4,
+      "checks": [],
+      "urlBefore": "/sources/?case=case-4002c83606ad4989be48",
+      "url": "/sources/?case=case-4002c83606ad4989be48",
+      "shell": {
+        "kicker": "Sources / Evidence",
+        "h1": "Documents, extraction and coverage",
+        "title": "CAOS — Documents, extraction and coverage",
+        "authority": "Credit: Carnival CorporationVisible snapshot: No visible snapshotSelected run: NoneSource set: No visible source set",
+        "primaryButtons": [
+          "Upload and version"
+        ],
+        "statuses": [
+          "Extracted",
+          "Extracted",
+          "Extracted",
+          "Extracted",
+          "Extracted",
+          "Extracted",
+          "Extracted",
+          "Extracted",
+          "Extracted",
+          "Extracted",
+          "Extracted",
+          "Extracted",
+          "Extracted",
+          "Extracted"
+        ],
+        "unavailable": [
+          "Claim coverage"
+        ]
+      },
+      "destinationChanged": null,
+      "authorityChanged": null,
+      "screenshot": "p05-FAILED-run-console-carnival-compiled.png",
+      "ok": false,
+      "startedAt": "2026-09-05T10:04:40.013Z",
+      "error": "locator.click: Timeout 30000ms exceeded.\nCall log:\n  - waiting for getByRole('navigation', { name: 'Analysis tools' }).getByRole('link', { name: 'Run' })\n",
+      "finishedAt": "2026-09-05T10:05:11.512Z"
+    },
+    {
+      "n": 7,
+      "persona": "analyst",
+      "label": "run console while the route runs",
+      "clicks": 0,
+      "checks": [],
+      "urlBefore": "/sources/?case=case-4002c83606ad4989be48",
+      "url": "/sources/?case=case-4002c83606ad4989be48",
+      "shell": null,
+      "destinationChanged": null,
+      "authorityChanged": null,
+      "screenshot": null,
+      "ok": false,
+      "startedAt": "2026-09-05T10:05:11.514Z",
+      "error": "locator.waitFor: Target page, context or browser has been closed\nCall log:\n  - waiting for getByRole('progressbar', { name: 'Execution progress' }) to be visible\n",
+      "finishedAt": "2026-09-05T10:05:42.956Z"
+    },
+    {
+      "n": 8,
+      "persona": "analyst",
+      "label": "UX-010 route succeeded (unaccepted)",
+      "clicks": 0,
+      "checks": [
+        "UX-010"
+      ],
+      "urlBefore": "/sources/?case=case-4002c83606ad4989be48",
+      "url": "/sources/?case=case-4002c83606ad4989be48",
+      "shell": null,
+      "destinationChanged": null,
+      "authorityChanged": null,
+      "screenshot": null,
+      "ok": false,
+      "startedAt": "2026-09-05T10:05:42.958Z",
+      "error": "locator.waitFor: Target page, context or browser has been closed",
+      "finishedAt": "2026-09-05T10:05:42.958Z"
+    },
+    {
+      "n": 9,
+      "persona": "analyst",
+      "label": "accept (dialog + confirm)",
+      "clicks": 2,
+      "checks": [],
+      "urlBefore": "/sources/?case=case-4002c83606ad4989be48",
+      "url": "/sources/?case=case-4002c83606ad4989be48",
+      "shell": null,
+      "destinationChanged": null,
+      "authorityChanged": null,
+      "screenshot": null,
+      "ok": false,
+      "startedAt": "2026-09-05T10:05:42.959Z",
+      "error": "locator.click: Target page, context or browser has been closed",
+      "finishedAt": "2026-09-05T10:05:42.960Z"
+    },
+    {
+      "n": 10,
+      "persona": "analyst",
+      "label": "rail: Model (ready to build)",
+      "clicks": 1,
+      "checks": [],
+      "urlBefore": "/sources/?case=case-4002c83606ad4989be48",
+      "url": "/sources/?case=case-4002c83606ad4989be48",
+      "shell": null,
+      "destinationChanged": null,
+      "authorityChanged": null,
+      "screenshot": null,
+      "ok": false,
+      "startedAt": "2026-09-05T10:05:42.960Z",
+      "error": "locator.click: Target page, context or browser has been closed",
+      "finishedAt": "2026-09-05T10:05:42.960Z"
+    },
+    {
+      "n": 11,
+      "persona": "analyst",
+      "label": "build the application model (worker)",
+      "clicks": 1,
+      "checks": [],
+      "urlBefore": "/sources/?case=case-4002c83606ad4989be48",
+      "url": "/sources/?case=case-4002c83606ad4989be48",
+      "shell": null,
+      "destinationChanged": null,
+      "authorityChanged": null,
+      "screenshot": null,
+      "ok": false,
+      "startedAt": "2026-09-05T10:05:42.961Z",
+      "error": "locator.click: Target page, context or browser has been closed",
+      "finishedAt": "2026-09-05T10:05:42.961Z"
+    },
+    {
+      "n": 12,
+      "persona": "analyst",
+      "label": "change one assumption, recalculate, sign off R1",
+      "clicks": 3,
+      "checks": [],
+      "urlBefore": "/sources/?case=case-4002c83606ad4989be48",
+      "url": "/sources/?case=case-4002c83606ad4989be48",
+      "shell": null,
+      "destinationChanged": null,
+      "authorityChanged": null,
+      "screenshot": null,
+      "ok": false,
+      "startedAt": "2026-09-05T10:05:42.962Z",
+      "error": "locator.waitFor: Target page, context or browser has been closed",
+      "finishedAt": "2026-09-05T10:05:42.962Z"
+    },
+    {
+      "n": 13,
+      "persona": "analyst",
+      "label": "rail: Report (unsigned opinion, model selected)",
+      "clicks": 1,
+      "checks": [],
+      "urlBefore": "/sources/?case=case-4002c83606ad4989be48",
+      "url": "/sources/?case=case-4002c83606ad4989be48",
+      "shell": null,
+      "destinationChanged": null,
+      "authorityChanged": null,
+      "screenshot": null,
+      "ok": false,
+      "startedAt": "2026-09-05T10:05:42.962Z",
+      "error": "locator.click: Target page, context or browser has been closed",
+      "finishedAt": "2026-09-05T10:05:42.963Z"
+    },
+    {
+      "n": 14,
+      "persona": "analyst",
+      "label": "compose the nine required sections (autosave)",
+      "clicks": 9,
+      "checks": [],
+      "urlBefore": "/sources/?case=case-4002c83606ad4989be48",
+      "url": "/sources/?case=case-4002c83606ad4989be48",
+      "shell": null,
+      "destinationChanged": null,
+      "authorityChanged": null,
+      "screenshot": null,
+      "ok": false,
+      "startedAt": "2026-09-05T10:05:42.963Z",
+      "error": "locator.count: Target page, context or browser has been closed",
+      "finishedAt": "2026-09-05T10:05:42.964Z"
+    },
+    {
+      "n": 15,
+      "persona": "analyst",
+      "label": "UX-016 sign the opinion on the saved revision",
+      "clicks": 1,
+      "checks": [
+        "UX-016"
+      ],
+      "urlBefore": "/sources/?case=case-4002c83606ad4989be48",
+      "url": "/sources/?case=case-4002c83606ad4989be48",
+      "shell": null,
+      "destinationChanged": null,
+      "authorityChanged": null,
+      "screenshot": null,
+      "ok": false,
+      "startedAt": "2026-09-05T10:05:42.964Z",
+      "error": "locator.fill: Target page, context or browser has been closed",
+      "finishedAt": "2026-09-05T10:05:42.965Z"
+    },
+    {
+      "n": 16,
+      "persona": "analyst",
+      "label": "freeze (worker renders md/pdf/xlsx)",
+      "clicks": 1,
+      "checks": [],
+      "urlBefore": "/sources/?case=case-4002c83606ad4989be48",
+      "url": "/sources/?case=case-4002c83606ad4989be48",
+      "shell": null,
+      "destinationChanged": null,
+      "authorityChanged": null,
+      "screenshot": null,
+      "ok": false,
+      "startedAt": "2026-09-05T10:05:42.965Z",
+      "error": "locator.click: Target page, context or browser has been closed",
+      "finishedAt": "2026-09-05T10:05:42.965Z"
+    }
+  ],
+  "navigations": [
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T10:01:55.941Z",
+      "url": "/cases/"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T10:01:55.997Z",
+      "url": "/cases/"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T10:01:56.025Z",
+      "url": "/cases/"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T10:01:56.032Z",
+      "url": "/cases/"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T10:01:56.035Z",
+      "url": "/cases/"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T10:01:56.048Z",
+      "url": "/cases/?case=case-54b1867495a6422a86e8&run=run-4211024781b14c989af5"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T10:01:56.051Z",
+      "url": "/cases/?case=case-54b1867495a6422a86e8&run=run-4211024781b14c989af5"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T10:01:56.052Z",
+      "url": "/cases/?case=case-54b1867495a6422a86e8&run=run-4211024781b14c989af5"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T10:02:50.374Z",
+      "url": "/cases/?case=case-4002c83606ad4989be48"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T10:02:50.375Z",
+      "url": "/cases/?case=case-4002c83606ad4989be48"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T10:02:50.375Z",
+      "url": "/cases/?case=case-4002c83606ad4989be48"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T10:04:36.953Z",
+      "url": "/sources/?case=case-4002c83606ad4989be48"
+    },
+    {
+      "persona": "analyst",
+      "at": "2026-09-05T10:04:36.957Z",
+      "url": "/sources/?case=case-4002c83606ad4989be48"
+    }
+  ],
+  "failures": [
+    {
+      "step": 6,
+      "label": "advanced path: compile Full Credit at full depth from the Run tool",
+      "error": "locator.click: Timeout 30000ms exceeded.\nCall log:\n  - waiting for getByRole('navigation', { name: 'Analysis tools' }).getByRole('link', { name: 'Run' })\n"
+    },
+    {
+      "step": 7,
+      "label": "run console while the route runs",
+      "error": "locator.waitFor: Target page, context or browser has been closed\nCall log:\n  - waiting for getByRole('progressbar', { name: 'Execution progress' }) to be visible\n"
+    },
+    {
+      "step": 8,
+      "label": "UX-010 route succeeded (unaccepted)",
+      "error": "locator.waitFor: Target page, context or browser has been closed"
+    },
+    {
+      "step": 9,
+      "label": "accept (dialog + confirm)",
+      "error": "locator.click: Target page, context or browser has been closed"
+    },
+    {
+      "step": 10,
+      "label": "rail: Model (ready to build)",
+      "error": "locator.click: Target page, context or browser has been closed"
+    },
+    {
+      "step": 11,
+      "label": "build the application model (worker)",
+      "error": "locator.click: Target page, context or browser has been closed"
+    },
+    {
+      "step": 12,
+      "label": "change one assumption, recalculate, sign off R1",
+      "error": "locator.waitFor: Target page, context or browser has been closed"
+    },
+    {
+      "step": 13,
+      "label": "rail: Report (unsigned opinion, model selected)",
+      "error": "locator.click: Target page, context or browser has been closed"
+    },
+    {
+      "step": 14,
+      "label": "compose the nine required sections (autosave)",
+      "error": "locator.count: Target page, context or browser has been closed"
+    },
+    {
+      "step": 15,
+      "label": "UX-016 sign the opinion on the saved revision",
+      "error": "locator.fill: Target page, context or browser has been closed"
+    },
+    {
+      "step": 16,
+      "label": "freeze (worker renders md/pdf/xlsx)",
+      "error": "locator.click: Target page, context or browser has been closed"
+    }
+  ],
+  "notes": [
+    {
+      "corpusFiles": 30
+    },
+    {
+      "unboundRefusal": "Documents not admitted\n\nINTAKE_ISSUER_AMBIGUOUS — The pack names more than one issuer: CARNIV AL CORPORATION & PLC; CARNIVAL CORPORATION & PLC; RELEASE OF CARNIVAL CORPORATION & PLC.\n\nThe pack names more than one issuer; drop one issuer's documents at a time.\n\nCCL_2023_Q1_business_update_guidance.pdf — names CARNIVAL CORPORATION & PLC\nCCL_2023_Q2_earnings_guidance.pdf — names CARNIVAL CORPORATION & PLC\nCCL_2023_Q3_earnings_guidance.pdf — names CARNIVAL CORPORATION & PLC\nCCL_2023_Q4_earnings_guidance.pdf — names CARNIVAL CORPORATION & PLC\nCCL_2024_Q1_earnings_guidance.pdf — names CARNIVAL CORPO"
+    },
+    {
+      "boundRefusal": "Documents not admitted\n\nINTAKE_ISSUER_AMBIGUOUS — The pack names more than one issuer: CARNIV AL CORPORATION & PLC; CARNIVAL CORPORATION & PLC; RELEASE OF CARNIVAL CORPORATION & PLC.\n\nThe pack names more than one issuer; drop one issuer's documents at a time.\n\nCCL_2023_Q1_business_update_guidance.pdf — names CARNIVAL CORPORATION & PLC\nCCL_2023_Q2_earnings_guidance.pdf — names CARNIVAL CORPORATION & PLC\nCCL_2023_Q3_earnings_guidance.pdf — names CARNIVAL CORPORATION & PLC\nCCL_2023_Q4_earnings_guidance.pdf — names CARNIVAL CORPORATION & PLC\nCCL_2024_Q1_earnings_guidance.pdf — names CARNIVAL CORPO"
+    }
+  ]
+}
