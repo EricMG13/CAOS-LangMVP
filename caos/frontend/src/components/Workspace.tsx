@@ -7,7 +7,7 @@ import EvidenceChip from "./EvidenceChip";
 import ModelBuilder from "./model/ModelBuilder";
 import ReportStudio from "./report/ReportStudio";
 import { EmptyBlock, EmptyPanel, IdentityValue, LoadState, MutationReceipt, StateBlock, StateNote, Unavailable } from "./states";
-import { ApiRequestError, api as request, firstErrorMessage, isIntakeRefusal, isUnavailableRoute, type ArtifactRecord, type CaseRecord, type IntakeRecord, type IntakeRefusal, type LoanFinding, type LoanRow, type LoanUniverseResponse, type ResearchPlan, type RunRecord, type SourceRecord } from "../lib/api";
+import { ApiRequestError, api as request, firstErrorMessage, isIntakeRefusal, isUnavailableRoute, networkFetch, type ArtifactRecord, type CaseRecord, type IntakeRecord, type IntakeRefusal, type LoanFinding, type LoanRow, type LoanUniverseResponse, type ResearchPlan, type RunRecord, type SourceRecord } from "../lib/api";
 import { displayValue, flattenValue, markdownBlocks, normalizeEvidenceRefs, type NormalizedEvidenceRef } from "../lib/artifactReader";
 import { initialAuthorityState, matchesAuthority, requestContext, workspaceAuthorityReducer, type AuthorityEvent } from "../lib/workspaceAuthority";
 
@@ -1765,7 +1765,7 @@ function RVView({ writeAccess, caseId }: { writeAccess: WriteAccess; caseId: str
       const form = new FormData(); form.append("file", file);
       const source = await request<SourceRecord>(`/api/cases/${caseId}/sources`, { method: "POST", body: form });
       setMessage("Validating the fixed CP-3 workbook…");
-      const response = await fetch(`/api/cases/${caseId}/rv/loan-universes`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ source_id: source.id }) });
+      const response = await networkFetch(`/api/cases/${caseId}/rv/loan-universes`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ source_id: source.id }) });
       const body = await response.json().catch(() => ({}));
       if (!response.ok) {
         const detail = body.detail || {};

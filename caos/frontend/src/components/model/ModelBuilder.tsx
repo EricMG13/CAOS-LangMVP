@@ -16,6 +16,7 @@ import {
   assumptionRegistryPath,
   firstErrorMessage,
   isUnavailableRoute,
+  networkFetch,
   type ModelBuild,
   type ModelInventory,
   type ModelReadiness,
@@ -122,7 +123,7 @@ class ModelRequestError extends Error {
 }
 
 async function modelRequest<T>(path: string, options: RequestInit, signal?: AbortSignal): Promise<T> {
-  const response = await fetch(path, {
+  const response = await networkFetch(path, {
     ...options,
     signal,
     headers: { "Content-Type": "application/json", ...options.headers },
@@ -696,7 +697,7 @@ export default function ModelBuilder({
     const action = ++actionGeneration.current;
     setPending(`download:${revision.id}`); setMessage("");
     try {
-      const response = await fetch(`${apiBase}/api/cases/${caseId}/model-revisions/${revision.id}/download`);
+      const response = await networkFetch(`${apiBase}/api/cases/${caseId}/model-revisions/${revision.id}/download`);
       if (response.status === 404) { if (action === actionGeneration.current) setUnavailable((current) => ({ ...current, revisionDownload: true })); return; }
       if (!response.ok) throw new Error(`Unable to download the exact version XLSX (${response.status})`);
       const blob = await response.blob();

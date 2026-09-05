@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { LoadState, StateBlock, StateNote } from "../states";
 import { formatDate, humanizeCode, withQuery } from "../../lib/workbench";
-import { api as request, assumptionRegistryPath, firstErrorMessage, type CaseRecord, type SourceRecord } from "../../lib/api";
+import { api as request, assumptionRegistryPath, firstErrorMessage, networkFetch, type CaseRecord, type SourceRecord } from "../../lib/api";
 import DeliverableDocument, {
   type DeliverableBlock,
   type EvidenceCitation,
@@ -68,7 +68,7 @@ class ReportRequestError extends Error {
 }
 
 async function reportRequest<T>(path: string, options: RequestInit = {}, signal?: AbortSignal): Promise<T> {
-  const response = await fetch(path, { ...options, signal, headers: { "Content-Type": "application/json", ...options.headers } });
+  const response = await networkFetch(path, { ...options, signal, headers: { "Content-Type": "application/json", ...options.headers } });
   const body = await response.json().catch(() => null);
   if (!response.ok) throw new ReportRequestError(response.status, body?.detail ?? body);
   return body as T;

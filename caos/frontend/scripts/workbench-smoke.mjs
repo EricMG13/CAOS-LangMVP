@@ -2307,6 +2307,14 @@ try {
     "an unresolved identity left a write control on the page");
   assert.equal(await readerPage.evaluate(() => document.querySelector("main")?.textContent?.includes("Reader access")), true,
     "a failed identity lookup did not settle on the read-only floor");
+  // The network state: the aborted identity read is announced as one sentence,
+  // never as the engine's own rejection text (FE-A0 F7; DESIGN.md §5 `offline`).
+  const networkAlert = readerPage.getByRole("alert").filter({ hasText: "Network unavailable. Check the connection and retry." });
+  await networkAlert.waitFor();
+  const alertText = await readerPage.getByRole("alert").allInnerTexts();
+  for (const engineText of ["Failed to fetch", "NetworkError when attempting to fetch resource.", "Load failed"]) {
+    assert.equal(alertText.some((text) => text.includes(engineText)), false, `the page-level alert carried engine text: ${engineText}`);
+  }
   await reader.close();
   assert.deepEqual(externalGoogleFontRequests, [], "workbench requested an external Google font");
   report({ status: "passed" });
