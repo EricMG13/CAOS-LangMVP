@@ -92,6 +92,14 @@ jobs:
         run: |
           npm run test:browsers
           npm run a11y
+      - name: Focus-restoration soak in every engine
+        # Issue #38 was order-dependent: one pass proved nothing. Eight fresh
+        # pages per engine, failing on any miss (FE-A0 F10, one restoration owner).
+        working-directory: caos/frontend
+        run: |
+          for engine in chromium firefox webkit; do
+            CAOS_BROWSER="$engine" npm run test:focus
+          done
       - name: Retain the browser reports, traces and screenshots
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

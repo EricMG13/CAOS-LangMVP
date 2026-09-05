@@ -130,6 +130,7 @@ export default function Workspace({ destination, children }: { destination?: Des
   const historyEntrySequenceRef = useRef(0);
   const lastHistoryEntryRef = useRef<{ id: string; href: string } | null>(null);
   const focusedBeforeRef = useRef<HTMLElement | null>(null);
+  const discardTriggerRef = useRef<HTMLElement | null>(null);
   const previousFocusedRef = useRef<HTMLElement | null>(null);
   const lastDestinationRef = useRef(active);
   const selectedCase = useMemo(() => cases.find((item) => item.id === caseId) || null, [cases, caseId]);
@@ -305,6 +306,11 @@ export default function Workspace({ destination, children }: { destination?: Des
     if (!prompt) return;
     discardPromptRef.current = null;
     focusedBeforeRef.current = prompt.trigger;
+    // Read by the repair effect on the dialog-close run. `focusedBeforeRef` is not
+    // enough there: the browser's own close restoration fires `focusin` on whatever
+    // it lands on (the editor, when the select raised the prompt) and the tracker
+    // overwrites the ref before the effect runs.
+    discardTriggerRef.current = prompt.trigger;
     setDiscardPrompt(null);
     resolveDraftDiscard(prompt, confirmed);
     if (!confirmed && !prompt.cancel && !modelDraftDirtyRef.current && !reportDraftDirtyRef.current) releaseCleanDraftGuard();
@@ -637,7 +643,19 @@ export default function Workspace({ destination, children }: { destination?: Des
   // to the control the analyst was on, and a control that did not survive its own
   // action falls back to the landmark rather than to nothing. A page that has never
   // held focus is left alone — <body> is the correct starting point for a fresh load.
+  //
+  // This effect is also the one owner of focus return after the draft-discard
+  // dialog closes (`discardPrompt` in the dependencies). On that run the trigger
+  // the prompt recorded gets focus even when the browser's own close restoration
+  // landed elsewhere — WebKit restores nothing, and Chromium restores whatever was
+  // focused at showModal, which is not the link or select that raised the prompt —
+  // unless the analyst has moved focus since the frame the dialog closed on.
+  const discardOpenRef = useRef(false);
   useEffect(() => {
+    const dialogJustClosed = discardOpenRef.current && discardPrompt === null;
+    discardOpenRef.current = discardPrompt !== null;
+    const discardTrigger = dialogJustClosed ? discardTriggerRef.current : null;
+    discardTriggerRef.current = null;
     // This assignment stays ABOVE the guards on purpose. The ref tracks where the
     // workspace is, not where a repair last happened, so it must advance even on the
     // runs that decline to repair. Move it below and a route change the user made
@@ -646,7 +664,7 @@ export default function Workspace({ destination, children }: { destination?: Des
     // landmark instead of returning it to the control.
     const navigated = lastDestinationRef.current !== active;
     lastDestinationRef.current = active;
-    const previous = focusedBeforeRef.current;
+    const previous = discardTrigger ?? focusedBeforeRef.current;
     // Wait for the action to settle. Repairing mid-flight would land on the landmark
     // every time, because the control the analyst pressed is still disabled and
     // cannot take focus back yet.
@@ -657,18 +675,30 @@ export default function Workspace({ destination, children }: { destination?: Des
     // ever opens without taking focus, the landmark fallback would put focus on
     // inert content behind the backdrop, which is worse than the loss it repairs.
     if (document.querySelector("dialog[open]")) return;
-    if (!previous || document.activeElement !== document.body) return;
+    if (!previous || (!dialogJustClosed && document.activeElement !== document.body)) return;
+    // Where the browser's own close restoration left focus, read synchronously; the
+    // frame below repairs only if nothing has moved since (WCAG 3.2.1 — the 24 ms
+    // focus steal the old timer chain committed was exactly this check missing).
+    const settled = document.activeElement;
     const frame = window.requestAnimationFrame(() => {
-      if (document.activeElement !== document.body) return;
+      if (document.activeElement !== settled) return;
+      // A trigger React re-rendered since the prompt opened is found again by id,
+      // then by accessible name; a control that is gone falls to the landmark.
+      const label = previous.getAttribute("aria-label");
+      const target = navigated ? null
+        : previous.isConnected ? previous
+          : previous.id ? document.getElementById(previous.id)
+            : label ? [...document.querySelectorAll<HTMLElement>("[aria-label]")].find((element) => element.getAttribute("aria-label") === label) ?? null
+              : null;
       // Still connected is not the same as still focusable: accept confirms from
       // inside a <dialog> that this very action closes, and `focus()` on a control
       // in a closed dialog is a silent no-op. Land on the landmark whenever the
       // restore did not take, rather than trusting it to have worked.
-      if (!navigated && previous.isConnected) previous.focus();
+      if (target && document.activeElement !== target) target.focus();
       if (document.activeElement === document.body) document.getElementById("main-content")?.focus();
     });
     return () => window.cancelAnimationFrame(frame);
-  }, [active, caseId, runId, pendingAction, run?.status, run?.error?.code]);
+  }, [active, caseId, runId, pendingAction, run?.status, run?.error?.code, discardPrompt]);
 
   useEffect(() => {
     if (!hydrated) return;
@@ -1365,39 +1395,14 @@ function DraftDiscardDialog({ open, detail, trigger, onConfirm, onClose }: { ope
   const dialogRef = useRef<HTMLDialogElement>(null);
   const headingRef = useRef<HTMLHeadingElement>(null);
   const triggerRef = useRef<HTMLElement | null>(null);
+  // Focus restoration has one owner: the workspace repair effect, which runs on
+  // dialog close (`discardPrompt` is one of its dependencies) and returns focus
+  // to the trigger the prompt recorded. This dialog no longer keeps a private
+  // retry chain — two owners produced the order-dependent race behind issue #38
+  // (`.superpowers/sdd/loops/focus-race-findings.md`).
   const dismiss = useCallback(() => {
-    const trigger = triggerRef.current;
     onClose();
     dialogRef.current?.close();
-    // Where the browser's own close restoration left focus, read synchronously.
-    // The repair below runs on a timer, so by the time it runs the user may have
-    // moved on; it must return focus to the trigger (which the browser may have
-    // missed — re-rendered, or a different control held focus when the dialog
-    // opened) without stealing it from a control the user focused since.
-    // Observed: the timer fired 24 ms after a dismissal and pulled focus off the
-    // editor the analyst had just focused (WCAG 3.2.1).
-    const settled = document.activeElement;
-    const restore = (attempt = 0) => {
-      const current = document.activeElement;
-      if (current !== settled && current instanceof HTMLElement && current !== document.body && !dialogRef.current?.contains(current)) return;
-      const focus = (candidate: HTMLElement | null | undefined) => {
-        if (!candidate?.isConnected) return false;
-        candidate.focus();
-        return document.activeElement === candidate;
-      };
-      if (focus(trigger)) return;
-      if (trigger?.id) {
-        const replacement = document.getElementById(trigger.id);
-        if (focus(replacement)) return;
-      }
-      const label = trigger?.getAttribute("aria-label");
-      if (label) {
-        const replacement = [...document.querySelectorAll<HTMLElement>("[aria-label]")].find((element) => element.getAttribute("aria-label") === label);
-        if (focus(replacement)) return;
-      }
-      if (attempt < 10) window.setTimeout(() => restore(attempt + 1), 50);
-    };
-    window.setTimeout(restore, 0);
   }, [onClose]);
   useEffect(() => {
     const dialog = dialogRef.current;
