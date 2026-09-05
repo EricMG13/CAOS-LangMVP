@@ -247,14 +247,11 @@ function ForecastScrubber({
   const inputRef = useRef(value);
   const drag = useRef<{ x: number; value: number } | null>(null);
   const update = (next: string) => { inputRef.current = next; setInput(next); };
-  // The input follows its committed value instead of being re-keyed on every
-  // draft generation: a remount unmounted the input the analyst had just tabbed
-  // into and dropped focus to <body> (FE-A0 F1).
-  useEffect(() => {
-    // The committed value is the external authority this local entry mirrors.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    inputRef.current = value; setInput(value);
-  }, [value]);
+  // The local entry is seeded from the committed value and the scrubber is keyed
+  // on that value by its caller, so it remounts only when its own committed value
+  // changes — never on a draft generation (FE-A0 F1), which unmounted the input
+  // the analyst had just tabbed into and dropped focus to <body>. Keying beats an
+  // effect here: the new value shows in the same render as the draft change.
   const commit = (next = inputRef.current) => {
     if (scrubberCommitDecision(next, value) === "commit" && onCommit(next)) return;
     update(value);
@@ -758,7 +755,7 @@ export default function ModelBuilder({
           if (!rows.length) return null;
           const scope = assumptionScope(draft, definition.assumption_id, selectedCase, "ALL");
           const step = Number(definition.sensitivity_default.step);
-          return <fieldset className={styles.driver} key={`${definition.assumption_id}:${selectedCase}`}><legend><span>{definition.label}</span><small>{definition.unit}</small></legend><div className={styles.forecastValues}><label><span>All forecast years</span><ForecastScrubber key={`${definition.assumption_id}:${selectedCase}:ALL`} value={scope.value} mixed={scope.mixed} label={`${definition.label}, all forecast years, ${selectedCase}`} minimum={Number(definition.hard_min)} maximum={Number(definition.hard_max)} step={step} disabled={!canWrite || !scope.editable} onCommit={(value) => editAssumption(definition, selectedCase, "ALL", value)} /></label>{rows.map((row) => <label key={assumptionKey(row)}><span>{row.period_id}</span><ForecastScrubber key={assumptionKey(row)} value={row.value === null ? "" : String(row.value)} label={`${definition.label}, ${row.period_id}, ${selectedCase}`} minimum={Number(definition.hard_min)} maximum={Number(definition.hard_max)} step={step} disabled={!canWrite || row.status !== "READY"} onCommit={(value) => editAssumption(definition, selectedCase, row.period_id, value)} />{row.status !== "READY" ? <small>{humanizeCode(row.gap_code || row.status)}</small> : <small>App {formatModelValue(row.default_value)}</small>}</label>)}</div></fieldset>;
+          return <fieldset className={styles.driver} key={`${definition.assumption_id}:${selectedCase}`}><legend><span>{definition.label}</span><small>{definition.unit}</small></legend><div className={styles.forecastValues}><label><span>All forecast years</span><ForecastScrubber key={`${definition.assumption_id}:${selectedCase}:ALL:${scope.value}`} value={scope.value} mixed={scope.mixed} label={`${definition.label}, all forecast years, ${selectedCase}`} minimum={Number(definition.hard_min)} maximum={Number(definition.hard_max)} step={step} disabled={!canWrite || !scope.editable} onCommit={(value) => editAssumption(definition, selectedCase, "ALL", value)} /></label>{rows.map((row) => <label key={assumptionKey(row)}><span>{row.period_id}</span><ForecastScrubber key={`${assumptionKey(row)}:${row.value ?? ""}`} value={row.value === null ? "" : String(row.value)} label={`${definition.label}, ${row.period_id}, ${selectedCase}`} minimum={Number(definition.hard_min)} maximum={Number(definition.hard_max)} step={step} disabled={!canWrite || row.status !== "READY"} onCommit={(value) => editAssumption(definition, selectedCase, row.period_id, value)} />{row.status !== "READY" ? <small>{humanizeCode(row.gap_code || row.status)}</small> : <small>App {formatModelValue(row.default_value)}</small>}</label>)}</div></fieldset>;
         })}</div>
         {!canWrite ? <p className="callout">Reader mode: the model and forecast assumptions remain readable. Changes, recalculation, tornado refresh, and saving are unavailable.</p> : null}
       </aside>
