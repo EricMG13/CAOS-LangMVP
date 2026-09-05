@@ -117,6 +117,10 @@ export default function Workspace({ destination, children }: { destination?: Des
   // load-bearing, not redundant (lib/workspaceAuthority.ts).
   const [intake, setIntake] = useState<IntakeRecord | null>(null);
   const [intakeRefusal, setIntakeRefusal] = useState<IntakeRefusal | null>(null);
+  // A requested case the register does not hold (FE-A0 F5; WEB-003): the id the
+  // link named, rendered as a typed state with the URL kept, never replaced by
+  // the first case in the register.
+  const [unresolvedCaseId, setUnresolvedCaseId] = useState("");
   const intakeRequest = useRef(0);
   const routeAuthorityRef = useRef("");
   const modelDraftDirtyRef = useRef(false);
@@ -336,6 +340,7 @@ export default function Workspace({ destination, children }: { destination?: Des
     // The intake record is case-scoped: a switch clears it and the read below
     // refetches only when the new case names one (FE-A0 F6).
     setIntake(null);
+    setUnresolvedCaseId("");
   }, [cases, dispatchAuthority]);
 
   const selectCase = useCallback((nextCaseId: string, availableCases = cases, trigger?: HTMLElement | null) => {
@@ -361,7 +366,8 @@ export default function Workspace({ destination, children }: { destination?: Des
       const requestedRunId = queryParam("run");
       const requestedCase = next.find((item) => item.id === requestedCaseId);
       const currentCaseId = authorityRef.current.caseId || "";
-      const resolvedCaseId = next.find((item) => item.id === currentCaseId)?.id || requestedCase?.id || next[0]?.id || "";
+      // The first case is selected only when the link named none.
+      const resolvedCaseId = next.find((item) => item.id === currentCaseId)?.id || requestedCase?.id || (requestedCaseId ? "" : next[0]?.id) || "";
       if (resolvedCaseId !== currentCaseId) {
         if (requestedCaseId && !requestedCase) routeAuthorityRef.current = `${requestedCaseId}\u0000${requestedRunId}`;
         if (!selectCase(resolvedCaseId, next)) return;
@@ -376,6 +382,7 @@ export default function Workspace({ destination, children }: { destination?: Des
         }
       }
       if (authorityRef.current.caseId) dispatchAuthority({ type: "requestStarted", scope: "case" });
+      setUnresolvedCaseId(requestedCaseId && !requestedCase ? requestedCaseId : "");
     } catch (caught) {
       if (requestId !== casesRequest.current || !matchesAuthority(authorityRef.current, context)) return;
       if (!(caught instanceof DOMException && caught.name === "AbortError")) {
@@ -708,6 +715,9 @@ export default function Workspace({ destination, children }: { destination?: Des
 
   useEffect(() => {
     if (!hydrated) return;
+    // A link to a case the register does not hold keeps its URL: the typed state
+    // names the request, and the route authority stays acknowledged as the bad route.
+    if (!caseId && unresolvedCaseId) return;
     const url = new URL(window.location.href);
     if (caseId) url.searchParams.set("case", caseId); else url.searchParams.delete("case");
     if (runId) url.searchParams.set("run", runId); else url.searchParams.delete("run");
@@ -717,7 +727,7 @@ export default function Workspace({ destination, children }: { destination?: Des
     // issuer's run re-attached after the analyst has already moved on.
     routeAuthorityRef.current = `${caseId}\u0000${runId}`;
     window.history.replaceState(historyStateForExternalReplace(window.history.state), "", `${url.pathname}${url.search}${url.hash}`);
-  }, [hydrated, caseId, runId]);
+  }, [hydrated, caseId, runId, unresolvedCaseId]);
 
   useEffect(() => {
     if (!runId || !caseIsAuthorized) return;
@@ -1052,7 +1062,7 @@ export default function Workspace({ destination, children }: { destination?: Des
       : null;
 
   const renderDestination = () => {
-    if (!selectedCase && active !== "Cases" && active !== "Admin Studio") return <EmptyPanel text="Create or select a case before entering an analytical workspace." action={{ label: "Open Cases", href: "/cases/" }} />;
+    if (!selectedCase && active !== "Cases" && active !== "Admin Studio") return unresolvedCaseId ? null : <EmptyPanel text="Create or select a case before entering an analytical workspace." action={{ label: "Open Cases", href: "/cases/" }} />;
     switch (active) {
       case "Cases": return <CasesView writeAccess={writeAccess} cases={cases} casesLoading={casesLoading} selectedCase={selectedCase} caseId={caseId} createCase={createCase} pendingAction={pendingAction} intake={intake} intakeRefusal={intakeRefusal} run={run} submitIntake={submitIntake} />;
       case "Sources": return <SourcesView writeAccess={writeAccess} selectedCase={selectedCase} artifactId={routeArtifactId} sourceId={routeSourceId} upload={upload} pendingAction={pendingAction} onOpenEvidence={(evidenceId, source) => setDrawer({ kind: "evidence", evidenceId, source })} />;
@@ -1085,6 +1095,7 @@ export default function Workspace({ destination, children }: { destination?: Des
       unknownRoute={!routeIsKnown}
     >
       {notice ? <MutationReceipt>{notice}</MutationReceipt> : null}
+      {unresolvedCaseId && !selectedCase ? <StateBlock tone="warning" live="status" title="Case unavailable" body={<>The link names case <span className="mono">{unresolvedCaseId}</span>, which is not in your register: its membership may have ended or the id may be wrong. No other case was selected in its place.</>} action={active === "Cases" ? undefined : { label: "Open Cases", href: "/cases/" }} /> : null}
       <div key={`${active}:${caseId}`}>{routeIsKnown ? <>{renderDestination()}{children}</> : children}</div>
     </WorkbenchShell>
     <AcceptDialog open={acceptPrompt} trigger={acceptOpener} run={run} replaces={authority?.latest_accepted ?? null} pending={pendingAction === "accept-run"} onConfirm={confirmAccept} onClose={() => setAcceptPrompt(false)} />

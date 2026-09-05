@@ -402,14 +402,22 @@ try {
   await page.getByRole("combobox", { name: "Select case" }).selectOption(caseRecord.id);
   await visibleAuthority.getByText(/Source set:\s*v1/).waitFor();
 
+  // A retained link to a case the register does not hold is a typed state (FE-A0
+  // F5; WEB-003): a live region names the request, the URL keeps the id, and no
+  // other case is selected in its place.
   const missingCaseId = `case_missing_${fixtureSuffix}`;
   await page.goto(`${baseURL}/run-console/?case=${missingCaseId}&run=${run.id}`, { waitUntil: "domcontentloaded" });
-  await page.waitForFunction((invalidCaseId) => {
-    const selected = document.querySelector('[aria-label="Select case"]');
-    return selected instanceof HTMLSelectElement && selected.value && selected.value !== invalidCaseId;
-  }, missingCaseId);
+  const unavailableCase = page.getByRole("status").filter({ hasText: "Case unavailable" });
+  await unavailableCase.waitFor();
+  await unavailableCase.getByText(missingCaseId, { exact: true }).waitFor();
   await page.getByRole("status", { name: "Loading" }).waitFor({ state: "detached" });
   assert.equal(await page.getByRole("status", { name: "Loading" }).count(), 0, "invalid initial case/run authority left the workspace permanently loading");
+  assert.equal(new URL(page.url()).searchParams.get("case"), missingCaseId, "an unknown case link was rewritten to another case");
+  assert.equal(await page.getByRole("combobox", { name: "Select case" }).inputValue(), "", "an unknown case link silently selected another case");
+  assert.equal(await page.getByRole("region", { name: "Visible authority" }).getByText(new RegExp(`Credit:\\s*${primaryIssuer}`)).count(), 0, "another issuer's authority was shown for an unknown case link");
+  await page.getByRole("combobox", { name: "Select case" }).selectOption(caseRecord.id);
+  await page.waitForURL((url) => url.searchParams.get("case") === caseRecord.id);
+  assert.equal(await unavailableCase.count(), 0, "the unknown-case state survived an explicit selection");
 
   let releaseStaleRun;
   const staleRunBarrier = new Promise((resolve) => { releaseStaleRun = resolve; });
