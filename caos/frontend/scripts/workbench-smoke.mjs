@@ -312,19 +312,19 @@ try {
       }).catch(() => {});
     }
   });
-  // Every non-document response the page saw, by exact URL, and every request
-  // the browser abandoned without a response: the evidence the WebKit
-  // teardown filter below demands before it drops a page error. Document
-  // loads are excluded so a navigation to /portfolio/ never vouches for a fetch of
-  // /portfolio/ that a policy blocked.
+  // Every non-document response the page saw, by exact URL: the evidence the
+  // WebKit teardown filter below demands before it drops a page error.
+  // Document loads are excluded so a navigation to /portfolio/ never vouches
+  // for a fetch of /portfolio/ that a policy blocked. There is deliberately no
+  // `requestfailed` set beside this — WebKit emits no such event for a fetch
+  // cancelled by navigation, which is what left five rejections undropped on
+  // CI run 34027429627.
   const responded = new Map();
-  const abandoned = new Set();
   page.on("response", (response) => {
     if (response.request().resourceType() !== "document") responded.set(response.url(), response.status());
   });
-  page.on("requestfailed", (request) => abandoned.add(request.url()));
   page.on("pageerror", (error) => {
-    const teardown = webkitTeardownRejection(error.message, { browserName, baseURL, responded, abandoned });
+    const teardown = webkitTeardownRejection(error.message, { browserName, baseURL, responded });
     if (teardown) {
       webkitTeardownRejections.push(teardown);
       return;

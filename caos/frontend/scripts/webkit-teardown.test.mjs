@@ -1,8 +1,9 @@
 // WebKit rejects a same-origin fetch that is still in flight when the document
 // navigates away with `TypeError: <url> due to access control checks.`; an
 // unawaited prefetch turns that into a page error. The predicate drops such a
-// rejection only with evidence that the server answered that exact URL, so a
-// genuine cross-origin or blocked request still fails the run.
+// rejection only with evidence that the server answered that exact URL, or
+// answered its path while the exact URL got no response at all, so a genuine
+// cross-origin, refused or blocked request still fails the run.
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
@@ -20,17 +21,26 @@ test("a same-origin URL the server answered 2xx is a teardown rejection under We
   assert.deepEqual(result, { url: "http://127.0.0.1:8000/cases/", status: 200, evidence: "answered" });
 });
 
-test("an abandoned request for a fresh prefetch query is dropped when its path was answered before", () => {
-  const abandoned = new Set(["http://127.0.0.1:8000/cases/__next.$d$destination.__PAGE__.txt?case=case-2&_rsc=zzz"]);
-  const result = webkitTeardownRejection("/127.0.0.1:8000/cases/__next.$d$destination.__PAGE__.txt?case=case-2&_rsc=zzz due to access control checks.", { browserName: "webkit", baseURL, responded, abandoned });
-  assert.deepEqual(result, { url: "http://127.0.0.1:8000/cases/__next.$d$destination.__PAGE__.txt?case=case-2&_rsc=zzz", status: 200, evidence: "abandoned; path answered" });
+// WebKit emits no `requestfailed` for a fetch cancelled by navigation, so the
+// absence of any recorded response IS the cancellation — CI run 34027429627.
+test("a fresh prefetch query with no response at all is dropped when its path was answered before", () => {
+  const result = webkitTeardownRejection("/127.0.0.1:8000/cases/__next.$d$destination.__PAGE__.txt?case=case-2&_rsc=zzz due to access control checks.", { browserName: "webkit", baseURL, responded });
+  assert.deepEqual(result, { url: "http://127.0.0.1:8000/cases/__next.$d$destination.__PAGE__.txt?case=case-2&_rsc=zzz", status: 200, evidence: "no response; path answered" });
 });
 
-test("an abandoned request whose path was never answered stays a page error", () => {
-  const abandoned = new Set(["http://127.0.0.1:8000/api/blocked?x=1"]);
-  assert.equal(webkitTeardownRejection("/127.0.0.1:8000/api/blocked?x=1 due to access control checks.", { browserName: "webkit", baseURL, responded, abandoned }), null);
-  const unanswered = new Set(["http://127.0.0.1:8000/cases/__next.$d$destination.__PAGE__.txt?case=case-9&_rsc=q"]);
-  assert.equal(webkitTeardownRejection("/127.0.0.1:8000/cases/__next.$d$destination.__PAGE__.txt?case=case-9&_rsc=q due to access control checks.", { browserName: "webkit", baseURL, responded: new Map(), abandoned: unanswered }), null);
+test("a request whose path was never answered stays a page error", () => {
+  assert.equal(webkitTeardownRejection("/127.0.0.1:8000/api/blocked?x=1 due to access control checks.", { browserName: "webkit", baseURL, responded }), null);
+  assert.equal(webkitTeardownRejection("/127.0.0.1:8000/cases/__next.$d$destination.__PAGE__.txt?case=case-9&_rsc=q due to access control checks.", { browserName: "webkit", baseURL, responded: new Map() }), null);
+});
+
+// The exact URL was refused. Path-level evidence must not launder that into a
+// teardown drop, which is the one thing this relaxation could have cost.
+test("a refused exact URL is never rescued by an answered sibling on the same path", () => {
+  const siblings = new Map([
+    ["http://127.0.0.1:8000/api/thing?ok=1", 200],
+    ["http://127.0.0.1:8000/api/thing?ok=2", 403],
+  ]);
+  assert.equal(webkitTeardownRejection("/127.0.0.1:8000/api/thing?ok=2 due to access control checks.", { browserName: "webkit", baseURL, responded: siblings }), null);
 });
 
 test("the scheme-bearing form and query strings resolve to the same evidence", () => {
