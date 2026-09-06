@@ -1102,7 +1102,7 @@ export default function Workspace({ destination, children }: { destination?: Des
     if (!selectedCase && active !== "Portfolio" && active !== "Admin") return unresolvedCaseId ? null : <EmptyPanel text="Create or select a case before entering an analytical workspace." action={{ label: "Open Portfolio", href: "/portfolio/" }} />;
     switch (active) {
       case "Portfolio": return <CasesView writeAccess={writeAccess} cases={cases} casesLoading={casesLoading} selectedCase={selectedCase} caseId={caseId} createCase={createCase} pendingAction={pendingAction} intake={intake} intakeRefusal={intakeRefusal} run={run} submitIntake={submitIntake} />;
-      case "Sources": return <SourcesView writeAccess={writeAccess} selectedCase={selectedCase} artifactId={routeArtifactId} sourceId={routeSourceId} upload={upload} pendingAction={pendingAction} onOpenEvidence={(evidenceId, source, opener) => setDrawer({ kind: "evidence", evidenceId, source, opener })} />;
+      case "Sources": return <SourcesView writeAccess={writeAccess} selectedCase={selectedCase} artifactId={routeArtifactId} sourceId={routeSourceId} upload={upload} pendingAction={pendingAction} onOpenEvidence={(evidenceId, source, opener, blockIds) => setDrawer({ kind: "evidence", evidenceId, source, opener, blockIds })} />;
       case "Run": return <RunConsole fromIntake={Boolean(run && intake?.case_id === caseId && intake.run?.id === run.id)} writeAccess={writeAccess} caseId={caseId} selectedCase={selectedCase} run={run} runLoading={runLoading} runError={runError} startRun={startRun} acceptRun={acceptRun} acceptedSnapshotId={acceptedRunSnapshotId} supersededSnapshotId={supersededRunSnapshotId} visibleSnapshotId={authority?.accepted?.id || ""} switchRequired={authority?.switch_required === true} approveResearchPlan={approveResearchPlan} approvalUnavailable={approvalUnavailable === runId} pendingAction={pendingAction} resumeSlot={resumeSlot} />;
       case "Analysis": return <DeepDive writeAccess={writeAccess} selectedCase={selectedCase} question={routeQuestion} caseId={caseId} run={run} authority={authority} authorityStatus={authorityStatus} onSwitchSnapshot={switchSnapshot} />;
       case "Market": return <RVView key={caseId} writeAccess={writeAccess} caseId={caseId} />;
@@ -1248,7 +1248,7 @@ function IntakeEvidence({ intake, run, caseId }: { intake: IntakeRecord; run: Ru
   </div>;
 }
 
-function SourcesView({ writeAccess, selectedCase, artifactId, sourceId, upload, pendingAction, onOpenEvidence }: { writeAccess: WriteAccess; selectedCase: CaseRecord | null; artifactId: string; sourceId: string; upload: (event: FormEvent<HTMLFormElement>) => void; pendingAction: string; onOpenEvidence: (evidenceId: string, source: SourceRecord, opener: HTMLElement | null) => void }) {
+function SourcesView({ writeAccess, selectedCase, artifactId, sourceId, upload, pendingAction, onOpenEvidence }: { writeAccess: WriteAccess; selectedCase: CaseRecord | null; artifactId: string; sourceId: string; upload: (event: FormEvent<HTMLFormElement>) => void; pendingAction: string; onOpenEvidence: (evidenceId: string, source: SourceRecord, opener: HTMLElement | null, blockIds: string[]) => void }) {
   const [sources, setSources] = useState<SourceRecord[]>([]);
   const [artifact, setArtifact] = useState<ArtifactRecord | null>(null);
   const [loading, setLoading] = useState(true);
@@ -1274,7 +1274,7 @@ function SourcesView({ writeAccess, selectedCase, artifactId, sourceId, upload, 
   const evidenceRefs = useMemo(() => normalizeEvidenceRefs(artifact?.payload?.evidence_refs), [artifact]);
   const sourceById = useMemo(() => new Map(sources.map((source) => [source.id, source])), [sources]);
   const activeEvidenceId = linkedEvidenceId || selectedEvidenceId;
-  const openEvidence = (evidenceId: string, opener: HTMLElement | null = null) => {
+  const openEvidence = (evidenceId: string, opener: HTMLElement | null = null, blockIds: string[] = []) => {
     const source = sourceById.get(evidenceId);
     if (!source) {
       setArtifactError(`Evidence ${evidenceId} is not in the active case source set.`);
@@ -1282,7 +1282,7 @@ function SourcesView({ writeAccess, selectedCase, artifactId, sourceId, upload, 
     }
     setArtifactError("");
     setSelectedEvidenceId(evidenceId);
-    onOpenEvidence(evidenceId, source, opener);
+    onOpenEvidence(evidenceId, source, opener, blockIds);
   };
   useEffect(() => {
     if (!selectedCase || !sourceId || loading || readySourceCaseId !== selectedCase.id) return;
@@ -1322,7 +1322,7 @@ function SourcesView({ writeAccess, selectedCase, artifactId, sourceId, upload, 
 // Deterministic payloads (markdown null) render the typed narrative fields;
 // agent payloads render the canonical six-section markdown, host frontmatter
 // stripped, with no HTML injection surface.
-function ArtifactReader({ artifact, evidenceRefs, activeEvidenceId, onOpenEvidence, onPreview, onPreviewEnd }: { artifact: ArtifactRecord; evidenceRefs: NormalizedEvidenceRef[]; activeEvidenceId: string; onOpenEvidence: (evidenceId: string, opener: HTMLElement) => void; onPreview: (evidenceId: string) => void; onPreviewEnd: () => void }) {
+function ArtifactReader({ artifact, evidenceRefs, activeEvidenceId, onOpenEvidence, onPreview, onPreviewEnd }: { artifact: ArtifactRecord; evidenceRefs: NormalizedEvidenceRef[]; activeEvidenceId: string; onOpenEvidence: (evidenceId: string, opener: HTMLElement, blockIds: string[]) => void; onPreview: (evidenceId: string) => void; onPreviewEnd: () => void }) {
   const payload = artifact.payload || undefined;
   const blocks = useMemo(() => (artifact.markdown ? markdownBlocks(artifact.markdown) : []), [artifact.markdown]);
   const summary = payload?.summary;
@@ -1363,7 +1363,7 @@ function ArtifactReader({ artifact, evidenceRefs, activeEvidenceId, onOpenEviden
     </dl>
     {loanUniverse?.rows && <><h3>Loan universe</h3><ArtifactDataTable label="Pinned loan universe" value={loanUniverse} /></>}
     <h3>Evidence</h3>
-    {evidenceRefs.length ? <div className="evidence-list" aria-label="Artifact evidence">{evidenceRefs.map((ref) => <span className="evidence-ref" key={ref.sourceId}><EvidenceChip evidenceId={ref.sourceId} linkedId={activeEvidenceId} onOpen={onOpenEvidence} onPreview={onPreview} onPreviewEnd={onPreviewEnd} />{ref.blockIds.length > 0 && <span className="mono muted">{ref.blockIds.join(" · ")}</span>}</span>)}</div> : <p className="muted">No evidence citations in this artifact.</p>}
+    {evidenceRefs.length ? <div className="evidence-list" aria-label="Artifact evidence">{evidenceRefs.map((ref) => <span className="evidence-ref" key={ref.sourceId}><EvidenceChip evidenceId={ref.sourceId} linkedId={activeEvidenceId} onOpen={(evidenceId, opener) => onOpenEvidence(evidenceId, opener, ref.blockIds)} onPreview={onPreview} onPreviewEnd={onPreviewEnd} />{ref.blockIds.length > 0 && <span className="mono muted">{ref.blockIds.join(" · ")}</span>}</span>)}</div> : <p className="muted">No evidence citations in this artifact.</p>}
   </div>;
 }
 

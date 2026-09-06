@@ -152,7 +152,7 @@ a:not(.button, .nav-link, .wordmark):hover { color: var(--caos-accent-strong); }
 .button.is-active:hover { border-color: var(--caos-accent-strong); }
 .field { display: grid; gap: var(--space-xs); margin-bottom: var(--space-md); }
 .field label { color: var(--caos-muted); font-weight: 700; letter-spacing: .06em; }
-.field input, .field select, .field textarea { width: 100%; border: 1px solid var(--caos-border-strong); background: var(--caos-bg); color: var(--caos-text); border-radius: var(--radius-md); padding: var(--space-sm); transition: border-color 160ms var(--ease-out), box-shadow 160ms var(--ease-out); }
+.field input:not([type="checkbox"]), .field select, .field textarea { width: 100%; border: 1px solid var(--caos-border-strong); background: var(--caos-bg); color: var(--caos-text); border-radius: var(--radius-md); padding: var(--space-sm); transition: border-color 160ms var(--ease-out), box-shadow 160ms var(--ease-out); }
 .field input:hover:not(:disabled), .field select:hover:not(:disabled), .field textarea:hover:not(:disabled), .top-actions select:hover:not(:disabled) { border-color: color-mix(in srgb, var(--caos-border-strong) 55%, var(--caos-text)); }
 .field input:focus-visible, .field select:focus-visible, .field textarea:focus-visible, .top-actions select:focus-visible { outline: none; border-color: var(--caos-accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--caos-accent) 22%, transparent); }
 .field textarea { min-height: 100px; resize: vertical; }
@@ -462,7 +462,7 @@ a.dag-node:hover strong, a.dag-node:focus-visible strong { text-decoration: unde
 .model-builder-command-body { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: var(--space-xl); }
 .model-builder-command-body p { max-width: 86ch; margin: var(--space-xs) 0 0; }
 .model-primary-action { display: flex; align-items: center; justify-content: flex-end; gap: var(--space-sm); flex-wrap: wrap; }
-.report-studio { display: grid; grid-template-columns: minmax(210px, 2.5fr) minmax(330px, 4fr) minmax(440px, 5.5fr); gap: var(--space-md); height: calc(100dvh - 145px); overflow: hidden; }
+.report-studio { display: grid; grid-template-columns: minmax(210px, 2.5fr) minmax(330px, 4fr) minmax(0, 5.5fr); gap: var(--space-md); height: calc(100dvh - 145px); overflow: hidden; }
 .report-studio > *, .report-studio :where(section, aside, nav, div, form, fieldset, label) { min-width: 0; }
 .report-studio :where(code, p, strong, span, button, a) { overflow-wrap: anywhere; }
 /* The header row takes the panel header's own height (46px min): a fixed 32px
@@ -578,7 +578,17 @@ a.dag-node:hover strong, a.dag-node:focus-visible strong { text-decoration: unde
 }
 @media (max-width: 900px) {
   .app-shell { display: block; }
-  .rail { position: static; height: auto; border-right: 0; border-bottom: 1px solid var(--caos-border); padding: var(--space-sm) var(--space-md); flex-direction: row; align-items: center; gap: var(--space-sm); overflow-x: auto; overflow-y: visible; scrollbar-width: thin; }
+  .rail { position: static; height: auto; border-right: 0; border-bottom: 1px solid var(--caos-border); padding: var(--space-sm) var(--space-md); flex-direction: row; align-items: center; gap: var(--space-sm); overflow-x: auto; overflow-y: visible; scrollbar-width: auto; scrollbar-color: auto; }
+  /* The strip scrolls (the approved 720 artboard, FE-A2 F-07); the thumb is the
+     one cue that Model, Report and Admin sit past the edge. A styled
+     ::-webkit-scrollbar is a classic, always-drawn scrollbar in Chromium and
+     WebKit, but only while the standard scrollbar-width/scrollbar-color
+     properties are `auto` on the element (the vertical rail sets them, hence
+     the reset above). Firefox ignores the pseudo-element; its lever is the
+     standard pair, scoped to it by the -moz-appearance feature test. */
+  .rail::-webkit-scrollbar { height: 6px; }
+  .rail::-webkit-scrollbar-thumb { background: var(--caos-border-strong); border-radius: var(--radius-pill); }
+  @supports (-moz-appearance: none) { .rail { scrollbar-width: thin; scrollbar-color: var(--caos-border-strong) transparent; } }
   .wordmark { flex: 0 0 auto; }
   .wordmark small { display: none; }
   .nav-group { display: flex; flex: 0 0 auto; gap: var(--space-xs); }

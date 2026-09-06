@@ -84,7 +84,11 @@ test("model sign-off is one ordered approval sequence and remains reader-gated",
   assert.ok(approval.indexOf("What will bind") < approval.indexOf('className="state-facts"'));
   assert.ok(approval.indexOf('className="state-facts"') < approval.indexOf("Sign-Off Note"));
   assert.ok(approval.indexOf("Sign-Off Note") < approval.indexOf("Save model version"));
-  assert.match(modelBuilder, /dirty && canWrite \? <section className="approval-panel" data-model-approval/);
+  assert.match(modelBuilder, /dirty && canWrite \? <section className="panel span-12" data-model-approval/);
+  // FE-G4: the sign-off panel renders below the worksheet, never above it, so a
+  // first edit does not displace the model; and a blank cell is never "selected".
+  assert.ok(modelBuilder.indexOf("${styles.workspace}") < start, "the sign-off panel renders above the worksheet");
+  assert.match(modelBuilder, /cell && selected\?\.address === cell\.address \? "is-selected"/);
   assert.doesNotMatch(modelBuilder.slice(modelBuilder.indexOf("model-builder-command-body"), start), /Save model version/);
 });
 

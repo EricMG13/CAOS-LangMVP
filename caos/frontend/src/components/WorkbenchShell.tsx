@@ -27,6 +27,10 @@ export type DrawerState = {
     sha256: string;
     blocks: { block_id: string; locator: Record<string, unknown>; text?: string }[];
   };
+  // The block ids the citation named, in citation order; empty when the artifact
+  // cited the source as a whole (FE-G4 critique P1: the drawer used to deny a
+  // locator the chip beside it had just shown).
+  blockIds: string[];
   // The control that opened the drawer, passed from its click: focus returns
   // here on close. Never inferred from document.activeElement (FE-A0 F11).
   opener?: HTMLElement | null;
@@ -239,11 +243,13 @@ export default function WorkbenchShell({
         <dt className="meta-label">Visible snapshot</dt><dd>{visibleSnapshotId ? <IdentityValue value={visibleSnapshotId} /> : visibleSnapshotIdentity}</dd>
         <dt className="meta-label">Visible source set</dt><dd className="mono">{visibleSourceSetIdentity}</dd>
       </dl>
-      <p className="status warning">Source-level reference; no block locator supplied by this artifact.</p>
+      {drawer.blockIds.length
+        ? <p className="mono muted">Cited blocks: {drawer.blockIds.join(" · ")}</p>
+        : <p className="status warning">Source-level reference; no block locator supplied by this artifact.</p>}
       <h3>Available source text</h3>
       <div className="source-blocks">
-        {drawer.source.blocks.slice(0, 20).map((block) => <article className="source-block" key={block.block_id}>
-          <div className="meta-label">{block.block_id}</div>
+        {[...drawer.source.blocks].sort((a, b) => Number(drawer.blockIds.includes(b.block_id)) - Number(drawer.blockIds.includes(a.block_id))).slice(0, 20).map((block) => <article className="source-block" key={block.block_id} data-cited-block={drawer.blockIds.includes(block.block_id) ? block.block_id : undefined}>
+          <div className="meta-label">{block.block_id}{drawer.blockIds.includes(block.block_id) ? <> · <span className="status success">Cited</span></> : null}</div>
           <p>{block.text || "No extracted text."}</p>
         </article>)}
         {!drawer.source.blocks.length && <p className="muted">No extracted source text.</p>}
