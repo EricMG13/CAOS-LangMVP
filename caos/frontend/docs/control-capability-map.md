@@ -5,7 +5,10 @@ is intentionally conservative: an absent contract produces an unavailable
 state, never a browser-derived substitute, and no control is drawn for a route
 the server does not serve. "Served, not drawn" names a contract the server
 serves that no surface renders yet; drawing it is an information-architecture
-decision (FE-G3), not a capability gap.
+decision, not a capability gap. FE-G3 drew the two governance contracts the
+approved Align canvas and FE-A1 D7 assigned (member provisioning and the case
+audit package, both on Admin); withdrawal and notes stay "served, not drawn"
+because no approved artboard draws them.
 
 | Surface | Control or data | Production source | Treatment |
 |---|---|---|---|
@@ -17,7 +20,7 @@ decision (FE-G3), not a capability gap.
 | Credit | Accepted module conclusions and evidence counts | Snapshot artifact ids plus `GET /api/cases/{case_id}/artifacts/{artifact_id}` | Served as exact module output |
 | Credit | Normalized binding metric, threshold, tolerance and gap summary | No normalized credit-summary response | Unavailable; no inferred values |
 | Sources | List, read and upload source objects | Existing case source routes | Served |
-| Sources | Withdraw a source | `POST /api/cases/{case_id}/sources/{source_id}/withdraw` | Served, not drawn (D-G; an IA decision for FE-G3) |
+| Sources | Withdraw a source | `POST /api/cases/{case_id}/sources/{source_id}/withdraw` | Served, not drawn (D-G; no approved artboard draws it — deferred past FE-G3) |
 | Sources | Analyst notes | `GET`/`POST /api/cases/{case_id}/notes` | Served, not drawn (D-G) |
 | Sources | Claim-to-source coverage matrix | No normalized claim-map response | Unavailable |
 | Analysis | Run stages, live progress, resume and exact artifact output | Existing run, event and artifact routes | Served |
@@ -32,9 +35,9 @@ decision (FE-G3), not a capability gap.
 | Report | Opinion sign-off on the exact saved revision | `POST /api/cases/{case_id}/deliverables/{pathway}/opinion` | Served |
 | Report | Freeze as a worker job, tracked to the frozen record | `POST …/freeze`, `GET …/deliverables/freeze-jobs/{job_id}` | Served |
 | Report | Filing receipt and request-changes | `GET …/deliverables/by-id/{id}/receipt`, `POST …/by-id/{id}/request-changes` | Served |
-| Report | Approver provisioning | `POST /api/cases/{case_id}/members` | Served; drawn in Report Studio until FE-G3 moves it to Admin (D7) |
+| Admin | Member provisioning (a distinct APPROVER or ADMIN) | `POST /api/cases/{case_id}/members` | Served and drawn on Admin (FE-G3, D7); the control renders only for a current APPROVER/ADMIN role with stored APPROVER/ADMIN case standing, a reader sees the reason, and the filing gate stays on Report |
 | Report | Browser recovery copy | Browser `localStorage`, one slot per subject, case, pathway and browser tab | Served as recovery only; never authority; never offered to another subject |
-| Admin | Case audit package | `GET /api/cases/{case_id}/audit-package` | Served, not drawn (FE-G3 adds the download to Admin, D7) |
+| Admin | Case audit package | `GET /api/cases/{case_id}/audit-package` | Served and drawn on Admin (FE-G3, D7): a download whose receipt names the `x-caos-sha256` digest; a 404 renders the unavailable state |
 | Admin | Membership | `POST /api/cases/{case_id}/members` | Served; drawn in Report Studio (see above) |
 | Admin | Audit rows, bundle integrity, step-up operations | Routes absent in this deployment | Unavailable; requirements only |
 
