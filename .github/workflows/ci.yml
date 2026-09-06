@@ -105,7 +105,13 @@ jobs:
           ANTHROPIC_API_KEY: ""
           GEMINI_API_KEY: ""
           OPENROUTER_API_KEY: ""
-        run: python -m pytest caos/tests -q -W always
+        # -n auto --dist loadfile: one worker per runner core, whole FILES
+        # distributed rather than individual tests. Serial this step was ~31
+        # min; the deliverable, publication and model-builder specs alone are
+        # ~80% of it. loadfile (not the default load) keeps every test in a
+        # file on one worker, so a file's tests still run in order and nothing
+        # has to become order-independent to make this safe.
+        run: python -m pytest caos/tests -q -W always -n auto --dist loadfile
 
   browser:
     name: Browser — workbench journey and accessibility

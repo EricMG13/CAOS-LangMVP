@@ -604,6 +604,17 @@ async def test_engine_close_refuses_owner_loop_stopped_during_waiter_handoff(
     stopped = threading.Event()
     resume = threading.Event()
     finished = threading.Event()
+    # aclose() drains with cancel=True, so it submits `task.cancel` to the owner
+    # loop while that loop is still running, before the waiter handoff this test
+    # interrupts. Whether the cancelled task gets a step before `loop.stop` takes
+    # effect is pure scheduling: same batch and the task stays pending, different
+    # batches and it finishes, `_drain_tasks` reads it as drained rather than
+    # refused, and aclose() returns cleanly (CI run 34027429627 under load).
+    # Only a live task on a dead loop is refused, so this continuation stays live
+    # across the drain: it absorbs the drain-phase cancellation and honours the
+    # one the test issues afterwards.
+    absorb = threading.Event()
+    absorb.set()
     owned = {}
 
     def own_continuation() -> None:
@@ -611,7 +622,12 @@ async def test_engine_close_refuses_owner_loop_stopped_during_waiter_handoff(
         asyncio.set_event_loop(loop)
 
         async def pending() -> None:
-            await asyncio.Event().wait()
+            while True:
+                try:
+                    await asyncio.Event().wait()
+                except asyncio.CancelledError:
+                    if not absorb.is_set():
+                        raise
 
         def prepare() -> None:
             task = loop.create_task(pending())
@@ -656,11 +672,13 @@ async def test_engine_close_refuses_owner_loop_stopped_during_waiter_handoff(
 
         assert engine._closed is False
         assert owned["task"] in engine._continuations
+        absorb.clear()
         owner_loop.call_soon_threadsafe(owned["task"].cancel)
         resume.set()
         await asyncio.to_thread(owner.join)
         await engine.aclose()
     finally:
+        absorb.clear()
         task = owned.get("task")
         if task is not None and not task.done() and not task.get_loop().is_closed():
             task.get_loop().call_soon_threadsafe(task.cancel)

@@ -46,6 +46,12 @@ dependencies = [
 dev = [
     "pytest>=8",
     "pytest-asyncio>=0.24",
+    # The suite is ~1250 tests and the deliverable/publication/model-builder
+    # specs dominate it (pango-view renders one PDF page per invocation; the
+    # model builds re-execute calculation records). Serial, that is ~31 min of
+    # CI on each matrix leg. Distributed by FILE — never by test — because a
+    # spec file's tests share nothing but still read most naturally in order.
+    "pytest-xdist>=3.6",
     "httpx>=0.27",
     # The documented lint command runs under this extra; without it `uv run
     # --extra dev ruff check …` fails to spawn.
