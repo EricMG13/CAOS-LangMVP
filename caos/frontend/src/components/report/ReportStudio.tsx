@@ -281,7 +281,7 @@ export default function ReportStudio({ caseId, role, subject = "", selectedCase,
       onDraftStateChange(false);
     } catch (caught) {
       if (generation !== loadGeneration.current || caught instanceof DOMException && caught.name === "AbortError") return;
-      setLoadError(firstErrorMessage(caught, "Unable to load Report Studio"));
+      setLoadError(firstErrorMessage(caught, "Unable to load Report."));
     } finally { if (generation === loadGeneration.current) setLoading(false); }
     // `subject` is a load input: the recovery slot is keyed by it, and it resolves
     // from /api/me after the first render on a cold deep link.
@@ -560,11 +560,11 @@ export default function ReportStudio({ caseId, role, subject = "", selectedCase,
       onDraftStateChange(false); setPathway(next);
     };
     if (unsavedDraft.current || ["DIRTY", "SAVING", "INCOMPLETE", "ERROR"].includes(saveState.kind)) {
-      requestDraftDiscard("Discard the unsaved Report Studio changes before changing pathway?", change, undefined, trigger);
+      requestDraftDiscard("Discard the unsaved draft before changing pathway?", change, undefined, trigger);
     } else change();
   };
 
-  if (loading || loadError || !workspace) return <div className="panel"><div className="panel-body"><LoadState loading={loading} error={loadError} title="Unable to load Report Studio." onRetry={() => void load()} /></div></div>;
+  if (loading || loadError || !workspace) return <div className="panel"><div className="panel-body"><LoadState loading={loading} error={loadError} title="Unable to load Report." onRetry={() => void load()} /></div></div>;
 
   const savedSections = workspace.current?.content.document_sections || draftTextSections(blocks, workspace.template.blocks);
   const previewSections = selectedFrozen

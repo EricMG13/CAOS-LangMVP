@@ -4,7 +4,7 @@ import { compactIdentity, humanizeCode } from "../lib/workbench";
 
 // One home for every "nothing here / still loading / this failed / this route is
 // absent" surface in the workbench. Three surfaces used to own near-duplicate
-// copies of these blocks (Workspace, Model Builder, Report Studio); the classes,
+// copies of these blocks (Workspace, Model, Report); the classes,
 // copy, and ARIA below are exactly what those surfaces already rendered, so the
 // stylesheet and the browser harnesses keep matching.
 //

@@ -38,7 +38,6 @@ because no approved artboard draws them.
 | Admin | Member provisioning (a distinct APPROVER or ADMIN) | `POST /api/cases/{case_id}/members` | Served and drawn on Admin (FE-G3, D7); the control renders only for a current APPROVER/ADMIN role with stored APPROVER/ADMIN case standing, a reader sees the reason, and the filing gate stays on Report |
 | Report | Browser recovery copy | Browser `localStorage`, one slot per subject, case, pathway and browser tab | Served as recovery only; never authority; never offered to another subject |
 | Admin | Case audit package | `GET /api/cases/{case_id}/audit-package` | Served and drawn on Admin (FE-G3, D7): a download whose receipt names the `x-caos-sha256` digest; a 404 renders the unavailable state |
-| Admin | Membership | `POST /api/cases/{case_id}/members` | Served; drawn in Report Studio (see above) |
 | Admin | Audit rows, bundle integrity, step-up operations | Routes absent in this deployment | Unavailable; requirements only |
 
 Unavailability is observed, not configured: a capability call that answers 404

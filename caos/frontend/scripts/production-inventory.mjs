@@ -504,7 +504,7 @@ try {
     { slug: "rv-screener", endpoint: `/api/cases/${emptyCase.id}/rv/loan-universes/active`, url: `${baseURL}/rv-screener/?case=${emptyCase.id}`, emptyText: "Upload the fixed CP-3 workbook to activate a leveraged-loan universe." },
     { slug: "command-center", endpoint: `/api/cases/${emptyCase.id}/lens`, url: `${baseURL}/command-center/?case=${emptyCase.id}`, emptyText: "No accepted snapshot yet. Posture becomes reviewable after an explicit acceptance." },
     { slug: "model-builder", endpoint: `/api/cases/${emptyCase.id}/models`, url: `${baseURL}/model-builder/?case=${emptyCase.id}`, emptyText: "ACCEPTED FULL CREDIT REQUIRED", emptyEndpoint: null },
-    { slug: "report-studio", endpoint: `/api/cases/${emptyCase.id}/deliverables/FULL_CREDIT`, url: `${baseURL}/report-studio/?case=${emptyCase.id}`, errorText: "Unable to load Report Studio." },
+    { slug: "report-studio", endpoint: `/api/cases/${emptyCase.id}/deliverables/FULL_CREDIT`, url: `${baseURL}/report-studio/?case=${emptyCase.id}`, errorText: "Unable to load Report." },
   ];
 
   for (const [role, context] of roleContexts) {
