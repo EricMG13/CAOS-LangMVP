@@ -152,8 +152,32 @@ export function isUnavailableRoute(caught: unknown): boolean {
   return status === 404 || status === 405;
 }
 
+// The network state (DESIGN.md §5 `offline`). `fetch` rejects with an engine-worded
+// TypeError when a request never reaches the server — "Failed to fetch" (Chromium),
+// "NetworkError when attempting to fetch resource." (Firefox), "Load failed"
+// (WebKit) — and every surface used to render that text as the page-level alert
+// (FE-A0 F7). Every request helper sends through here, so the engine text never
+// reaches the DOM: the typed error carries one sentence and keeps the cause. An
+// abort is not a network failure and passes through untouched, because every
+// caller already distinguishes its own AbortError.
+export const NETWORK_UNAVAILABLE = "Network unavailable. Check the connection and retry.";
+export class NetworkError extends Error {
+  constructor(cause: unknown) {
+    super(NETWORK_UNAVAILABLE, { cause });
+    this.name = "NetworkError";
+  }
+}
+export async function networkFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+  try {
+    return await fetch(input, init);
+  } catch (caught) {
+    if (caught instanceof DOMException) throw caught;
+    throw new NetworkError(caught);
+  }
+}
+
 export async function api<T>(path: string, options: RequestInit = {}, signal?: AbortSignal): Promise<T> {
-  const response = await fetch(path, { ...options, signal, headers: options.body instanceof FormData ? options.headers : { "Content-Type": "application/json", ...options.headers } });
+  const response = await networkFetch(path, { ...options, signal, headers: options.body instanceof FormData ? options.headers : { "Content-Type": "application/json", ...options.headers } });
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));
     throw new ApiRequestError(response.status, body.detail);

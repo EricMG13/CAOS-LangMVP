@@ -1,7 +1,10 @@
 type Props = {
   evidenceId: string;
   linkedId: string;
-  onOpen: (evidenceId: string) => void;
+  // The chip passes itself as the drawer's opener: WebKit does not focus a
+  // button on click, so an opener inferred from document.activeElement would
+  // return focus to whatever the analyst touched before the chip.
+  onOpen: (evidenceId: string, opener: HTMLElement) => void;
   onPreview: (evidenceId: string) => void;
   onPreviewEnd: () => void;
 };
@@ -14,7 +17,7 @@ export default function EvidenceChip({ evidenceId, linkedId, onOpen, onPreview, 
     data-evidence-id={evidenceId}
     aria-label={`Open evidence ${evidenceId}`}
     onBlur={onPreviewEnd}
-    onClick={() => onOpen(evidenceId)}
+    onClick={(event) => onOpen(evidenceId, event.currentTarget)}
     onFocus={() => onPreview(evidenceId)}
     onMouseEnter={() => onPreview(evidenceId)}
     onMouseLeave={onPreviewEnd}

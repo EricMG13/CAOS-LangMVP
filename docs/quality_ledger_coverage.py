@@ -72,6 +72,7 @@ FILE_MAP = {
     r"^caos/frontend/scripts/identity-a11y": "F-UI-14",
     r"^caos/frontend/scripts/draft-history-smoke": "F-UI-09, F-UI-11",
     r"^caos/frontend/scripts/workbench-smoke": "F-UI-02, F-UI-04",
+    r"^caos/frontend/scripts/focus-restoration-smoke": "F-UI-09, F-UI-11, F-UI-14 (focus restoration through the dirty-draft discard prompts; issue #38)",
     r"^caos/frontend/scripts/run-browsers": "F-UI-02, F-UI-04 (the three-engine runner for the workbench journey)",
     r"^caos/frontend/scripts/webkit-teardown": "F-UI-02, F-UI-04 (WebKit's navigation-time fetch rejections, filtered only with server evidence; D-016)",
     r"^caos/frontend/scripts/draft-history-smoke": "F-UI-02, F-UI-04",

@@ -184,10 +184,6 @@ engine, the bundle, or the routes.
   `GZipMiddleware` (`minimum_size=1024`), and its content-type exclusions are
   load-bearing: `text/event-stream` keeps the run-events tail streaming and the
   XLSX media type is excluded because a workbook is already a zip.
-- Next emits a `noModule` legacy polyfill bundle (112,594 B, byte-identical to
-  `next/dist/build/polyfills/polyfill-nomodule.js`) that every route's HTML
-  references. There is no config switch for it and no browser with ES-module
-  support fetches it — do not "optimize" it away by deleting build output.
 - The run console has exactly one home. Portfolio links into a credit and
   Deep-Dive reads accepted artifacts; neither renders the compile form or the
   accept control. Run progress, compilation and acceptance stay in
@@ -533,7 +529,10 @@ engine, the bundle, or the routes.
   `document.activeElement`: WebKit does not focus a button or link on click,
   so an inferred opener is `<body>` there and cancelling the dialog drops focus
   to the landmark. `AcceptDialog` and the palette-initiated discard were fixed
-  in Task 12b; `closeDrawer` in `WorkbenchShell` still infers and is open. A
+  in Task 12b; the evidence drawer in FE-G1 (`EvidenceChip` and the "Open
+  evidence context" button pass their click target through
+  `DrawerState.opener`, and `WorkbenchShell` falls back to `activeElement`
+  only for a caller that passes none). A
   focus repair that runs on a timer must first check where the browser's own
   close restoration left focus and whether the user has moved since
   (`DraftDiscardDialog.dismiss`) — the 24 ms focus steal that fix removed was

@@ -30,6 +30,11 @@ test("authoring uses the six server templates and shared append-only draft route
   assert.match(studio, /saveChain/);
 });
 
+// The recovery-copy pins this file used to carry (key shape, localStorage calls,
+// labels) survived a copy that was never written; the smoke now asserts the
+// studio writes a subject-scoped copy on edit, clears it on save, keeps the
+// original compare-and-swap base and offers another subject nothing, and
+// reportRecovery.test.ts pins the key and the subject refusal (FE-G1).
 test("the structured document is safe and keeps generated content read-only", () => {
   assert.match(document, /DocumentTableSection/);
   assert.match(document, /DocumentChartSection/);
@@ -40,17 +45,6 @@ test("the structured document is safe and keeps generated content read-only", ()
   assert.doesNotMatch(document, /dangerouslySetInnerHTML|contentEditable|contenteditable/);
   assert.doesNotMatch(studio, /eval\(|Function\(/);
   assert.doesNotMatch(studio, /sessionStorage/);
-});
-
-test("unsaved report work has a scoped non-authoritative recovery copy and automatic retry", () => {
-  assert.match(studio, /reportRecoveryKey\(caseId, pathway\)/);
-  assert.match(studio, /window\.localStorage\.setItem/);
-  assert.match(studio, /clearBrowserRecovery/);
-  assert.match(studio, /SAVE_RETRY_DELAY_MS/);
-  assert.match(studio, /Not shared authority/);
-  for (const label of ["Restore copy", "Retry save now", "Download JSON", "Discard copy"]) assert.match(studio, new RegExp(label));
-  const applyRecovery = studio.slice(studio.indexOf("const applyRecovery"), studio.indexOf("const discardRecovery"));
-  assert.ok(applyRecovery.indexOf("savedVersion.current = recovery.expectedVersion") < applyRecovery.indexOf("markChanged(recovery.blocks"), "recovery must preserve its original compare-and-swap base before saving");
 });
 
 test("exact Frozen and Filed lifecycle is identity-bound and role-gated", () => {

@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { LoadState, StateBlock, StateNote } from "../states";
 import { formatDate, humanizeCode, withQuery } from "../../lib/workbench";
-import { api as request, assumptionRegistryPath, firstErrorMessage, type CaseRecord, type SourceRecord } from "../../lib/api";
+import { api as request, assumptionRegistryPath, firstErrorMessage, networkFetch, type CaseRecord, type SourceRecord } from "../../lib/api";
 import DeliverableDocument, {
   type DeliverableBlock,
   type EvidenceCitation,
@@ -13,7 +13,7 @@ import DeliverableDocument, {
   type TemplateBlock,
 } from "./DeliverableDocument";
 import { draftTextSections, overlayAnalystText, type DocumentSection } from "./documentTypes";
-import { parseReportRecovery, reportRecoveryKey, type RecoveryModelSelection, type ReportRecovery } from "./reportRecovery";
+import { browserTabId, parseReportRecovery, reportRecoveryKey, type RecoveryModelSelection, type ReportRecovery } from "./reportRecovery";
 import { canFileFrozen, freezeChecklist, freezeJobIsPending } from "./reportStudioState";
 
 const apiBase = process.env.NEXT_PUBLIC_API_URL || "";
@@ -68,7 +68,7 @@ class ReportRequestError extends Error {
 }
 
 async function reportRequest<T>(path: string, options: RequestInit = {}, signal?: AbortSignal): Promise<T> {
-  const response = await fetch(path, { ...options, signal, headers: { "Content-Type": "application/json", ...options.headers } });
+  const response = await networkFetch(path, { ...options, signal, headers: { "Content-Type": "application/json", ...options.headers } });
   const body = await response.json().catch(() => null);
   if (!response.ok) throw new ReportRequestError(response.status, body?.detail ?? body);
   return body as T;
@@ -149,18 +149,18 @@ function saveLabel(state: SaveState): string {
   return state.kind === "DIRTY" ? "Unsaved changes" : "Ready";
 }
 
-function readBrowserRecovery(caseId: string, pathway: Pathway) {
-  try { return { raw: window.localStorage.getItem(reportRecoveryKey(caseId, pathway)), failed: false }; }
+function readBrowserRecovery(caseId: string, pathway: Pathway, subject: string) {
+  try { return { raw: window.localStorage.getItem(reportRecoveryKey(caseId, pathway, subject, browserTabId())), failed: false }; }
   catch { return { raw: null, failed: true }; }
 }
 
 function storeBrowserRecovery(copy: ReportRecovery) {
-  try { window.localStorage.setItem(reportRecoveryKey(copy.caseId, copy.pathway), JSON.stringify(copy)); return true; }
+  try { window.localStorage.setItem(reportRecoveryKey(copy.caseId, copy.pathway, copy.subject, browserTabId()), JSON.stringify(copy)); return true; }
   catch { return false; }
 }
 
-function clearBrowserRecovery(caseId: string, pathway: Pathway) {
-  try { window.localStorage.removeItem(reportRecoveryKey(caseId, pathway)); return true; }
+function clearBrowserRecovery(caseId: string, pathway: Pathway, subject: string) {
+  try { window.localStorage.removeItem(reportRecoveryKey(caseId, pathway, subject, browserTabId())); return true; }
   catch { return false; }
 }
 
@@ -256,8 +256,8 @@ export default function ReportStudio({ caseId, role, subject = "", selectedCase,
       setPersistedVersion(savedVersion.current);
       const nextModelSelection = next.current?.content.model_selection || next.model_eligibility.default_model_selection;
       setWorkspace(next); setBlocks(nextBlocks); setModelSelection(nextModelSelection); setSelectedBlockId(nextBlocks[0]?.block_id || ""); setSources(sourceResult.value); setEvidenceError(sourceResult.error); setSaveState(next.current ? { kind: "SAVED", version: next.current.version } : { kind: "IDLE" });
-      const recoveryRead = readBrowserRecovery(caseId, pathway);
-      const storedRecovery = parseReportRecovery(recoveryRead.raw, caseId, pathway);
+      const recoveryRead = readBrowserRecovery(caseId, pathway, subject);
+      const storedRecovery = parseReportRecovery(recoveryRead.raw, caseId, pathway, subject);
       setRecovery(storedRecovery);
       setRecoveryError(recoveryRead.failed ? "Browser recovery is unavailable in this session." : recoveryRead.raw && !storedRecovery ? "A stored recovery copy was unreadable and was not restored." : "");
       const buildId = nextModelSelection?.build_id;
@@ -284,7 +284,9 @@ export default function ReportStudio({ caseId, role, subject = "", selectedCase,
       if (generation !== loadGeneration.current || caught instanceof DOMException && caught.name === "AbortError") return;
       setLoadError(firstErrorMessage(caught, "Unable to load Report Studio"));
     } finally { if (generation === loadGeneration.current) setLoading(false); }
-  }, [caseId, onDraftStateChange, pathway]);
+    // `subject` is a load input: the recovery slot is keyed by it, and it resolves
+    // from /api/me after the first render on a cold deep link.
+  }, [caseId, onDraftStateChange, pathway, subject]);
 
   useEffect(() => () => onDraftStateChange(false), [onDraftStateChange]);
 
@@ -311,18 +313,18 @@ export default function ReportStudio({ caseId, role, subject = "", selectedCase,
         savedVersion.current = next.current?.version || savedVersion.current;
         setPersistedVersion(savedVersion.current);
         setWorkspace(next); setConflict(null);
-        if (generation === saveGeneration.current) { unsavedDraft.current = false; setDraftIsUnsaved(false); setBlocks(next.current?.content.blocks || prepared); setSaveState({ kind: "SAVED", version: savedVersion.current }); const cleared = clearBrowserRecovery(caseId, pathway); setRecovery(null); setRecoveryError(cleared ? "" : "The server saved this revision, but its browser recovery copy could not be cleared."); onDraftStateChange(false); }
+        if (generation === saveGeneration.current) { unsavedDraft.current = false; setDraftIsUnsaved(false); setBlocks(next.current?.content.blocks || prepared); setSaveState({ kind: "SAVED", version: savedVersion.current }); const cleared = clearBrowserRecovery(caseId, pathway, subject); setRecovery(null); setRecoveryError(cleared ? "" : "The server saved this revision, but its browser recovery copy could not be cleared."); onDraftStateChange(false); }
       } catch (caught) {
         if (scope !== currentScope.current) return;
         if (caught instanceof ReportRequestError && caught.status === 409 && typeof caught.detail === "object" && caught.detail) {
           const detail = caught.detail as { code?: string; current?: DraftRevision | null };
-          if (detail.code === "DELIVERABLE_VERSION_CONFLICT") { setRecovery(parseReportRecovery(readBrowserRecovery(caseId, pathway).raw, caseId, pathway)); setConflict(detail.current || null); setSaveState({ kind: "CONFLICT", detail: "A newer shared revision is available." }); return; }
+          if (detail.code === "DELIVERABLE_VERSION_CONFLICT") { setRecovery(parseReportRecovery(readBrowserRecovery(caseId, pathway, subject).raw, caseId, pathway, subject)); setConflict(detail.current || null); setSaveState({ kind: "CONFLICT", detail: "A newer shared revision is available." }); return; }
         }
-        setRecovery(parseReportRecovery(readBrowserRecovery(caseId, pathway).raw, caseId, pathway));
+        setRecovery(parseReportRecovery(readBrowserRecovery(caseId, pathway, subject).raw, caseId, pathway, subject));
         setSaveState({ kind: "ERROR", detail: firstErrorMessage(caught, "Autosave failed") });
       }
     });
-  }, [canWrite, caseId, onDraftStateChange, pathway, workspace]);
+  }, [canWrite, caseId, onDraftStateChange, pathway, subject, workspace]);
 
   const markChanged = useCallback((nextBlocks: DeliverableBlock[], nextSelection = modelSelection) => {
     setBlocks(nextBlocks); setModelSelection(nextSelection); setSelectedFrozen(null); setMessage(""); setError(""); setConflict(null);
@@ -332,14 +334,14 @@ export default function ReportStudio({ caseId, role, subject = "", selectedCase,
     setDraftIsUnsaved(true);
     setSaveState({ kind: "DIRTY" }); onDraftStateChange(true);
     if (workspace) {
-      const copy: ReportRecovery = { caseId, pathway, savedAt: Date.now(), expectedVersion: savedVersion.current, templateId: workspace.template.template_id, templateVersion: workspace.template.template_version, modelSelection: nextSelection, blocks: nextBlocks };
+      const copy: ReportRecovery = { subject, caseId, pathway, savedAt: Date.now(), expectedVersion: savedVersion.current, templateId: workspace.template.template_id, templateVersion: workspace.template.template_version, modelSelection: nextSelection, blocks: nextBlocks };
       if (storeBrowserRecovery(copy)) { setRecovery((current) => current ? copy : null); setRecoveryError(""); }
       else setRecoveryError("Browser recovery could not be updated. Keep this tab open until the server save succeeds.");
     }
     if (saveTimer.current !== null) window.clearTimeout(saveTimer.current);
     const scope = currentScope.current;
     saveTimer.current = window.setTimeout(() => enqueueSave(nextBlocks, nextSelection, generation, scope), AUTOSAVE_DELAY_MS);
-  }, [caseId, enqueueSave, modelSelection, onDraftStateChange, pathway, workspace]);
+  }, [caseId, enqueueSave, modelSelection, onDraftStateChange, pathway, subject, workspace]);
 
   useEffect(() => {
     if (saveState.kind !== "ERROR" || !draftIsUnsaved || !canWrite) return;
@@ -355,7 +357,7 @@ export default function ReportStudio({ caseId, role, subject = "", selectedCase,
     if (retryNow) { if (saveTimer.current !== null) window.clearTimeout(saveTimer.current); enqueueSave(recovery.blocks, recovery.modelSelection, draftGeneration.current, currentScope.current); }
   };
 
-  const discardRecovery = () => { if (clearBrowserRecovery(caseId, pathway)) { setRecovery(null); setRecoveryError(""); } else setRecoveryError("The browser recovery copy could not be discarded in this session."); };
+  const discardRecovery = () => { if (clearBrowserRecovery(caseId, pathway, subject)) { setRecovery(null); setRecoveryError(""); } else setRecoveryError("The browser recovery copy could not be discarded in this session."); };
   const downloadRecovery = () => {
     if (!recovery) return;
     const url = URL.createObjectURL(new Blob([JSON.stringify(recovery, null, 2)], { type: "application/json" }));

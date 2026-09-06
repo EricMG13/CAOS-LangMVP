@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { ApiRequestError, api, firstErrorMessage, isUnavailableRoute } from "./api.ts";
+import { ApiRequestError, NETWORK_UNAVAILABLE, NetworkError, api, firstErrorMessage, isUnavailableRoute } from "./api.ts";
 
 test("api returns parsed JSON from successful responses", async (t) => {
   const originalFetch = globalThis.fetch;
@@ -87,4 +87,29 @@ test("only an observed 404 or 405 reads as an unavailable route", () => {
   assert.equal(isUnavailableRoute(new SyntaxError("Unexpected token")), false);
   assert.equal(isUnavailableRoute(null), false);
   assert.equal(isUnavailableRoute({ status: 404 }), false);
+});
+
+test("a request that never reaches the server reads as the network state, never as engine text", async (t) => {
+  const originalFetch = globalThis.fetch;
+  t.after(() => { globalThis.fetch = originalFetch; });
+  // Chromium, Firefox and WebKit each word the rejection differently; none of
+  // those words may reach the analyst (DESIGN.md §5 `offline`, FE-A0 F7).
+  for (const engineText of ["Failed to fetch", "NetworkError when attempting to fetch resource.", "Load failed"]) {
+    globalThis.fetch = async () => { throw new TypeError(engineText); };
+    const caught = await api("/api/cases").then(() => null, (rejection: unknown) => rejection);
+    assert.ok(caught instanceof NetworkError, `fetch rejection "${engineText}" was not typed as a network failure`);
+    assert.equal(caught.message, NETWORK_UNAVAILABLE);
+    assert.equal(firstErrorMessage(caught, "fallback"), NETWORK_UNAVAILABLE);
+    assert.doesNotMatch(firstErrorMessage(caught, "fallback"), new RegExp(engineText.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+    assert.equal(isUnavailableRoute(caught), false, "a network failure is not an absent route");
+    assert.equal((caught as NetworkError).cause instanceof TypeError, true, "the engine rejection is retained as the cause");
+  }
+  // An abort is the caller's own doing and keeps its identity.
+  const abort = new DOMException("The user aborted a request.", "AbortError");
+  globalThis.fetch = async () => { throw abort; };
+  const aborted = await api("/api/cases").then(() => null, (rejection: unknown) => rejection);
+  assert.strictEqual(aborted, abort);
+  // A served refusal is still a served refusal.
+  globalThis.fetch = async () => new Response(JSON.stringify({ detail: "Case access denied" }), { status: 403 });
+  await assert.rejects(api("/api/cases/case_1"), new Error("Case access denied"));
 });

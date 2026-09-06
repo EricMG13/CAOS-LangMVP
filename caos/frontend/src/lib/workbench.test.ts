@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
-import { acceptanceSlotSummary, acceptedAuthorityMatch, destinationMeta, evidenceKind, formatBlockLocator, humanizeCode, moduleLabel, withQuery, workflows } from "./workbench.ts";
+import { acceptanceSlotSummary, acceptedAuthorityMatch, destinationMeta, evidenceKind, formatBlockLocator, humanizeCode, moduleLabel, protectDirtyDraftUnload, supersededAcceptance, withQuery, workflows } from "./workbench.ts";
 
 const workbenchShell = readFileSync(new URL("../components/WorkbenchShell.tsx", import.meta.url), "utf8");
 const workspace = readFileSync(new URL("../components/Workspace.tsx", import.meta.url), "utf8");
@@ -95,7 +95,15 @@ test("draft navigation uses one focus-returning native dialog and preserves befo
   assert.doesNotMatch(reportStudio, /window\.confirm/);
   assert.match(workspace, /function DraftDiscardDialog/);
   assert.match(workspace, /dialog\.addEventListener\("cancel", cancel\)/);
-  assert.match(workspace, /window\.addEventListener\("beforeunload", guardUnload\)/);
+  // The unload guard's behaviour, not its presence: a dirty draft cancels the
+  // event and sets the legacy returnValue; a clean one touches nothing. The
+  // wiring is driven in the smoke with a synthetic beforeunload on the window.
+  const dirtyEvent = { prevented: false, preventDefault() { this.prevented = true; }, returnValue: "unchanged" };
+  assert.equal(protectDirtyDraftUnload(dirtyEvent, true), true);
+  assert.deepEqual({ prevented: dirtyEvent.prevented, returnValue: dirtyEvent.returnValue }, { prevented: true, returnValue: "" });
+  const cleanEvent = { prevented: false, preventDefault() { this.prevented = true; }, returnValue: "unchanged" };
+  assert.equal(protectDirtyDraftUnload(cleanEvent, false), false);
+  assert.deepEqual({ prevented: cleanEvent.prevented, returnValue: cleanEvent.returnValue }, { prevented: false, returnValue: "unchanged" });
   assert.doesNotMatch(workspace, /history\.replaceState\(null/);
   assert.equal(workspace.match(/historyStateForExternalReplace\(window\.history\.state\)/g)?.length, 2);
   assert.match(workspace, /requestDraftDiscard/);
@@ -184,7 +192,62 @@ test("DAG nodes use neutral containers and shape-coded visible statuses", async 
   assert.doesNotMatch(workspace, /className=\{`dag-node \$\{node\.status\}`\}/);
   assert.match(workspace, /className=\{`status \$\{nodeStatusTone\(node\.status\)\}`\}>\{node\.status\}<\/div>/);
   assert.match(workspace, /dag-node-open dag-node-placeholder" aria-hidden="true">Open output/, "unfinished DAG nodes must reserve the completed-output row");
-  assert.match(styles, /\.status\.running::before\s*\{/);
+  // Severity is shape plus hue, never hue alone: every tone's glyph rule draws a
+  // distinct shape, so removing one (colour-only status) fails here rather than
+  // passing on the presence of a selector (FE-A0 §4, M8).
+  const glyph = (tone: string) => {
+    const rule = new RegExp(`\\.status\\.${tone}::before\\s*\\{([^}]*)\\}`).exec(styles);
+    assert.ok(rule, `no glyph rule for .status.${tone}`);
+    assert.doesNotMatch(rule[1], /content:\s*none/, `${tone} glyph removed`);
+    return rule[1];
+  };
+  assert.match(glyph("success"), /border-radius:\s*50%/);
+  assert.match(glyph("success"), /background:\s*var\(--caos-success\)/);
+  assert.match(glyph("running"), /border-radius:\s*50%/);
+  assert.match(glyph("running"), /background:\s*var\(--caos-accent\)/);
+  assert.match(glyph("warning"), /border-bottom:\s*8px solid var\(--caos-warning\)/);
+  assert.match(glyph("critical"), /border-radius:\s*2px/);
+  assert.match(glyph("critical"), /background:\s*var\(--caos-critical\)/);
+  assert.match(styles, /\.status::before, \.status\.idle::before\s*\{[^}]*width: 8px; height: 3px/);
+});
+
+test("no shipped frontend file carries an HTML or script sink", () => {
+  // WEB-012. The per-component pins covered DeliverableDocument and Report Studio
+  // only; a raw-HTML sink in the artifact reader or the shell passed every test
+  // (FE-A0 §4, M9). Every shipped file under app/ and src/ is scanned.
+  const frontendRoot = new URL("../../", import.meta.url);
+  const files = ["app/", "src/"].flatMap((directory) => shippedFiles(new URL(directory, frontendRoot)));
+  const forbidden = /dangerouslySetInnerHTML|\.innerHTML\s*=|\.outerHTML\s*=|insertAdjacentHTML|srcdoc|\beval\(|new Function\(|javascript:/;
+  const violations = files.filter((file) => forbidden.test(readFileSync(file, "utf8"))).map((file) => file.pathname.slice(frontendRoot.pathname.length));
+  assert.deepEqual(violations, []);
+});
+
+test("every custom property the stylesheets read is declared on :root", () => {
+  // An undefined var() is invalid at computed-value time and the declaration
+  // silently inherits: masthead fact values rendered in label grey because the
+  // rule read `--caos-paper-ink` where the token is `--caos-ink` (FE-A2 F-11).
+  const moduleStyles = readFileSync(new URL("../components/model/ModelBuilder.module.css", import.meta.url), "utf8");
+  const declared = new Set([...styles.matchAll(/^\s*(--[a-z0-9-]+)\s*:/gm)].map((match) => match[1]));
+  const read = new Set([...`${styles}\n${moduleStyles}`.matchAll(/var\((--[a-z0-9-]+)/g)].map((match) => match[1]));
+  assert.deepEqual([...read].filter((token) => !declared.has(token)), []);
+});
+
+test("a pressed toggle button is visibly distinct from its siblings", () => {
+  // Base/Downside and the tornado swing set aria-pressed and `is-active` on
+  // `.button.small`; without this rule the pressed toggle looked identical to the
+  // others (FE-A2 F-01).
+  const rule = /\.button\.is-active\s*\{([^}]*)\}/.exec(styles);
+  assert.ok(rule, "no .button.is-active rule");
+  assert.match(rule[1], /border-color:/);
+  assert.match(rule[1], /background:/);
+  assert.match(modelBuilder, /"button small is-active"/);
+});
+
+test("the report panels' header row takes the header's own height", () => {
+  // A fixed 32px row under a 46px min-height header overlapped the body by 14px (FE-A2 F-12).
+  const rule = /\.report-outline, \.report-compose\s*\{([^}]*)\}/.exec(styles);
+  assert.ok(rule, "no .report-outline/.report-compose rule");
+  assert.match(rule[1], /grid-template-rows:\s*auto minmax\(0, 1fr\)/);
 });
 
 test("every route path keeps its trailing slash", () => {
@@ -204,7 +267,20 @@ test("acceptance stays live until the run's snapshot is the case authority", () 
   assert.equal(acceptedAuthorityMatch(null, "", "snap_a"), "", "an unaccepted run offers the action");
   assert.equal(acceptedAuthorityMatch(undefined, undefined, undefined), "", "no authority, no aftermath");
   assert.equal(acceptedAuthorityMatch("snap_a", "", null), "", "authority not yet loaded keeps the action live");
-  assert.equal(acceptedAuthorityMatch("snap_a", "", "snap_b"), "", "a different accepted authority keeps the action live");
+  assert.equal(acceptedAuthorityMatch("snap_a", "", "snap_b"), "", "acceptedAuthorityMatch names only the latest accepted id; a superseded acceptance is supersededAcceptance's to name");
+});
+
+test("a run accepted earlier and superseded since is named as superseded, never re-offered", () => {
+  assert.equal(supersededAcceptance("snap_a", "snap_b"), "snap_a", "the run's own accepted snapshot is named");
+  assert.equal(supersededAcceptance("snap_a", "snap_a"), "", "the latest acceptance is not superseded");
+  assert.equal(supersededAcceptance(null, "snap_b"), "", "a run never accepted is not superseded");
+  assert.equal(supersededAcceptance("", "snap_b"), "");
+  assert.equal(supersededAcceptance("snap_a", undefined), "", "unknown authority claims nothing");
+  assert.equal(supersededAcceptance("snap_a", null), "");
+  const runStatus = workspace.slice(workspace.indexOf("function RunStatus("), workspace.indexOf("function RunConsole("));
+  const superseded = runStatus.slice(runStatus.indexOf("else if (supersededSnapshotId)"), runStatus.indexOf('else if (run.status === "succeeded")'));
+  assert.match(superseded, /Accepted, superseded/);
+  assert.doesNotMatch(superseded, /Accept analytical snapshot|Ready for acceptance/, "a superseded run must never re-offer acceptance");
 });
 
 test("a positional block locator reads as English and every other shape keeps its JSON", () => {
@@ -289,7 +365,10 @@ test("command center selects a credit conclusion before preparation output", asy
 
 test("command center renders the served snapshot diff shape honestly", () => {
   const commandView = workspace.slice(workspace.indexOf("function CommandView("), workspace.indexOf("function AdminView("));
-  assert.match(commandView, /useState<SnapshotView \| null>/);
+  // One authority per screen: the credit screen renders the shell's snapshot and
+  // never reads /snapshot itself (FE-A0 F3).
+  assert.match(commandView, /authority: SnapshotView \| null/);
+  assert.doesNotMatch(commandView, /\/snapshot`/);
   assert.match(commandView, /selectConclusionArtifact\(artifacts\)/);
   assert.match(commandView, /diff\.modified(?:\?\.|\.)map\(\(item\)[\s\S]*?<IdentityValue value=\{item\.digest\}/);
   assert.doesNotMatch(commandView, /item\.(?:before|after)/);
@@ -327,9 +406,9 @@ test("the shell names the visible lens instead of conflating it with latest acce
 });
 
 test("the browser geometry fixture covers every acceptance-region state", () => {
-  assert.match(smoke, /\["queued", "running", "succeeded", "accepted", "failed", "paused"\]/);
-  assert.match(smoke, /accepted_snapshot_id: acceptanceRunPhase === "accepted" \? acceptanceSnapshot\.id : null/);
-  for (const state of ["Accepted", "Acceptance blocked", "Ready for acceptance", "Acceptance waiting"]) {
+  assert.match(smoke, /\["queued", "running", "succeeded", "accepted", "superseded", "failed", "paused"\]/);
+  assert.match(smoke, /accepted_snapshot_id: acceptanceRunPhase === "accepted" \? acceptanceSnapshot\.id : acceptanceRunPhase === "superseded" \? supersededSnapshotId : null/);
+  for (const state of ["Accepted", "Accepted, superseded", "Acceptance blocked", "Ready for acceptance", "Acceptance waiting"]) {
     assert.match(smoke, new RegExp(state));
   }
 });

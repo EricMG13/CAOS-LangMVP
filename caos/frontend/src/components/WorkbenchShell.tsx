@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { KeyboardEvent, ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import { KeyboardEvent, ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   CaseRecord,
   Destination,
@@ -26,6 +26,9 @@ export type DrawerState = {
     sha256: string;
     blocks: { block_id: string; locator: Record<string, unknown>; text?: string }[];
   };
+  // The control that opened the drawer, passed from its click: focus returns
+  // here on close. Never inferred from document.activeElement (FE-A0 F11).
+  opener?: HTMLElement | null;
 };
 
 type Props = {
@@ -122,14 +125,14 @@ export default function WorkbenchShell({
   const exactEvidenceKind = caseId ? evidenceKind(query) : null;
   const resultCount = caseItems.length + workflowItems.length + toolItems.length + (exactEvidenceKind ? 1 : 0);
 
-  const openPalette = () => {
+  const openPalette = useCallback(() => {
     if (document.querySelector("dialog[open]")) return;
     setPaletteOpen(true);
     setQuery("");
     setActiveResult(0);
     if (!dialogRef.current?.open) dialogRef.current?.showModal();
     window.requestAnimationFrame(() => searchRef.current?.focus());
-  };
+  }, [setActiveResult, setPaletteOpen, setQuery]);
 
   const closePalette = () => dialogRef.current?.close();
 
@@ -161,7 +164,9 @@ export default function WorkbenchShell({
       return () => dialog.removeEventListener("cancel", cancel);
     }
     if (!dialog.open) {
-      drawerTriggerRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+      // Every opener today passes itself; the activeElement fallback covers a
+      // caller that does not and is wrong under WebKit, where a click focuses nothing.
+      drawerTriggerRef.current = drawer.opener ?? (document.activeElement instanceof HTMLElement ? document.activeElement : null);
       dialog.showModal();
     }
     const frame = window.requestAnimationFrame(() => drawerHeadingRef.current?.focus());
@@ -177,7 +182,7 @@ export default function WorkbenchShell({
     };
     window.addEventListener("keydown", openShortcut);
     return () => window.removeEventListener("keydown", openShortcut);
-  });
+  }, [openPalette]);
 
   const paletteKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
     if (event.key === "Escape") {

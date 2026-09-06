@@ -1,7 +1,7 @@
 import type { DeliverableBlock, EvidenceCitation } from "./DeliverableDocument";
 
 export type RecoveryModelSelection = { kind: "ANALYST_REVISION"; build_id: string; revision_id: string } | { kind: "APPLICATION_BUILD"; build_id: string; fallback_acknowledged: true };
-export type ReportRecovery = { caseId: string; pathway: string; savedAt: number; expectedVersion: number; templateId: string; templateVersion: string; modelSelection: RecoveryModelSelection | null; blocks: DeliverableBlock[] };
+export type ReportRecovery = { subject: string; caseId: string; pathway: string; savedAt: number; expectedVersion: number; templateId: string; templateVersion: string; modelSelection: RecoveryModelSelection | null; blocks: DeliverableBlock[] };
 
 const MAX_RECOVERY_LENGTH = 5_000_000;
 const MAX_JSON_DEPTH = 32;
@@ -77,16 +77,37 @@ function recoverySelection(value: unknown): value is RecoveryModelSelection | nu
     : value.kind === "APPLICATION_BUILD" && value.fallback_acknowledged === true;
 }
 
-export function reportRecoveryKey(caseId: string, pathway: string) {
-  return `caos:report-recovery:${encodeURIComponent(caseId)}:${pathway}`;
+// The recovery slot is one per subject, case, pathway and browser tab (WEB-014;
+// FE-A0 F2). Keyed by case and pathway alone, the next subject on a shared
+// workstation was offered the previous subject's unsaved opinion text, and two
+// tabs of one subject overwrote each other's copy while a save in either tab
+// deleted the other's only crash recovery. The tab id lives in sessionStorage,
+// which a reload and a restored session keep and a closed tab does not — a copy
+// whose tab is gone stays in localStorage unread (a few kilobytes per abandoned
+// draft; pruning is the upgrade path if that ever matters).
+export function reportRecoveryKey(caseId: string, pathway: string, subject: string, tabId: string) {
+  return `caos:report-recovery:${encodeURIComponent(subject)}:${encodeURIComponent(caseId)}:${pathway}:${encodeURIComponent(tabId)}`;
 }
 
-export function parseReportRecovery(raw: string | null, caseId: string, pathway: string): ReportRecovery | null {
+const TAB_ID_KEY = "caos:tab-id";
+export function browserTabId(): string {
+  try {
+    const existing = window.sessionStorage.getItem(TAB_ID_KEY);
+    if (existing) return existing;
+    const created = typeof window.crypto?.randomUUID === "function" ? window.crypto.randomUUID() : `tab-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    window.sessionStorage.setItem(TAB_ID_KEY, created);
+    return created;
+  } catch {
+    return "";
+  }
+}
+
+export function parseReportRecovery(raw: string | null, caseId: string, pathway: string, subject: string): ReportRecovery | null {
   if (!raw || raw.length > MAX_RECOVERY_LENGTH) return null;
   try {
     const value: unknown = JSON.parse(raw);
     if (
-      !boundedJson(value) || !record(value) || value.caseId !== caseId || value.pathway !== pathway ||
+      !boundedJson(value) || !record(value) || value.subject !== subject || value.caseId !== caseId || value.pathway !== pathway ||
       !validTimestamp(value.savedAt) || !safeInteger(value.expectedVersion) ||
       !boundedString(value.templateId, 160) || !boundedString(value.templateVersion, 160) ||
       !recoverySelection(value.modelSelection) ||

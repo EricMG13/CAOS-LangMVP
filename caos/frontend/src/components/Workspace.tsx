@@ -7,12 +7,12 @@ import EvidenceChip from "./EvidenceChip";
 import ModelBuilder from "./model/ModelBuilder";
 import ReportStudio from "./report/ReportStudio";
 import { EmptyBlock, EmptyPanel, IdentityValue, LoadState, MutationReceipt, StateBlock, StateNote, Unavailable } from "./states";
-import { ApiRequestError, api as request, firstErrorMessage, isIntakeRefusal, isUnavailableRoute, type ArtifactRecord, type CaseRecord, type IntakeRecord, type IntakeRefusal, type LoanFinding, type LoanRow, type LoanUniverseResponse, type ResearchPlan, type RunRecord, type SourceRecord } from "../lib/api";
+import { ApiRequestError, api as request, firstErrorMessage, isIntakeRefusal, isUnavailableRoute, networkFetch, type ArtifactRecord, type CaseRecord, type IntakeRecord, type IntakeRefusal, type LoanFinding, type LoanRow, type LoanUniverseResponse, type ResearchPlan, type RunRecord, type SourceRecord } from "../lib/api";
 import { displayValue, flattenValue, markdownBlocks, normalizeEvidenceRefs, type NormalizedEvidenceRef } from "../lib/artifactReader";
-import { initialAuthorityState, matchesAuthority, requestContext, workspaceAuthorityReducer, type AuthorityEvent } from "../lib/workspaceAuthority";
+import { initialAuthorityState, matchesAuthority, requestContext, workspaceAuthorityReducer, type AuthorityEvent, type AuthorityStatus } from "../lib/workspaceAuthority";
 
 import WorkbenchShell, { type DrawerState } from "./WorkbenchShell";
-import { type Destination, type DraftHistoryTraversal, type Snapshot, type SnapshotView, acceptanceSlotSummary, acceptedAuthorityMatch, beginDraftHistoryTraversal, destinationFromSlug, destinationMeta, draftHistoryEntryId, draftHistoryNeedsRearm, finishDraftHistoryTraversal, formatBlockLocator, formatDate, historyStateForExternalReplace, humanizeCode, isSameTabPrimaryGesture, moduleLabel, nodeStatusTone, observeDraftHistoryPop, protectDirtyDraftUnload, resolveDraftDiscard, routeDestinations, selectConclusionArtifact, withQuery } from "../lib/workbench";
+import { type Destination, type DraftHistoryTraversal, type Snapshot, type SnapshotView, acceptanceSlotSummary, acceptedAuthorityMatch, beginDraftHistoryTraversal, destinationFromSlug, destinationMeta, draftHistoryEntryId, draftHistoryNeedsRearm, finishDraftHistoryTraversal, formatBlockLocator, formatDate, historyStateForExternalReplace, humanizeCode, isSameTabPrimaryGesture, moduleLabel, nodeStatusTone, observeDraftHistoryPop, protectDirtyDraftUnload, resolveDraftDiscard, routeDestinations, selectConclusionArtifact, supersededAcceptance, withQuery } from "../lib/workbench";
 
 type WriteAccess = "yes" | "no" | "unknown";
 type DraftDiscardRequest = { detail: string; confirm: () => void; cancel?: () => void; trigger: HTMLElement | null };
@@ -95,11 +95,14 @@ export default function Workspace({ destination, children }: { destination?: Des
   const [drawer, setDrawer] = useState<DrawerState | null>(null);
   const [acceptPrompt, setAcceptPrompt] = useState(false);
   const [discardPrompt, setDiscardPrompt] = useState<DraftDiscardRequest | null>(null);
-  // Observed-404 capability memory: a resume or plan-approval POST that 404ed means the
-  // route is absent on this deployment, so the control renders its unavailable block
-  // instead of an action that can never succeed.
-  const [resumeUnavailable, setResumeUnavailable] = useState(false);
-  const [approvalUnavailable, setApprovalUnavailable] = useState(false);
+  // Observed-404 capability memory, scoped to the run it was observed on: a resume
+  // or plan-approval POST answers 404 both when the route is absent on this
+  // deployment and when the run itself is unknown or no longer visible to the
+  // caller (CLAUDE.md auth edge: the same 404). The control renders its
+  // unavailable block for that run only; every other run keeps its action
+  // (FE-A0 F4). Each holds the run id the 404 was observed on.
+  const [resumeUnavailable, setResumeUnavailable] = useState("");
+  const [approvalUnavailable, setApprovalUnavailable] = useState("");
   // Fallback aftermath state for a server that does not serve run.accepted_snapshot_id:
   // the snapshot the accept POST just returned, bound to the run it was accepted for.
   const [localAccepted, setLocalAccepted] = useState<{ runId: string; snapshotId: string } | null>(null);
@@ -114,6 +117,10 @@ export default function Workspace({ destination, children }: { destination?: Des
   // load-bearing, not redundant (lib/workspaceAuthority.ts).
   const [intake, setIntake] = useState<IntakeRecord | null>(null);
   const [intakeRefusal, setIntakeRefusal] = useState<IntakeRefusal | null>(null);
+  // A requested case the register does not hold (FE-A0 F5; WEB-003): the id the
+  // link named, rendered as a typed state with the URL kept, never replaced by
+  // the first case in the register.
+  const [unresolvedCaseId, setUnresolvedCaseId] = useState("");
   const intakeRequest = useRef(0);
   const routeAuthorityRef = useRef("");
   const modelDraftDirtyRef = useRef(false);
@@ -130,6 +137,7 @@ export default function Workspace({ destination, children }: { destination?: Des
   const historyEntrySequenceRef = useRef(0);
   const lastHistoryEntryRef = useRef<{ id: string; href: string } | null>(null);
   const focusedBeforeRef = useRef<HTMLElement | null>(null);
+  const discardTriggerRef = useRef<HTMLElement | null>(null);
   const previousFocusedRef = useRef<HTMLElement | null>(null);
   const lastDestinationRef = useRef(active);
   const selectedCase = useMemo(() => cases.find((item) => item.id === caseId) || null, [cases, caseId]);
@@ -305,6 +313,11 @@ export default function Workspace({ destination, children }: { destination?: Des
     if (!prompt) return;
     discardPromptRef.current = null;
     focusedBeforeRef.current = prompt.trigger;
+    // Read by the repair effect on the dialog-close run. `focusedBeforeRef` is not
+    // enough there: the browser's own close restoration fires `focusin` on whatever
+    // it lands on (the editor, when the select raised the prompt) and the tracker
+    // overwrites the ref before the effect runs.
+    discardTriggerRef.current = prompt.trigger;
     setDiscardPrompt(null);
     resolveDraftDiscard(prompt, confirmed);
     if (!confirmed && !prompt.cancel && !modelDraftDirtyRef.current && !reportDraftDirtyRef.current) releaseCleanDraftGuard();
@@ -324,6 +337,10 @@ export default function Workspace({ destination, children }: { destination?: Des
     setRunError("");
     setError("");
     setIntakeRefusal(null);
+    // The intake record is case-scoped: a switch clears it and the read below
+    // refetches only when the new case names one (FE-A0 F6).
+    setIntake(null);
+    setUnresolvedCaseId("");
   }, [cases, dispatchAuthority]);
 
   const selectCase = useCallback((nextCaseId: string, availableCases = cases, trigger?: HTMLElement | null) => {
@@ -349,7 +366,8 @@ export default function Workspace({ destination, children }: { destination?: Des
       const requestedRunId = queryParam("run");
       const requestedCase = next.find((item) => item.id === requestedCaseId);
       const currentCaseId = authorityRef.current.caseId || "";
-      const resolvedCaseId = next.find((item) => item.id === currentCaseId)?.id || requestedCase?.id || next[0]?.id || "";
+      // The first case is selected only when the link named none.
+      const resolvedCaseId = next.find((item) => item.id === currentCaseId)?.id || requestedCase?.id || (requestedCaseId ? "" : next[0]?.id) || "";
       if (resolvedCaseId !== currentCaseId) {
         if (requestedCaseId && !requestedCase) routeAuthorityRef.current = `${requestedCaseId}\u0000${requestedRunId}`;
         if (!selectCase(resolvedCaseId, next)) return;
@@ -364,6 +382,7 @@ export default function Workspace({ destination, children }: { destination?: Des
         }
       }
       if (authorityRef.current.caseId) dispatchAuthority({ type: "requestStarted", scope: "case" });
+      setUnresolvedCaseId(requestedCaseId && !requestedCase ? requestedCaseId : "");
     } catch (caught) {
       if (requestId !== casesRequest.current || !matchesAuthority(authorityRef.current, context)) return;
       if (!(caught instanceof DOMException && caught.name === "AbortError")) {
@@ -387,7 +406,6 @@ export default function Workspace({ destination, children }: { destination?: Des
       setCases((previous) => previous.map((item) => item.id === id ? { ...item, ...detail } : item));
       setAuthority(snapshot);
       dispatchAuthority({ type: "requestSucceeded", context, scope: "case" });
-      if (snapshot.accepted) dispatchAuthority({ type: "snapshotAccepted", context, snapshotId: snapshot.accepted.id });
       return snapshot;
     } catch (caught) {
       if (requestId !== caseRefresh.current || !matchesAuthority(authorityRef.current, context)) return null;
@@ -637,7 +655,19 @@ export default function Workspace({ destination, children }: { destination?: Des
   // to the control the analyst was on, and a control that did not survive its own
   // action falls back to the landmark rather than to nothing. A page that has never
   // held focus is left alone — <body> is the correct starting point for a fresh load.
+  //
+  // This effect is also the one owner of focus return after the draft-discard
+  // dialog closes (`discardPrompt` in the dependencies). On that run the trigger
+  // the prompt recorded gets focus even when the browser's own close restoration
+  // landed elsewhere — WebKit restores nothing, and Chromium restores whatever was
+  // focused at showModal, which is not the link or select that raised the prompt —
+  // unless the analyst has moved focus since the frame the dialog closed on.
+  const discardOpenRef = useRef(false);
   useEffect(() => {
+    const dialogJustClosed = discardOpenRef.current && discardPrompt === null;
+    discardOpenRef.current = discardPrompt !== null;
+    const discardTrigger = dialogJustClosed ? discardTriggerRef.current : null;
+    discardTriggerRef.current = null;
     // This assignment stays ABOVE the guards on purpose. The ref tracks where the
     // workspace is, not where a repair last happened, so it must advance even on the
     // runs that decline to repair. Move it below and a route change the user made
@@ -646,7 +676,7 @@ export default function Workspace({ destination, children }: { destination?: Des
     // landmark instead of returning it to the control.
     const navigated = lastDestinationRef.current !== active;
     lastDestinationRef.current = active;
-    const previous = focusedBeforeRef.current;
+    const previous = discardTrigger ?? focusedBeforeRef.current;
     // Wait for the action to settle. Repairing mid-flight would land on the landmark
     // every time, because the control the analyst pressed is still disabled and
     // cannot take focus back yet.
@@ -657,21 +687,36 @@ export default function Workspace({ destination, children }: { destination?: Des
     // ever opens without taking focus, the landmark fallback would put focus on
     // inert content behind the backdrop, which is worse than the loss it repairs.
     if (document.querySelector("dialog[open]")) return;
-    if (!previous || document.activeElement !== document.body) return;
+    if (!previous || (!dialogJustClosed && document.activeElement !== document.body)) return;
+    // Where the browser's own close restoration left focus, read synchronously; the
+    // frame below repairs only if nothing has moved since (WCAG 3.2.1 — the 24 ms
+    // focus steal the old timer chain committed was exactly this check missing).
+    const settled = document.activeElement;
     const frame = window.requestAnimationFrame(() => {
-      if (document.activeElement !== document.body) return;
+      if (document.activeElement !== settled) return;
+      // A trigger React re-rendered since the prompt opened is found again by id,
+      // then by accessible name; a control that is gone falls to the landmark.
+      const label = previous.getAttribute("aria-label");
+      const target = navigated ? null
+        : previous.isConnected ? previous
+          : previous.id ? document.getElementById(previous.id)
+            : label ? [...document.querySelectorAll<HTMLElement>("[aria-label]")].find((element) => element.getAttribute("aria-label") === label) ?? null
+              : null;
       // Still connected is not the same as still focusable: accept confirms from
       // inside a <dialog> that this very action closes, and `focus()` on a control
       // in a closed dialog is a silent no-op. Land on the landmark whenever the
       // restore did not take, rather than trusting it to have worked.
-      if (!navigated && previous.isConnected) previous.focus();
+      if (target && document.activeElement !== target) target.focus();
       if (document.activeElement === document.body) document.getElementById("main-content")?.focus();
     });
     return () => window.cancelAnimationFrame(frame);
-  }, [active, caseId, runId, pendingAction, run?.status, run?.error?.code]);
+  }, [active, caseId, runId, pendingAction, run?.status, run?.error?.code, discardPrompt]);
 
   useEffect(() => {
     if (!hydrated) return;
+    // A link to a case the register does not hold keeps its URL: the typed state
+    // names the request, and the route authority stays acknowledged as the bad route.
+    if (!caseId && unresolvedCaseId) return;
     const url = new URL(window.location.href);
     if (caseId) url.searchParams.set("case", caseId); else url.searchParams.delete("case");
     if (runId) url.searchParams.set("run", runId); else url.searchParams.delete("run");
@@ -681,7 +726,7 @@ export default function Workspace({ destination, children }: { destination?: Des
     // issuer's run re-attached after the analyst has already moved on.
     routeAuthorityRef.current = `${caseId}\u0000${runId}`;
     window.history.replaceState(historyStateForExternalReplace(window.history.state), "", `${url.pathname}${url.search}${url.hash}`);
-  }, [hydrated, caseId, runId]);
+  }, [hydrated, caseId, runId, unresolvedCaseId]);
 
   useEffect(() => {
     if (!runId || !caseIsAuthorized) return;
@@ -703,7 +748,9 @@ export default function Workspace({ destination, children }: { destination?: Des
     // Progress is driven by the persisted graph events: each named event triggers
     // a RunRecord refetch, and `onopen` resyncs whatever a reconnect gap missed.
     source.onopen = refresh;
-    ["run.created", "run.running", "node.running", "node.succeeded", "node.failed", "run.succeeded", "run.failed", "run.paused", "research.plan_ready", "research.plan_approved", "snapshot.accepted"].forEach((name) => source.addEventListener(name, refresh));
+    // Exactly the names storage/runs.py emits; a name the log never carries is a
+    // dead subscription, never a refetch.
+    ["run.created", "run.running", "node.running", "node.succeeded", "run.succeeded", "run.failed", "run.paused", "research.plan_ready", "research.plan_approved"].forEach((name) => source.addEventListener(name, refresh));
     return () => source.close();
     // Event updates only begin after the run has passed its case authority check.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -835,6 +882,12 @@ export default function Workspace({ destination, children }: { destination?: Des
     const form = new FormData(event.currentTarget);
     const pathway = String(form.get("pathway") || "");
     const depth = String(form.get("depth") || "");
+    // The disabled action covers every user path; a scripted requestSubmit() does
+    // not consult it, so the handler refuses an empty cut itself (FE-A0 F9).
+    if (!pathway) {
+      setError("No pathway inside this deployment's cut can be compiled for this case.");
+      return;
+    }
     const mustAnswer = String(form.get("must_answer") || "").split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
     const exclusions = String(form.get("exclusions") || "").split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
     if (pathway === "DEEP_RESEARCH" && (mustAnswer.length > 10 || exclusions.length > 10 || mustAnswer.length + exclusions.length > 10 || [...mustAnswer, ...exclusions].some((line) => line.length > 200))) {
@@ -904,7 +957,6 @@ export default function Workspace({ destination, children }: { destination?: Des
     try {
       const accepted = await request<Snapshot>(`/api/runs/${runId}/accept`, { method: "POST" });
       if (!matchesAuthority(authorityRef.current, context)) return;
-      dispatchAuthority({ type: "snapshotAccepted", context, snapshotId: accepted.id });
       setLocalAccepted({ runId, snapshotId: accepted.id });
       // The id itself is announced by the accepted-authority line this unblocks; naming
       // it twice makes a screen reader read twenty characters of hash for no gain.
@@ -939,7 +991,7 @@ export default function Workspace({ destination, children }: { destination?: Des
       await refreshRun(runId);
     } catch (caught) {
       if (!matchesAuthority(authorityRef.current, context)) return;
-      if (isUnavailableRoute(caught)) setResumeUnavailable(true);
+      if (isUnavailableRoute(caught)) setResumeUnavailable(runId);
       else setError(firstErrorMessage(caught, "Unable to resume run"));
       dispatchAuthority({ type: "requestFailed", context, scope: "resume-run" });
     } finally {
@@ -963,7 +1015,7 @@ export default function Workspace({ destination, children }: { destination?: Des
       await refreshRun(expectedRunId);
     } catch (caught) {
       if (!matchesAuthority(authorityRef.current, context)) return;
-      if (isUnavailableRoute(caught)) setApprovalUnavailable(true);
+      if (isUnavailableRoute(caught)) setApprovalUnavailable(expectedRunId);
       else setError(firstErrorMessage(caught, "Unable to approve research plan"));
       dispatchAuthority({ type: "requestFailed", context, scope: "research-plan" });
     } finally {
@@ -975,9 +1027,8 @@ export default function Workspace({ destination, children }: { destination?: Des
     const context = requestContext(authorityRef.current);
     if (!context.caseId) return null;
     try {
-      const switched = await request<Snapshot>(`/api/cases/${context.caseId}/snapshot/switch`, { method: "POST", body: JSON.stringify({ snapshot_id: snapshotId }) });
+      await request<Snapshot>(`/api/cases/${context.caseId}/snapshot/switch`, { method: "POST", body: JSON.stringify({ snapshot_id: snapshotId }) });
       if (!matchesAuthority(authorityRef.current, context)) return null;
-      dispatchAuthority({ type: "snapshotAccepted", context, snapshotId: switched.id });
       return refreshCase(context.caseId);
     } catch (caught) {
       if (!matchesAuthority(authorityRef.current, context)) return null;
@@ -990,6 +1041,9 @@ export default function Workspace({ destination, children }: { destination?: Des
   // `authority.accepted` is deliberately different: it is the visible/pinned
   // reader lens and may trail this id until an explicit snapshot switch.
   const acceptedRunSnapshotId = run ? acceptedAuthorityMatch(run.accepted_snapshot_id, localAccepted && localAccepted.runId === run.id ? localAccepted.snapshotId : "", authority?.latest_accepted?.id) : "";
+  // A run accepted earlier and superseded since: the served run field against the
+  // latest accepted id. Never re-offered for acceptance (FE-A1 F-14; D9).
+  const supersededRunSnapshotId = run && !acceptedRunSnapshotId ? supersededAcceptance(run.accepted_snapshot_id, authority?.latest_accepted?.id) : "";
 
   // The rail's LIVE badge is honest only while the selected case's run is genuinely
   // executing (queued or running — paused and terminal runs are not live).
@@ -1002,22 +1056,22 @@ export default function Workspace({ destination, children }: { destination?: Des
   const writeAccess: WriteAccess = !roleResolved ? "unknown" : role === "READER" ? "no" : "yes";
 
   // The generic paused branch's resume control; READER never sees the shared write,
-  // and an observed 404 (older server without the resume route) pins the block.
-  const resumeSlot = resumeUnavailable
-    ? <Unavailable title="Run resume" />
+  // and an observed 404 pins the block for the run it was observed on.
+  const resumeSlot = resumeUnavailable === runId
+    ? <Unavailable title="Run resume" context="The server answered 404 for this run: the route is absent on this deployment or the run is no longer visible to you." />
     : writeAccess === "yes"
       ? <button className="button small" type="button" disabled={pendingAction === "resume-run"} onClick={() => void resumeRun()}>{pendingAction === "resume-run" ? "Resuming…" : "Resume run"}</button>
       : null;
 
   const renderDestination = () => {
-    if (!selectedCase && active !== "Cases" && active !== "Admin Studio") return <EmptyPanel text="Create or select a case before entering an analytical workspace." action={{ label: "Open Cases", href: "/cases/" }} />;
+    if (!selectedCase && active !== "Cases" && active !== "Admin Studio") return unresolvedCaseId ? null : <EmptyPanel text="Create or select a case before entering an analytical workspace." action={{ label: "Open Cases", href: "/cases/" }} />;
     switch (active) {
       case "Cases": return <CasesView writeAccess={writeAccess} cases={cases} casesLoading={casesLoading} selectedCase={selectedCase} caseId={caseId} createCase={createCase} pendingAction={pendingAction} intake={intake} intakeRefusal={intakeRefusal} run={run} submitIntake={submitIntake} />;
-      case "Sources": return <SourcesView writeAccess={writeAccess} selectedCase={selectedCase} artifactId={routeArtifactId} sourceId={routeSourceId} upload={upload} pendingAction={pendingAction} onOpenEvidence={(evidenceId, source) => setDrawer({ kind: "evidence", evidenceId, source })} />;
-      case "Run Console": return <RunConsole writeAccess={writeAccess} caseId={caseId} selectedCase={selectedCase} run={run} runLoading={runLoading} runError={runError} startRun={startRun} acceptRun={acceptRun} acceptedSnapshotId={acceptedRunSnapshotId} visibleSnapshotId={authority?.accepted?.id || ""} switchRequired={authority?.switch_required === true} approveResearchPlan={approveResearchPlan} approvalUnavailable={approvalUnavailable} pendingAction={pendingAction} resumeSlot={resumeSlot} />;
-      case "Deep-Dive": return <DeepDive writeAccess={writeAccess} selectedCase={selectedCase} question={routeQuestion} caseId={caseId} run={run} onSwitchSnapshot={switchSnapshot} />;
+      case "Sources": return <SourcesView writeAccess={writeAccess} selectedCase={selectedCase} artifactId={routeArtifactId} sourceId={routeSourceId} upload={upload} pendingAction={pendingAction} onOpenEvidence={(evidenceId, source, opener) => setDrawer({ kind: "evidence", evidenceId, source, opener })} />;
+      case "Run Console": return <RunConsole writeAccess={writeAccess} caseId={caseId} selectedCase={selectedCase} run={run} runLoading={runLoading} runError={runError} startRun={startRun} acceptRun={acceptRun} acceptedSnapshotId={acceptedRunSnapshotId} supersededSnapshotId={supersededRunSnapshotId} visibleSnapshotId={authority?.accepted?.id || ""} switchRequired={authority?.switch_required === true} approveResearchPlan={approveResearchPlan} approvalUnavailable={approvalUnavailable === runId} pendingAction={pendingAction} resumeSlot={resumeSlot} />;
+      case "Deep-Dive": return <DeepDive writeAccess={writeAccess} selectedCase={selectedCase} question={routeQuestion} caseId={caseId} run={run} authority={authority} authorityStatus={authorityStatus} onSwitchSnapshot={switchSnapshot} />;
       case "RV Screener": return <RVView key={caseId} writeAccess={writeAccess} caseId={caseId} />;
-      case "Command Center": return <CommandView caseId={caseId} question={routeQuestion} />;
+      case "Command Center": return <CommandView caseId={caseId} question={routeQuestion} authority={authority} authorityStatus={authorityStatus} />;
       case "Model Builder": return <ModelBuilder caseId={caseId} role={role} onDraftStateChange={onModelDraftStateChange} />;
       case "Report Studio": return <ReportStudio key={caseId} caseId={caseId} role={role} subject={subject} selectedCase={selectedCase} onDraftStateChange={onReportDraftStateChange} requestDraftDiscard={requestDraftDiscard} />;
       case "Admin Studio": return <AdminView />;
@@ -1043,6 +1097,7 @@ export default function Workspace({ destination, children }: { destination?: Des
       unknownRoute={!routeIsKnown}
     >
       {notice ? <MutationReceipt>{notice}</MutationReceipt> : null}
+      {unresolvedCaseId && !selectedCase ? <StateBlock tone="warning" live="status" title="Case unavailable" body={<>The link names case <span className="mono">{unresolvedCaseId}</span>, which is not in your register: its membership may have ended or the id may be wrong. No other case was selected in its place.</>} action={active === "Cases" ? undefined : { label: "Open Cases", href: "/cases/" }} /> : null}
       <div key={`${active}:${caseId}`}>{routeIsKnown ? <>{renderDestination()}{children}</> : children}</div>
     </WorkbenchShell>
     <AcceptDialog open={acceptPrompt} trigger={acceptOpener} run={run} replaces={authority?.latest_accepted ?? null} pending={pendingAction === "accept-run"} onConfirm={confirmAccept} onClose={() => setAcceptPrompt(false)} />
@@ -1101,7 +1156,7 @@ function IntakePanel({ writeAccess, selectedCase, caseId, pendingAction, intake,
     const files = Array.from(event.dataTransfer.files);
     if (files.length) submitIntake(files, targetCaseId);
   };
-  const meta = busy ? "Analyzing…" : intake ? `Last intake ${formatDate(intake.created_at)}` : "Creates or resolves the credit from the documents";
+  const meta = busy ? "Analyzing…" : intake && intake.case_id === caseId ? `Last intake ${formatDate(intake.created_at)}` : "Creates or resolves the credit from the documents";
   return <section className="panel cases-intake" aria-labelledby="intake-heading">
     <div className="panel-header"><h2 id="intake-heading">Analyze documents</h2><span className="panel-meta">{meta}</span></div>
     <div className="panel-body flow">
@@ -1154,7 +1209,7 @@ function IntakeEvidence({ intake, run, caseId }: { intake: IntakeRecord; run: Ru
   </div>;
 }
 
-function SourcesView({ writeAccess, selectedCase, artifactId, sourceId, upload, pendingAction, onOpenEvidence }: { writeAccess: WriteAccess; selectedCase: CaseRecord | null; artifactId: string; sourceId: string; upload: (event: FormEvent<HTMLFormElement>) => void; pendingAction: string; onOpenEvidence: (evidenceId: string, source: SourceRecord) => void }) {
+function SourcesView({ writeAccess, selectedCase, artifactId, sourceId, upload, pendingAction, onOpenEvidence }: { writeAccess: WriteAccess; selectedCase: CaseRecord | null; artifactId: string; sourceId: string; upload: (event: FormEvent<HTMLFormElement>) => void; pendingAction: string; onOpenEvidence: (evidenceId: string, source: SourceRecord, opener: HTMLElement | null) => void }) {
   const [sources, setSources] = useState<SourceRecord[]>([]);
   const [artifact, setArtifact] = useState<ArtifactRecord | null>(null);
   const [loading, setLoading] = useState(true);
@@ -1180,7 +1235,7 @@ function SourcesView({ writeAccess, selectedCase, artifactId, sourceId, upload, 
   const evidenceRefs = useMemo(() => normalizeEvidenceRefs(artifact?.payload?.evidence_refs), [artifact]);
   const sourceById = useMemo(() => new Map(sources.map((source) => [source.id, source])), [sources]);
   const activeEvidenceId = linkedEvidenceId || selectedEvidenceId;
-  const openEvidence = (evidenceId: string) => {
+  const openEvidence = (evidenceId: string, opener: HTMLElement | null = null) => {
     const source = sourceById.get(evidenceId);
     if (!source) {
       setArtifactError(`Evidence ${evidenceId} is not in the active case source set.`);
@@ -1188,7 +1243,7 @@ function SourcesView({ writeAccess, selectedCase, artifactId, sourceId, upload, 
     }
     setArtifactError("");
     setSelectedEvidenceId(evidenceId);
-    onOpenEvidence(evidenceId, source);
+    onOpenEvidence(evidenceId, source, opener);
   };
   useEffect(() => {
     if (!selectedCase || !sourceId || loading || readySourceCaseId !== selectedCase.id) return;
@@ -1218,7 +1273,7 @@ function SourcesView({ writeAccess, selectedCase, artifactId, sourceId, upload, 
     <section className="source-workspace span-12" aria-label="Source workspace">
       <aside className="source-register"><div className="source-region-head"><h2>Source register</h2><span className="mono muted">{loading ? "Loading…" : `${filteredSources.length} / ${sources.length}`}</span></div>{artifactError && !artifactId ? <StateNote tone="critical" live="alert">{artifactError}</StateNote> : null}{filteredSources.map((source) => <button id={`source-${source.id}`} className={`source-register-row ${selectedSource?.id === source.id ? "is-active" : ""}`} type="button" aria-pressed={selectedSource?.id === source.id} onClick={() => { setSelectedSourceId(source.id); setSelectedBlockId(""); }} key={source.id}><strong>{source.filename}</strong><span className="mono">{source.id} · {source.blocks.length} blocks</span><span className={`status ${source.blocks.length ? "success" : "warning"}`}>{source.blocks.length ? "Extracted" : "No blocks"}</span></button>)}{!filteredSources.length ? <LoadState loading={loading} error={loadError} empty={sources.length ? "No documents match this search." : "No source objects in this credit."} /> : null}</aside>
       <section className="source-reader" aria-labelledby="source-reader-title">{selectedSource ? <><div className="meta-label">{selectedSource.id} · immutable source object</div><h2 id="source-reader-title">{selectedSource.filename}</h2><div className="source-document-blocks">{selectedSource.blocks.slice(0, 40).map((block) => <article className={selectedBlock?.block_id === block.block_id ? "source-document-block is-selected" : "source-document-block"} id={`block-${selectedSource.id}-${block.block_id}`} key={block.block_id}><button type="button" onClick={() => setSelectedBlockId(block.block_id)} aria-pressed={selectedBlock?.block_id === block.block_id}><span className="meta-label">{block.block_id} · {formatBlockLocator(block.locator)}</span><span>{block.text || "No extracted text."}</span></button></article>)}</div>{selectedSource.blocks.length > 40 ? <p className="muted">Showing the first 40 of {selectedSource.blocks.length} extracted blocks.</p> : null}</> : <LoadState loading={loading} empty={loadError ? "Source reader unavailable while the source register could not be loaded." : "Select a source document."} />}</section>
-      <aside className="source-support"><div className="meta-label">Evidence support</div><h2>Selected source authority</h2>{selectedSource ? <><dl className="state-facts"><dt>Source</dt><dd className="mono">{selectedSource.id}</dd><dt>SHA-256</dt><dd><IdentityValue value={selectedSource.sha256} /></dd><dt>Blocks</dt><dd className="num">{selectedSource.blocks.length}</dd>{selectedBlock ? <><dt>Selected block</dt><dd className="mono">{selectedBlock.block_id}</dd><dt>Locator</dt><dd className="mono">{formatBlockLocator(selectedBlock.locator)}</dd></> : null}</dl><button className="button small" type="button" onClick={() => openEvidence(selectedSource.id)}>Open evidence context</button></> : <p className="muted">No source selected.</p>}<div className="source-coverage-gate"><Unavailable title="Claim coverage" context="A normalized claim-to-source map is not served by this deployment. Source blocks remain readable above." /></div></aside>
+      <aside className="source-support"><div className="meta-label">Evidence support</div><h2>Selected source authority</h2>{selectedSource ? <><dl className="state-facts"><dt>Source</dt><dd className="mono">{selectedSource.id}</dd><dt>SHA-256</dt><dd><IdentityValue value={selectedSource.sha256} /></dd><dt>Blocks</dt><dd className="num">{selectedSource.blocks.length}</dd>{selectedBlock ? <><dt>Selected block</dt><dd className="mono">{selectedBlock.block_id}</dd><dt>Locator</dt><dd className="mono">{formatBlockLocator(selectedBlock.locator)}</dd></> : null}</dl><button className="button small" type="button" onClick={(event) => openEvidence(selectedSource.id, event.currentTarget)}>Open evidence context</button></> : <p className="muted">No source selected.</p>}<div className="source-coverage-gate"><Unavailable title="Claim coverage" context="A normalized claim-to-source map is not served by this deployment. Source blocks remain readable above." /></div></aside>
     </section>
   </div>;
 }
@@ -1228,7 +1283,7 @@ function SourcesView({ writeAccess, selectedCase, artifactId, sourceId, upload, 
 // Deterministic payloads (markdown null) render the typed narrative fields;
 // agent payloads render the canonical six-section markdown, host frontmatter
 // stripped, with no HTML injection surface.
-function ArtifactReader({ artifact, evidenceRefs, activeEvidenceId, onOpenEvidence, onPreview, onPreviewEnd }: { artifact: ArtifactRecord; evidenceRefs: NormalizedEvidenceRef[]; activeEvidenceId: string; onOpenEvidence: (evidenceId: string) => void; onPreview: (evidenceId: string) => void; onPreviewEnd: () => void }) {
+function ArtifactReader({ artifact, evidenceRefs, activeEvidenceId, onOpenEvidence, onPreview, onPreviewEnd }: { artifact: ArtifactRecord; evidenceRefs: NormalizedEvidenceRef[]; activeEvidenceId: string; onOpenEvidence: (evidenceId: string, opener: HTMLElement) => void; onPreview: (evidenceId: string) => void; onPreviewEnd: () => void }) {
   const payload = artifact.payload || undefined;
   const blocks = useMemo(() => (artifact.markdown ? markdownBlocks(artifact.markdown) : []), [artifact.markdown]);
   const summary = payload?.summary;
@@ -1365,39 +1420,14 @@ function DraftDiscardDialog({ open, detail, trigger, onConfirm, onClose }: { ope
   const dialogRef = useRef<HTMLDialogElement>(null);
   const headingRef = useRef<HTMLHeadingElement>(null);
   const triggerRef = useRef<HTMLElement | null>(null);
+  // Focus restoration has one owner: the workspace repair effect, which runs on
+  // dialog close (`discardPrompt` is one of its dependencies) and returns focus
+  // to the trigger the prompt recorded. This dialog no longer keeps a private
+  // retry chain — two owners produced the order-dependent race behind issue #38
+  // (`.superpowers/sdd/loops/focus-race-findings.md`).
   const dismiss = useCallback(() => {
-    const trigger = triggerRef.current;
     onClose();
     dialogRef.current?.close();
-    // Where the browser's own close restoration left focus, read synchronously.
-    // The repair below runs on a timer, so by the time it runs the user may have
-    // moved on; it must return focus to the trigger (which the browser may have
-    // missed — re-rendered, or a different control held focus when the dialog
-    // opened) without stealing it from a control the user focused since.
-    // Observed: the timer fired 24 ms after a dismissal and pulled focus off the
-    // editor the analyst had just focused (WCAG 3.2.1).
-    const settled = document.activeElement;
-    const restore = (attempt = 0) => {
-      const current = document.activeElement;
-      if (current !== settled && current instanceof HTMLElement && current !== document.body && !dialogRef.current?.contains(current)) return;
-      const focus = (candidate: HTMLElement | null | undefined) => {
-        if (!candidate?.isConnected) return false;
-        candidate.focus();
-        return document.activeElement === candidate;
-      };
-      if (focus(trigger)) return;
-      if (trigger?.id) {
-        const replacement = document.getElementById(trigger.id);
-        if (focus(replacement)) return;
-      }
-      const label = trigger?.getAttribute("aria-label");
-      if (label) {
-        const replacement = [...document.querySelectorAll<HTMLElement>("[aria-label]")].find((element) => element.getAttribute("aria-label") === label);
-        if (focus(replacement)) return;
-      }
-      if (attempt < 10) window.setTimeout(() => restore(attempt + 1), 50);
-    };
-    window.setTimeout(restore, 0);
   }, [onClose]);
   useEffect(() => {
     const dialog = dialogRef.current;
@@ -1444,7 +1474,7 @@ function ModuleIdentity({ moduleId }: { moduleId: string }) {
 // Shared by Run Console and the inline panels on Cases and Deep-Dive. `approvalSlot`
 // is how Run Console injects the full ResearchPlanView; inline surfaces route to it
 // instead, since plan approval is a Run Console responsibility.
-function RunStatus({ writeAccess, caseId, run, runLoading, runError, acceptRun, acceptedSnapshotId, visibleSnapshotId, switchRequired, pendingAction, approvalSlot, resumeSlot }: { writeAccess: WriteAccess; caseId: string; run: RunRecord | null; runLoading: boolean; runError: string; acceptRun: (event: ReactMouseEvent<HTMLButtonElement>) => void; acceptedSnapshotId: string; visibleSnapshotId: string; switchRequired: boolean; pendingAction: string; approvalSlot: ReactNode; resumeSlot: ReactNode }) {
+function RunStatus({ writeAccess, caseId, run, runLoading, runError, acceptRun, acceptedSnapshotId, supersededSnapshotId, visibleSnapshotId, switchRequired, pendingAction, approvalSlot, resumeSlot }: { writeAccess: WriteAccess; caseId: string; run: RunRecord | null; runLoading: boolean; runError: string; acceptRun: (event: ReactMouseEvent<HTMLButtonElement>) => void; acceptedSnapshotId: string; supersededSnapshotId: string; visibleSnapshotId: string; switchRequired: boolean; pendingAction: string; approvalSlot: ReactNode; resumeSlot: ReactNode }) {
   if (!run) return <LoadState loading={runLoading} error={runError} empty="No current execution. Drop documents on Cases to start analysis, or compile a route here." />;
   const complete = run.nodes.filter((node) => node.status === "succeeded").length;
   const current = (run.status === "queued" || run.status === "running")
@@ -1460,6 +1490,12 @@ function RunStatus({ writeAccess, caseId, run, runLoading, runError, acceptRun, 
       {switchRequired
         ? <p>Visible lens remains on <span className="mono">{visibleSnapshotId || "a different snapshot"}</span> until explicitly switched.</p>
         : <p>Visible lens matches the latest accepted authority.</p>}
+    </>;
+  } else if (supersededSnapshotId) {
+    acceptance = <>
+      <span className="status idle">Accepted, superseded</span>
+      <span className="mono muted">{supersededSnapshotId}</span>
+      <p>A later acceptance is the latest authority; this snapshot is not offered again.</p>
     </>;
   } else if (run.status === "succeeded") {
     acceptance = <>
@@ -1500,7 +1536,7 @@ function RunStatus({ writeAccess, caseId, run, runLoading, runError, acceptRun, 
   </div>;
 }
 
-function RunConsole({ writeAccess, caseId, selectedCase, run, runLoading, runError, startRun, acceptRun, acceptedSnapshotId, visibleSnapshotId, switchRequired, approveResearchPlan, approvalUnavailable, pendingAction, resumeSlot }: { writeAccess: WriteAccess; caseId: string; selectedCase: CaseRecord | null; run: RunRecord | null; runLoading: boolean; runError: string; startRun: (event: FormEvent<HTMLFormElement>) => void; acceptRun: (event: ReactMouseEvent<HTMLButtonElement>) => void; acceptedSnapshotId: string; visibleSnapshotId: string; switchRequired: boolean; approveResearchPlan: (planHash: string) => void; approvalUnavailable: boolean; pendingAction: string; resumeSlot: ReactNode }) {
+function RunConsole({ writeAccess, caseId, selectedCase, run, runLoading, runError, startRun, acceptRun, acceptedSnapshotId, supersededSnapshotId, visibleSnapshotId, switchRequired, approveResearchPlan, approvalUnavailable, pendingAction, resumeSlot }: { writeAccess: WriteAccess; caseId: string; selectedCase: CaseRecord | null; run: RunRecord | null; runLoading: boolean; runError: string; startRun: (event: FormEvent<HTMLFormElement>) => void; acceptRun: (event: ReactMouseEvent<HTMLButtonElement>) => void; acceptedSnapshotId: string; supersededSnapshotId: string; visibleSnapshotId: string; switchRequired: boolean; approveResearchPlan: (planHash: string) => void; approvalUnavailable: boolean; pendingAction: string; resumeSlot: ReactNode }) {
   const [pathway, setPathway] = useState("EARNINGS_UPDATE");
   const [depth, setDepth] = useState("screen");
   const deepResearchAvailable = selectedCase?.deep_research_available === true;
@@ -1512,6 +1548,12 @@ function RunConsole({ writeAccess, caseId, selectedCase, run, runLoading, runErr
   const cut = selectedCase?.available_pathways;
   const pathwayEnabled = (value: string) => value === "DEEP_RESEARCH" ? deepResearchAvailable : !cut || cut.includes(value);
   const outsideCut = pathways.filter(([value]) => value !== "DEEP_RESEARCH" && !pathwayEnabled(value)).map(([, label]) => label);
+  // The served cut decides what the form submits (FE-A0 F9): a pick outside it —
+  // the initial default included — falls to the first pathway the engine will
+  // start, and an empty cut disables the action instead of posting a pathway the
+  // server would refuse. The analyst's own pick is kept for when the cut allows it.
+  const effectivePathway = pathwayEnabled(pathway) ? pathway : pathways.find(([value]) => pathwayEnabled(value))?.[0] ?? "";
+  const effectiveDepth = effectivePathway === "DEEP_RESEARCH" ? "full" : depth;
   const approvalPlan = run?.status === "paused" && run.error?.code === "PLAN_APPROVAL_REQUIRED" ? run.research?.proposed_plan : null;
   const approvalHash = run?.status === "paused" && run.error?.code === "PLAN_APPROVAL_REQUIRED" ? run.research?.proposed_plan_hash : null;
   return <div className="grid">
@@ -1521,7 +1563,7 @@ function RunConsole({ writeAccess, caseId, selectedCase, run, runLoading, runErr
         {writeAccess === "yes" ? <form onSubmit={startRun}>
           <div className="field">
             <label htmlFor="pathway">Purpose</label>
-            <select id="pathway" name="pathway" value={pathway} aria-describedby={[!deepResearchAvailable ? "deep-research-availability" : "", outsideCut.length ? "pathway-availability" : ""].filter(Boolean).join(" ") || undefined} onChange={(event) => { setPathway(event.target.value); if (event.target.value === "DEEP_RESEARCH") setDepth("full"); }}>
+            <select id="pathway" name="pathway" value={effectivePathway} aria-describedby={[!deepResearchAvailable ? "deep-research-availability" : "", outsideCut.length ? "pathway-availability" : ""].filter(Boolean).join(" ") || undefined} onChange={(event) => { setPathway(event.target.value); if (event.target.value === "DEEP_RESEARCH") setDepth("full"); }}>
               {pathways.map(([value, label]) => <option value={value} disabled={!pathwayEnabled(value)} key={value}>{label}</option>)}
             </select>
           </div>
@@ -1529,9 +1571,9 @@ function RunConsole({ writeAccess, caseId, selectedCase, run, runLoading, runErr
           {outsideCut.length > 0 && <p className="muted" id="pathway-availability">{`${outsideCut.join(", ")} ${outsideCut.length === 1 ? "is" : "are"} outside this deployment's cut.`}</p>}
           <div className="field">
             <label htmlFor="depth">Depth</label>
-            <select id="depth" name="depth" value={depth} onChange={(event) => setDepth(event.target.value)}><option value="screen" disabled={pathway === "DEEP_RESEARCH"}>Screen</option><option value="full">Full</option></select>
+            <select id="depth" name="depth" value={effectiveDepth} onChange={(event) => setDepth(event.target.value)}><option value="screen" disabled={effectivePathway === "DEEP_RESEARCH"}>Screen</option><option value="full">Full</option></select>
           </div>
-          {pathway === "DEEP_RESEARCH" && <fieldset className="research-brief">
+          {effectivePathway === "DEEP_RESEARCH" && <fieldset className="research-brief">
             <legend>Bounded research brief</legend>
             <div className="field"><label htmlFor="research-question">Research question</label><textarea id="research-question" name="research_question" maxLength={400} required /></div>
             <div className="field"><label htmlFor="decision-context">Decision context</label><textarea id="decision-context" name="decision_context" maxLength={400} required /></div>
@@ -1541,14 +1583,14 @@ function RunConsole({ writeAccess, caseId, selectedCase, run, runLoading, runErr
             <div className="field"><label htmlFor="exclusions">Exclusion lines</label><textarea id="exclusions" name="exclusions" maxLength={2009} aria-describedby="research-list-bounds" /></div>
             <p className="muted" id="research-list-bounds">One item per line; 10 items combined, 200 characters per item.</p>
           </fieldset>}
-          <button className="button primary" type="submit" disabled={!caseId || pendingAction === "start-run"}>{pendingAction === "start-run" ? "Compiling…" : "Compile and run"}</button>
+          <button className="button primary" type="submit" disabled={!caseId || !effectivePathway || pendingAction === "start-run"}>{pendingAction === "start-run" ? "Compiling…" : "Compile and run"}</button>
         </form> : <WriteBlocked access={writeAccess} action="compiling a route" />}
         <div className="callout">Every route begins by parsing your sources; the readiness check then runs against that exact parse.</div>
       </div>
     </section>
     <section className="panel span-8">
       <div className="panel-header"><h2>Execution route</h2><RunStatusBadge run={run} /></div>
-      <div className="panel-body flow"><RunStatus writeAccess={writeAccess} caseId={caseId} run={run} runLoading={runLoading} runError={runError} acceptRun={acceptRun} acceptedSnapshotId={acceptedSnapshotId} visibleSnapshotId={visibleSnapshotId} switchRequired={switchRequired} pendingAction={pendingAction} resumeSlot={resumeSlot} approvalSlot={approvalPlan && approvalHash ? <ResearchPlanView plan={approvalPlan} planHash={approvalHash} approving={pendingAction === "approve-research-plan"} approvalUnavailable={approvalUnavailable} writeAccess={writeAccess} onApprove={approveResearchPlan} /> :<StateBlock tone="warning" live="status" code="PLAN_APPROVAL_REQUIRED" body="The persisted approval plan is unavailable; approval remains blocked." />} /></div>
+      <div className="panel-body flow"><RunStatus writeAccess={writeAccess} caseId={caseId} run={run} runLoading={runLoading} runError={runError} acceptRun={acceptRun} acceptedSnapshotId={acceptedSnapshotId} supersededSnapshotId={supersededSnapshotId} visibleSnapshotId={visibleSnapshotId} switchRequired={switchRequired} pendingAction={pendingAction} resumeSlot={resumeSlot} approvalSlot={approvalPlan && approvalHash ? <ResearchPlanView plan={approvalPlan} planHash={approvalHash} approving={pendingAction === "approve-research-plan"} approvalUnavailable={approvalUnavailable} writeAccess={writeAccess} onApprove={approveResearchPlan} /> :<StateBlock tone="warning" live="status" code="PLAN_APPROVAL_REQUIRED" body="The persisted approval plan is unavailable; approval remains blocked." />} /></div>
     </section>
   </div>;
 }
@@ -1591,89 +1633,63 @@ function ResearchPlanView({ plan, planHash, approving, approvalUnavailable, writ
   </section>;
 }
 
-function DeepDive({ writeAccess, selectedCase, question, caseId, run, onSwitchSnapshot }: { writeAccess: WriteAccess; selectedCase: CaseRecord | null; question: string; caseId: string; run: RunRecord | null; onSwitchSnapshot: (snapshotId: string) => Promise<SnapshotView | null> }) {
+function DeepDive({ writeAccess, selectedCase, question, caseId, run, authority, authorityStatus, onSwitchSnapshot }: { writeAccess: WriteAccess; selectedCase: CaseRecord | null; question: string; caseId: string; run: RunRecord | null; authority: SnapshotView | null; authorityStatus: AuthorityStatus; onSwitchSnapshot: (snapshotId: string) => Promise<SnapshotView | null> }) {
   const selectedCaseId = selectedCase?.id || "";
-  const [view, setView] = useState<SnapshotView | null>(null);
+  // The shell's snapshot is the one authority this reader renders (FE-A0 F3): a
+  // second read of /snapshot here could name a different accepted id than the
+  // authority strip on the same screen. Only the accepted artifacts are read,
+  // and only when the accepted artifact set changes.
+  const snapshot = authority?.accepted ?? null;
+  const artifactIds = snapshot?.artifacts.map((item) => item.id).join("\u0000") ?? "";
   const [artifacts, setArtifacts] = useState<ArtifactRecord[]>([]);
   const [selectedArtifactId, setSelectedArtifactId] = useState("");
   const [artifactError, setArtifactError] = useState("");
   const [message, setMessage] = useState("");
-  const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState("");
+  const [artifactsLoading, setArtifactsLoading] = useState(false);
   const loadGeneration = useRef(0);
   useEffect(() => {
     const generation = ++loadGeneration.current;
-    let ignore = false;
+    const ids = artifactIds ? artifactIds.split("\u0000") : [];
+    // The accepted artifact set is external state: its change resets the reader.
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    setView(null); setArtifacts([]); setSelectedArtifactId(""); setArtifactError(""); setMessage(""); setLoadError(""); setLoading(Boolean(selectedCaseId));
-
-    if (selectedCaseId) {
-      void (async () => {
-        try {
-          const next = await request<SnapshotView>(`/api/cases/${selectedCaseId}/snapshot`);
-          if (ignore || generation !== loadGeneration.current) return;
-          const expected = next?.accepted?.artifacts ?? [];
-          const loaded = await Promise.all(expected.map(({ id }) =>
-            request<ArtifactRecord>(`/api/cases/${selectedCaseId}/artifacts/${id}`).catch(() => null)
-          ));
-          if (ignore || generation !== loadGeneration.current) return;
-          const available = loaded.filter((item): item is ArtifactRecord => item !== null);
-          setView(next);
-          setArtifacts(available);
-          if (available.length !== expected.length) setArtifactError("Some accepted module outputs could not be loaded.");
-        } catch (caught) {
-          if (ignore || generation !== loadGeneration.current || caught instanceof DOMException && caught.name === "AbortError") return;
-          setLoadError(firstErrorMessage(caught, "Unable to load snapshot authority"));
-        } finally {
-          if (!ignore && generation === loadGeneration.current) setLoading(false);
-        }
-      })();
-    }
-
-    return () => { ignore = true; loadGeneration.current += 1; };
-  }, [selectedCaseId]);
-  const switchSnapshot = async () => {
-    if (!selectedCase || !view?.latest_accepted) return;
-    const generation = ++loadGeneration.current;
-    const selectedCaseId = selectedCase.id;
-    const snapshotId = view.latest_accepted.id;
-    setLoading(true); setLoadError(""); setArtifactError(""); setMessage("");
-
-    try {
-      const next = await onSwitchSnapshot(snapshotId);
-      if (!next || generation !== loadGeneration.current) return;
-      const expected = next.accepted?.artifacts ?? [];
-      const loaded = await Promise.all(expected.map(({ id }) =>
-        request<ArtifactRecord>(`/api/cases/${selectedCaseId}/artifacts/${id}`).catch(() => null)
-      ));
+    setArtifacts([]); setSelectedArtifactId(""); setArtifactError(""); setArtifactsLoading(Boolean(selectedCaseId) && ids.length > 0);
+    if (!selectedCaseId || !ids.length) return;
+    void (async () => {
+      const loaded = await Promise.all(ids.map((id) => request<ArtifactRecord>(`/api/cases/${selectedCaseId}/artifacts/${id}`).catch(() => null)));
       if (generation !== loadGeneration.current) return;
       const available = loaded.filter((item): item is ArtifactRecord => item !== null);
-      setView(next);
       setArtifacts(available);
-      setSelectedArtifactId("");
-      if (available.length !== expected.length) setArtifactError("Some accepted module outputs could not be loaded.");
-      setMessage("Visible snapshot switched.");
+      if (available.length !== ids.length) setArtifactError("Some accepted module outputs could not be loaded.");
+      setArtifactsLoading(false);
+    })();
+    return () => { loadGeneration.current += 1; };
+  }, [selectedCaseId, artifactIds]);
+  const switchSnapshot = async () => {
+    if (!selectedCase || !authority?.latest_accepted) return;
+    setArtifactError(""); setMessage("");
+    try {
+      // The switch lands in the shell's authority; the artifact read above follows it.
+      const next = await onSwitchSnapshot(authority.latest_accepted.id);
+      if (next) setMessage("Visible snapshot switched.");
     } catch (caught) {
-      if (generation !== loadGeneration.current || caught instanceof DOMException && caught.name === "AbortError") return;
+      if (caught instanceof DOMException && caught.name === "AbortError") return;
       setArtifactError(firstErrorMessage(caught, "Unable to switch snapshot"));
-    } finally {
-      if (generation === loadGeneration.current) setLoading(false);
     }
   };
-  const snapshot = view?.accepted;
+  const loading = ((authorityStatus === "idle" || authorityStatus === "loading") && !authority) || artifactsLoading;
   const selectedArtifact = artifacts.find((item) => item.id === selectedArtifactId) || artifacts.find((item) => item.module_id === "CP-2") || artifacts[0] || null;
   const selectedBlocks = selectedArtifact?.markdown ? markdownBlocks(selectedArtifact.markdown) : [];
   const selectedEvidence = normalizeEvidenceRefs(selectedArtifact?.payload?.evidence_refs);
   if (loading) return <div className="panel"><div className="panel-body"><LoadState loading /></div></div>;
-  if (!snapshot) return <div className="panel"><div className="panel-body">{loading || loadError ? <LoadState loading={loading} error={loadError} /> : <StateBlock shape="action" title="Analysis unavailable" body="No accepted snapshot. Run the selected route, inspect exceptions, then accept it explicitly." action={{ label: "Open analysis run", href: withQuery("/run-console", { case: selectedCase?.id, run: run?.id }) }} />}</div></div>;
+  if (!snapshot) return <div className="panel"><div className="panel-body">{authorityStatus === "error" ? <LoadState loading={false} error="Case authority could not be loaded." title="Unable to load the accepted analysis." /> : <StateBlock shape="action" title="Analysis unavailable" body="No accepted snapshot. Run the selected route, inspect exceptions, then accept it explicitly." action={{ label: "Open analysis run", href: withQuery("/run-console", { case: selectedCase?.id, run: run?.id }) }} />}</div></div>;
   return <div className="analysis-screen">
     {question ? <section className="context-strip"><strong>Evidence request</strong><p>{question}</p></section> : null}
-    {view?.switch_required ? <div className="analysis-switch callout warning"><strong>New accepted execution available.</strong><p>This reader remains on snapshot <IdentityValue value={snapshot.id} /> until authority is switched explicitly.</p>{writeAccess === "yes" ? <button className="button small" type="button" onClick={switchSnapshot}>Switch visible snapshot</button> : null}</div> : null}
+    {authority?.switch_required ? <div className="analysis-switch callout warning"><strong>New accepted execution available.</strong><p>This reader remains on snapshot <IdentityValue value={snapshot.id} /> until authority is switched explicitly.</p>{writeAccess === "yes" ? <button className="button small" type="button" onClick={switchSnapshot}>Switch visible snapshot</button> : null}</div> : null}
     {message ? <MutationReceipt>{message}</MutationReceipt> : null}
     {artifactError ? <StateNote tone="critical" live="alert">{artifactError}</StateNote> : null}
     <div className="analysis-reader-shell">
       <nav className="analysis-toc" aria-label="Accepted analysis modules"><div className="meta-label">Accepted modules</div>{artifacts.map((artifact) => <button type="button" aria-pressed={selectedArtifact?.id === artifact.id} className={selectedArtifact?.id === artifact.id ? "is-active" : ""} onClick={() => setSelectedArtifactId(artifact.id)} key={artifact.id}><span>{moduleLabel(artifact.module_id)}</span><span className="mono">{artifact.module_id}</span></button>)}<Link className="button small" href={withQuery("/run-console", { case: caseId, run: run?.id })}>Open selected run</Link></nav>
-      <article className="analysis-reader" aria-labelledby="analysis-artifact-title">{selectedArtifact ? <><div className="meta-label">Accepted {formatDate(snapshot.accepted_at)} · Source set v{snapshot.source_set_version ?? "Unavailable"}</div><h2 id="analysis-artifact-title">{moduleLabel(selectedArtifact.module_id)}</h2><p className="analysis-lead">{selectedArtifact.payload?.narrative?.takeaway || selectedArtifact.payload?.summary || selectedBlocks.find((block) => block.kind === "paragraph")?.text || "No module summary is available."}</p>{selectedArtifact.markdown ? <div className="analysis-copy">{selectedBlocks.map((block, index) => block.kind === "heading" ? <h3 key={`${block.text}:${index}`}>{block.text}</h3> : <p key={`${block.text}:${index}`}>{block.text}</p>)}</div> : <div className="analysis-copy">{selectedArtifact.payload?.narrative?.basis ? <><h3>Basis</h3><p>{selectedArtifact.payload.narrative.basis}</p></> : null}{selectedArtifact.payload?.narrative?.exceptions ? <div className="callout warning"><strong>Exceptions</strong><p>{selectedArtifact.payload.narrative.exceptions}</p></div> : null}</div>}<dl className="analysis-provenance"><dt className="meta-label">Artifact</dt><dd><IdentityValue value={selectedArtifact.id} /></dd><dt className="meta-label">Digest</dt><dd><IdentityValue value={selectedArtifact.digest} /></dd><dt className="meta-label">Input fingerprint</dt><dd><IdentityValue value={selectedArtifact.payload?.lineage?.input_fingerprint || selectedArtifact.input_fingerprint || "Unavailable"} /></dd></dl></> : <LoadState loading={loading} error={loadError} empty="No accepted module output is available." />}</article>
+      <article className="analysis-reader" aria-labelledby="analysis-artifact-title">{selectedArtifact ? <><div className="meta-label">Accepted {formatDate(snapshot.accepted_at)} · Source set v{snapshot.source_set_version ?? "Unavailable"}</div><h2 id="analysis-artifact-title">{moduleLabel(selectedArtifact.module_id)}</h2><p className="analysis-lead">{selectedArtifact.payload?.narrative?.takeaway || selectedArtifact.payload?.summary || selectedBlocks.find((block) => block.kind === "paragraph")?.text || "No module summary is available."}</p>{selectedArtifact.markdown ? <div className="analysis-copy">{selectedBlocks.map((block, index) => block.kind === "heading" ? <h3 key={`${block.text}:${index}`}>{block.text}</h3> : <p key={`${block.text}:${index}`}>{block.text}</p>)}</div> : <div className="analysis-copy">{selectedArtifact.payload?.narrative?.basis ? <><h3>Basis</h3><p>{selectedArtifact.payload.narrative.basis}</p></> : null}{selectedArtifact.payload?.narrative?.exceptions ? <div className="callout warning"><strong>Exceptions</strong><p>{selectedArtifact.payload.narrative.exceptions}</p></div> : null}</div>}<dl className="analysis-provenance"><dt className="meta-label">Artifact</dt><dd><IdentityValue value={selectedArtifact.id} /></dd><dt className="meta-label">Digest</dt><dd><IdentityValue value={selectedArtifact.digest} /></dd><dt className="meta-label">Input fingerprint</dt><dd><IdentityValue value={selectedArtifact.payload?.lineage?.input_fingerprint || selectedArtifact.input_fingerprint || "Unavailable"} /></dd></dl></> : <LoadState loading={loading} empty="No accepted module output is available." />}</article>
       <aside className="analysis-evidence"><div className="meta-label">Evidence rail</div><h2>{selectedEvidence.length} cited source{selectedEvidence.length === 1 ? "" : "s"}</h2>{selectedEvidence.map((ref, index) => <div className="analysis-evidence-card" key={`${ref.sourceId}:${index}`}><Link href={withQuery("/sources", { case: caseId, source: ref.sourceId })}>{ref.sourceId}</Link><span className="mono muted">{ref.blockIds.length ? ref.blockIds.join(" · ") : "Source-level reference"}</span></div>)}{selectedArtifact && !selectedEvidence.length ? <Unavailable title="Evidence citations" context="This accepted module output contains no normalized evidence references." /> : null}<div className="analysis-evidence-authority"><span className="meta-label">Visible authority</span><IdentityValue value={snapshot.digest} /></div></aside>
     </div>
   </div>;
@@ -1760,7 +1776,7 @@ function RVView({ writeAccess, caseId }: { writeAccess: WriteAccess; caseId: str
       const form = new FormData(); form.append("file", file);
       const source = await request<SourceRecord>(`/api/cases/${caseId}/sources`, { method: "POST", body: form });
       setMessage("Validating the fixed CP-3 workbook…");
-      const response = await fetch(`/api/cases/${caseId}/rv/loan-universes`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ source_id: source.id }) });
+      const response = await networkFetch(`/api/cases/${caseId}/rv/loan-universes`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ source_id: source.id }) });
       const body = await response.json().catch(() => ({}));
       if (!response.ok) {
         const detail = body.detail || {};
@@ -1782,22 +1798,22 @@ function RVView({ writeAccess, caseId }: { writeAccess: WriteAccess; caseId: str
   </div>;
 }
 
-function CommandView({ caseId, question }: { caseId: string; question: string }) {
+function CommandView({ caseId, question, authority, authorityStatus }: { caseId: string; question: string; authority: SnapshotView | null; authorityStatus: AuthorityStatus }) {
   const [lens, setLens] = useState<{ issuer: string; sector: string; accepted_snapshot_id: string | null; source_set?: { version: number } | null } | null>(null);
-  const [snapshot, setSnapshot] = useState<SnapshotView | null>(null);
   const [artifacts, setArtifacts] = useState<ArtifactRecord[]>([]);
   const [artifactError, setArtifactError] = useState("");
+  const [artifactsLoading, setArtifactsLoading] = useState(false);
   const [lensLoading, setLensLoading] = useState(true); const [lensError, setLensError] = useState(""); const [lensUnavailable, setLensUnavailable] = useState(false);
-  const [snapshotLoading, setSnapshotLoading] = useState(true); const [snapshotError, setSnapshotError] = useState(""); const [snapshotUnavailable, setSnapshotUnavailable] = useState(false);
-  // Command-center state is synchronized from two external authorities. The two
-  // requests are deliberately independent: each panel loads, fails, or degrades to
-  // its unavailable block on its own, so a dead lens route never blanks the diff.
+  // The shell's snapshot is the one authority this screen renders (FE-A0 F3): a
+  // second read of /snapshot here could name a different accepted id than the
+  // authority strip on the same screen. The lens is read here, independently: a
+  // dead lens route degrades its own panel and never blanks the diff.
   useEffect(() => {
     if (!caseId) return;
     let ignore = false;
-    // The fetch boundary intentionally resets both panels' state.
+    // The fetch boundary intentionally resets the lens panel's state.
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    setLensLoading(true); setLensError(""); setLensUnavailable(false); setSnapshotLoading(true); setSnapshotError(""); setSnapshotUnavailable(false); setArtifacts([]); setArtifactError("");
+    setLensLoading(true); setLensError(""); setLensUnavailable(false);
     void request<typeof lens>(`/api/cases/${caseId}/lens`)
       .then((nextLens) => { if (!ignore) setLens(nextLens); })
       .catch((caught) => {
@@ -1806,25 +1822,32 @@ function CommandView({ caseId, question }: { caseId: string; question: string })
         else setLensError(firstErrorMessage(caught, "Unable to load the issuer lens"));
       })
       .finally(() => { if (!ignore) setLensLoading(false); });
-    void request<SnapshotView>(`/api/cases/${caseId}/snapshot`)
-      .then(async (nextSnapshot) => {
-        if (ignore) return;
-        setSnapshot(nextSnapshot);
-        const acceptedArtifacts = nextSnapshot?.accepted?.artifacts || [];
-        const loaded = await Promise.all(acceptedArtifacts.map((item) => request<ArtifactRecord>(`/api/cases/${caseId}/artifacts/${item.id}`).catch(() => null)));
-        if (ignore) return;
-        const available = loaded.filter((item): item is ArtifactRecord => item !== null);
-        setArtifacts(available);
-        if (available.length !== acceptedArtifacts.length) setArtifactError("Some accepted module outputs could not be loaded. Snapshot identity remains visible.");
-      })
-      .catch((caught) => {
-        if (ignore) return;
-        if (isUnavailableRoute(caught)) setSnapshotUnavailable(true);
-        else setSnapshotError(firstErrorMessage(caught, "Unable to load the snapshot diff"));
-      })
-      .finally(() => { if (!ignore) setSnapshotLoading(false); });
     return () => { ignore = true; };
   }, [caseId]);
+  const snapshot = authority;
+  const artifactIds = snapshot?.accepted?.artifacts.map((item) => item.id).join("\u0000") ?? "";
+  const loadGeneration = useRef(0);
+  useEffect(() => {
+    const generation = ++loadGeneration.current;
+    const ids = artifactIds ? artifactIds.split("\u0000") : [];
+    // The accepted artifact set is external state: its change resets the register.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setArtifacts([]); setArtifactError(""); setArtifactsLoading(Boolean(caseId) && ids.length > 0);
+    if (!caseId || !ids.length) return;
+    void (async () => {
+      const loaded = await Promise.all(ids.map((id) => request<ArtifactRecord>(`/api/cases/${caseId}/artifacts/${id}`).catch(() => null)));
+      if (generation !== loadGeneration.current) return;
+      const available = loaded.filter((item): item is ArtifactRecord => item !== null);
+      setArtifacts(available);
+      if (available.length !== ids.length) setArtifactError("Some accepted module outputs could not be loaded. Snapshot identity remains visible.");
+      setArtifactsLoading(false);
+    })();
+    return () => { loadGeneration.current += 1; };
+  }, [caseId, artifactIds]);
+  // One loading state for identity and proof: the accepted id is never shown
+  // beside an empty proof register that is still on its way.
+  const snapshotLoading = ((authorityStatus === "idle" || authorityStatus === "loading") && !snapshot) || artifactsLoading;
+  const snapshotError = authorityStatus === "error" && !snapshot ? "Case authority could not be loaded." : "";
   const diff = snapshot?.diff;
   const conclusion = selectConclusionArtifact(artifacts);
   const conclusionBlocks = conclusion?.markdown ? markdownBlocks(conclusion.markdown) : [];
@@ -1833,7 +1856,7 @@ function CommandView({ caseId, question }: { caseId: string; question: string })
   return <div className="grid credit-screen">
     {question && <section className="context-strip span-12"><strong>Evidence request</strong><p>{question}</p></section>}
     <section className="credit-main span-9">
-      {snapshotUnavailable ? <Unavailable title="Credit authority" /> : snapshotLoading || snapshotError ? <LoadState loading={snapshotLoading} error={snapshotError} /> : !snapshot?.accepted ? <StateBlock shape="action" title="Credit state unavailable" body="No accepted snapshot yet. Run analysis, inspect its exact outputs, then accept the snapshot." action={{ label: "Open analysis run", href: withQuery("/run-console", { case: caseId }) }} /> : <>
+      {snapshotLoading || snapshotError ? <LoadState loading={snapshotLoading} error={snapshotError} /> : !snapshot?.accepted ? <StateBlock shape="action" title="Credit state unavailable" body="No accepted snapshot yet. Run analysis, inspect its exact outputs, then accept the snapshot." action={{ label: "Open analysis run", href: withQuery("/run-console", { case: caseId }) }} /> : <>
         <div className="credit-authority-head"><div><span className="meta-label">{lens?.issuer || "Selected credit"} · accepted record</span><h2>Accepted conclusion and exact module authority</h2></div><span className="status success">Accepted {formatDate(snapshot.accepted.accepted_at)}</span></div>
         <div className="standing-answer"><span className="meta-label">Current conclusion · {evidenceCount} source reference{evidenceCount === 1 ? "" : "s"}</span>{conclusionText ? <><h2>{conclusionText}</h2>{conclusion?.payload?.narrative?.basis ? <p>{conclusion.payload.narrative.basis}</p> : null}<p className="mono muted">{moduleLabel(conclusion?.module_id || "")} · {conclusion ? <IdentityValue value={conclusion.digest} className="" /> : null}</p></> : <Unavailable title="Standing conclusion" context="The accepted snapshot contains no module summary that can be presented as a conclusion." />}</div>
         <div className="authority-metrics"><div><span className="meta-label">Accepted snapshot</span><strong><IdentityValue value={snapshot.accepted.id} /></strong></div><div><span className="meta-label">Source set</span><strong className="mono">v{snapshot.accepted.source_set_version ?? "Unavailable"}</strong></div><div><span className="meta-label">Module outputs</span><strong className="num">{snapshot.accepted.artifacts.length}</strong></div><div><span className="meta-label">Evidence references</span><strong className="num">{evidenceCount}</strong></div></div>
@@ -1847,16 +1870,21 @@ function CommandView({ caseId, question }: { caseId: string; question: string })
   </div>;
 }
 
+// The table states what this build serves (FE-A0 F8; D-D). The administrative
+// screens stay an unavailable capability (CLAUDE.md known gaps), but two of the
+// contracts they would draw on are served today: the hash-chained case audit
+// package and case membership. Saying "Not served" for those was a false claim.
 function AdminView() {
-  const contracts = [
-    ["Bundle integrity", "Signed build manifest and file verification"],
-    ["Audit trail", "Immutable, exportable actor and action events"],
-    ["Membership", "Identity-to-case role assignments"],
-    ["Step-up", "Server-verified privileged-session state"],
+  const contracts: [string, string, "served" | "absent"][] = [
+    ["Bundle integrity", "Signed build manifest and file verification", "absent"],
+    ["Audit rows", "Readable, immutable actor and action events", "absent"],
+    ["Audit package", "Hash-chained case audit package (GET /api/cases/{case_id}/audit-package); not drawn on this surface", "served"],
+    ["Membership", "Identity-to-case role assignments (POST /api/cases/{case_id}/members); provisioned from Report Studio", "served"],
+    ["Step-up", "Server-verified privileged-session state", "absent"],
   ];
   return <div className="admin-capability">
-    <section className="admin-intro"><span className="flag">UNAVAILABLE</span><div><div className="meta-label">Deployment capability</div><h2>Administrative authority is not served by this application build.</h2><p>No token prompt or simulated audit record is shown. Identity role and case role remain separate server-owned concepts.</p></div></section>
-    <section className="panel"><div className="panel-header"><h2>Required contracts</h2><span className="panel-meta">Server-owned</span></div><div className="panel-body table-wrap" tabIndex={0} role="region" aria-label="Required administrative contracts"><table><thead><tr><th scope="col">Capability</th><th scope="col">Required response</th><th scope="col">State</th></tr></thead><tbody>{contracts.map(([capability, response]) => <tr key={capability}><th scope="row">{capability}</th><td>{response}</td><td><span className="status warning">Not served</span></td></tr>)}</tbody></table></div></section>
+    <section className="admin-intro"><span className="flag">UNAVAILABLE</span><div><div className="meta-label">Deployment capability</div><h2>Administrative screens are not served by this application build.</h2><p>No token prompt or simulated audit record is shown. Identity role and case role remain separate server-owned concepts. The contracts this build does serve are marked below; none of them is drawn here.</p></div></section>
+    <section className="panel"><div className="panel-header"><h2>Required contracts</h2><span className="panel-meta">Server-owned</span></div><div className="panel-body table-wrap" tabIndex={0} role="region" aria-label="Required administrative contracts"><table><thead><tr><th scope="col">Capability</th><th scope="col">Required response</th><th scope="col">State</th></tr></thead><tbody>{contracts.map(([capability, response, state]) => <tr key={capability}><th scope="row">{capability}</th><td>{response}</td><td>{state === "served" ? <span className="status success">Served</span> : <span className="status warning">Not served</span>}</td></tr>)}</tbody></table></div></section>
     <section className="context-strip"><strong>Authorization boundary</strong><p>Adding these screens requires authenticated backend routes and auditable policy enforcement. Client-only controls would not create administrative authority.</p></section>
   </div>;
 }

@@ -188,6 +188,8 @@ browser.newContext = async (options) => {
   return context;
 };
 const errors = [];
+const unexpectedDialogs = [];
+let beforeunloadPrompts = 0;
 // The workspace restores focus on the animation frame AFTER an action settles
 // (Workspace.tsx: useEffect → requestAnimationFrame), so a check that reads
 // document.activeElement the instant the settled UI renders races that frame
@@ -203,6 +205,13 @@ const awaitFocus = (locator, what) => locator.evaluate((element, label) => new P
   };
   check();
 }), what);
+// A hand-rolled request barrier awaited with no bound turns a missing request into a
+// hang, never a failure (FE-G1 mutation M7 ran for 13 hours); every barrier is bounded
+// and names the request that never came.
+const bounded = (promise, what, ms = 30_000) => {
+  let timer;
+  return Promise.race([promise, new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(what)), ms); })]).finally(() => clearTimeout(timer));
+};
 // WebKit's "<url> due to access control checks." rejections for fetches still
 // in flight at navigation, kept out of `errors` only with server evidence and
 // retained in the report so nothing is swallowed silently.
@@ -351,7 +360,7 @@ try {
   };
   await page.route(heldAuthorityDetail, holdAuthorityDetail);
   await page.goto(`${baseURL}/command-center/?case=${caseRecord.id}`, { waitUntil: "domcontentloaded" });
-  await authorityDetailSeen;
+  await bounded(authorityDetailSeen, "the command center never requested the selected case's authority");
   const visibleAuthority = page.getByRole("region", { name: "Visible authority" });
   await visibleAuthority.getByText(/Visible snapshot:\s*Loading authority/).waitFor();
   await visibleAuthority.getByText(/Source set:\s*Loading authority/).waitFor();
@@ -402,14 +411,22 @@ try {
   await page.getByRole("combobox", { name: "Select case" }).selectOption(caseRecord.id);
   await visibleAuthority.getByText(/Source set:\s*v1/).waitFor();
 
+  // A retained link to a case the register does not hold is a typed state (FE-A0
+  // F5; WEB-003): a live region names the request, the URL keeps the id, and no
+  // other case is selected in its place.
   const missingCaseId = `case_missing_${fixtureSuffix}`;
   await page.goto(`${baseURL}/run-console/?case=${missingCaseId}&run=${run.id}`, { waitUntil: "domcontentloaded" });
-  await page.waitForFunction((invalidCaseId) => {
-    const selected = document.querySelector('[aria-label="Select case"]');
-    return selected instanceof HTMLSelectElement && selected.value && selected.value !== invalidCaseId;
-  }, missingCaseId);
+  const unavailableCase = page.getByRole("status").filter({ hasText: "Case unavailable" });
+  await unavailableCase.waitFor();
+  await unavailableCase.getByText(missingCaseId, { exact: true }).waitFor();
   await page.getByRole("status", { name: "Loading" }).waitFor({ state: "detached" });
   assert.equal(await page.getByRole("status", { name: "Loading" }).count(), 0, "invalid initial case/run authority left the workspace permanently loading");
+  assert.equal(new URL(page.url()).searchParams.get("case"), missingCaseId, "an unknown case link was rewritten to another case");
+  assert.equal(await page.getByRole("combobox", { name: "Select case" }).inputValue(), "", "an unknown case link silently selected another case");
+  assert.equal(await page.getByRole("region", { name: "Visible authority" }).getByText(new RegExp(`Credit:\\s*${primaryIssuer}`)).count(), 0, "another issuer's authority was shown for an unknown case link");
+  await page.getByRole("combobox", { name: "Select case" }).selectOption(caseRecord.id);
+  await page.waitForURL((url) => url.searchParams.get("case") === caseRecord.id);
+  assert.equal(await unavailableCase.count(), 0, "the unknown-case state survived an explicit selection");
 
   let releaseStaleRun;
   const staleRunBarrier = new Promise((resolve) => { releaseStaleRun = resolve; });
@@ -478,6 +495,14 @@ try {
       });
     assert.equal(await page.locator('[aria-current="page"]').count(), 1, `${route} rendered more than one aria-current="page" entry`);
   }
+  // Admin Studio states which contracts this build serves (FE-A0 F8; D-D): the
+  // audit package and membership are served, the rest are not.
+  await page.goto(`${baseURL}/admin-studio/?case=${caseRecord.id}`, { waitUntil: "networkidle" });
+  const contractsTable = page.getByRole("region", { name: "Required administrative contracts" });
+  for (const [capability, state] of [["Bundle integrity", "Not served"], ["Audit rows", "Not served"], ["Audit package", "Served"], ["Membership", "Served"], ["Step-up", "Not served"]]) {
+    const row = contractsTable.getByRole("row").filter({ has: page.getByRole("rowheader", { name: capability, exact: true }) });
+    assert.equal(await row.locator(".status").innerText(), state, `Admin Studio misstates the ${capability} contract`);
+  }
   expectedNotFoundURL = `${baseURL}/missing-${fixtureSuffix}`;
   await page.goto(expectedNotFoundURL, { waitUntil: "networkidle" });
   await page.getByRole("heading", { name: "Page not found" }).waitFor();
@@ -527,6 +552,27 @@ try {
   assert.ok(authorityRequests <= 12, `same-client navigation caused an authority refresh loop (${authorityRequests} requests)`);
   await page.getByRole("region", { name: "Visible authority" }).getByText(new RegExp(`Credit:\\s*${primaryIssuer}`)).waitFor();
   await page.getByRole("region", { name: "Visible authority" }).getByText(/Source set:\s*v1/).waitFor();
+
+  // One snapshot authority per screen (FE-A0 F3): the credit screen renders the
+  // shell's snapshot, never a second read of its own, so with the route answering
+  // a different id on every read the authority strip and the accepted-snapshot
+  // metric still name the same id and no divergence goes unmarked.
+  let alternatingSnapshotReads = 0;
+  const alternatingSnapshotPath = (url) => url.pathname === `/api/cases/${caseRecord.id}/snapshot`;
+  await page.route(alternatingSnapshotPath, (route) => {
+    alternatingSnapshotReads += 1;
+    const answer = alternatingSnapshotReads % 2 === 1 ? accepted : { ...accepted, id: `snap_alternate_${fixtureSuffix}` };
+    return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ accepted: answer, latest_accepted: answer, switch_required: false, diff: { changed: false } }) });
+  });
+  await page.goto(`${baseURL}/command-center/?case=${caseRecord.id}&fixture=alternating-snapshot`, { waitUntil: "networkidle" });
+  await page.locator(".authority-metrics [title]").first().waitFor();
+  const stripSnapshotId = await page.getByRole("region", { name: "Visible authority" }).locator("span", { hasText: /^Visible snapshot:/ }).locator("[title]").first().getAttribute("title");
+  const creditSnapshotId = await page.locator(".authority-metrics [title]").first().getAttribute("title");
+  assert.ok(alternatingSnapshotReads >= 1, "the alternating snapshot fixture was not read");
+  assert.ok(stripSnapshotId, "the authority strip names no visible snapshot");
+  assert.equal(creditSnapshotId, stripSnapshotId, `the credit screen (${creditSnapshotId}) and the authority strip (${stripSnapshotId}) name different accepted snapshots on one screen`);
+  await page.unroute(alternatingSnapshotPath);
+  await page.goto(`${baseURL}/command-center/?case=${caseRecord.id}`, { waitUntil: "networkidle" });
 
   const paletteTrigger = page.getByRole("button", { name: /Open command palette/ });
   await paletteTrigger.focus();
@@ -641,6 +687,14 @@ try {
       await page.goto(`${baseURL}/cases/`, { waitUntil: "networkidle" });
     }
   }
+  // The intake header is fenced to the selected case (FE-A0 F6): a switch to a
+  // case with no intake shows the idle sentence, never the previous case's date.
+  const intakeHeader = page.getByRole("region", { name: "Analyze documents" });
+  await intakeHeader.getByText(/^Last intake /).waitFor();
+  await page.getByRole("combobox", { name: "Select case" }).selectOption(idleCase.id);
+  await intakeHeader.getByText("Creates or resolves the credit from the documents", { exact: true }).waitFor();
+  assert.equal(await intakeHeader.getByText(/^Last intake /).count(), 0, "the intake header carried the previous case's last intake across a case switch");
+
   // A refused pack: one malformed PDF refuses the whole pack and creates nothing.
   await page.goto(`${baseURL}/cases/`, { waitUntil: "networkidle" });
   const refusedPanel = page.getByRole("region", { name: "Analyze documents" });
@@ -728,6 +782,30 @@ try {
     approvedResearchPlan = true;
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ...pendingResearchRun, status: "queued", error: null }) });
   });
+  // An observed 404 pins the unavailable state to the run it was observed on
+  // (FE-A0 F4): a run the caller may no longer see answers 404 without marking the
+  // route absent for every other paused run for the rest of the session.
+  const goneResearchRun = { ...pendingResearchRun, id: `run_plan_gone_${fixtureSuffix}` };
+  const goneRunPath = (url) => url.pathname === `/api/runs/${goneResearchRun.id}`;
+  const goneEventsPath = (url) => url.pathname === `/api/runs/${goneResearchRun.id}/events`;
+  const goneApprovePath = (url) => url.pathname === `/api/runs/${goneResearchRun.id}/research-plan/approve`;
+  await page.route(goneRunPath, (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(goneResearchRun) }));
+  await page.route(goneEventsPath, (route) => route.fulfill({ status: 200, contentType: "text/event-stream", body: "retry: 60000\n\n" }));
+  await page.route(goneApprovePath, (route) => route.fulfill({ status: 404, contentType: "application/json", body: JSON.stringify({ detail: "Not Found" }) }));
+  expectedNotFoundURL = `${baseURL}/api/runs/${goneResearchRun.id}/research-plan/approve`;
+  await page.goto(`${baseURL}/run-console/?case=${caseRecord.id}&run=${goneResearchRun.id}`, { waitUntil: "networkidle" });
+  await page.getByRole("heading", { name: "Proposed research plan" }).waitFor();
+  await page.getByRole("button", { name: "Approve research plan" }).click();
+  await page.getByText("Not available in this deployment.", { exact: true }).waitFor();
+  assert.equal(await page.getByRole("button", { name: "Approve research plan" }).count(), 0, "a 404 on approval left the action live on the same run");
+  await page.evaluate(({ caseId, runId }) => { window.history.pushState(null, "", `/run-console/?case=${caseId}&run=${runId}`); }, { caseId: caseRecord.id, runId: pendingResearchRun.id });
+  await page.waitForURL((url) => url.searchParams.get("run") === pendingResearchRun.id);
+  await page.getByRole("button", { name: "Approve research plan" }).waitFor();
+  assert.equal(await page.getByText("Not available in this deployment.", { exact: true }).count(), 0, "a run-scoped 404 marked plan approval unavailable for every run");
+  await page.unroute(goneRunPath);
+  await page.unroute(goneEventsPath);
+  await page.unroute(goneApprovePath);
+
   await page.goto(`${baseURL}/run-console/?case=${caseRecord.id}&fixture=pending-plan`, { waitUntil: "networkidle" });
   await page.getByRole("combobox", { name: "Purpose" }).selectOption("DEEP_RESEARCH");
   const depth = page.getByRole("combobox", { name: "Depth" });
@@ -819,6 +897,30 @@ try {
   await page.unroute(approveResearchFixturePath);
   await page.setViewportSize({ width: 1440, height: 1000 });
 
+  // The compile form offers only the served cut (FE-A0 F9): with one pathway in
+  // the cut the select starts on it and the default outside the cut is never the
+  // value; an empty cut disables submission, so no POST leaves for a refusal the
+  // client already knows.
+  let cutStartPosts = 0;
+  const countCutStart = (requestValue) => { if (requestValue.method() === "POST" && new URL(requestValue.url()).pathname === `/api/cases/${caseRecord.id}/runs`) cutStartPosts += 1; };
+  page.on("request", countCutStart);
+  let servedCut = ["FULL_CREDIT"];
+  await page.route(caseDetailFixturePath, (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ...caseDetailFixture, available_pathways: servedCut, deep_research_available: false, deep_research_unavailable_reason: "Controlled fixture." }) }));
+  await page.goto(`${baseURL}/run-console/?case=${caseRecord.id}&fixture=cut`, { waitUntil: "networkidle" });
+  await page.waitForFunction(() => document.querySelector("#pathway")?.value === "FULL_CREDIT");
+  assert.equal(await page.locator('#pathway option[value="EARNINGS_UPDATE"]').isDisabled(), true, "a pathway outside the cut stayed selectable");
+  assert.equal(await page.getByRole("button", { name: "Compile and run" }).isDisabled(), false, "a one-pathway cut disabled the compile action");
+  servedCut = [];
+  await page.reload({ waitUntil: "networkidle" });
+  await page.getByText(/are outside this deployment's cut\./).waitFor();
+  assert.equal(await page.getByRole("button", { name: "Compile and run" }).isDisabled(), true, "an empty cut left the compile action enabled");
+  // A scripted requestSubmit() bypasses the disabled button; the handler refuses too.
+  await page.locator("#pathway").evaluate((element) => element.form?.requestSubmit());
+  await page.getByRole("alert").getByText("No pathway inside this deployment's cut can be compiled for this case.", { exact: true }).waitFor();
+  assert.equal(cutStartPosts, 0, "the compile form posted a pathway outside the served cut");
+  page.off("request", countCutStart);
+  await page.unroute(caseDetailFixturePath);
+
   await page.goto(`${baseURL}/run-console/?case=${caseRecord.id}&run=${run.id}`, { waitUntil: "networkidle" });
   let markStartRunIntercepted;
   const startRunIntercepted = new Promise((resolve) => { markStartRunIntercepted = resolve; });
@@ -837,7 +939,7 @@ try {
       && new URL(response.url()).pathname === `/api/cases/${caseRecord.id}/runs`,
   );
   await page.getByRole("button", { name: "Compile and run" }).click();
-  await startRunIntercepted;
+  await bounded(startRunIntercepted, "compile and run never posted the run");
   await page.getByRole("combobox", { name: "Select case" }).selectOption(raceCase.id);
   releaseStartRun();
   const nextRunResponse = await nextRunResponsePromise;
@@ -870,13 +972,16 @@ try {
   // progress crosses the irreversible-action boundary.
   let acceptanceRunPhase = "queued";
   const acceptanceSnapshot = { ...accepted, id: `snap_acceptance_${fixtureSuffix}`, run_id: nextRun.id };
+  // A run accepted earlier and superseded since (FE-A1 F-14; D9): its own
+  // accepted id differs from the case's latest accepted id.
+  const supersededSnapshotId = `snap_superseded_${fixtureSuffix}`;
   const acceptanceRunPath = (url) => url.pathname === `/api/runs/${nextRun.id}`;
   const acceptanceEventsPath = (url) => url.pathname === `/api/runs/${nextRun.id}/events`;
   const acceptanceAuthorityPath = (url) => url.pathname === `/api/cases/${caseRecord.id}/snapshot`;
   const acceptanceRunFixture = () => ({
     ...nextRunState,
-    status: acceptanceRunPhase === "accepted" ? "succeeded" : acceptanceRunPhase,
-    accepted_snapshot_id: acceptanceRunPhase === "accepted" ? acceptanceSnapshot.id : null,
+    status: acceptanceRunPhase === "accepted" || acceptanceRunPhase === "superseded" ? "succeeded" : acceptanceRunPhase,
+    accepted_snapshot_id: acceptanceRunPhase === "accepted" ? acceptanceSnapshot.id : acceptanceRunPhase === "superseded" ? supersededSnapshotId : null,
     error: acceptanceRunPhase === "failed"
       ? { code: "GEOMETRY_FAILURE", message: "Controlled fixture failure." }
       : acceptanceRunPhase === "paused"
@@ -884,11 +989,11 @@ try {
         : null,
     nodes: nextRunState.nodes.map((node, index) => ({
       ...node,
-      status: acceptanceRunPhase === "succeeded" || acceptanceRunPhase === "accepted" ? "succeeded"
+      status: acceptanceRunPhase === "succeeded" || acceptanceRunPhase === "accepted" || acceptanceRunPhase === "superseded" ? "succeeded"
         : acceptanceRunPhase === "failed" ? index === 0 ? "failed" : "pending"
         : acceptanceRunPhase === "running" ? index === 0 ? "succeeded" : index === 1 ? "running" : "pending"
           : "pending",
-      artifact_id: acceptanceRunPhase === "succeeded" || acceptanceRunPhase === "accepted" ? node.artifact_id : index === 0 && acceptanceRunPhase === "running" ? node.artifact_id : null,
+      artifact_id: acceptanceRunPhase === "succeeded" || acceptanceRunPhase === "accepted" || acceptanceRunPhase === "superseded" ? node.artifact_id : index === 0 && acceptanceRunPhase === "running" ? node.artifact_id : null,
     })),
   });
   const acceptanceAuthorityFixture = () => {
@@ -899,16 +1004,21 @@ try {
   await page.route(acceptanceEventsPath, (route) => route.fulfill({ status: 200, contentType: "text/event-stream", body: "retry: 60000\n\n" }));
   await page.route(acceptanceAuthorityPath, (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(acceptanceAuthorityFixture()) }));
   const acceptanceBoxes = [];
-  const acceptancePhases = ["queued", "running", "succeeded", "accepted", "failed", "paused"];
+  const acceptancePhases = ["queued", "running", "succeeded", "accepted", "superseded", "failed", "paused"];
   for (const phase of acceptancePhases) {
     acceptanceRunPhase = phase;
     await page.reload({ waitUntil: "networkidle" });
     const region = page.locator("[data-run-acceptance]");
     const expectedState = phase === "accepted" ? "Latest accepted authority"
-      : phase === "succeeded" ? "Ready for acceptance"
-        : phase === "failed" || phase === "paused" ? "Acceptance blocked"
-          : "Acceptance waiting";
+      : phase === "superseded" ? "Accepted, superseded"
+        : phase === "succeeded" ? "Ready for acceptance"
+          : phase === "failed" || phase === "paused" ? "Acceptance blocked"
+            : "Acceptance waiting";
     await region.getByText(expectedState, { exact: true }).waitFor();
+    if (phase === "superseded") {
+      await region.getByText(supersededSnapshotId, { exact: true }).waitFor();
+      assert.equal(await page.getByRole("button", { name: "Accept analytical snapshot" }).count(), 0, "a superseded acceptance re-offered a live acceptance action");
+    }
     acceptanceBoxes.push(await region.boundingBox());
   }
   assert.ok(acceptanceBoxes.every(Boolean), "an execution state omitted the acceptance region");
@@ -972,7 +1082,7 @@ try {
   await acceptDialog.getByText(nextRun.id, { exact: true }).waitFor();
   await acceptDialog.getByRole("button", { name: "Accept analytical snapshot" }).click();
   await acceptDialog.waitFor({ state: "hidden" });
-  await acceptanceIntercepted;
+  await bounded(acceptanceIntercepted, "accepting the snapshot never posted the acceptance");
   await page.getByRole("combobox", { name: "Select case" }).selectOption(raceCase.id);
   switchedToRaceCase = true;
   releaseAcceptance();
@@ -1203,7 +1313,9 @@ try {
     const activeRevision = modelRevisions.find((item) => item.state === "ACTIVE");
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ source_revision_id: requestBody.revision_id, source_build_id: modelBuildId, build_id: modelBuildId, draft_generation: requestBody.draft_generation, compatible: [{ assumption_id: assumptionDefinition.assumption_id }], changed: [{ assumption_id: assumptionDefinition.assumption_id, reason: "SOURCE_CONTEXT_CHANGED" }], invalidated: [], candidate_assumptions: activeRevision?.effective_assumptions || assumptionDefaults, preview: null }) });
   });
+  let tornadoPosts = 0;
   await page.route(tornadoPath, async (route) => {
+    tornadoPosts += 1;
     const requestBody = route.request().postDataJSON();
     assert.equal(requestBody.assumptions.length, assumptionDefaults.length, "tornado did not receive the complete working forecast");
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ build_id: modelBuildId, draft_generation: requestBody.draft_generation, case: requestBody.case, output_period_id: requestBody.output_period_id, output_id: requestBody.output_id, intensity: requestBody.intensity, baseline: "4.2", bars: [
@@ -1268,6 +1380,19 @@ try {
   assert.equal(previewPosts, 1, "forecast edit did not automatically calculate one preview");
   await page.getByRole("group", { name: /Net leverage tornado for BASE/ }).waitFor();
   const secondAssumption = page.getByLabel("Revenue growth, FY2026, BASE", { exact: true });
+  // A blur that changes nothing commits nothing (FE-A0 F1): Tab from the untouched
+  // FY2026 input lands on FY2027 with every input still mounted and no tornado
+  // request. Every blur used to commit, re-key all 23 fieldsets' inputs, unmount
+  // the one that had just taken focus and post a tornado per Tab.
+  const tornadoPostsBeforeTab = tornadoPosts;
+  const previewPostsBeforeTab = previewPosts;
+  await secondAssumption.focus();
+  await page.keyboard.press("Tab");
+  await awaitFocus(page.getByLabel("Revenue growth, FY2027, BASE", { exact: true }), "Tab from an untouched forecast input did not land on the next input");
+  await page.waitForTimeout(500);
+  assert.equal(tornadoPosts, tornadoPostsBeforeTab, "a blur without a change posted a tornado");
+  assert.equal(previewPosts, previewPostsBeforeTab, "a blur without a change requested a preview");
+  assert.equal(await secondAssumption.inputValue(), "0.03", "an unchanged blur altered the forecast input");
   await firstAssumption.fill("3");
   await firstAssumption.press("Enter");
   assert.equal(await firstAssumption.inputValue(), "0.04", "rejected out-of-bounds edit did not revert the controlled input");
@@ -1304,6 +1429,11 @@ try {
   });
   await firstAssumption.fill("0.06");
   await firstAssumption.press("Enter");
+  // beforeunload protects a dirty draft (WEB-014). Playwright cannot observe the
+  // native prompt on a navigation, so the listener is driven with a synthetic
+  // event: a dirty draft cancels it.
+  const unloadGuarded = () => page.evaluate(() => { const event = new Event("beforeunload", { cancelable: true }); window.dispatchEvent(event); return event.defaultPrevented; });
+  assert.equal(await unloadGuarded(), true, "a dirty draft did not arm beforeunload");
   const discardDraftDialog = () => page.getByRole("dialog", { name: "Discard draft changes?" });
   const caseSelect = page.getByRole("combobox", { name: "Select case" });
   await caseSelect.selectOption(raceCase.id);
@@ -1395,6 +1525,7 @@ try {
   await discardDraftDialog().getByRole("button", { name: "Discard changes" }).click();
   await page.waitForFunction((caseId) => document.querySelector("#case-select")?.value === caseId, raceCase.id);
   assert.equal(await caseSelect.inputValue(), raceCase.id, "confirming draft discard did not complete the case switch");
+  assert.equal(await unloadGuarded(), false, "a discarded draft left beforeunload armed");
   await page.setViewportSize({ width: 720, height: 900 });
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth), false, "Model Builder causes page-level horizontal overflow at 200% desktop zoom width");
   await page.setViewportSize({ width: 1440, height: 1000 });
@@ -1423,12 +1554,25 @@ try {
     if (readOnly) modelRevisions = modelRevisions.map((item) => ({ ...item, export: { ...item.export, status: "READY", error: null } }));
   }
   modelRole = "ANALYST";
-  page.once("dialog", (dialog) => void dialog.accept());
+  // The only native dialog that belongs to this journey is the browser's own
+  // beforeunload prompt, raised by the dirty-draft guard when the next goto
+  // leaves an edited Model Builder: it is accepted and counted (native proof of
+  // the guard, beside the synthetic dispatch above). Every other native dialog —
+  // a reintroduced window.confirm/alert/prompt — is recorded and fails the run
+  // instead of being auto-accepted and forgotten (FE-A0 §4).
+  page.on("dialog", (dialog) => {
+    if (dialog.type() === "beforeunload") { beforeunloadPrompts += 1; void dialog.accept(); return; }
+    unexpectedDialogs.push(`${dialog.type()}: ${dialog.message()}`);
+    void dialog.dismiss();
+  });
   for (const [state, text] of [["FAILED", "MODEL CALCULATION FAILED"], ["NOT_READY", "ACCEPTED FULL CREDIT REQUIRED"]]) {
     modelState = state; modelExportState = "NOT_REQUESTED";
     await page.goto(`${baseURL}/model-builder/?case=${caseRecord.id}&state=${state}`, { waitUntil: "networkidle" });
     await page.getByText(text, { exact: true }).waitFor();
   }
+  // Chromium raises the native prompt on a navigation away from a dirty draft;
+  // Firefox and WebKit under automation may not, so only Chromium asserts it.
+  if (browserName === "chromium") assert.ok(beforeunloadPrompts >= 1, "leaving a dirty Model Builder draft by navigation raised no native beforeunload prompt");
   modelLoadFails = true;
   await page.goto(`${baseURL}/model-builder/?case=${caseRecord.id}&state=load-error`, { waitUntil: "networkidle" });
   await page.getByText("Unavailable", { exact: true }).waitFor();
@@ -1792,14 +1936,16 @@ try {
   const recoveryTemplate = reportTemplate(recoveryPathway);
   const recoveryBlocks = reportDraft(recoveryPathway).content.blocks.map((block, index) => index === 0 ? { ...block, text: "Recovered from stale server v0." } : block);
   const recoveryCopy = {
-    caseId: caseRecord.id, pathway: recoveryPathway, savedAt: Date.now(), expectedVersion: 0,
+    subject: reportSubject, caseId: caseRecord.id, pathway: recoveryPathway, savedAt: Date.now(), expectedVersion: 0,
     templateId: recoveryTemplate.template_id, templateVersion: recoveryTemplate.template_version,
     modelSelection: reportSelection, blocks: recoveryBlocks,
   };
-  await page.evaluate(([key, value]) => localStorage.setItem(key, value), [
-    `caos:report-recovery:${encodeURIComponent(caseRecord.id)}:${recoveryPathway}`,
-    JSON.stringify(recoveryCopy),
-  ]);
+  // The recovery slot is one per subject, case, pathway and browser tab (WEB-014;
+  // FE-A0 F2). The tab id is minted by the studio on its first read.
+  const recoveryTabId = await page.evaluate(() => sessionStorage.getItem("caos:tab-id"));
+  assert.ok(recoveryTabId, "Report Studio minted no browser tab id for its recovery slot");
+  const recoveryKey = (subject, pathway) => `caos:report-recovery:${encodeURIComponent(subject)}:${encodeURIComponent(caseRecord.id)}:${pathway}:${encodeURIComponent(recoveryTabId)}`;
+  await page.evaluate(([key, value]) => localStorage.setItem(key, value), [recoveryKey(reportSubject, recoveryPathway), JSON.stringify(recoveryCopy)]);
   await page.getByRole("combobox", { name: "Pathway template" }).selectOption(recoveryPathway);
   await page.getByText(/Unsaved browser copy from/).waitFor();
   // Report Studio autosaves 850 ms after the last edit. On a slow runner that
@@ -1824,6 +1970,21 @@ try {
   await awaitReportSave(recoveryPathway, hasBlockText("Recovered from stale server v0."), "recovery");
   assert.equal(reportLastSave.expected_version, 0, "recovery save discarded its original compare-and-swap base");
   assert.equal(reportLastSave.blocks[0].text, "Recovered from stale server v0.", "recovery save did not use the browser copy");
+  assert.equal(await page.evaluate((key) => localStorage.getItem(key), recoveryKey(reportSubject, recoveryPathway)), null, "a successful save left its recovery copy behind");
+  // The next subject on the same browser profile is never offered this subject's
+  // unsaved text: the slot is keyed by subject, and a copy whose subject differs
+  // is refused even if the keys were ever to collide.
+  await page.evaluate(([key, value]) => localStorage.setItem(key, value), [recoveryKey(reportSubject, recoveryPathway), JSON.stringify({ ...recoveryCopy, savedAt: Date.now() })]);
+  reportSubject = "second-analyst";
+  await page.reload({ waitUntil: "networkidle" });
+  await page.getByRole("combobox", { name: "Pathway template" }).selectOption(recoveryPathway);
+  await page.getByRole("article", { name: /Deliverable preview/i }).locator(".rd-subtitle").filter({ hasText: reportTitles[recoveryPathway] }).waitFor();
+  assert.equal(await page.getByText(/Unsaved browser copy from/).count(), 0, "a second subject was offered the previous subject's recovery copy");
+  assert.equal(await page.getByRole("button", { name: "Restore copy" }).count(), 0, "a second subject could restore the previous subject's copy");
+  assert.notEqual(await page.evaluate((key) => localStorage.getItem(key), recoveryKey("analyst", recoveryPathway)), null, "a second subject's load discarded the previous subject's recovery copy");
+  await page.evaluate((key) => localStorage.removeItem(key), recoveryKey("analyst", recoveryPathway));
+  reportSubject = "analyst";
+  await page.reload({ waitUntil: "networkidle" });
 
   const reportPaper = () => page.getByRole("article", { name: /Deliverable preview/i });
   const reportTitle = (title) => reportPaper().locator(".rd-subtitle").filter({ hasText: title });
@@ -1850,6 +2011,11 @@ try {
   const dirtyPathwayEditor = page.getByRole("textbox", { name: "Credit Snapshot" });
   await dirtyPathwayEditor.fill("Dirty pathway fence value");
   await page.getByText("Unsaved changes", { exact: true }).waitFor();
+  // The studio writes the recovery copy itself on every change, under this
+  // subject's own tab-scoped slot, before the autosave lands.
+  const writtenRecovery = await page.evaluate((key) => JSON.parse(localStorage.getItem(key) || "null"), recoveryKey(reportSubject, "EARNINGS_UPDATE"));
+  assert.equal(writtenRecovery?.subject, reportSubject, "an edit did not write a subject-scoped recovery copy");
+  assert.equal(writtenRecovery?.blocks?.[0]?.text, "Dirty pathway fence value", "the recovery copy does not carry the unsaved text");
   await pathwaySelect.selectOption("FULL_CREDIT");
   await discardDraftDialog().waitFor();
   assert.equal(await pathwaySelect.inputValue(), "EARNINGS_UPDATE", "dirty pathway cancel changed pathway before confirmation");
@@ -2138,6 +2304,25 @@ try {
   await chip.click();
   const evidence = page.getByRole("dialog", { name: source.filename });
   await evidence.getByText("earnings.txt").waitFor();
+  // The drawer's opener is the chip that was clicked, passed explicitly (FE-A0
+  // F11): closing with Escape returns focus to it in every engine, including
+  // WebKit, where the click itself focused nothing.
+  await page.keyboard.press("Escape");
+  await evidence.waitFor({ state: "hidden" });
+  await awaitFocus(chip, "closing the evidence drawer did not return focus to the chip that opened it");
+  // The same return proven without the browser's own dialog restoration: a scripted
+  // click focuses nothing in any engine, so only the opener the chip passed (F11)
+  // can bring focus back. Under a real click Chromium's native close restoration
+  // masks both a removed explicit restore and an opener inferred from
+  // activeElement (FE-A0 mutations M10 and M13); this pass fails on either.
+  await page.evaluate(() => { if (document.activeElement instanceof HTMLElement) document.activeElement.blur(); });
+  await chip.evaluate((element) => element.click());
+  await evidence.getByText("earnings.txt").waitFor();
+  await page.keyboard.press("Escape");
+  await evidence.waitFor({ state: "hidden" });
+  await awaitFocus(chip, "closing the evidence drawer opened by a scripted click did not return focus to the chip that passed itself as opener");
+  await chip.click();
+  await evidence.getByText("earnings.txt").waitFor();
   await evidence.getByText(/Source-level reference; no block locator supplied/).waitFor();
   await evidence.getByRole("link", { name: "Open full source" }).click();
   await page.waitForURL((url) => url.pathname.replace(/\/$/, "") === "/sources" && url.hash === `#source-${source.id}`);
@@ -2292,6 +2477,15 @@ try {
     "an unresolved identity left a write control on the page");
   assert.equal(await readerPage.evaluate(() => document.querySelector("main")?.textContent?.includes("Reader access")), true,
     "a failed identity lookup did not settle on the read-only floor");
+  // The network state: the aborted identity read is announced as one sentence,
+  // never as the engine's own rejection text (FE-A0 F7; DESIGN.md §5 `offline`).
+  const networkAlert = readerPage.getByRole("alert").filter({ hasText: "Network unavailable. Check the connection and retry." });
+  await networkAlert.waitFor();
+  const alertText = await readerPage.getByRole("alert").allInnerTexts();
+  for (const engineText of ["Failed to fetch", "NetworkError when attempting to fetch resource.", "Load failed"]) {
+    assert.equal(alertText.some((text) => text.includes(engineText)), false, `the page-level alert carried engine text: ${engineText}`);
+  }
+  assert.deepEqual(unexpectedDialogs, [], "a native dialog appeared during the journey");
   await reader.close();
   assert.deepEqual(externalGoogleFontRequests, [], "workbench requested an external Google font");
   report({ status: "passed" });
@@ -2324,6 +2518,7 @@ function report(outcome) {
     duration_ms: Date.now() - startedAt,
     timing: pageTiming,
     console_errors: errors,
+    beforeunload_prompts: beforeunloadPrompts,
     webkit_teardown_rejections: webkitTeardownRejections,
     ...outcome,
   };

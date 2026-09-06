@@ -145,6 +145,11 @@ a:not(.button, .nav-link, .wordmark):hover { color: var(--caos-accent-strong); }
 .button.quiet { color: var(--caos-muted); }
 .button.danger { border-color: var(--caos-critical); color: var(--caos-critical); }
 .button.small { min-height: 30px; border-radius: var(--radius-sm); padding: var(--space-xs) var(--space-sm); font-size: 11px; }
+/* A pressed toggle (Base/Downside, the tornado swing) reads the way a linked
+   evidence chip does: accent border on an accent tint. It carried aria-pressed
+   and this class with no rule behind it (FE-A2 F-01). */
+.button.is-active { border-color: var(--caos-accent); background: color-mix(in srgb, var(--caos-accent) 16%, var(--caos-elevated)); color: var(--caos-accent-strong); }
+.button.is-active:hover { border-color: var(--caos-accent-strong); }
 .field { display: grid; gap: var(--space-xs); margin-bottom: var(--space-md); }
 .field label { color: var(--caos-muted); font-weight: 700; letter-spacing: .06em; }
 .field input, .field select, .field textarea { width: 100%; border: 1px solid var(--caos-border-strong); background: var(--caos-bg); color: var(--caos-text); border-radius: var(--radius-md); padding: var(--space-sm); transition: border-color 160ms var(--ease-out), box-shadow 160ms var(--ease-out); }
@@ -227,15 +232,9 @@ caption { color: var(--caos-muted); font-size: 10px; font-weight: 600; letter-sp
 .skip-link:focus { transform: translateY(0); }
 dialog { border: 1px solid var(--caos-border-strong); border-radius: var(--radius-xl); background: var(--caos-panel); color: var(--caos-text); padding: 0; box-shadow: var(--shadow-modal); overscroll-behavior: contain; }
 dialog::backdrop { background: rgb(0 0 0 / .6); backdrop-filter: blur(3px); }
-/* Overlays are the one surface the shadow vocabulary animates: a 6px rise and a
-   backdrop fade distinguish "modal above the work" from an in-place panel.
-   Confined to no-preference; the global reduced-motion rule also pins it. */
-@media (prefers-reduced-motion: no-preference) {
-  dialog[open] { animation: caos-dialog-in 180ms var(--ease-out); }
-  dialog[open]::backdrop { animation: caos-fade-in 180ms ease-out; }
-}
-@keyframes caos-dialog-in { from { opacity: .5; transform: translateY(6px); } }
-@keyframes caos-fade-in { from { opacity: 0; } }
+/* Dialogs open without an entrance animation: motion is reserved for live state
+   (DESIGN.md §1 and §6; FE-A0 F16). The shadow and the backdrop carry the
+   "modal above the work" reading on their own. */
 dialog:not(.context-drawer) { width: min(680px, calc(100% - 32px)); max-width: 680px; max-height: min(680px, calc(100dvh - 32px)); }
 .dialog-body { display: grid; gap: 12px; padding: 16px; }
 .dialog-body .panel-header { margin: -16px -16px 0; border-radius: var(--radius-xl) var(--radius-xl) 0 0; }
@@ -462,7 +461,9 @@ a.dag-node:hover strong, a.dag-node:focus-visible strong { text-decoration: unde
 .report-studio { display: grid; grid-template-columns: minmax(210px, 2.5fr) minmax(330px, 4fr) minmax(440px, 5.5fr); gap: var(--space-md); height: calc(100dvh - 145px); overflow: hidden; }
 .report-studio > *, .report-studio :where(section, aside, nav, div, form, fieldset, label) { min-width: 0; }
 .report-studio :where(code, p, strong, span, button, a) { overflow-wrap: anywhere; }
-.report-outline, .report-compose { display: grid; min-height: 0; grid-template-rows: 32px minmax(0, 1fr); }
+/* The header row takes the panel header's own height (46px min): a fixed 32px
+   row put the body's first content under the header rule (FE-A2 F-12). */
+.report-outline, .report-compose { display: grid; min-height: 0; grid-template-rows: auto minmax(0, 1fr); }
 .report-rail-scroll { min-height: 0; overflow-y: auto; }
 .report-editor-scroll { min-height: 0; overflow-y: auto; }
 .report-proof-stage { min-width: 0; min-height: 0; overflow: auto; border: 1px solid var(--caos-border); border-radius: var(--radius-lg); background: var(--caos-bg); padding: var(--space-xl); }
@@ -524,7 +525,7 @@ a.dag-node:hover strong, a.dag-node:focus-visible strong { text-decoration: unde
 .rd-masthead-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 4px 14px; margin: 6px 0 0; font: 500 8.5px/1.45 var(--font-mono), ui-monospace, monospace; color: var(--caos-paper-meta); }
 .rd-masthead-facts div { display: grid; gap: 1px; }
 .rd-masthead-facts dt { font-weight: 700; }
-.rd-masthead-facts dd { margin: 0; overflow-wrap: anywhere; color: var(--caos-paper-ink); }
+.rd-masthead-facts dd { margin: 0; overflow-wrap: anywhere; color: var(--caos-ink); }
 .deliverable-document { color: var(--caos-ink); padding: 40px 46px 26px; font-family: var(--font-sans), ui-sans-serif, system-ui, sans-serif; }
 .deliverable-document :focus-visible { outline-color: var(--caos-paper-link); }
 .rd-page-container + .rd-page-container { border-top: 1px dashed var(--caos-paper-rule); margin-top: 26px; padding-top: 30px; }

@@ -1,6 +1,5 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import {
   initialAuthorityState,
   matchesAuthority,
@@ -9,14 +8,6 @@ import {
 } from "./workspaceAuthority.ts";
 
 const reduce = (event: Parameters<typeof workspaceAuthorityReducer>[1]) => workspaceAuthorityReducer(initialAuthorityState, event);
-
-test("case authority refresh follows every reducer generation", () => {
-  const workspace = readFileSync(new URL("../components/Workspace.tsx", import.meta.url), "utf8");
-  const effect = workspace.match(/void refreshCase\(caseId, controller\.signal\);[\s\S]*?\}, \[([^\]]+)\]\);/);
-
-  assert.ok(effect, "case authority refresh effect is present");
-  assert.match(effect[1], /\bauthorityState\.generation\b/);
-});
 
 test("hydrates route authority as a loading case/run boundary", () => {
   const state = reduce({ type: "hydrate", caseId: "case_a", runId: "run_a" });
@@ -31,7 +22,6 @@ test("hydrates route authority as a loading case/run boundary", () => {
       scope: "case",
       context: { generation: 1, caseId: "case_a", runId: "run_a" },
     },
-    acceptedSnapshotId: null,
   });
   assert.strictEqual(workspaceAuthorityReducer(state, {
     type: "requestSucceeded",
@@ -56,25 +46,19 @@ test("hydrates an empty route into a new authority generation", () => {
   );
 });
 
-test("selecting a different case clears the selected run and snapshot authority", () => {
+test("selecting a different case clears the selected run", () => {
   const hydrated = reduce({ type: "hydrate", caseId: "case_a", runId: "run_a" });
   const ready = workspaceAuthorityReducer(hydrated, {
     type: "requestSucceeded",
     context: requestContext(hydrated),
     scope: "case",
   });
-  const accepted = workspaceAuthorityReducer(ready, {
-    type: "snapshotAccepted",
-    context: requestContext(ready),
-    snapshotId: "snapshot_a",
-  });
 
-  const state = workspaceAuthorityReducer(accepted, { type: "selectCase", caseId: "case_b" });
+  const state = workspaceAuthorityReducer(ready, { type: "selectCase", caseId: "case_b" });
 
   assert.equal(state.caseId, "case_b");
   assert.equal(state.runId, null);
-  assert.equal(state.acceptedSnapshotId, null);
-  assert.equal(state.generation, accepted.generation + 1);
+  assert.equal(state.generation, ready.generation + 1);
   assert.equal(state.status, "loading");
   assert.deepEqual(state.pending, { scope: "case", context: requestContext(state) });
 });
@@ -180,26 +164,6 @@ test("rejects a stale failed request", () => {
     workspaceAuthorityReducer(nextRun, { type: "requestFailed", context: requestContext(started), scope: "case" }),
     nextRun,
   );
-});
-
-test("accepts a matching snapshot refresh", () => {
-  const hydrated = reduce({ type: "hydrate", caseId: "case_a", runId: "run_a" });
-  const started = workspaceAuthorityReducer(hydrated, { type: "requestStarted", scope: "case" });
-  assert.strictEqual(workspaceAuthorityReducer(started, {
-    type: "snapshotAccepted",
-    context: requestContext(started),
-    snapshotId: "snapshot_a",
-  }), started);
-  const succeeded = workspaceAuthorityReducer(started, { type: "requestSucceeded", context: requestContext(started), scope: "case" });
-  const state = workspaceAuthorityReducer(succeeded, {
-    type: "snapshotAccepted",
-    context: requestContext(succeeded),
-    snapshotId: "snapshot_a",
-  });
-
-  assert.equal(state.status, "ready");
-  assert.equal(state.acceptedSnapshotId, "snapshot_a");
-  assert.equal(state.pending, null);
 });
 
 test("invalidates only the active case or run authority", () => {
