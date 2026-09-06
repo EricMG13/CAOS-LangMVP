@@ -24,7 +24,16 @@ prompt carries (fix P0/P1, record P2), and that substitution is stated here at t
 
 ## Status
 
-(written as the task proceeds; every claim below points at a command in §9)
+Complete on `claude/enterprise-readiness-frontend-g4-fa7188`, rebased onto `main` at
+`ecdfaee` (the FE-G3 second-pass squash, PR #74) so the branch carries only this
+session's commits: `9ebb4ea` (frontend P1 fixes with paired tests), `fdd1755` (design
+contracts and sidecar), `e82b69d` (critique, report, progress, evidence). Pull request to
+`main`, open and ready for review (the user asked for a merge once CI is green): https://github.com/EricMG13/CAOS-LangMVP/pull/75.
+After the rebase the only file main had changed under this branch was
+`scripts/a11y-axe.mjs` (the Credit-skeleton loading wait, a CI-flake fix) plus the FE-G3
+report; the sweep was rerun on the rebased build against a fresh-data server:
+`{"routes":17,"forwarders":8,"viewports":6,"combinations":125,…,"violations":0}`.
+The smoke script was untouched by the rebase, so the three-engine result in §7 stands.
 
 ## 1. Measuring instrument
 
