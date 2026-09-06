@@ -6,7 +6,7 @@ product
 
 ## Users
 
-CAOS serves institutional leveraged-finance credit specialists. The primary user is the buy-side credit analyst building a defensible credit view across Deep-Dive, Model Builder, Report Studio, and Command Center. Secondary users are PMs/CIOs scanning posture and change, plus Heads of Research/QA overseeing coverage health, evidence quality, and governance.
+CAOS serves institutional leveraged-finance credit specialists. The primary user is the buy-side credit analyst building a defensible credit view across Portfolio, Credit, Sources, Analysis and its Run tool, Market, Model, Report and Admin (the eight destinations plus Run of `DESIGN.md`'s 2026-09-06 addendum). Secondary users are PMs/CIOs scanning posture and change, plus Heads of Research/QA overseeing coverage health, evidence quality, and governance.
 
 ## Product Purpose
 
