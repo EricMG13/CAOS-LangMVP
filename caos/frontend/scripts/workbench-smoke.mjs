@@ -521,6 +521,45 @@ try {
     const row = contractsTable.getByRole("row").filter({ has: page.getByRole("rowheader", { name: capability, exact: true }) });
     assert.equal(await row.locator(".status").innerText(), state, `Admin misstates the ${capability} contract`);
   }
+  // FE-A1 D7: Admin draws the two served governance contracts. The audit package is
+  // driven live — any case member may download it and the response carries the
+  // package digest, which the receipt names. Provisioning needs stored APPROVER/ADMIN
+  // standing that no served route grants (F-12), so this identity (the case's
+  // creator, ANALYST standing) sees the rule, never the control; the control is
+  // proven on a route-intercepted document below, like the model and report legs.
+  const governance = page.getByRole("region", { name: "Case governance" });
+  const [auditResponse] = await Promise.all([
+    page.waitForResponse((response) => new URL(response.url()).pathname === `/api/cases/${caseRecord.id}/audit-package`),
+    governance.getByRole("button", { name: "Download audit package" }).click(),
+  ]);
+  assert.equal(auditResponse.status(), 200, "the audit package was not served");
+  const auditDigest = auditResponse.headers()["x-caos-sha256"] || "";
+  assert.match(auditDigest, /^[0-9a-f]{64}$/, "the audit package response carries no digest");
+  await governance.getByText(`audit-package-${caseRecord.id}.zip`, { exact: false }).waitFor();
+  await governance.getByText(auditDigest.slice(0, 12), { exact: false }).first().waitFor();
+  assert.equal(await governance.getByRole("button", { name: "Provision member" }).count(), 0, "provisioning was offered without APPROVER/ADMIN standing");
+  await governance.getByText("Provisioning a member needs a current APPROVER or ADMIN role", { exact: false }).waitFor();
+  const adminSubject = "qa.admin@local.invalid";
+  const adminIdentityPath = (url) => url.pathname === "/api/me";
+  const adminCasePath = (url) => url.pathname === `/api/cases/${caseRecord.id}`;
+  const adminMembersPath = (url) => url.pathname === `/api/cases/${caseRecord.id}/members`;
+  const adminCaseFixture = await (await api.get(`/api/cases/${caseRecord.id}`)).json();
+  let memberPostBody = null;
+  await page.route(adminIdentityPath, (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ role: "ADMIN", subject: adminSubject }) }));
+  await page.route(adminCasePath, (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ...adminCaseFixture, members: { ...(adminCaseFixture.members || {}), [adminSubject]: "ADMIN" } }) }));
+  await page.route(adminMembersPath, async (route) => {
+    memberPostBody = route.request().postDataJSON();
+    await route.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify({ ...adminCaseFixture, members: { ...(adminCaseFixture.members || {}), [adminSubject]: "ADMIN", [memberPostBody.subject]: memberPostBody.role } }) });
+  });
+  await page.goto(`${baseURL}/admin/?case=${caseRecord.id}&fixture=admin-governance`, { waitUntil: "networkidle" });
+  const provisionForm = page.locator("form[data-member-form]");
+  await provisionForm.waitFor();
+  await provisionForm.getByLabel("Provision a distinct approver (subject)").fill("qa.approver@local.invalid");
+  await provisionForm.getByRole("button", { name: "Provision member" }).click();
+  await page.getByText("qa.approver@local.invalid provisioned as case APPROVER.", { exact: false }).waitFor();
+  assert.deepEqual(memberPostBody, { subject: "qa.approver@local.invalid", role: "APPROVER" }, "provisioning posted something other than the subject and standing");
+  await page.waitForFunction(() => document.getElementById("member-subject")?.value === "", null, { timeout: 5_000 }).catch(() => { throw new Error("the form kept the provisioned subject after the receipt"); });
+  await page.unroute(adminIdentityPath); await page.unroute(adminCasePath); await page.unroute(adminMembersPath);
   expectedNotFoundURL = `${baseURL}/missing-${fixtureSuffix}`;
   await page.goto(expectedNotFoundURL, { waitUntil: "networkidle" });
   await page.getByRole("heading", { name: "Page not found" }).waitFor();
@@ -704,6 +743,26 @@ try {
       await page.setViewportSize({ width: 1440, height: 1000 });
       await page.goto(`${baseURL}/portfolio/`, { waitUntil: "networkidle" });
     }
+    if (index === 1) {
+      // FE-A1 D11 and the "Align — Analysis paused" artboard: the intake-created Deep
+      // Research run pauses on plan approval; Run leads with the execution route and
+      // the plan's one primary, and the compile form is a closed disclosure below it.
+      await intakePanel.getByRole("link", { name: "Open Run", exact: true }).waitFor({ timeout: 120_000 });
+      await intakePanel.getByRole("link", { name: "Open Run", exact: true }).click();
+      await page.waitForURL((url) => url.pathname === "/run/" && url.searchParams.get("case") === intakeCaseRecord.id);
+      await page.getByRole("button", { name: "Approve research plan" }).waitFor();
+      const advanced = page.locator("details.run-advanced");
+      await advanced.waitFor();
+      assert.equal(await advanced.evaluate((element) => element.open), false, "an intake-created run still leads with the compile form");
+      assert.equal(await page.locator("#pathway").isVisible(), false, "the compile form is visible beside an intake-created run");
+      assert.equal(await page.locator("main .button.primary:visible").count(), 1, "an intake-created paused run offers more than one primary action");
+      await advanced.locator("summary").click();
+      await page.locator("#pathway").waitFor({ state: "visible" });
+      // Back to this case's Portfolio: the fenced-header check below expects the
+      // intake header of the case the loop left selected.
+      await page.goto(`${baseURL}/portfolio/?case=${intakeCaseRecord.id}`, { waitUntil: "networkidle" });
+      await intakePanel.getByRole("region", { name: "Source disposition manifest" }).waitFor();
+    }
   }
   // The intake header is fenced to the selected case (FE-A0 F6): a switch to a
   // case with no intake shows the idle sentence, never the previous case's date.
@@ -726,6 +785,21 @@ try {
   await refusalBlock.waitFor();
   await refusalBlock.getByText("scan.pdf", { exact: true }).waitFor();
   assert.equal((await listCases()).length, casesBefore + intakeCases.length + browserCases.length, "a refused pack created a case");
+  // FE-A1 D10: a pack whose documents name the issuer two ways is refused
+  // INTAKE_ISSUER_AMBIGUOUS; the refusal points at the advanced path (create the
+  // case, upload on Sources, compile from Run) with links, and still creates nothing.
+  await refusedPanel.locator("#intake-files").setInputFiles([
+    intakeDoc("annual", `Ambiguouspack-${fixtureSuffix} Holdings`),
+    intakeDoc("quarterly", `Otherissuer-${fixtureSuffix} Holdings`),
+  ]);
+  expectedIntakeRefusals = 1;
+  await refusedPanel.getByRole("button", { name: /^Analyze 2 documents$/ }).click();
+  const ambiguousBlock = page.getByRole("alert").filter({ hasText: "INTAKE_ISSUER_AMBIGUOUS" });
+  await ambiguousBlock.waitFor();
+  await ambiguousBlock.getByRole("link", { name: "create the case", exact: true }).waitFor();
+  await ambiguousBlock.getByRole("link", { name: "Sources", exact: true }).waitFor();
+  await ambiguousBlock.getByRole("link", { name: "Run", exact: true }).waitFor();
+  assert.equal((await listCases()).length, casesBefore + intakeCases.length + browserCases.length, "an ambiguous pack created a case");
 
   await page.goto(`${baseURL}/run/?case=${caseRecord.id}`, { waitUntil: "networkidle" });
   // Deep Research availability is derived from runtime truth. This server binds
@@ -2483,6 +2557,11 @@ try {
 
   await readerPage.goto(`${baseURL}/market/?case=${caseRecord.id}`, { waitUntil: "networkidle" });
   await absent(readerPage, "Upload CP-3 workbook");
+  await readerPage.goto(`${baseURL}/admin/?case=${caseRecord.id}`, { waitUntil: "networkidle" });
+  await absent(readerPage, "Provision member");
+  assert.equal(await readerPage.evaluate(() => document.querySelector("main")?.textContent?.includes("Reader access: member provisioning is an analyst action.")), true,
+    "Admin did not say why provisioning is absent");
+  await readerPage.getByRole("button", { name: "Download audit package" }).waitFor();
 
   // The gate must fail closed even when /api/me never answers successfully.
   await readerPage.route((url) => url.pathname === "/api/me", (route) => route.abort("failed"));

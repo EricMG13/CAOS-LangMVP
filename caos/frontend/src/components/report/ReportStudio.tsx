@@ -190,7 +190,6 @@ export default function ReportStudio({ caseId, role, subject = "", selectedCase,
   const [changeComment, setChangeComment] = useState("");
   const [opinionForm, setOpinionForm] = useState<OpinionForm>(EMPTY_OPINION);
   const [receipt, setReceipt] = useState<FilingReceipt | null>(null);
-  const [memberForm, setMemberForm] = useState({ subject: "", role: "APPROVER" });
   const [registry, setRegistry] = useState<RegistryResponse | null>(null);
   const [scenarioForm, setScenarioForm] = useState({ assumptionId: "", case: "BASE", periodId: "", value: "" });
   const loadGeneration = useRef(0);
@@ -529,19 +528,6 @@ export default function ReportStudio({ caseId, role, subject = "", selectedCase,
     if (frozen) void loadReceipt(frozen); else setReceipt(null);
   };
 
-  const addMember = async () => {
-    if (!canApprove || !memberForm.subject.trim()) return;
-    const token = beginLifecycle("member");
-    if (!token) return;
-    try {
-      await request(`/api/cases/${caseId}/members`, { method: "POST", body: JSON.stringify({ subject: memberForm.subject.trim(), role: memberForm.role }) });
-      if (!lifecycleIsCurrent(token)) return;
-      setMessage(`${memberForm.subject.trim()} provisioned as case ${memberForm.role}.`);
-      setMemberForm({ subject: "", role: "APPROVER" });
-    } catch (caught) { if (lifecycleIsCurrent(token)) setError(firstErrorMessage(caught, "Unable to provision the member")); }
-    finally { finishLifecycle(token); }
-  };
-
   const fileFrozen = async () => {
     if (!selectedFrozen || !canApprove) return;
     const token = beginLifecycle("file");
@@ -602,8 +588,6 @@ export default function ReportStudio({ caseId, role, subject = "", selectedCase,
   const pendingFreeze = pendingJobs.find((job) => freezeJobIsPending(job.status)) || null;
   const failedFreeze = pendingJobs.find((job) => job.status === "FAILED") || null;
   const canFileSelected = selectedFrozen ? canFileFrozen(role, subject, { signed_by: selectedFrozen.signed_by, frozen_by: selectedFrozen.frozen_by }) : false;
-  // Provisioning mirrors the filing rule: current approver/admin role AND stored case APPROVER/ADMIN standing.
-  const canProvision = canApprove && ["APPROVER", "ADMIN"].includes(selectedCase?.members?.[subject] ?? "");
   const lifecycleBusy = pending !== "";
   const authoringLocked = lifecycleBusy;
   const selectedNarrative = selectedBlock?.kind === "NARRATIVE" ? selectedBlock : null;
@@ -650,7 +634,6 @@ export default function ReportStudio({ caseId, role, subject = "", selectedCase,
             </form> : null}
             {pendingFreeze ? <p className="status warning freeze-job" role="status" aria-live="polite" data-freeze-job>Freeze of Draft v{pendingFreeze.draft_version} is {humanizeCode(pendingFreeze.status).toLowerCase()} · the worker publishes and verifies every export before the frozen record exists.</p> : null}
             {failedFreeze && !pendingFreeze ? <StateNote tone="critical" live="status">Freeze of Draft v{failedFreeze.draft_version} failed: {failedFreeze.error?.code || "DELIVERABLE_RENDER_FAILED"}. Freeze again to requeue.</StateNote> : null}
-            {canProvision ? <form className="opinion-form" data-member-form onSubmit={(event) => { event.preventDefault(); void addMember(); }}><div className="field"><label htmlFor="member-subject">Provision a distinct approver (subject)</label><input id="member-subject" value={memberForm.subject} maxLength={200} onChange={(event) => setMemberForm((current) => ({ ...current, subject: event.target.value }))} disabled={lifecycleBusy} /></div><div className="field"><label htmlFor="member-role">Case standing</label><select id="member-role" value={memberForm.role} onChange={(event) => setMemberForm((current) => ({ ...current, role: event.target.value }))} disabled={lifecycleBusy}><option value="APPROVER">APPROVER</option><option value="ADMIN">ADMIN</option></select></div><div className="report-actions"><button className="button small" type="submit" disabled={!memberForm.subject.trim() || lifecycleBusy}>{pending === "member" ? "Provisioning…" : "Provision member"}</button></div></form> : null}
             <div className="report-actions report-freeze-actions">{canWrite ? <button className="button primary" data-primary-report-action type="button" onClick={() => void freeze()} disabled={!freezeReady || lifecycleBusy || Boolean(pendingFreeze)}>{pending === "freeze" ? "Freezing…" : `Freeze saved v${workspace.current?.version || "—"}`}</button> : <span className="status idle">Reader mode · Freeze is an analyst action</span>}<span>Freeze revalidates the saved revision, the signed opinion and current authority on the server; the worker publishes every export before the frozen record exists.</span></div>
           </section>
         </>}

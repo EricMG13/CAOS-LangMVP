@@ -865,7 +865,9 @@ export default function Workspace({ destination, children }: { destination?: Des
   useEffect(() => {
     // Read only when the case wire names an intake (never a 404 probe) and the
     // record is not already the one on screen.
-    if (!hydrated || !caseId || active !== "Portfolio" || !latestIntakeId) return;
+    // Run reads it too (FE-A1 D11): the compile form collapses into a disclosure
+    // when the selected run is the intake's run, and only the record says so.
+    if (!hydrated || !caseId || (active !== "Portfolio" && active !== "Run") || !latestIntakeId) return;
     if (intake && intake.case_id === caseId && intake.intake_id === latestIntakeId) return;
     const context = requestContext(authorityRef.current);
     const controller = new AbortController();
@@ -1029,6 +1031,33 @@ export default function Workspace({ destination, children }: { destination?: Des
     }
   };
 
+  // One governed mutation provisions a distinct approver or admin on the selected
+  // case (Task 10, moved from Report to Admin by FE-A1 D7). The receipt names the
+  // standing; the case wire is re-read so `members` reflects it.
+  const provisionMember = async (member: { subject: string; role: string }) => {
+    const context = requestContext(authorityRef.current);
+    const expectedCaseId = context.caseId;
+    const memberSubject = member.subject.trim();
+    if (!expectedCaseId || !memberSubject) return false;
+    setError(""); setNotice("");
+    setPendingAction("member");
+    try {
+      await request(`/api/cases/${expectedCaseId}/members`, { method: "POST", body: JSON.stringify({ subject: memberSubject, role: member.role }) });
+      if (!matchesAuthority(authorityRef.current, context)) return false;
+      setNotice(`${memberSubject} provisioned as case ${member.role}.`);
+      // The receipt and the cleared form land in the same render; the case re-read
+      // that carries the new standing into `members` follows on its own (CI caught
+      // the form still holding the subject while the re-read was in flight).
+      void refreshCase(expectedCaseId);
+      return true;
+    } catch (caught) {
+      if (matchesAuthority(authorityRef.current, context)) setError(firstErrorMessage(caught, "Unable to provision the member"));
+      return false;
+    } finally {
+      if (matchesAuthority(authorityRef.current, context)) setPendingAction((current) => current === "member" ? "" : current);
+    }
+  };
+
   const switchSnapshot = async (snapshotId: string) => {
     const context = requestContext(authorityRef.current);
     if (!context.caseId) return null;
@@ -1074,13 +1103,13 @@ export default function Workspace({ destination, children }: { destination?: Des
     switch (active) {
       case "Portfolio": return <CasesView writeAccess={writeAccess} cases={cases} casesLoading={casesLoading} selectedCase={selectedCase} caseId={caseId} createCase={createCase} pendingAction={pendingAction} intake={intake} intakeRefusal={intakeRefusal} run={run} submitIntake={submitIntake} />;
       case "Sources": return <SourcesView writeAccess={writeAccess} selectedCase={selectedCase} artifactId={routeArtifactId} sourceId={routeSourceId} upload={upload} pendingAction={pendingAction} onOpenEvidence={(evidenceId, source, opener) => setDrawer({ kind: "evidence", evidenceId, source, opener })} />;
-      case "Run": return <RunConsole writeAccess={writeAccess} caseId={caseId} selectedCase={selectedCase} run={run} runLoading={runLoading} runError={runError} startRun={startRun} acceptRun={acceptRun} acceptedSnapshotId={acceptedRunSnapshotId} supersededSnapshotId={supersededRunSnapshotId} visibleSnapshotId={authority?.accepted?.id || ""} switchRequired={authority?.switch_required === true} approveResearchPlan={approveResearchPlan} approvalUnavailable={approvalUnavailable === runId} pendingAction={pendingAction} resumeSlot={resumeSlot} />;
+      case "Run": return <RunConsole fromIntake={Boolean(run && intake?.case_id === caseId && intake.run?.id === run.id)} writeAccess={writeAccess} caseId={caseId} selectedCase={selectedCase} run={run} runLoading={runLoading} runError={runError} startRun={startRun} acceptRun={acceptRun} acceptedSnapshotId={acceptedRunSnapshotId} supersededSnapshotId={supersededRunSnapshotId} visibleSnapshotId={authority?.accepted?.id || ""} switchRequired={authority?.switch_required === true} approveResearchPlan={approveResearchPlan} approvalUnavailable={approvalUnavailable === runId} pendingAction={pendingAction} resumeSlot={resumeSlot} />;
       case "Analysis": return <DeepDive writeAccess={writeAccess} selectedCase={selectedCase} question={routeQuestion} caseId={caseId} run={run} authority={authority} authorityStatus={authorityStatus} onSwitchSnapshot={switchSnapshot} />;
       case "Market": return <RVView key={caseId} writeAccess={writeAccess} caseId={caseId} />;
       case "Credit": return <CommandView caseId={caseId} question={routeQuestion} authority={authority} authorityStatus={authorityStatus} />;
       case "Model": return <ModelBuilder caseId={caseId} role={role} onDraftStateChange={onModelDraftStateChange} />;
       case "Report": return <ReportStudio key={caseId} caseId={caseId} role={role} subject={subject} selectedCase={selectedCase} onDraftStateChange={onReportDraftStateChange} requestDraftDiscard={requestDraftDiscard} />;
-      case "Admin": return <AdminView />;
+      case "Admin": return <AdminView caseId={caseId} selectedCase={selectedCase} role={role} subject={subject} writeAccess={writeAccess} pendingAction={pendingAction} provisionMember={provisionMember} />;
     }
   };
 
@@ -1124,7 +1153,7 @@ function CasesView({ writeAccess, cases, casesLoading, selectedCase, caseId, cre
   return <div className="grid cases-layout">
     <IntakePanel writeAccess={writeAccess} selectedCase={selectedCase} caseId={caseId} pendingAction={pendingAction} intake={intake} refusal={intakeRefusal} run={run} submitIntake={submitIntake} />
     <section className="panel cases-register"><div className="panel-header"><h2>Monitored credits</h2><span className="panel-meta">{casesLoading ? "Loading…" : `${visibleCases.length} of ${cases.length}`}</span></div><div className="worklist-toolbar"><div className="field"><label htmlFor="case-search">Search credits</label><input id="case-search" type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Issuer, case, or sector" /></div><div className="field"><label htmlFor="case-snapshot-filter">Authority</label><select id="case-snapshot-filter" value={snapshotFilter} onChange={(event) => setSnapshotFilter(event.target.value as "all" | "accepted" | "unaccepted")}><option value="all">All credits</option><option value="accepted">Accepted authority</option><option value="unaccepted">No accepted authority</option></select></div></div><div className="panel-body table-wrap" tabIndex={0} role="region" aria-label="Monitored credit register"><table><thead><tr><th scope="col">Credit</th><th scope="col">Case</th><th scope="col">Evidence</th><th scope="col">Authority</th><th scope="col">Action</th></tr></thead><tbody>{visibleCases.map((item) => <tr aria-current={caseId === item.id ? "true" : undefined} className={caseId === item.id ? "selected-row" : undefined} key={item.id}><td><strong>{item.issuer}</strong><div className="muted">{item.sector}</div></td><td>{item.name}</td><td className="num">{item.source_count == null ? "Unavailable" : `${item.source_count} source${item.source_count === 1 ? "" : "s"}`}</td><td>{item.accepted_snapshot_id ? <span className="status success">Accepted</span> : <span className="status warning">Not accepted</span>}</td><td><Link className="button small primary" href={withQuery("/credit", { case: item.id })}>Open credit</Link></td></tr>)}</tbody></table>{!visibleCases.length && (cases.length ? <EmptyBlock><p>No credits match this search and filter.</p><button className="button primary" type="button" onClick={resetFilters}>Reset filters</button></EmptyBlock> : <LoadState loading={casesLoading} empty="No credits yet. Create the first case to establish the context boundary." />)}</div></section>
-    <section className="panel cases-create"><div className="panel-header"><h2>Create case</h2></div><div className="panel-body">{writeAccess === "yes" ? <form onSubmit={createCase}><div className="field"><label htmlFor="case-name">Case name</label><input id="case-name" name="name" autoComplete="off" required placeholder="Q3 credit review…" /></div><div className="field"><label htmlFor="issuer">Issuer</label><input id="issuer" name="issuer" autoComplete="organization" required placeholder="Issuer legal name…" /></div><div className="field"><label htmlFor="sector">Sector</label><input id="sector" name="sector" autoComplete="off" placeholder="Business services…" /></div><button className={`button ${selectedCase ? "" : "primary"}`} type="submit" disabled={pendingAction === "create-case"}>{pendingAction === "create-case" ? "Creating…" : "Create case"}</button></form> : <WriteBlocked access={writeAccess} action="case creation" />}</div></section>
+    <section className="panel cases-create" id="cases-create"><div className="panel-header"><h2>Create case</h2></div><div className="panel-body">{writeAccess === "yes" ? <form onSubmit={createCase}><div className="field"><label htmlFor="case-name">Case name</label><input id="case-name" name="name" autoComplete="off" required placeholder="Q3 credit review…" /></div><div className="field"><label htmlFor="issuer">Issuer</label><input id="issuer" name="issuer" autoComplete="organization" required placeholder="Issuer legal name…" /></div><div className="field"><label htmlFor="sector">Sector</label><input id="sector" name="sector" autoComplete="off" placeholder="Business services…" /></div><button className={`button ${selectedCase ? "" : "primary"}`} type="submit" disabled={pendingAction === "create-case"}>{pendingAction === "create-case" ? "Creating…" : "Create case"}</button></form> : <WriteBlocked access={writeAccess} action="case creation" />}</div></section>
     {/* Fit truth: render the served fit when the wire carries one; claim NEEDS_SOURCE
         only when the case verifiably has zero sources (the server's own rule); stay
         neutral otherwise. The case wire now serves pathway_fit, so the fallback below
@@ -1178,6 +1207,10 @@ function IntakePanel({ writeAccess, selectedCase, caseId, pendingAction, intake,
       {busy && <p className="status running" role="status" aria-live="polite">Admitting, classifying and routing the documents…</p>}
       {refusal && <StateBlock tone="critical" live="alert" title="Documents not admitted" body={<><span className="mono">{refusal.code}</span> — {refusal.message}</>}>
         <p>{refusal.next_action}</p>
+        {/* FE-A1 D10: a pack whose documents spell the issuer differently cannot
+            follow "drop one issuer's documents at a time"; the advanced path is
+            the documented one until the classifier is repaired (F-17). */}
+        {refusal.code === "INTAKE_ISSUER_AMBIGUOUS" ? <p>Advanced path for a pack whose documents name one issuer differently: <a href="#cases-create">create the case</a>, upload each document on {selectedCase ? <Link href={withQuery("/sources", { case: selectedCase.id })}>Sources</Link> : "Sources"}, then compile from {selectedCase ? <Link href={withQuery("/run", { case: selectedCase.id })}>Run</Link> : "Run"}.</p> : null}
         {refusal.findings.length ? <ul className="change-list">{refusal.findings.map((finding, index) => <li key={`${finding.filename}-${index}`}><span className="mono">{finding.filename}</span> — {finding.detail}{finding.status ? ` (${finding.status})` : ""}</li>)}</ul> : null}
       </StateBlock>}
       {intake && intake.case_id === caseId ? <IntakeEvidence intake={intake} run={run} caseId={caseId} /> : null}
@@ -1542,7 +1575,7 @@ function RunStatus({ writeAccess, caseId, run, runLoading, runError, acceptRun, 
   </div>;
 }
 
-function RunConsole({ writeAccess, caseId, selectedCase, run, runLoading, runError, startRun, acceptRun, acceptedSnapshotId, supersededSnapshotId, visibleSnapshotId, switchRequired, approveResearchPlan, approvalUnavailable, pendingAction, resumeSlot }: { writeAccess: WriteAccess; caseId: string; selectedCase: CaseRecord | null; run: RunRecord | null; runLoading: boolean; runError: string; startRun: (event: FormEvent<HTMLFormElement>) => void; acceptRun: (event: ReactMouseEvent<HTMLButtonElement>) => void; acceptedSnapshotId: string; supersededSnapshotId: string; visibleSnapshotId: string; switchRequired: boolean; approveResearchPlan: (planHash: string) => void; approvalUnavailable: boolean; pendingAction: string; resumeSlot: ReactNode }) {
+function RunConsole({ fromIntake, writeAccess, caseId, selectedCase, run, runLoading, runError, startRun, acceptRun, acceptedSnapshotId, supersededSnapshotId, visibleSnapshotId, switchRequired, approveResearchPlan, approvalUnavailable, pendingAction, resumeSlot }: { fromIntake: boolean; writeAccess: WriteAccess; caseId: string; selectedCase: CaseRecord | null; run: RunRecord | null; runLoading: boolean; runError: string; startRun: (event: FormEvent<HTMLFormElement>) => void; acceptRun: (event: ReactMouseEvent<HTMLButtonElement>) => void; acceptedSnapshotId: string; supersededSnapshotId: string; visibleSnapshotId: string; switchRequired: boolean; approveResearchPlan: (planHash: string) => void; approvalUnavailable: boolean; pendingAction: string; resumeSlot: ReactNode }) {
   const [pathway, setPathway] = useState("EARNINGS_UPDATE");
   const [depth, setDepth] = useState("screen");
   const deepResearchAvailable = selectedCase?.deep_research_available === true;
@@ -1562,10 +1595,11 @@ function RunConsole({ writeAccess, caseId, selectedCase, run, runLoading, runErr
   const effectiveDepth = effectivePathway === "DEEP_RESEARCH" ? "full" : depth;
   const approvalPlan = run?.status === "paused" && run.error?.code === "PLAN_APPROVAL_REQUIRED" ? run.research?.proposed_plan : null;
   const approvalHash = run?.status === "paused" && run.error?.code === "PLAN_APPROVAL_REQUIRED" ? run.research?.proposed_plan_hash : null;
-  return <div className="grid">
-    <section className="panel span-4">
-      <div className="panel-header"><h2>Compile route</h2><span className="panel-meta">Immutable plan</span></div>
-      <div className="panel-body flow">
+  // One form, two homes (FE-A1 D11, the "Align — Analysis paused" artboard): beside
+  // the route while the analyst compiles by hand, and collapsed below it as
+  // "Advanced: compile a route" when the selected run came from intake, so the
+  // governed result and its one primary action (accept, or approve the plan) lead.
+  const compileForm = <>
         {writeAccess === "yes" ? <form onSubmit={startRun}>
           <div className="field">
             <label htmlFor="pathway">Purpose</label>
@@ -1592,12 +1626,20 @@ function RunConsole({ writeAccess, caseId, selectedCase, run, runLoading, runErr
           <button className="button primary" type="submit" disabled={!caseId || !effectivePathway || pendingAction === "start-run"}>{pendingAction === "start-run" ? "Compiling…" : "Compile and run"}</button>
         </form> : <WriteBlocked access={writeAccess} action="compiling a route" />}
         <div className="callout">Every route begins by parsing your sources; the readiness check then runs against that exact parse.</div>
-      </div>
-    </section>
-    <section className="panel span-8">
+  </>;
+  return <div className="grid">
+    {!fromIntake ? <section className="panel span-4">
+      <div className="panel-header"><h2>Compile route</h2><span className="panel-meta">Immutable plan</span></div>
+      <div className="panel-body flow">{compileForm}</div>
+    </section> : null}
+    <section className={`panel ${fromIntake ? "span-12" : "span-8"}`}>
       <div className="panel-header"><h2>Execution route</h2><RunStatusBadge run={run} /></div>
       <div className="panel-body flow"><RunStatus writeAccess={writeAccess} caseId={caseId} run={run} runLoading={runLoading} runError={runError} acceptRun={acceptRun} acceptedSnapshotId={acceptedSnapshotId} supersededSnapshotId={supersededSnapshotId} visibleSnapshotId={visibleSnapshotId} switchRequired={switchRequired} pendingAction={pendingAction} resumeSlot={resumeSlot} approvalSlot={approvalPlan && approvalHash ? <ResearchPlanView plan={approvalPlan} planHash={approvalHash} approving={pendingAction === "approve-research-plan"} approvalUnavailable={approvalUnavailable} writeAccess={writeAccess} onApprove={approveResearchPlan} /> :<StateBlock tone="warning" live="status" code="PLAN_APPROVAL_REQUIRED" body="The persisted approval plan is unavailable; approval remains blocked." />} /></div>
     </section>
+    {fromIntake ? <details className="panel run-advanced span-12">
+      <summary>Advanced: compile a route</summary>
+      <div className="panel-body flow">{compileForm}</div>
+    </details> : null}
   </div>;
 }
 
@@ -1880,17 +1922,62 @@ function CommandView({ caseId, question, authority, authorityStatus }: { caseId:
 // screens stay an unavailable capability (CLAUDE.md known gaps), but two of the
 // contracts they would draw on are served today: the hash-chained case audit
 // package and case membership. Saying "Not served" for those was a false claim.
-function AdminView() {
+// Admin draws exactly the two governance contracts this build serves (FE-A1 D7):
+// the case audit package and member provisioning. Every other administrative
+// capability stays an honest "Not served" row; no control is drawn for it.
+function AdminView({ caseId, selectedCase, role, subject, writeAccess, pendingAction, provisionMember }: { caseId: string; selectedCase: CaseRecord | null; role: string; subject: string; writeAccess: WriteAccess; pendingAction: string; provisionMember: (member: { subject: string; role: string }) => Promise<boolean> }) {
+  const [memberForm, setMemberForm] = useState({ subject: "", role: "APPROVER" });
+  const [download, setDownload] = useState<{ state: "idle" | "busy" | "done" | "unavailable" | "error"; sha256?: string; filename?: string; message?: string }>({ state: "idle" });
+  const downloadGeneration = useRef(0);
+  // Provisioning mirrors the filing rule (Task 10): a current APPROVER/ADMIN role
+  // and stored case APPROVER/ADMIN standing; the server enforces the same rule.
+  const canProvision = (role === "APPROVER" || role === "ADMIN") && ["APPROVER", "ADMIN"].includes(selectedCase?.members?.[subject] ?? "");
   const contracts: [string, string, "served" | "absent"][] = [
     ["Bundle integrity", "Signed build manifest and file verification", "absent"],
     ["Audit rows", "Readable, immutable actor and action events", "absent"],
-    ["Audit package", "Hash-chained case audit package (GET /api/cases/{case_id}/audit-package); not drawn on this surface", "served"],
-    ["Membership", "Identity-to-case role assignments (POST /api/cases/{case_id}/members); provisioned from Report", "served"],
+    ["Audit package", "Hash-chained case audit package (GET /api/cases/{case_id}/audit-package); download below", "served"],
+    ["Membership", "Identity-to-case role assignments (POST /api/cases/{case_id}/members); provisioned below", "served"],
     ["Step-up", "Server-verified privileged-session state", "absent"],
   ];
+  const downloadAuditPackage = async () => {
+    const action = ++downloadGeneration.current;
+    setDownload({ state: "busy" });
+    try {
+      const response = await networkFetch(`/api/cases/${caseId}/audit-package`);
+      if (response.status === 404) { if (action === downloadGeneration.current) setDownload({ state: "unavailable" }); return; }
+      if (!response.ok) throw new Error(`Unable to download the audit package (${response.status})`);
+      const blob = await response.blob();
+      if (action !== downloadGeneration.current) return;
+      const disposition = response.headers.get("content-disposition") || "";
+      const filename = /filename="?([^";]+)"?/i.exec(disposition)?.[1] || `audit-package-${caseId}.zip`;
+      const sha256 = response.headers.get("x-caos-sha256") || "";
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url; anchor.download = filename; document.body.appendChild(anchor); anchor.click(); anchor.remove(); URL.revokeObjectURL(url);
+      setDownload({ state: "done", sha256, filename });
+    } catch (caught) { if (action === downloadGeneration.current) setDownload({ state: "error", message: firstErrorMessage(caught, "Unable to download the audit package") }); }
+  };
+  const submitMember = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (await provisionMember(memberForm)) setMemberForm({ subject: "", role: "APPROVER" });
+  };
+  const busy = pendingAction === "member";
   return <div className="admin-capability">
-    <section className="admin-intro"><span className="flag">UNAVAILABLE</span><div><div className="meta-label">Deployment capability</div><h2>Administrative screens are not served by this application build.</h2><p>No token prompt or simulated audit record is shown. Identity role and case role remain separate server-owned concepts. The contracts this build does serve are marked below; none of them is drawn here.</p></div></section>
+    <section className="admin-intro"><span className="flag">PARTIAL</span><div><div className="meta-label">Deployment capability</div><h2>Most administrative screens are not served by this application build.</h2><p>No token prompt or simulated audit record is shown. Identity role and case role remain separate server-owned concepts. The two contracts this build serves — the case audit package and member provisioning — are drawn below; the rest are marked not served.</p></div></section>
     <section className="panel"><div className="panel-header"><h2>Required contracts</h2><span className="panel-meta">Server-owned</span></div><div className="panel-body table-wrap" tabIndex={0} role="region" aria-label="Required administrative contracts"><table><thead><tr><th scope="col">Capability</th><th scope="col">Required response</th><th scope="col">State</th></tr></thead><tbody>{contracts.map(([capability, response, state]) => <tr key={capability}><th scope="row">{capability}</th><td>{response}</td><td>{state === "served" ? <span className="status success">Served</span> : <span className="status warning">Not served</span>}</td></tr>)}</tbody></table></div></section>
-    <section className="context-strip"><strong>Authorization boundary</strong><p>Adding these screens requires authenticated backend routes and auditable policy enforcement. Client-only controls would not create administrative authority.</p></section>
+    <section className="panel" aria-labelledby="case-governance-title"><div className="panel-header"><h2 id="case-governance-title">Case governance</h2><span className="panel-meta">{selectedCase ? `${selectedCase.issuer} / ${selectedCase.name}` : "No case selected"}</span></div>
+      <div className="panel-body flow">
+        {!selectedCase ? <EmptyBlock><p>Select a case to download its audit package or provision a member.</p></EmptyBlock> : <>
+          <div className="row-actions"><span className="muted">Hash-chained and offline-verifiable; every export is recorded as an audit event.</span><button className="button" type="button" disabled={download.state === "busy"} onClick={() => void downloadAuditPackage()}>{download.state === "busy" ? "Preparing…" : "Download audit package"}</button></div>
+          {download.state === "done" ? <MutationReceipt>Audit package {download.filename} downloaded · SHA-256 {download.sha256 ? <IdentityValue value={download.sha256} /> : "not served"}</MutationReceipt> : null}
+          {download.state === "unavailable" ? <Unavailable title="Audit package" context="This deployment does not serve the case audit package." /> : null}
+          {download.state === "error" ? <StateNote tone="critical" live="alert">{download.message}</StateNote> : null}
+          {writeAccess !== "yes" ? <WriteBlocked access={writeAccess} action="member provisioning" />
+            : canProvision ? <form className="opinion-form" data-member-form onSubmit={(event) => void submitMember(event)}><div className="field"><label htmlFor="member-subject">Provision a distinct approver (subject)</label><input id="member-subject" value={memberForm.subject} maxLength={200} onChange={(event) => setMemberForm((current) => ({ ...current, subject: event.target.value }))} disabled={busy} /></div><div className="field"><label htmlFor="member-role">Case standing</label><select id="member-role" value={memberForm.role} onChange={(event) => setMemberForm((current) => ({ ...current, role: event.target.value }))} disabled={busy}><option value="APPROVER">APPROVER</option><option value="ADMIN">ADMIN</option></select></div><div className="row-actions"><button className="button small" type="submit" disabled={!memberForm.subject.trim() || busy}>{busy ? "Provisioning…" : "Provision member"}</button></div></form>
+            : <p className="muted">Provisioning a member needs a current APPROVER or ADMIN role and stored APPROVER or ADMIN standing on this case.</p>}
+        </>}
+      </div>
+    </section>
+    <section className="context-strip"><strong>Authorization boundary</strong><p>Adding the remaining screens requires authenticated backend routes and auditable policy enforcement. Client-only controls would not create administrative authority.</p></section>
   </div>;
 }
