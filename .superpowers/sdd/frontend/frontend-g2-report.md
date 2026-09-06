@@ -22,15 +22,21 @@ that name a frontend route, and `caos/server/caos/contracts.py` and
 
 ## Status
 
-COMPLETE on the branch. Three commits: `2d9e914` (the app, its unit tests and the
-browser scripts, one commit because every load-bearing literal moves with the code it
-pins), `472d4c2` (the documents and the two decision records), and the report commit
-(this file and `progress.md`). Every frontend gate is green on `2d9e914`'s tree (the later
-commits touch no code): lint, tsc, unit 135/135, build 20/20, the workbench smoke in
-Chromium, Firefox and WebKit, the accessibility sweep over 17 routes at six viewports with
-0 violations, and the focus soak 8/8. No server file changed, so the backend suite and
-Ruff were not run. A draft pull request to `main` is opened after the report commit; its
-URL is recorded in `progress.md`.
+COMPLETE on the branch; draft pull request
+https://github.com/EricMG13/CAOS-LangMVP/pull/65 (not merged). Three commits plus this
+correction: `93af3b8` (the app, its unit tests and the browser scripts, one commit because
+every load-bearing literal moves with the code it pins), `709eb37` (the documents and the
+two decision records), `c7fcec7` (this report and `progress.md`), and the commit that
+records the pull request and the rebase. The branch was rebased onto `origin/main` at
+`fff945c` (PR #64, `fix(engine)`: `caos/server/caos/engine/runtime.py` and
+`caos/tests/spec/test_runs_spec.py`, no frontend path) before the push, which rewrote the
+hashes the first draft of this report and `progress.md` carried (`2d9e914`, `472d4c2`,
+`614cb45`); the tree of every frontend file is byte-identical across the rebase. Every
+frontend gate is green on that tree: lint, tsc, unit 135/135, build 20/20, the workbench
+smoke in Chromium, Firefox and WebKit, the accessibility sweep over 17 routes at six
+viewports with 0 violations, and the focus soak 8/8; the Chromium smoke was run a second
+time against a server started from the rebased tree (§4). No server file changed in this
+task, so the backend suite and Ruff were not run.
 
 ## 0. A note on the canvas the task names
 
@@ -126,7 +132,7 @@ client navigation. After the move both write `CAOS — <destination>`.
 
 ## 3. Test literals that moved, with their commit
 
-All of the below moved in the commit that changed the code they pin (`2d9e914`, the
+All of the below moved in the commit that changed the code they pin (`93af3b8`, the
 app-and-scripts commit), never separately.
 
 | Test file | Literal before | Literal after |
@@ -176,7 +182,8 @@ earlier session, so this task used `:8770` and `CAOS_URL`.
 | Workbench smoke, WebKit | `CAOS_URL=http://127.0.0.1:8770 CAOS_BROWSER=webkit npm run test:workbench` (75 s after Firefox) | `{"browser":"webkit","browser_version":"26.5","status":"passed","duration_ms":147350}`; timing recorded, not enforced (`domContentLoaded 22 / firstContentfulPaint 112`); no D-016 prefetch rejection this run |
 | Focus soak, Chromium | `CAOS_URL=http://127.0.0.1:8770 CAOS_BROWSER=chromium npm run test:focus` (its one route literal moved) | `{"browser":"chromium","iterations":8,"passes":8,"fails":0,"harnessErrors":0,…}` |
 | Server 429/5xx after every gate | same greps, plus `grep -ci 'error\|traceback' worker.log` | 0 / 0 / 0 |
-| Backend suite, Ruff | — | not run: no server file changed (§6) |
+| Workbench smoke, Chromium, after the rebase onto `fff945c` | server and worker restarted from the rebased tree on a fresh data directory; `CAOS_URL=http://127.0.0.1:8770 CAOS_BROWSER=chromium npm run test:workbench` | `{"browser":"chromium","browser_version":"151.0.7922.34","status":"passed","duration_ms":139650}` |
+| Backend suite, Ruff | — | not run: no server file changed in this task (§6); the rebase brought in PR #64's engine change with its own spec tests, landed on `main` |
 
 ## 5. Follow-ups
 
@@ -218,9 +225,10 @@ follow-ups (§5).
 
 | Commit | Content |
 |---|---|
-| `2d9e914` | `feat(frontend): serve the Align destination set with a forwarding page per earlier slug` — `workbench.ts` (tables, `routeFor`, `forwardedSlug`, `destinationFromSlug` → `Destination \| null`, `workflows` derived), `workspaceAuthority.ts` (hydrate replay), `RouteForwarder.tsx` (new), `app/[destination]/page.tsx`, `app/not-found.tsx`, `WorkbenchShell.tsx`, `Workspace.tsx`, `ModelBuilder.tsx`, `ReportStudio.tsx`; `workbench.test.ts`, `workspaceAuthority.test.ts`, `ModelBuilder.test.ts`, `ReportStudio.test.ts`; `workbench-smoke.mjs`, `a11y-axe.mjs`, `focus-restoration-smoke.mjs`, `identity-a11y.mjs`, `draft-history-smoke.mjs` |
-| `472d4c2` | `docs: record the Align IA (DESIGN.md addendum, DECISIONS §14.23) and retire the old route names` — `DESIGN.md`, `docs/DECISIONS.md`, `CLAUDE.md`, `.impeccable.md`, `README.md`, `caos/frontend/docs/control-capability-map.md`, the prompt series' frontend addendum, and one line each in the Task 8, 9 and 13 reports |
-| (report commit) | this file and `.superpowers/sdd/frontend/progress.md` |
+| `93af3b8` | `feat(frontend): serve the Align destination set with a forwarding page per earlier slug` — `workbench.ts` (tables, `routeFor`, `forwardedSlug`, `destinationFromSlug` → `Destination \| null`, `workflows` derived), `workspaceAuthority.ts` (hydrate replay), `RouteForwarder.tsx` (new), `app/[destination]/page.tsx`, `app/not-found.tsx`, `WorkbenchShell.tsx`, `Workspace.tsx`, `ModelBuilder.tsx`, `ReportStudio.tsx`; `workbench.test.ts`, `workspaceAuthority.test.ts`, `ModelBuilder.test.ts`, `ReportStudio.test.ts`; `workbench-smoke.mjs`, `a11y-axe.mjs`, `focus-restoration-smoke.mjs`, `identity-a11y.mjs`, `draft-history-smoke.mjs` |
+| `709eb37` | `docs: record the Align IA (DESIGN.md addendum, DECISIONS §14.23) and retire the old route names` — `DESIGN.md`, `docs/DECISIONS.md`, `CLAUDE.md`, `.impeccable.md`, `README.md`, `caos/frontend/docs/control-capability-map.md`, the prompt series' frontend addendum, and one line each in the Task 8, 9 and 13 reports |
+| `c7fcec7` | `docs(sdd): FE-G2 report and progress row` — this file and `.superpowers/sdd/frontend/progress.md`, written with the pre-rebase hashes |
+| (this commit) | `docs(sdd): record the FE-G2 pull request and the rebase` — the corrected hashes, the rebase note, the PR URL and the post-rebase Chromium smoke |
 
 ## 8. Confidence review
 
