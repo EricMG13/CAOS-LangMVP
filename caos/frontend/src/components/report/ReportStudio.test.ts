@@ -222,9 +222,10 @@ test("separation of duties and the detached receipt are explicit in the frozen r
   assert.match(document, /rd-masthead-facts/);
 });
 
-test("approver provisioning is one governed mutation available to a case admin", () => {
-  assert.match(studio, /`\/api\/cases\/\$\{caseId\}\/members`/);
-  assert.match(studio, /canProvision \? <form className="opinion-form" data-member-form/);
-  assert.match(studio, /canApprove && \["APPROVER", "ADMIN"\]\.includes\(selectedCase\?\.members\?\.\[subject\] \?\? ""\)/);
-  assert.match(studio, /<option value="APPROVER">APPROVER<\/option><option value="ADMIN">ADMIN<\/option>/);
+test("Report no longer provisions members: the governed mutation lives on Admin (FE-A1 D7)", () => {
+  // The provisioning pin moved to workbench.test.ts ("Admin draws the two served
+  // governance contracts…") in the same commit that moved the form.
+  assert.doesNotMatch(studio, /data-member-form|\/members`|canProvision|addMember/);
+  // The filing gate stays on Report.
+  assert.match(studio, /canFileFrozen\(role, subject/);
 });

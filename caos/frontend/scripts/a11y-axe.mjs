@@ -69,7 +69,10 @@ try {
   const caseId = "case_a11y_pending_plan";
   const runId = "run_a11y_pending_plan";
   const planHash = `sha256:${"b".repeat(64)}`;
-  const caseFixture = { id: caseId, name: "Pending plan", issuer: "Northstar", sector: "Services", current_execution_id: runId, deep_research_available: true, deep_research_unavailable_reason: null };
+  // The case names an intake whose run is this run, so Run collapses the compile
+  // form into the "Advanced: compile a route" disclosure (FE-A1 D11) — the state the
+  // "Align — Analysis paused" artboard draws.
+  const caseFixture = { id: caseId, name: "Pending plan", issuer: "Northstar", sector: "Services", current_execution_id: runId, deep_research_available: true, deep_research_unavailable_reason: null, latest_intake_id: "intake_a11y_pending_plan" };
   const runFixture = {
     id: runId,
     case_id: caseId,
@@ -109,8 +112,12 @@ try {
     return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(runFixture) });
   });
   await pendingPage.route((url) => url.pathname === `/api/runs/${runId}/events`, (route) => route.fulfill({ status: 200, contentType: "text/event-stream", body: "retry: 60000\n\n" }));
+  await pendingPage.route((url) => url.pathname === `/api/cases/${caseId}/intake`, (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ intake_id: "intake_a11y_pending_plan", case_id: caseId, status: "started", created_at: "2026-09-06T00:00:00Z", case: caseFixture, run: runFixture, suggestions: { issuer: "Northstar", label: "Northstar / Deep Research", sector: "Services", issuer_confidence: "high", basis: "cover" }, route: { pathway: "DEEP_RESEARCH", depth: "full", reason: "brief", selected_by: "host_classification", evidence: [] }, documents: [] }) }));
   await pendingPage.goto(`${baseUrl}/run/?case=${caseId}&run=${runId}&fixture=pending-plan`, { waitUntil: "networkidle" });
   await pendingPage.getByRole("heading", { name: "Proposed research plan" }).waitFor();
+  const pendingAdvanced = pendingPage.locator("details.run-advanced");
+  await pendingAdvanced.waitFor();
+  assert.equal(await pendingAdvanced.evaluate((element) => element.open), false, "pending-plan axe fixture did not collapse the compile form on an intake-created run (D11)");
   const pendingPlan = pendingPage.locator(".research-plan");
   assert.ok(await pendingPlan.getByText("None", { exact: true }).count() >= 9, "pending-plan axe fixture did not render explicit empty-scalar markers");
   assert.ok(await pendingPlan.getByText("Empty", { exact: true }).count() >= 3, "pending-plan axe fixture did not render explicit empty-list markers");
@@ -125,6 +132,28 @@ try {
   assert.ok(caseFixtureHits > 0, "pending-plan case fixture was not exercised");
   assert.ok(runFixtureHits > 0, "pending-plan run fixture was not exercised");
   await pendingContext.close();
+
+  // FE-A1 D7: Admin with a case, on an identity holding a current ADMIN role and
+  // stored ADMIN standing, so the provisioning form and the download are drawn.
+  const adminSubject = "a11y.admin@local.invalid";
+  const adminCaseId = "case_a11y_admin";
+  const adminCase = { id: adminCaseId, name: "Governance", issuer: "Northstar", sector: "Services", current_execution_id: null, members: { [adminSubject]: "ADMIN" } };
+  for (const viewport of [{ name: "desktop-1440", width: 1440, height: 1000 }, { name: "desktop-200-percent", width: 720, height: 900 }]) {
+    const adminContext = await browser.newContext({ viewport: { width: viewport.width, height: viewport.height }, extraHTTPHeaders: identityHeaders });
+    const adminPage = await adminContext.newPage();
+    await adminPage.route((url) => url.pathname === "/api/me", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ role: "ADMIN", subject: adminSubject }) }));
+    await adminPage.route((url) => url.pathname === "/api/cases", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([adminCase]) }));
+    await adminPage.route((url) => url.pathname === `/api/cases/${adminCaseId}`, (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(adminCase) }));
+    await adminPage.route((url) => url.pathname === `/api/cases/${adminCaseId}/snapshot`, (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ accepted: null, latest_accepted: null, switch_required: false, diff: null }) }));
+    await adminPage.goto(`${baseUrl}/admin/?case=${adminCaseId}&fixture=admin-governance-${viewport.name}`, { waitUntil: "networkidle" });
+    await adminPage.getByRole("button", { name: "Provision member" }).waitFor();
+    await adminPage.getByRole("button", { name: "Download audit package" }).waitFor();
+    const adminResult = await new AxeBuilder({ page: adminPage }).analyze();
+    for (const violation of adminResult.violations) violations.push({ viewport: `admin-governance-${viewport.name}`, route: "/admin/", id: violation.id, impact: violation.impact, nodes: violation.nodes.map((node) => ({ target: node.target, html: node.html, summary: node.failureSummary })) });
+    const adminOverflow = await adminPage.evaluate(() => ({ scrollWidth: document.documentElement.scrollWidth, clientWidth: document.documentElement.clientWidth }));
+    if (adminOverflow.scrollWidth > adminOverflow.clientWidth + 1) violations.push({ viewport: `admin-governance-${viewport.name}`, route: "/admin/", id: "page-horizontal-scroll", impact: "serious", nodes: [{ target: ["html"], html: "", summary: `document scrollWidth ${adminOverflow.scrollWidth} exceeds clientWidth ${adminOverflow.clientWidth}` }] });
+    await adminContext.close();
+  }
 
   const modelContext = await browser.newContext({ viewport: { width: 1440, height: 1000 }, extraHTTPHeaders: identityHeaders });
   const modelPage = await modelContext.newPage();
@@ -344,5 +373,5 @@ if (violations.length) {
   console.error(JSON.stringify({ violations }, null, 2));
   process.exitCode = 1;
 } else {
-  console.log(JSON.stringify({ routes: routes.length, forwarders: forwardedRoutes.length, viewports: viewports.length, combinations: routes.length * viewports.length + 21, pendingPlanFixture: true, readyModelFixture: true, readyReportFixture: true, states: ["empty", "populated", "review", "filed", "loading", "error", "refusal"], modelBuilderAxeChecks: 12, modelBuilderKeyboardTabChecks: 3, reportStudioAxeChecks: 3, reportStudioKeyboardTabChecks: 3, violations: 0 }));
+  console.log(JSON.stringify({ routes: routes.length, forwarders: forwardedRoutes.length, viewports: viewports.length, combinations: routes.length * viewports.length + 23, pendingPlanFixture: true, adminGovernanceAxeChecks: 2, readyModelFixture: true, readyReportFixture: true, states: ["empty", "populated", "review", "filed", "loading", "error", "refusal"], modelBuilderAxeChecks: 12, modelBuilderKeyboardTabChecks: 3, reportStudioAxeChecks: 3, reportStudioKeyboardTabChecks: 3, violations: 0 }));
 }

@@ -313,6 +313,10 @@ a.dag-node:hover strong, a.dag-node:focus-visible strong { text-decoration: unde
 .loan-advanced-filters { grid-column: 1 / -1; border-top: 1px solid var(--caos-border); padding-top: var(--space-sm); }
 .loan-advanced-filters summary { cursor: pointer; color: var(--caos-text); font-weight: 600; }
 .loan-advanced-grid { display: grid; grid-template-columns: repeat(6, minmax(120px, 1fr)); gap: var(--space-sm); margin-top: var(--space-sm); }
+/* The compile form as a disclosure below the execution route (FE-A1 D11): the
+   summary reads as a panel header, the body as a panel body. */
+.run-advanced > summary { cursor: pointer; min-height: 46px; display: list-item; padding: 10px 14px; font-size: 13px; font-weight: 600; color: var(--caos-text); }
+.run-advanced[open] > summary { border-bottom: 1px solid var(--caos-border); }
 .loan-table-wrap { max-height: min(680px, calc(100dvh - 280px)); overflow: auto; }
 .loan-table { width: max-content; min-width: 100%; font: 10px/1.35 var(--font-mono), ui-monospace, monospace; font-variant-numeric: tabular-nums; }
 .loan-table th, .loan-table td { max-width: 260px; padding: 5px 7px; white-space: normal; overflow-wrap: anywhere; }

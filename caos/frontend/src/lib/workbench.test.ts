@@ -133,6 +133,63 @@ test("every pre-Align slug is a static forwarding page to its destination, and t
   for (const [from] of forwardedRoutes) assert.doesNotMatch(workspace + workbenchShell + modelBuilder + reportStudio, new RegExp(`"/${from}[/"?]`), `a link still targets the forwarded slug /${from}/`);
 });
 
+test("the compile form collapses into 'Advanced: compile a route' on an intake-created run (FE-A1 D11)", () => {
+  // The "Align — Analysis paused" artboard: the execution route and its one primary
+  // lead; the compile form is a closed disclosure at the bottom. Only the intake
+  // record can say a run came from intake, so Run reads it too.
+  assert.match(workspace, /if \(!hydrated \|\| !caseId \|\| \(active !== "Portfolio" && active !== "Run"\) \|\| !latestIntakeId\) return;/);
+  assert.match(workspace, /<RunConsole fromIntake=\{Boolean\(run && intake\?\.case_id === caseId && intake\.run\?\.id === run\.id\)\}/);
+  const runConsole = workspace.slice(workspace.indexOf("function RunConsole("), workspace.indexOf("function ResearchPlanView("));
+  assert.match(runConsole, /\{!fromIntake \? <section className="panel span-4">\s*<div className="panel-header"><h2>Compile route<\/h2>/);
+  assert.match(runConsole, /<section className=\{`panel \$\{fromIntake \? "span-12" : "span-8"\}`\}>\s*<div className="panel-header"><h2>Execution route<\/h2>/);
+  assert.match(runConsole, /\{fromIntake \? <details className="panel run-advanced span-12">\s*<summary>Advanced: compile a route<\/summary>\s*<div className="panel-body flow">\{compileForm\}<\/div>\s*<\/details> : null\}/);
+  // One form in both homes: the disclosure carries the same form and the same
+  // "Compile and run" action, so the compile pins keep holding on a hand-compiled run.
+  assert.equal(runConsole.match(/\{compileForm\}/g)?.length, 2);
+  assert.equal(runConsole.match(/"Compile and run"/g)?.length, 1);
+  assert.match(styles, /\.run-advanced > summary \{[^}]*cursor: pointer/);
+  // Browser proof: the intake-created Deep Research run pauses on plan approval with
+  // the form closed and exactly one visible primary.
+  assert.match(smoke, /details\.run-advanced/);
+  assert.match(smoke, /an intake-created run still leads with the compile form/);
+});
+
+test("Admin draws the two served governance contracts and Report no longer provisions (FE-A1 D7)", () => {
+  const admin = workspace.slice(workspace.indexOf("function AdminView("), workspace.indexOf("function AdminView(") + 9000);
+  assert.match(admin, /\["Audit package", "Hash-chained case audit package \(GET \/api\/cases\/\{case_id\}\/audit-package\); download below", "served"\]/);
+  assert.match(admin, /\["Membership", "Identity-to-case role assignments \(POST \/api\/cases\/\{case_id\}\/members\); provisioned below", "served"\]/);
+  for (const row of ["Bundle integrity", "Audit rows", "Step-up"]) assert.match(admin, new RegExp(`\\["${row}", "[^"]+", "absent"\\]`));
+  assert.match(admin, /networkFetch\(`\/api\/cases\/\$\{caseId\}\/audit-package`\)/);
+  assert.match(admin, /response\.headers\.get\("x-caos-sha256"\)/);
+  assert.match(admin, /if \(response\.status === 404\) \{ if \(action === downloadGeneration\.current\) setDownload\(\{ state: "unavailable" \}\); return; \}/);
+  // Provisioning keeps the filing rule: current APPROVER/ADMIN role and stored case standing.
+  assert.match(admin, /const canProvision = \(role === "APPROVER" \|\| role === "ADMIN"\) && \["APPROVER", "ADMIN"\]\.includes\(selectedCase\?\.members\?\.\[subject\] \?\? ""\);/);
+  assert.match(admin, /: canProvision \? <form className="opinion-form" data-member-form/);
+  assert.match(admin, /<option value="APPROVER">APPROVER<\/option><option value="ADMIN">ADMIN<\/option>/);
+  // A reader sees the reason, never the control (UX-015); a writer without standing sees the rule.
+  assert.match(admin, /\{writeAccess !== "yes" \? <WriteBlocked access=\{writeAccess\} action="member provisioning" \/>/);
+  assert.match(admin, /Provisioning a member needs a current APPROVER or ADMIN role and stored APPROVER or ADMIN standing on this case\./);
+  // The mutation is the workspace's governed write with its receipt and a case re-read.
+  assert.match(workspace, /const provisionMember = async \(member: \{ subject: string; role: string \}\) => \{/);
+  assert.match(workspace, /await request\(`\/api\/cases\/\$\{expectedCaseId\}\/members`, \{ method: "POST", body: JSON\.stringify\(\{ subject: memberSubject, role: member\.role \}\) \}\);/);
+  assert.match(workspace, /setNotice\(`\$\{memberSubject\} provisioned as case \$\{member\.role\}\.`\);\s*await refreshCase\(expectedCaseId\);/);
+  assert.doesNotMatch(reportStudio, /data-member-form|\/members`/);
+  // Browser proof: the audit package is driven live with its digest; provisioning is
+  // proven on a route-intercepted page (no served route grants the first standing, F-12).
+  assert.match(smoke, /"Download audit package"/);
+  assert.match(smoke, /provisioned as case APPROVER\./);
+  assert.match(smoke, /READER was offered "Provision member"|absent\(readerPage, "Provision member"\)/);
+});
+
+test("the ambiguous-issuer refusal points at the advanced path (FE-A1 D10)", () => {
+  const intake = workspace.slice(workspace.indexOf("function IntakePanel("), workspace.indexOf("function IntakeEvidence("));
+  assert.match(intake, /\{refusal\.code === "INTAKE_ISSUER_AMBIGUOUS" \? <p>Advanced path for a pack whose documents name one issuer differently: <a href="#cases-create">create the case<\/a>, upload each document on \{selectedCase \? <Link href=\{withQuery\("\/sources", \{ case: selectedCase\.id \}\)\}>Sources<\/Link> : "Sources"\}, then compile from \{selectedCase \? <Link href=\{withQuery\("\/run", \{ case: selectedCase\.id \}\)\}>Run<\/Link> : "Run"\}\.<\/p> : null\}/);
+  assert.match(workspace, /<section className="panel cases-create" id="cases-create">/);
+  // The intake surface still posts files and nothing else: no new field.
+  assert.equal(intake.match(/<input /g)?.length, 2);
+  assert.match(smoke, /INTAKE_ISSUER_AMBIGUOUS/);
+});
+
 test("the palette offers every destination once, under its rail word, at its route", () => {
   // The palette derives from `workflows`: one "Open <word>" per rail entry plus one
   // per tool, and nothing else — no entry for a route the table does not declare.
