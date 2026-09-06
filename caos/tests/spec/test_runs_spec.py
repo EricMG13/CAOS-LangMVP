@@ -242,6 +242,7 @@ async def test_continuation_failure_is_consumed_and_logged_safely(tmp_path, sett
 
     monkeypatch.setattr(engine, "wait", failing)
     monkeypatch.setattr(runtime, "log_event", record)
+    monkeypatch.setattr(engine, "CONTINUATION_RETRY_DELAYS", ())
     loop.set_exception_handler(lambda _loop, context: unhandled.append(context))
     try:
         engine._schedule_continuation("run-safe")
@@ -250,8 +251,10 @@ async def test_continuation_failure_is_consumed_and_logged_safely(tmp_path, sett
         loop.set_exception_handler(previous_handler)
 
     assert unhandled == []
+    # The exception class only, never its text; with no retry budget the run is
+    # failed closed — a run that does not exist leaves no refusal record.
     assert records == [(("engine.continuation_failed",), {
-        "level": runtime.logging.ERROR, "run_id": "run-safe", "detail": "ValueError",
+        "level": runtime.logging.ERROR, "run_id": "run-safe", "detail": "ValueError", "attempt": 0,
     })]
 
 

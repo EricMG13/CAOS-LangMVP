@@ -49,6 +49,10 @@ import styles from "./ModelBuilder.module.css";
 
 const apiBase = process.env.NEXT_PUBLIC_API_URL || "";
 const PX_PER_STEP = 4;
+// One interval for the worker-backed states this surface waits on: a QUEUED or
+// BUILDING build and a QUEUED or EXPORTING revision export (the same convention as
+// ReportStudio's FREEZE_POLL_MS). ModelBuilder.test.ts pins the re-arm on it.
+const EXPORT_POLL_MS = 1500;
 const TORNADO_METRICS = [
   { id: "net_leverage", label: "Net leverage", unit: "x" },
   { id: "cumulative_fcf", label: "Cumulative FCF", unit: "$M" },
@@ -507,9 +511,9 @@ export default function ModelBuilder({
     const poll = async () => {
       if (buildPending) await refresh(undefined, false);
       else await refreshRevisionExports();
-      if (active) timer = window.setTimeout(poll, 1500);
+      if (active) timer = window.setTimeout(poll, EXPORT_POLL_MS);
     };
-    timer = window.setTimeout(poll, 1500);
+    timer = window.setTimeout(poll, EXPORT_POLL_MS);
     return () => { active = false; window.clearTimeout(timer); };
   }, [refresh, refreshRevisionExports, revisions, status]);
 

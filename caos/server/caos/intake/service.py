@@ -83,20 +83,32 @@ class IntakeService:
         explicit_case = self.store.get_case(case_id) if case_id else None
         if case_id and explicit_case is None:
             raise HTTPException(status_code=404, detail="case not found")
+        # Everything this submission puts at a content address, so a refusal —
+        # at admission, at classification, or in the store's own commit — leaves
+        # no vault file the store does not reference (W2, 2026-09-06 review).
+        # `_prepare` fills it; bytes another case already owns are never in it.
+        published: list[str] = []
         try:
-            return await self._submit(actor=actor, uploads=uploads, explicit_case=explicit_case)
-        except IntakeRefused as exc:
-            self.store.refuse_intake(actor, exc.code, case_id=case_id)
-            log_event("intake.refused", case_id=case_id, code=exc.code, files=len(uploads))
+            return await self._submit(
+                actor=actor, uploads=uploads, explicit_case=explicit_case, published=published,
+            )
+        except BaseException as exc:
+            vault = Vault(self.settings)
+            for sha256 in published:
+                vault.discard(sha256)
+            if isinstance(exc, IntakeRefused):
+                self.store.refuse_intake(actor, exc.code, case_id=case_id)
+                log_event("intake.refused", case_id=case_id, code=exc.code, files=len(uploads))
             raise
 
-    async def _submit(self, *, actor: str, uploads: list[UploadFile], explicit_case: dict[str, Any] | None) -> tuple[dict[str, Any], bool]:
+    async def _submit(self, *, actor: str, uploads: list[UploadFile], explicit_case: dict[str, Any] | None,
+                      published: list[str]) -> tuple[dict[str, Any], bool]:
         if not uploads:
             raise IntakeRefused("INTAKE_NO_FILES", "No documents were supplied.")
         if len(uploads) > MAX_INTAKE_FILES:
             raise IntakeRefused("INTAKE_TOO_MANY_FILES", f"{len(uploads)} documents exceed the {MAX_INTAKE_FILES}-file intake ceiling.")
 
-        prepared = await self._prepare(uploads)
+        prepared = await self._prepare(uploads, published)
         documents = self._classify(prepared)
         issuer, issuer_confidence = self._resolve_issuer(documents, explicit_case)
         case, new_case = self._resolve_case(actor, explicit_case, issuer, documents)
@@ -160,7 +172,7 @@ class IntakeService:
 
     # -- steps ---------------------------------------------------------------------
 
-    async def _prepare(self, uploads: list[UploadFile]) -> list[dict[str, Any]]:
+    async def _prepare(self, uploads: list[UploadFile], published: list[str]) -> list[dict[str, Any]]:
         vault = Vault(self.settings)
         prepared: list[dict[str, Any]] = []
         findings: list[dict[str, Any]] = []
@@ -171,6 +183,8 @@ class IntakeService:
             except HTTPException as exc:
                 findings.append(_finding(filename, str(exc.detail), status=exc.status_code))
                 continue
+            if source.pop("published_now"):
+                published.append(source["sha256"])
             source["content"] = Path(source["vault_path"]).read_bytes()
             prepared.append(source)
         if findings:

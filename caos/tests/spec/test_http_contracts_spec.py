@@ -688,7 +688,9 @@ def test_distinct_duplicate_note_promotion_is_a_structured_source_conflict(clien
     assert promoted.status_code == 200 and replay.status_code == 200
     assert replay.json()["promoted_source_id"] == promoted.json()["promoted_source_id"]
     assert conflict.status_code == 409
-    assert conflict.json() == {"detail": "source content already active"}
+    # A typed code, not the exception's own sentence: the wire never carries
+    # `str(exc)` (the 2026-09-06 review's X4).
+    assert conflict.json() == {"detail": {"code": "SOURCE_CONTENT_ALREADY_ACTIVE"}}
     notes = {note["id"]: note for note in client.get(f"/api/cases/{case['id']}/notes").json()}
     assert notes[first["id"]]["promoted"] is True
     assert notes[second["id"]]["promoted"] is False

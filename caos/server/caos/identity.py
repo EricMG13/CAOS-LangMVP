@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hmac
+import unicodedata
 from dataclasses import dataclass
 from typing import Any
 
@@ -43,6 +44,28 @@ def _edge_bytes(value: str | None) -> bytes:
     return (value or "").encode("utf-8", "surrogateescape")
 
 
+def _identity_text(value: str | None) -> str | None:
+    """The identity the trusted edge wrote, in one spelling.
+
+    Starlette decodes header bytes as latin-1, while the edge writes the
+    subject's UTF-8 bytes, so the raw bytes are recovered before decoding —
+    identity bytes that are not UTF-8 were not written by the edge (401). The
+    result is NFC-normalized because `case_members` stores the subject and
+    `is_member` compares bytes: an NFD-provisioned approver would otherwise
+    never match the NFC subject its IdP presents, and two spellings would mint
+    two standings for one person.
+    """
+    if value is None:
+        return None
+    try:
+        value = value.encode("latin-1").decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise HTTPException(status_code=401, detail="trusted edge identity required") from exc
+    except UnicodeEncodeError:
+        pass  # already beyond latin-1: not a value this decoder produced
+    return unicodedata.normalize("NFC", value)
+
+
 def _trusted_header(request: Request, name: str, *, production: bool) -> str | None:
     values = request.headers.getlist(name)
     if production and len(values) > 1:
@@ -57,8 +80,8 @@ def identity_from_request(request: Request, settings: Settings) -> Identity:
     edge_authorization = _trusted_header(
         request, "x-edge-authorization", production=production
     )
-    subject_header = _trusted_header(request, "x-forwarded-user", production=production)
-    email_header = _trusted_header(request, "x-forwarded-email", production=production)
+    subject_header = _identity_text(_trusted_header(request, "x-forwarded-user", production=production))
+    email_header = _identity_text(_trusted_header(request, "x-forwarded-email", production=production))
     groups_header = _trusted_header(request, "x-forwarded-groups", production=production)
     if production and not hmac.compare_digest(
         _edge_bytes(edge_authorization),

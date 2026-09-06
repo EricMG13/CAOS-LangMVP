@@ -12,7 +12,13 @@ import { displayValue, flattenValue, markdownBlocks, normalizeEvidenceRefs, type
 import { initialAuthorityState, matchesAuthority, requestContext, workspaceAuthorityReducer, type AuthorityEvent, type AuthorityStatus } from "../lib/workspaceAuthority";
 
 import WorkbenchShell, { type DrawerState } from "./WorkbenchShell";
-import { type Destination, type DraftHistoryTraversal, type Snapshot, type SnapshotView, acceptanceSlotSummary, acceptedAuthorityMatch, beginDraftHistoryTraversal, destinationFromSlug, draftHistoryEntryId, draftHistoryNeedsRearm, finishDraftHistoryTraversal, formatBlockLocator, formatDate, historyStateForExternalReplace, humanizeCode, isSameTabPrimaryGesture, moduleLabel, nodeStatusTone, observeDraftHistoryPop, protectDirtyDraftUnload, resolveDraftDiscard, selectConclusionArtifact, supersededAcceptance, withQuery } from "../lib/workbench";
+import { BRIEF_LIMITS, type Destination, type DraftHistoryTraversal, type Snapshot, type SnapshotView, acceptanceSlotSummary, acceptedAuthorityMatch, beginDraftHistoryTraversal, destinationFromSlug, draftHistoryEntryId, draftHistoryNeedsRearm, finishDraftHistoryTraversal, formatBlockLocator, formatDate, historyStateForExternalReplace, humanizeCode, isSameTabPrimaryGesture, moduleLabel, nodeStatusTone, observeDraftHistoryPop, protectDirtyDraftUnload, researchBriefListsWithinBounds, resolveDraftDiscard, runErrorDetail, selectConclusionArtifact, supersededAcceptance, withQuery } from "../lib/workbench";
+
+// Client display ceilings, named so no surface carries a bare literal: the Sources
+// reader renders this many blocks of the selected source before pointing at the
+// full count, and an artifact table renders this many flattened rows.
+const SOURCE_READER_BLOCK_PREVIEW = 40;
+const ARTIFACT_TABLE_MAX_ROWS = 80;
 
 type WriteAccess = "yes" | "no" | "unknown";
 type DraftDiscardRequest = { detail: string; confirm: () => void; cancel?: () => void; trigger: HTMLElement | null };
@@ -856,7 +862,7 @@ export default function Workspace({ destination, children }: { destination?: Des
   };
 
   // The latest intake for the selected case: read once per case selection while the
-  // Cases page is showing, so a refresh, a reconnect or a case switch shows exactly
+  // Portfolio page is showing, so a refresh, a reconnect or a case switch shows exactly
   // the durable record. Not keyed on the authority generation on purpose — every
   // reducer event bumps it, and one more GET per event on every route would push the
   // browser gates into the per-subject request ceiling. A submission sets the record
@@ -898,8 +904,9 @@ export default function Workspace({ destination, children }: { destination?: Des
     }
     const mustAnswer = String(form.get("must_answer") || "").split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
     const exclusions = String(form.get("exclusions") || "").split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
-    if (pathway === "DEEP_RESEARCH" && (mustAnswer.length > 10 || exclusions.length > 10 || mustAnswer.length + exclusions.length > 10 || [...mustAnswer, ...exclusions].some((line) => line.length > 200))) {
-      setError("Research brief lists allow at most 10 nonblank lines combined, and each line is limited to 200 characters.");
+    // The server's bounds, counted the server's way (BRIEF_LIMITS names the source).
+    if (pathway === "DEEP_RESEARCH" && !researchBriefListsWithinBounds(mustAnswer, exclusions)) {
+      setError(`Research brief lists allow at most ${BRIEF_LIMITS.listItems} nonblank lines combined, and each line is limited to ${BRIEF_LIMITS.itemChars} characters.`);
       return;
     }
     const researchBrief = pathway === "DEEP_RESEARCH" ? {
@@ -1311,7 +1318,7 @@ function SourcesView({ writeAccess, selectedCase, artifactId, sourceId, upload, 
     <section className="panel span-12 source-toolbar"><div className="panel-body"><div className="field"><label htmlFor="source-search">Search documents</label><input id="source-search" type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Filename, source id, or digest" /></div>{writeAccess !== "yes" ? <WriteBlocked access={writeAccess} action="governed source intake" /> : selectedCase ? <form onSubmit={upload}><div className="field"><label htmlFor="source-file">Add governed source</label><input id="source-file" name="file" type="file" accept=".pdf,.xlsx,.json,.txt,.md,.csv" required /></div><button className="button primary" type="submit" disabled={pendingAction === "upload"}>{pendingAction === "upload" ? "Uploading…" : "Upload and version"}</button></form> : null}</div></section>
     <section className="source-workspace span-12" aria-label="Source workspace">
       <aside className="source-register"><div className="source-region-head"><h2>Source register</h2><span className="mono muted">{loading ? "Loading…" : `${filteredSources.length} / ${sources.length}`}</span></div>{artifactError && !artifactId ? <StateNote tone="critical" live="alert">{artifactError}</StateNote> : null}{filteredSources.map((source) => <button id={`source-${source.id}`} className={`source-register-row ${selectedSource?.id === source.id ? "is-active" : ""}`} type="button" aria-pressed={selectedSource?.id === source.id} onClick={() => { setSelectedSourceId(source.id); setSelectedBlockId(""); }} key={source.id}><strong>{source.filename}</strong><span className="mono">{source.id} · {source.blocks.length} blocks</span><span className={`status ${source.blocks.length ? "success" : "warning"}`}>{source.blocks.length ? "Extracted" : "No blocks"}</span></button>)}{!filteredSources.length ? <LoadState loading={loading} error={loadError} empty={sources.length ? "No documents match this search." : "No source objects in this credit."} /> : null}</aside>
-      <section className="source-reader" aria-labelledby="source-reader-title">{selectedSource ? <><div className="meta-label">{selectedSource.id} · immutable source object</div><h2 id="source-reader-title">{selectedSource.filename}</h2><div className="source-document-blocks">{selectedSource.blocks.slice(0, 40).map((block) => <article className={selectedBlock?.block_id === block.block_id ? "source-document-block is-selected" : "source-document-block"} id={`block-${selectedSource.id}-${block.block_id}`} key={block.block_id}><button type="button" onClick={() => setSelectedBlockId(block.block_id)} aria-pressed={selectedBlock?.block_id === block.block_id}><span className="meta-label">{block.block_id} · {formatBlockLocator(block.locator)}</span><span>{block.text || "No extracted text."}</span></button></article>)}</div>{selectedSource.blocks.length > 40 ? <p className="muted">Showing the first 40 of {selectedSource.blocks.length} extracted blocks.</p> : null}</> : <LoadState loading={loading} empty={loadError ? "Source reader unavailable while the source register could not be loaded." : "Select a source document."} />}</section>
+      <section className="source-reader" aria-labelledby="source-reader-title">{selectedSource ? <><div className="meta-label">{selectedSource.id} · immutable source object</div><h2 id="source-reader-title">{selectedSource.filename}</h2><div className="source-document-blocks">{selectedSource.blocks.slice(0, SOURCE_READER_BLOCK_PREVIEW).map((block) => <article className={selectedBlock?.block_id === block.block_id ? "source-document-block is-selected" : "source-document-block"} id={`block-${selectedSource.id}-${block.block_id}`} key={block.block_id}><button type="button" onClick={() => setSelectedBlockId(block.block_id)} aria-pressed={selectedBlock?.block_id === block.block_id}><span className="meta-label">{block.block_id} · {formatBlockLocator(block.locator)}</span><span>{block.text || "No extracted text."}</span></button></article>)}</div>{selectedSource.blocks.length > SOURCE_READER_BLOCK_PREVIEW ? <p className="muted">Showing the first {SOURCE_READER_BLOCK_PREVIEW} of {selectedSource.blocks.length} extracted blocks.</p> : null}</> : <LoadState loading={loading} empty={loadError ? "Source reader unavailable while the source register could not be loaded." : "Select a source document."} />}</section>
       <aside className="source-support"><div className="meta-label">Evidence support</div><h2>Selected source authority</h2>{selectedSource ? <><dl className="state-facts"><dt>Source</dt><dd className="mono">{selectedSource.id}</dd><dt>SHA-256</dt><dd><IdentityValue value={selectedSource.sha256} /></dd><dt>Blocks</dt><dd className="num">{selectedSource.blocks.length}</dd>{selectedBlock ? <><dt>Selected block</dt><dd className="mono">{selectedBlock.block_id}</dd><dt>Locator</dt><dd className="mono">{formatBlockLocator(selectedBlock.locator)}</dd></> : null}</dl><button className="button small" type="button" onClick={(event) => openEvidence(selectedSource.id, event.currentTarget)}>Open evidence context</button></> : <p className="muted">No source selected.</p>}<div className="source-coverage-gate"><Unavailable title="Claim coverage" context="A normalized claim-to-source map is not served by this deployment. Source blocks remain readable above." /></div></aside>
     </section>
   </div>;
@@ -1367,7 +1374,7 @@ function ArtifactReader({ artifact, evidenceRefs, activeEvidenceId, onOpenEviden
   </div>;
 }
 
-function ArtifactDataTable({ value, label, maxRows = 80 }: { value: unknown; label: string; maxRows?: number }) {
+function ArtifactDataTable({ value, label, maxRows = ARTIFACT_TABLE_MAX_ROWS }: { value: unknown; label: string; maxRows?: number }) {
   const flattened = flattenValue(value);
   const rows = flattened.slice(0, maxRows);
   if (!rows.length) return <p className="muted">No pinned values are available.</p>;
@@ -1514,7 +1521,7 @@ function ModuleIdentity({ moduleId }: { moduleId: string }) {
 // how Run injects the full ResearchPlanView; inline surfaces route to it instead,
 // since plan approval is a Run responsibility (one home for every human gate).
 function RunStatus({ writeAccess, caseId, run, runLoading, runError, acceptRun, acceptedSnapshotId, supersededSnapshotId, visibleSnapshotId, switchRequired, pendingAction, approvalSlot, resumeSlot }: { writeAccess: WriteAccess; caseId: string; run: RunRecord | null; runLoading: boolean; runError: string; acceptRun: (event: ReactMouseEvent<HTMLButtonElement>) => void; acceptedSnapshotId: string; supersededSnapshotId: string; visibleSnapshotId: string; switchRequired: boolean; pendingAction: string; approvalSlot: ReactNode; resumeSlot: ReactNode }) {
-  if (!run) return <LoadState loading={runLoading} error={runError} empty="No current execution. Drop documents on Cases to start analysis, or compile a route here." />;
+  if (!run) return <LoadState loading={runLoading} error={runError} empty="No current execution. Drop documents on Portfolio to start analysis, or compile a route here." />;
   const complete = run.nodes.filter((node) => node.status === "succeeded").length;
   const current = (run.status === "queued" || run.status === "running")
     ? run.nodes.find((node) => node.status === "running") || run.nodes.find((node) => node.status === "pending")
@@ -1569,7 +1576,9 @@ function RunStatus({ writeAccess, caseId, run, runLoading, runError, acceptRun, 
     <div className="run-progress" role="progressbar" aria-label="Execution progress" aria-valuemin={0} aria-valuemax={run.nodes.length} aria-valuenow={complete} aria-valuetext={`${complete} of ${run.nodes.length} modules complete${current ? `; ${moduleLabel(current.module_id)} ${current.status}` : ""}`}><div><span>{progressLabel}</span><span className="mono">{complete}/{run.nodes.length}</span></div><span className="run-progress-track" aria-hidden="true"><span style={{ width: `${progress}%` }} /></span></div>
     <div className="dag">{run.nodes.map((node, index) => <div className="dag-step" key={node.id}>{index > 0 && <span className="dag-edge" aria-hidden="true">→</span>}{node.artifact_id ? <Link className="dag-node" href={withQuery("/sources/", { case: caseId, artifact: node.artifact_id })}><ModuleIdentity moduleId={node.module_id} /><div className={`status ${nodeStatusTone(node.status)}`}>{node.status}</div><span className="dag-node-open">Open output</span></Link> : <div className="dag-node"><ModuleIdentity moduleId={node.module_id} /><div className={`status ${nodeStatusTone(node.status)}`}>{node.status}</div><span className="dag-node-open dag-node-placeholder" aria-hidden="true">Open output</span></div>}</div>)}</div>
     <div className="approval-panel run-acceptance" data-run-acceptance>{acceptance}</div>
-    {run.status === "failed" && run.error && <StateNote tone="critical" live="alert" code={run.error.code}>{run.error.message || "Run exception"}</StateNote>}
+    {/* The typed failure: the humanized code, the blamed module by its registry
+        name, and the host's sentence only when it sent one (RunErrorResponse). */}
+    {run.status === "failed" && run.error && <StateNote tone="critical" live="alert" code={run.error.code}>{runErrorDetail(run.error)}</StateNote>}
     {run.status === "paused" && run.error?.code === "PLAN_APPROVAL_REQUIRED" && approvalSlot}
     {run.status === "paused" && !["SOURCE_SET_EMPTY", "PLAN_APPROVAL_REQUIRED"].includes(run.error?.code || "") && <StateNote tone="warning" live="status" code={run.error?.code || "RUN_PAUSED"}>{run.error?.message || "Run paused."}</StateNote>}
   </div>;
@@ -1615,13 +1624,16 @@ function RunConsole({ fromIntake, writeAccess, caseId, selectedCase, run, runLoa
           </div>
           {effectivePathway === "DEEP_RESEARCH" && <fieldset className="research-brief">
             <legend>Bounded research brief</legend>
-            <div className="field"><label htmlFor="research-question">Research question</label><textarea id="research-question" name="research_question" maxLength={400} required /></div>
-            <div className="field"><label htmlFor="decision-context">Decision context</label><textarea id="decision-context" name="decision_context" maxLength={400} required /></div>
+            {/* maxLength is the browser's UTF-16 convenience cap, never wider than the
+                server's code-point bound; the submit check counts code points. A list
+                textarea holds the item cap of full lines plus their newlines. */}
+            <div className="field"><label htmlFor="research-question">Research question</label><textarea id="research-question" name="research_question" maxLength={BRIEF_LIMITS.textChars} required /></div>
+            <div className="field"><label htmlFor="decision-context">Decision context</label><textarea id="decision-context" name="decision_context" maxLength={BRIEF_LIMITS.textChars} required /></div>
             <div className="field"><label htmlFor="as-of-date">As-of date</label><input id="as-of-date" name="as_of_date" type="date" required /></div>
-            <div className="field"><label htmlFor="time-horizon">Time horizon</label><input id="time-horizon" name="time_horizon" maxLength={200} required /></div>
-            <div className="field"><label htmlFor="must-answer">Must-answer lines</label><textarea id="must-answer" name="must_answer" maxLength={2009} aria-describedby="research-list-bounds" /></div>
-            <div className="field"><label htmlFor="exclusions">Exclusion lines</label><textarea id="exclusions" name="exclusions" maxLength={2009} aria-describedby="research-list-bounds" /></div>
-            <p className="muted" id="research-list-bounds">One item per line; 10 items combined, 200 characters per item.</p>
+            <div className="field"><label htmlFor="time-horizon">Time horizon</label><input id="time-horizon" name="time_horizon" maxLength={BRIEF_LIMITS.horizonChars} required /></div>
+            <div className="field"><label htmlFor="must-answer">Must-answer lines</label><textarea id="must-answer" name="must_answer" maxLength={BRIEF_LIMITS.listItems * (BRIEF_LIMITS.itemChars + 1) - 1} aria-describedby="research-list-bounds" /></div>
+            <div className="field"><label htmlFor="exclusions">Exclusion lines</label><textarea id="exclusions" name="exclusions" maxLength={BRIEF_LIMITS.listItems * (BRIEF_LIMITS.itemChars + 1) - 1} aria-describedby="research-list-bounds" /></div>
+            <p className="muted" id="research-list-bounds">One item per line; {BRIEF_LIMITS.listItems} items combined, {BRIEF_LIMITS.itemChars} characters per item.</p>
           </fieldset>}
           <button className="button primary" type="submit" disabled={!caseId || !effectivePathway || pendingAction === "start-run"}>{pendingAction === "start-run" ? "Compiling…" : "Compile and run"}</button>
         </form> : <WriteBlocked access={writeAccess} action="compiling a route" />}

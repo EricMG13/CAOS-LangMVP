@@ -624,11 +624,30 @@ class DomainStore:
             if case is None or (actor_role != "ADMIN" and actor_case_role not in {"ADMIN", "APPROVER"}):
                 return False
             existing = conn.execute(
-                sa.select(case_members.c.subject).where(
+                sa.select(case_members.c.role).where(
                     case_members.c.case_id == case_id, case_members.c.subject == member
                 )
-            ).first()
-            if existing:
+            ).scalar()
+            if existing is not None and member == actor:
+                # A member never re-roles themselves: an APPROVER could otherwise
+                # promote to ADMIN, and the last ADMIN could step down alone.
+                # Provisioning a subject that holds no standing yet is unchanged.
+                raise ValueError(
+                    "MEMBER_SELF_ROLE_CHANGE: a member cannot change their own case standing"
+                )
+            if existing == "ADMIN" and role != "ADMIN":
+                admins = conn.execute(
+                    sa.select(sa.func.count()).select_from(case_members).where(
+                        case_members.c.case_id == case_id, case_members.c.role == "ADMIN"
+                    )
+                ).scalar_one()
+                if admins <= 1:
+                    # A case with no ADMIN can never file again and no served
+                    # route can repair it (the route passes actor_role=None).
+                    raise ValueError(
+                        "MEMBER_LAST_ADMIN_DEMOTION: the case's last administrator cannot be demoted"
+                    )
+            if existing is not None:
                 conn.execute(sa.update(case_members).where(
                     case_members.c.case_id == case_id, case_members.c.subject == member
                 ).values(role=role))
@@ -645,6 +664,14 @@ class DomainStore:
         guard = _AUTHORITY_MUTATION_LOCK if "accepted_snapshot_id" in changes else nullcontext()
         with guard, self.engine.begin() as conn:
             conn.execute(sa.update(cases).where(cases.c.id == case_id).values(**changes))
+
+    def switch_visible_snapshot(self, case_id: str, snapshot_id: str, *, actor: str) -> None:
+        """Move the case's visible lens and record it in one transaction (the
+        transactional-pairing rule): a pointer moved without its audit row, or
+        an audit row without the move, never lands."""
+        with self.engine.begin() as conn:
+            conn.execute(sa.update(cases).where(cases.c.id == case_id).values(visible_snapshot_id=snapshot_id))
+            self._audit(conn, "snapshot.visible_switched", actor, case_id=case_id, snapshot_id=snapshot_id)
 
     # -- sources / source sets --------------------------------------------
 
