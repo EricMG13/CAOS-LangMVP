@@ -205,6 +205,13 @@ const awaitFocus = (locator, what) => locator.evaluate((element, label) => new P
   };
   check();
 }), what);
+// A hand-rolled request barrier awaited with no bound turns a missing request into a
+// hang, never a failure (FE-G1 mutation M7 ran for 13 hours); every barrier is bounded
+// and names the request that never came.
+const bounded = (promise, what, ms = 30_000) => {
+  let timer;
+  return Promise.race([promise, new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(what)), ms); })]).finally(() => clearTimeout(timer));
+};
 // WebKit's "<url> due to access control checks." rejections for fetches still
 // in flight at navigation, kept out of `errors` only with server evidence and
 // retained in the report so nothing is swallowed silently.
@@ -353,7 +360,7 @@ try {
   };
   await page.route(heldAuthorityDetail, holdAuthorityDetail);
   await page.goto(`${baseURL}/command-center/?case=${caseRecord.id}`, { waitUntil: "domcontentloaded" });
-  await authorityDetailSeen;
+  await bounded(authorityDetailSeen, "the command center never requested the selected case's authority");
   const visibleAuthority = page.getByRole("region", { name: "Visible authority" });
   await visibleAuthority.getByText(/Visible snapshot:\s*Loading authority/).waitFor();
   await visibleAuthority.getByText(/Source set:\s*Loading authority/).waitFor();
@@ -932,7 +939,7 @@ try {
       && new URL(response.url()).pathname === `/api/cases/${caseRecord.id}/runs`,
   );
   await page.getByRole("button", { name: "Compile and run" }).click();
-  await startRunIntercepted;
+  await bounded(startRunIntercepted, "compile and run never posted the run");
   await page.getByRole("combobox", { name: "Select case" }).selectOption(raceCase.id);
   releaseStartRun();
   const nextRunResponse = await nextRunResponsePromise;
@@ -1075,7 +1082,7 @@ try {
   await acceptDialog.getByText(nextRun.id, { exact: true }).waitFor();
   await acceptDialog.getByRole("button", { name: "Accept analytical snapshot" }).click();
   await acceptDialog.waitFor({ state: "hidden" });
-  await acceptanceIntercepted;
+  await bounded(acceptanceIntercepted, "accepting the snapshot never posted the acceptance");
   await page.getByRole("combobox", { name: "Select case" }).selectOption(raceCase.id);
   switchedToRaceCase = true;
   releaseAcceptance();
@@ -2303,6 +2310,17 @@ try {
   await page.keyboard.press("Escape");
   await evidence.waitFor({ state: "hidden" });
   await awaitFocus(chip, "closing the evidence drawer did not return focus to the chip that opened it");
+  // The same return proven without the browser's own dialog restoration: a scripted
+  // click focuses nothing in any engine, so only the opener the chip passed (F11)
+  // can bring focus back. Under a real click Chromium's native close restoration
+  // masks both a removed explicit restore and an opener inferred from
+  // activeElement (FE-A0 mutations M10 and M13); this pass fails on either.
+  await page.evaluate(() => { if (document.activeElement instanceof HTMLElement) document.activeElement.blur(); });
+  await chip.evaluate((element) => element.click());
+  await evidence.getByText("earnings.txt").waitFor();
+  await page.keyboard.press("Escape");
+  await evidence.waitFor({ state: "hidden" });
+  await awaitFocus(chip, "closing the evidence drawer opened by a scripted click did not return focus to the chip that passed itself as opener");
   await chip.click();
   await evidence.getByText("earnings.txt").waitFor();
   await evidence.getByText(/Source-level reference; no block locator supplied/).waitFor();
