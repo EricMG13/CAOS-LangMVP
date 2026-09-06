@@ -33,7 +33,7 @@ medium is fixed, the lows are fixed except the two the audit itself sends elsewh
 the contract-drift and test-vacuity tables are applied; no route, slug, rail label,
 kicker, page title or destination changed; `Workspace.tsx` is one file; the reducer
 changed only through its unit tests; no server response model changed; the a11y
-literal count is untouched. A draft pull request to `main` is open (URL at the end).
+literal count is untouched. A draft pull request to `main` is open: https://github.com/EricMG13/CAOS-LangMVP/pull/63 (not merged).
 
 ## Decisions applied
 
