@@ -866,3 +866,51 @@ Consolidation note: where §6 conflicts with §10/§11/§12 (output Σ vs Σ+max
     make it observable), a media type per deliverable export format, or any
     production capacity figure. Evidence:
     `.superpowers/sdd/enterprise-task-12b-report.md`.
+
+23. **The workbench information architecture: eight destinations plus the Run
+    tool, one vocabulary, a forwarding page for every earlier slug
+    (2026-09-06, FE-G2; FE-A1 decisions D1, D2, D3, D6, D12).** The frontend
+    serves the rail's eight words as its destinations — Portfolio
+    `/portfolio/`, Credit `/credit/`, Sources `/sources/`, Analysis
+    `/analysis/`, Market `/market/`, Model `/model/`, Report `/report/`, Admin
+    `/admin/` — plus Run `/run/`, the tool of Analysis, with the same word in
+    the URL, the rail, the command palette, the kicker and the tab title
+    ("Align", `.superpowers/sdd/frontend/frontend-a1-ia-audit.md` §5.1; the
+    FE-D1 canvas
+    https://claude.ai/code/artifact/5de66539-7954-45fd-8f8f-d40349fe736e,
+    chosen 2026-09-05 with no changes; `DESIGN.md` 2026-09-06 addendum with
+    the artboards and the export digest — the complete approval record, since
+    the FE-D2 hi-fi canvas was skipped on 2026-09-06, decision D13, and FE-G3
+    builds from the FE-D1 artboards). The route set is a pure function of
+    one declaration (`caos/frontend/src/lib/workbench.ts`:
+    `routeDestinations` and `forwardedRoutes`): `generateStaticParams`, the
+    rail, the palette and the accessibility sweep read it and nothing else,
+    and no navigation is data-selected. Route map: `/cases/` → `/portfolio/`,
+    `/command-center/` → `/credit/`, `/deep-dive/` → `/analysis/`,
+    `/run-console/` → `/run/`, `/rv-screener/` → `/market/`,
+    `/model-builder/` → `/model/`, `/report-studio/` → `/report/`,
+    `/admin-studio/` → `/admin/`. Every earlier slug stays a static page that
+    replaces history — never pushes — to its new home with the query string
+    and the hash intact (`RouteForwarder.tsx`, through the same external
+    `replaceState` the workspace uses for its own URL writes, so the entry
+    stays router-owned and nothing is fetched), because a static export
+    cannot serve a redirect and deep links in retained evidence packages must
+    keep resolving; workspace authority reads the re-presented case and run
+    as a route replay (a `hydrate` naming the current authority returns the
+    state unchanged; `workspaceAuthority.test.ts`, one case per forwarder).
+    One-home rules: run progress, compilation, acceptance and research-plan
+    approval have exactly one home, `/run/`; sign-off, freeze and filing stay
+    on `/report/`; intake stays on `/portfolio/` and posts files only;
+    `/analysis/` reads accepted artifacts; `/admin/` remains an
+    unavailable-capability surface with no control drawn for an unserved
+    route. The Run tool link and its LIVE badge render on every surface
+    (D12). `Workspace.tsx` stays one file: the move changed the destination
+    switch labels and the link targets and nothing else, and the authority
+    machine and the reducer did not move (D3). Every load-bearing test
+    literal moved in the same commit as the code it pins
+    (`.superpowers/sdd/frontend/frontend-g2-report.md` §3). The server keeps
+    no copy of the destination set: `contracts.DESTINATIONS` (the old nine
+    names, read by nothing) was deleted, and the intake fallback
+    `next_action` now reads "open Run and retry execution" (folded into the
+    same pull request at the decision owner's instruction, 2026-09-06). The
+    surfaces' interiors are FE-G3's; this entry binds structure only.

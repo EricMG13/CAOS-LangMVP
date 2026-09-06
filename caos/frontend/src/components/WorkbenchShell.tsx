@@ -9,6 +9,7 @@ import {
   WorkflowId,
   destinationMeta,
   evidenceKind,
+  routeFor,
   withQuery,
   workflowFor,
   workflows,
@@ -47,7 +48,7 @@ type Props = {
   runIsLive: boolean;
   selectedCase: CaseRecord | null;
   // An unrecognised path still gets the shell, but it must not claim to be a
-  // destination: `active` falls back to Cases for the rail, the title does not.
+  // destination: `active` falls back to Portfolio for the rail, the title does not.
   unknownRoute?: boolean;
   children: ReactNode;
 };
@@ -205,7 +206,7 @@ export default function WorkbenchShell({
 
   const workflowHref = (href: string, destination?: Destination) => withQuery(href, {
     case: caseId || undefined,
-    run: destination === "Run Console" ? runId || undefined : undefined,
+    run: destination === "Run" ? runId || undefined : undefined,
   });
   // SnapshotView.accepted is the effective visible/pinned reader lens. Keep its
   // name honest here because latest_accepted may move while this lens remains.
@@ -248,29 +249,29 @@ export default function WorkbenchShell({
         {!drawer.source.blocks.length && <p className="muted">No extracted source text.</p>}
         {drawer.source.blocks.length > 20 && <p className="muted">Showing the first 20 blocks. Open the full source for the remaining {drawer.source.blocks.length - 20} blocks.</p>}
       </div>
-      <Link className="button small" href={`${withQuery("/sources", { case: caseId })}#source-${drawer.source.id}`} onNavigate={closeDrawer}>Open full source</Link>
+      <Link className="button small" href={`${withQuery(routeFor("Sources"), { case: caseId })}#source-${drawer.source.id}`} onNavigate={closeDrawer}>Open full source</Link>
     </div>;
   }
   const evidenceHref = exactEvidenceKind === "source"
-    ? withQuery("/sources", { case: caseId, source: query.trim() })
-    : withQuery("/sources", { case: caseId, artifact: query.trim() });
+    ? withQuery(routeFor("Sources"), { case: caseId, source: query.trim() })
+    : withQuery(routeFor("Sources"), { case: caseId, artifact: query.trim() });
   let resultIndex = 0;
 
   return <>
     <a className="skip-link" href="#main-content">Skip to content</a>
     <div className="app-shell">
       <aside ref={railRef} className="rail" aria-label="Primary navigation">
-        <Link href={workflowHref("/cases")} className="wordmark"><span className="brand-mark" aria-hidden="true"><svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="m4.5 5 3 3-3 3M8.5 11h3.5" /></svg></span><span>CAOS<small>Credit Agent OS</small></span></Link>
+        <Link href={workflowHref(routeFor("Portfolio"))} className="wordmark"><span className="brand-mark" aria-hidden="true"><svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="m4.5 5 3 3-3 3M8.5 11h3.5" /></svg></span><span>CAOS<small>Credit Agent OS</small></span></Link>
         <nav aria-label="Workflows" className="nav-group">
           <div className="nav-label">Workspace</div>
           {workflows.map((workflow) => {
             // Exactly one rail entry per page carries aria-current="page" and the
             // active fill: the most specific match for the destination — a tool link
-            // when one targets it, the Admin Studio utility link on that surface,
-            // otherwise the workflow link.
+            // when one targets it, the governance entry on Admin, otherwise the
+            // workflow link.
             const current = workflow.id === activeWorkflow.id
               && !activeWorkflow.tools?.some((tool) => tool.destination === active)
-              && active !== "Admin Studio";
+              && active !== "Admin";
             return <Link
               aria-current={current ? "page" : undefined}
               className={`nav-link ${current ? "active" : ""}`}
@@ -279,24 +280,27 @@ export default function WorkbenchShell({
             ><span className="nav-glyph" aria-hidden="true">{workflowGlyphs[workflow.id]}</span><span className="nav-text">{workflow.label}</span></Link>;
           })}
         </nav>
-        {activeWorkflow.tools?.length ? <nav aria-label={`${activeWorkflow.label} tools`} className="nav-group">
-          <div className="nav-label">Analysis tools</div>
-          {activeWorkflow.tools.map((tool) => <Link
+        {/* A tool group renders on every surface, not only while its workflow is
+            active (FE-A1 D12): the Run tool and its LIVE badge are reachable from
+            Portfolio, Report or anywhere else a run is in flight. */}
+        {workflows.filter((workflow) => workflow.tools?.length).map((workflow) => <nav aria-label={`${workflow.label} tools`} className="nav-group" key={workflow.id}>
+          <div className="nav-label">{workflow.label} tools</div>
+          {workflow.tools?.map((tool) => <Link
             aria-current={active === tool.destination ? "page" : undefined}
             className={`nav-link ${active === tool.destination ? "active" : ""}`}
             href={workflowHref(tool.href, tool.destination)}
             key={tool.destination}
-          >{tool.label}{tool.destination === "Run Console" && runIsLive && <span className="shortcut">LIVE<span className="sr-only"> run in progress</span></span>}</Link>)}
-        </nav> : null}
+          >{tool.label}{tool.destination === "Run" && runIsLive && <span className="shortcut">LIVE<span className="sr-only"> run in progress</span></span>}</Link>)}
+        </nav>)}
         <div className="rail-spacer" />
-        <nav className="nav-group governance-nav" aria-label="Governance"><div className="nav-label">Governance</div><Link className={`nav-link ${active === "Admin Studio" ? "active" : ""}`} aria-current={active === "Admin Studio" ? "page" : undefined} href={workflowHref("/admin-studio")}><span className="nav-glyph" aria-hidden="true"><svg {...glyphProps}><path d="M8 1.75 13.25 3.5v4.25c0 3.25-2.25 5.25-5.25 6.25-3-1-5.25-3-5.25-6.25V3.5Z" /><path d="m5.75 7.75 1.5 1.5 2.75-2.75" /></svg></span><span className="nav-text">Admin</span></Link></nav>
+        <nav className="nav-group governance-nav" aria-label="Governance"><div className="nav-label">Governance</div><Link className={`nav-link ${active === "Admin" ? "active" : ""}`} aria-current={active === "Admin" ? "page" : undefined} href={workflowHref(routeFor("Admin"))}><span className="nav-glyph" aria-hidden="true"><svg {...glyphProps}><path d="M8 1.75 13.25 3.5v4.25c0 3.25-2.25 5.25-5.25 6.25-3-1-5.25-3-5.25-6.25V3.5Z" /><path d="m5.75 7.75 1.5 1.5 2.75-2.75" /></svg></span><span className="nav-text">Admin</span></Link></nav>
         <div className="rail-meta"><span>{role === "READER" ? "Reader" : role.toLowerCase().replace(/^./, (value) => value.toUpperCase())}</span><span>{selectedCase ? selectedCase.issuer : "No credit selected"}</span><span>Desktop workbench</span></div>
       </aside>
       <div className="workspace">
         <header className="topbar">
           <div className="topbar-heading"><span className="meta-label">{meta.kicker}</span><h1>{unknownRoute ? "Page not found" : meta.title}</h1></div>
           <div className="top-actions">
-            {selectedCase && active !== "Sources" ? <Link className="button quiet" href={workflowHref("/sources")}>Sources &amp; evidence</Link> : null}
+            {selectedCase && active !== "Sources" ? <Link className="button quiet" href={workflowHref(routeFor("Sources"))}>Sources &amp; evidence</Link> : null}
             <label className="sr-only" htmlFor="case-select">Select case</label>
             <select id="case-select" aria-label="Select case" value={caseId} onChange={(event) => onCaseChange(event.target.value, event.currentTarget)}>
               {/* The placeholder names its own state: while the register is still
@@ -324,7 +328,7 @@ export default function WorkbenchShell({
             reader never entered the content (WCAG 2.4.1); it is also where Workspace
             sends focus when a route change or a governed write destroys the element
             the user was on (WCAG 2.4.3). */}
-        <main className={`content${active === "Report Studio" ? " report-content" : ""}`} id="main-content" tabIndex={-1}>
+        <main className={`content${active === "Report" ? " report-content" : ""}`} id="main-content" tabIndex={-1}>
           {error && <div className="error global-error" role="alert" aria-live="assertive">{error}</div>}
           {children}
         </main>

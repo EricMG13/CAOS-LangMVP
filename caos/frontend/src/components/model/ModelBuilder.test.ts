@@ -17,7 +17,7 @@ const smoke = readFileSync(new URL("../../../scripts/workbench-smoke.mjs", impor
 
 test("Workspace delegates Model Builder to the extracted component", () => {
   assert.match(workspace, /import ModelBuilder from "\.\/model\/ModelBuilder";/);
-  assert.match(workspace, /case "Model Builder": return <ModelBuilder caseId=\{caseId\} role=\{role\}/);
+  assert.match(workspace, /case "Model": return <ModelBuilder caseId=\{caseId\} role=\{role\}/);
   assert.doesNotMatch(workspace, /function ModelView\(/);
 });
 

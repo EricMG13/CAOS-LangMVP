@@ -368,6 +368,6 @@ class IntakeService:
     def _unavailable(self, intake: dict[str, Any], code: str, message: str) -> dict[str, Any]:
         return self.store.update_intake(intake["id"], status="execution_unavailable", refusal={
             "code": code, "message": message,
-            "next_action": _NEXT_ACTIONS.get(code, "The documents are admitted; retry execution from the run console."),
+            "next_action": _NEXT_ACTIONS.get(code, "The documents are admitted; open Run and retry execution."),
             "findings": [],
         })

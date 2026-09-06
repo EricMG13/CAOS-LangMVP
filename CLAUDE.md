@@ -184,19 +184,32 @@ engine, the bundle, or the routes.
   `GZipMiddleware` (`minimum_size=1024`), and its content-type exclusions are
   load-bearing: `text/event-stream` keeps the run-events tail streaming and the
   XLSX media type is excluded because a workbook is already a zip.
-- The run console has exactly one home. Portfolio links into a credit and
-  Deep-Dive reads accepted artifacts; neither renders the compile form or the
-  accept control. Run progress, compilation and acceptance stay in
-  `/run-console/`.
-- The golden journey is document-first (Task 8, DECISIONS §14.17): the Cases
-  page's `.cases-intake` panel posts files and nothing else to
+- The workbench serves eight destinations plus Run, the tool of Analysis, with
+  one word in the URL, the rail, the palette, the kicker and the tab title
+  (DECISIONS §14.23, "Align"): `/portfolio/`, `/credit/`, `/sources/`,
+  `/analysis/`, `/run/`, `/market/`, `/model/`, `/report/`, `/admin/`. The
+  route set is a pure function of `routeDestinations` and `forwardedRoutes` in
+  `lib/workbench.ts`: `generateStaticParams`, the rail, the palette and the
+  a11y sweep read those two tables and nothing else. Every pre-Align slug
+  (`/cases/`, `/command-center/`, `/deep-dive/`, `/run-console/`,
+  `/rv-screener/`, `/model-builder/`, `/report-studio/`, `/admin-studio/`) is
+  a static forwarding page that replaces history to its new home with the
+  query string intact (`RouteForwarder.tsx`, through the workspace's own
+  external `replaceState` so the entry stays router-owned), and workspace
+  authority reads the re-presented case and run as a route replay.
+- Run has exactly one home, `/run/`. Portfolio links into a credit and
+  Analysis reads accepted artifacts; neither renders the compile form or the
+  accept control. Run progress, compilation, acceptance and research-plan
+  approval stay in `/run/`.
+- The golden journey is document-first (Task 8, DECISIONS §14.17): the
+  Portfolio page's `.cases-intake` panel posts files and nothing else to
   `POST /api/intake`; the server creates or resolves the case, admits every
   file or none in one transaction, classifies the evidence, selects the route
   and starts the run. Issuer, label, document types, periods, dispositions and
   the route are served as labelled machine suggestions and never taken from
   the browser or from document instructions. The create-case and compile
   forms remain as advanced controls; a completed intake run is opened for
-  review in the run console and is never accepted on the analyst's behalf.
+  review on Run and is never accepted on the analyst's behalf.
 - Visual language is established: dark institutional terminal, semantic color
   only, motion only for live state. `DESIGN.md` and `.impeccable.md` govern;
   inherit, don't reinvent.
@@ -328,7 +341,7 @@ engine, the bundle, or the routes.
 - The AI pull-request review is gone (ETR-B06): `security-review.yml` runs
   the recorded read-only diff review instead, and no workflow holds a secret
   outside the dispatch-only qualification job or a write token anywhere.
-- Admin Studio remains an explicit unavailable capability (`/admin/audit`,
+- Admin (`/admin/`) remains an explicit unavailable capability (`/admin/audit`,
   `/admin/bundle`). Worksheet reads, one-way sensitivity, tornado, revision
   rebase preview, build/revision export and download, and the Deep Research
   plan routes (`GET /runs/{id}/research-plan`,

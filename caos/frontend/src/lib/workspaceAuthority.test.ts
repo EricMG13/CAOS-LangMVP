@@ -6,6 +6,7 @@ import {
   requestContext,
   workspaceAuthorityReducer,
 } from "./workspaceAuthority.ts";
+import { forwardedRoutes } from "./workbench.ts";
 
 const reduce = (event: Parameters<typeof workspaceAuthorityReducer>[1]) => workspaceAuthorityReducer(initialAuthorityState, event);
 
@@ -181,4 +182,27 @@ test("invalidates only the active case or run authority", () => {
   assert.equal(caseInvalidated.caseId, null);
   assert.equal(caseInvalidated.runId, null);
   assert.equal(caseInvalidated.status, "idle");
+});
+
+test("a forwarded route re-hydrates the same case and run as a route replay", () => {
+  // FE-A1 D2: a pre-Align slug is a static page that replaces history to its new home
+  // with the query string intact. The shell hydrates from that query once at the old
+  // slug; whatever re-presents the same case and run afterwards — the forwarder, a
+  // StrictMode double effect, a re-run of the mount effect — is a replay and must not
+  // open a new authority generation or a new pending request. One case per forwarder.
+  for (const [from, to] of forwardedRoutes) {
+    const hydrated = reduce({ type: "hydrate", caseId: `case_${from}`, runId: `run_${from}` });
+    const replayed = workspaceAuthorityReducer(hydrated, { type: "hydrate", caseId: `case_${from}`, runId: `run_${from}` });
+    assert.strictEqual(replayed, hydrated, `/${from}/ → /${to}/ replay opened a new authority generation`);
+    const ready = workspaceAuthorityReducer(hydrated, { type: "requestSucceeded", context: requestContext(hydrated), scope: "case" });
+    assert.strictEqual(workspaceAuthorityReducer(ready, { type: "hydrate", caseId: `case_${from}`, runId: `run_${from}` }), ready, `/${from}/ → /${to}/ replay restarted a resolved authority`);
+  }
+  // An empty route replays too, and a route that names a different run is not a replay.
+  const empty = reduce({ type: "hydrate", caseId: null, runId: null });
+  assert.strictEqual(workspaceAuthorityReducer(empty, { type: "hydrate", caseId: null, runId: null }), empty);
+  const hydrated = reduce({ type: "hydrate", caseId: "case_a", runId: "run_a" });
+  const other = workspaceAuthorityReducer(hydrated, { type: "hydrate", caseId: "case_a", runId: "run_b" });
+  assert.notStrictEqual(other, hydrated);
+  assert.equal(other.generation, hydrated.generation + 1);
+  assert.equal(other.runId, "run_b");
 });

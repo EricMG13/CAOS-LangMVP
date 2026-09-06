@@ -55,6 +55,11 @@ export function workspaceAuthorityReducer(state: AuthorityState, event: Authorit
   switch (event.type) {
     case "hydrate": {
       const runId = event.caseId ? event.runId : null;
+      // A route that re-presents the current case and run is a route replay: a
+      // pre-Align slug replacing history to its new home (FE-A1 D2), a StrictMode
+      // double effect, a re-run of the mount effect. It opens no new generation and
+      // no new pending request; only the first hydration and a changed authority do.
+      if (state.hydrated && state.caseId === event.caseId && state.runId === runId) return state;
       const generation = state.generation + 1;
       return {
         ...state,

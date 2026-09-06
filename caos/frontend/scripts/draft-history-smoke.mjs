@@ -210,7 +210,7 @@ try {
     }
   });
   await new Promise((resolve) => workspaceServer.listen(workspacePort, "127.0.0.1", resolve));
-  await waitForBuiltApp(`${workspaceOrigin}/report-studio/`);
+  await waitForBuiltApp(`${workspaceOrigin}/report/`);
 
   const cases = [
     { id: "history-case-a", name: "History A", issuer: "History A", sector: "Services", source_count: 0, accepted_snapshot_id: null },
@@ -270,7 +270,7 @@ try {
     if (selectedCase && url.pathname === `/api/cases/${caseId}`) return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(selectedCase) });
     return route.fulfill({ status: 404, contentType: "application/json", body: JSON.stringify({ detail: "not found" }) });
   });
-  await workspacePage.goto(`${workspaceOrigin}/report-studio/?case=history-case-a`, { waitUntil: "networkidle" });
+  await workspacePage.goto(`${workspaceOrigin}/report/?case=history-case-a`, { waitUntil: "networkidle" });
   await workspacePage.evaluate(() => {
     window.__caosWorkspaceReplaceCalls = [];
     const replaceState = history.replaceState.bind(history);

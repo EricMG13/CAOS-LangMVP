@@ -21,7 +21,7 @@ decision (FE-G3), not a capability gap.
 | Sources | Analyst notes | `GET`/`POST /api/cases/{case_id}/notes` | Served, not drawn (D-G) |
 | Sources | Claim-to-source coverage matrix | No normalized claim-map response | Unavailable |
 | Analysis | Run stages, live progress, resume and exact artifact output | Existing run, event and artifact routes | Served |
-| Analysis | Deep Research plan review and digest-bound approval | `GET /api/runs/{run_id}/research-plan`, `POST /api/runs/{run_id}/research-plan/approve` | Served and drawn in the run console |
+| Analysis | Deep Research plan review and digest-bound approval | `GET /api/runs/{run_id}/research-plan`, `POST /api/runs/{run_id}/research-plan/approve` | Served and drawn on Run (`/run/`) |
 | Review | Accept exact run snapshot and switch visible accepted snapshot | Existing accept and snapshot-switch routes | Served |
 | Market | Active loan universe, filters, values and source locators | Existing active-universe route | Served |
 | Market | Relative percentile | No deterministic percentile contract | Omitted |
