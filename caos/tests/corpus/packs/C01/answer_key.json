@@ -1,9 +1,9 @@
 {
   "schema_version": "caos.answer-key.v1",
   "pack_id": "C01",
-  "version": "1.0.0",
-  "authored_by": "Claude Fable 5.1 (ER-G6 implementer)",
-  "status": "draft-host-control",
+  "version": "1.1.0",
+  "authored_by": "Codex (GPT-6 Astra); machine author, self-reviewed against pinned source bytes",
+  "status": "draft-machine-authored-source-grounded",
   "intake": {
     "status": "refused",
     "route": null,
@@ -23,7 +23,16 @@
         "26,622"
       ],
       "required": true,
-      "cells": null
+      "cells": null,
+      "source_evidence": {
+        "sha256": "dce18829919d84ca999d80a5a5f23492008bafbb6799a5362a17395d9485350d",
+        "normalization": "NFC",
+        "locator": {
+          "kind": "pdf_page",
+          "page": 47
+        },
+        "quote": "in millions, except per share\n data)\n Years Ended November 30,\n 2025 2024 2023\nPassenger ticket $ 17,419 $ 16,463 $ 14,067 \nOnboard and other  9,202  8,558  7,526 \nTotal Revenues  26,622  25,021  21,593 \nCruise and tour operating expenses:\nCommissions, transportation and other  3,331  3,232  2,761 \nOnboard and other  2,816  2,678  2,375 \nPayroll and related  2,589  2,464  2,373 \nFuel  1,808  2,007  2,047 \nFood  1,499  1,457  1,335 \nOther operating  3,904  3,801 "
+      }
     },
     {
       "id": "F2",
@@ -36,7 +45,16 @@
         "25,021"
       ],
       "required": true,
-      "cells": null
+      "cells": null,
+      "source_evidence": {
+        "sha256": "dce18829919d84ca999d80a5a5f23492008bafbb6799a5362a17395d9485350d",
+        "normalization": "NFC",
+        "locator": {
+          "kind": "pdf_page",
+          "page": 47
+        },
+        "quote": "ons, except per share\n data)\n Years Ended November 30,\n 2025 2024 2023\nPassenger ticket $ 17,419 $ 16,463 $ 14,067 \nOnboard and other  9,202  8,558  7,526 \nTotal Revenues  26,622  25,021  21,593 \nCruise and tour operating expenses:\nCommissions, transportation and other  3,331  3,232  2,761 \nOnboard and other  2,816  2,678  2,375 \nPayroll and related  2,589  2,464  2,373 \nFuel  1,808  2,007  2,047 \nFood  1,499  1,457  1,335 \nOther operating  3,904  3,801  3,426 \n"
+      }
     },
     {
       "id": "F3",
@@ -49,7 +67,16 @@
         "2,760"
       ],
       "required": true,
-      "cells": null
+      "cells": null,
+      "source_evidence": {
+        "sha256": "dce18829919d84ca999d80a5a5f23492008bafbb6799a5362a17395d9485350d",
+        "normalization": "NFC",
+        "locator": {
+          "kind": "pdf_page",
+          "page": 47
+        },
+        "quote": "9)  (111) \nOther income (expense), net  (4)  83  (75) \nIncome (Loss) Before Income Taxes  2,772  1,915  (62) \nIncome tax benefit (expense), net  (12)  1  (13) \nNet Income (Loss) $ 2,760 $ 1,916 $ (74) \nEarnings Per Share\nBasic $ 2.10 $ 1.50 $ (0.06) \nDiluted $ 2.02 $ 1.44 $ (0.06) \nThe accompanying notes are an integral part of these consolidated financial statements.\n45"
+      }
     },
     {
       "id": "F4",
@@ -62,7 +89,16 @@
         "27,383"
       ],
       "required": true,
-      "cells": null
+      "cells": null,
+      "source_evidence": {
+        "sha256": "dce18829919d84ca999d80a5a5f23492008bafbb6799a5362a17395d9485350d",
+        "normalization": "NFC",
+        "locator": {
+          "kind": "pdf_page",
+          "page": 60
+        },
+        "quote": "200 \nEUR Notes Oct 2029 1.00%  696  633 \nLoans\nEUR floating rate (e) Apr 2029 EURIBOR + 1.95%  348  — \n          Total Unsecured (No Subsidiary Guarantee)  1,244  833 \nTotal Debt  27,383  28,213 \nLess: unamortized debt issuance costs \nand discounts  (744)  (738) \n58"
+      }
     },
     {
       "id": "F5",
@@ -75,11 +111,20 @@
         "1,928"
       ],
       "required": true,
-      "cells": null
+      "cells": null,
+      "source_evidence": {
+        "sha256": "dce18829919d84ca999d80a5a5f23492008bafbb6799a5362a17395d9485350d",
+        "normalization": "NFC",
+        "locator": {
+          "kind": "pdf_page",
+          "page": 49
+        },
+        "quote": "CARNIVAL CORPORATION & PLC\nCONSOLIDATED BALANCE SHEETS\n(in millions, except par values)\n November 30,\n 2025 2024\nASSETS\nCurr\nent Assets\nC\nash and cash equivalents $ 1,928 $ 1,210 \nTrade and other receivables, net  678  590 \nInventories  505  507 \nPrepaid expenses and other  1,108  1,070 \n  Total current assets  4,219  3,378 \nProperty and Equipment, Net  43,494  41,795 \nOperating Lease Right-of-Use Assets, Net  1,328  1,368 \nGoodwill  579  579 \nOt"
+      }
     },
     {
       "id": "F6",
-      "statement": "Scheduled principal payments due in 2026",
+      "statement": "2026 principal payments in the November 30, 2025 maturity schedule, including subsequently settled convertible notes",
       "value": "2,615",
       "unit": "USD millions",
       "period": "FY2026",
@@ -88,11 +133,20 @@
         "2,615"
       ],
       "required": true,
-      "cells": null
+      "cells": null,
+      "source_evidence": {
+        "sha256": "dce18829919d84ca999d80a5a5f23492008bafbb6799a5362a17395d9485350d",
+        "normalization": "NFC",
+        "locator": {
+          "kind": "pdf_page",
+          "page": 61
+        },
+        "quote": " which do not \nguarantee our other outstanding debt.\nAs of November 30, 2025, the scheduled maturities of our debt are as follows:\n(in millions)\nYear Principal Payments\n2026 (a) $ 2,615 \n2027  2,518 \n2028  3,962 \n2029  4,133 \n2030  2,886 \nThereafter  11,268 \nTotal $ 27,383 \n(a) Includes $1.1 billion of our 5.75% convertible senior notes due 2027 (“2027 Convertible Notes”) which were settled in \nDecember 2025. See “Convertible Notes” below.\nRevolving Facility\nDu"
+      }
     },
     {
       "id": "F7",
-      "statement": "FY2025 interest expense net of capitalized interest",
+      "statement": "FY2025 interest expense net of capitalized interest (expense magnitude; shown in parentheses)",
       "value": "1,349",
       "unit": "USD millions",
       "period": "FY2025",
@@ -101,7 +155,16 @@
         "1,349"
       ],
       "required": true,
-      "cells": null
+      "cells": null,
+      "source_evidence": {
+        "sha256": "dce18829919d84ca999d80a5a5f23492008bafbb6799a5362a17395d9485350d",
+        "normalization": "NFC",
+        "locator": {
+          "kind": "pdf_page",
+          "page": 47
+        },
+        "quote": "0 \nDepreciation and amortization expense  2,790  2,557  2,370 \nOperating Income  4,483  3,574  1,956 \nInterest income  51  93  233 \nInterest expense, net of capitalized interest  (1,349)  (1,755)  (2,066) \nDebt extinguishment and modification costs  (409)  (79)  (111) \nOther income (expense), net  (4)  83  (75) \nIncome (Loss) Before Income Taxes  2,772  1,915  (62) \nIncome tax benefit (expense), net  (12)  1  (13) \nNet Income (Loss) $ 2,760 $ 1,916 $ (74) \nEarn"
+      }
     },
     {
       "id": "F8",
@@ -114,7 +177,16 @@
         "$7.2 billion"
       ],
       "required": true,
-      "cells": null
+      "cells": null,
+      "source_evidence": {
+        "sha256": "fd73bd9f5715c80f05df51f37b92bd1f8260f0c6e6bedb6af77c97b57e08a213",
+        "normalization": "NFC",
+        "locator": {
+          "kind": "pdf_page",
+          "page": 1
+        },
+        "quote": " 2025 due to strong close-in demand. \n• All-time high full year operating income of $4.5 billion, up 25 percent compared to the prior year. \n• Record full year adjusted EBITDA1 of $7.2 billion, up over $1 billion compared to the prior year. \n• Adjusted return on invested capital1 (“ROIC”) exceeds 13 percent. \n• Net debt to adjusted EBITDA1 ratio of 3.4x and recognized by Fitch as investment grade. \n• Cumulative advanced booked position for 2026 remains in line with 20"
+      }
     },
     {
       "id": "F9",
@@ -127,7 +199,16 @@
         "3.4x"
       ],
       "required": true,
-      "cells": null
+      "cells": null,
+      "source_evidence": {
+        "sha256": "fd73bd9f5715c80f05df51f37b92bd1f8260f0c6e6bedb6af77c97b57e08a213",
+        "normalization": "NFC",
+        "locator": {
+          "kind": "pdf_page",
+          "page": 1
+        },
+        "quote": "ITDA1 of $7.2 billion, up over $1 billion compared to the prior year. \n• Adjusted return on invested capital1 (“ROIC”) exceeds 13 percent. \n• Net debt to adjusted EBITDA1 ratio of 3.4x and recognized by Fitch as investment grade. \n• Cumulative advanced booked position for 2026 remains in line with 2025 record levels at historical high prices \n(in constant currency1). \n• Full year 2026 adjusted net income expected to be $3.5 billion, surpassing record 2025 leve"
+      }
     },
     {
       "id": "F10",
@@ -140,20 +221,38 @@
         "2.5 to 1.0"
       ],
       "required": true,
-      "cells": null
+      "cells": null,
+      "source_evidence": {
+        "sha256": "dce18829919d84ca999d80a5a5f23492008bafbb6799a5362a17395d9485350d",
+        "normalization": "NFC",
+        "locator": {
+          "kind": "pdf_page",
+          "page": 63
+        },
+        "quote": "ties \ninclude the following:\n• Maintain minimum interest coverage (adjusted EBITDA to consolidated net interest charges, as defined in the \nagreements) at a ratio of not less than 2.5 to 1.0 for the November 30, 2025 testing date, and at a ratio of not less than \n3.0 to 1.0 for the February 28, 2026 testing date onwards\n• Maintain minimum issued capital and consolidated reserves (as defined in the agreements) of $5.0 billion\n• Limit our debt to capital (as defined i"
+      }
     },
     {
       "id": "F11",
-      "statement": "Minimum liquidity covenant",
+      "statement": "Minimum liquidity covenant disclosed at November 30, 2025",
       "value": "1.5",
       "unit": "USD billions",
-      "period": "FY2024-Q2",
-      "source": "CCL_2024_Q2_10Q_term_loan_agreements.pdf",
+      "period": "FY2025",
+      "source": "CCL_2025_form_10K.pdf",
       "match": [
         "minimum liquidity of $1.5 billion"
       ],
       "required": true,
-      "cells": null
+      "cells": null,
+      "source_evidence": {
+        "sha256": "dce18829919d84ca999d80a5a5f23492008bafbb6799a5362a17395d9485350d",
+        "normalization": "NFC",
+        "locator": {
+          "kind": "pdf_page",
+          "page": 63
+        },
+        "quote": "olidated reserves (as defined in the agreements) of $5.0 billion\n• Limit our debt to capital (as defined in the agreements) percentage to a percentage not to exceed 65%\n• Maintain minimum liquidity of $1.5 billion\n• Limit the amounts of our secured assets as well as secured and other indebtedness\nAt November 30, 2025, we were in compliance with the applicable covenants under our debt agreements. Generally, if an event \nof default under any debt agreement occurs, then, pursuant to cross-de"
+      }
     },
     {
       "id": "F12",
@@ -166,7 +265,60 @@
         "8,153"
       ],
       "required": true,
-      "cells": null
+      "cells": null,
+      "source_evidence": {
+        "sha256": "1e909085deea9a22cc6f95beabd6642131308c282b26ad0a4ae2c98c33f65778",
+        "normalization": "NFC",
+        "locator": {
+          "kind": "pdf_page",
+          "page": 4
+        },
+        "quote": "nded \nAugust 31, \nNine Months Ended \nAugust 31, \n2025 2024 2025 2024 \nPassenger ticket $ 5,430 $ 5,239 $ 13,366 $ 12,609 \nOnboard and other 2,723 2,657 6,925 6,474 \nTotal Revenues 8,153 7,896 20,292 19,083 \nCruise and tour operating expenses: \nCommissions, transportation and other 973 958 2,603 2,510 \nOnboard and other 883 866 2,154 2,043 \nPayroll and related 636 575 1,915 1,812 \nFuel 451 515 1,384 1,546 \nFood 398 393 1,124 1,099 \nOther operating 1,044 995 2,85"
+      }
+    },
+    {
+      "id": "F13",
+      "statement": "Minimum interest coverage from the February 28, 2026 testing date onwards",
+      "value": "3.0",
+      "unit": "x",
+      "period": "FY2026-Q1 onwards",
+      "source": "CCL_2025_form_10K.pdf",
+      "match": [
+        "3.0 to 1.0"
+      ],
+      "required": true,
+      "cells": null,
+      "source_evidence": {
+        "sha256": "dce18829919d84ca999d80a5a5f23492008bafbb6799a5362a17395d9485350d",
+        "normalization": "NFC",
+        "locator": {
+          "kind": "pdf_page",
+          "page": 63
+        },
+        "quote": "o consolidated net interest charges, as defined in the \nagreements) at a ratio of not less than 2.5 to 1.0 for the November 30, 2025 testing date, and at a ratio of not less than \n3.0 to 1.0 for the February 28, 2026 testing date onwards\n• Maintain minimum issued capital and consolidated reserves (as defined in the agreements) of $5.0 billion\n• Limit our debt to capital (as defined in the agreements) percentage to a percentage not to exceed 65%\n• Maintain minimum li"
+      }
+    },
+    {
+      "id": "F14",
+      "statement": "The reported 2026 maturity bucket includes $1.1 billion of 2027 Convertible Notes settled in December 2025",
+      "value": "1.1",
+      "unit": "USD billions",
+      "period": "December 2025 subsequent event",
+      "source": "CCL_2025_form_10K.pdf",
+      "match": [
+        "$1.1 billion"
+      ],
+      "required": true,
+      "cells": null,
+      "source_evidence": {
+        "sha256": "dce18829919d84ca999d80a5a5f23492008bafbb6799a5362a17395d9485350d",
+        "normalization": "NFC",
+        "locator": {
+          "kind": "pdf_page",
+          "page": 61
+        },
+        "quote": "r debt are as follows:\n(in millions)\nYear Principal Payments\n2026 (a) $ 2,615 \n2027  2,518 \n2028  3,962 \n2029  4,133 \n2030  2,886 \nThereafter  11,268 \nTotal $ 27,383 \n(a) Includes $1.1 billion of our 5.75% convertible senior notes due 2027 (“2027 Convertible Notes”) which were settled in \nDecember 2025. See “Convertible Notes” below.\nRevolving Facility\nDuring 2025, Carnival Corporation and Carnival plc entered into a $4.5 billion unsecured multi-currency revolving cre"
+      }
     }
   ],
   "conflicts": [],
@@ -384,5 +536,48 @@
     ],
     "exclusions": []
   },
-  "orchestration_note": "Relative Value, Distressed and Deep Research cells on this pack are orchestration proof only (proves_pathway false): Carnival carries no licensed marks (C20), is not a restructuring case (C21) and the brief is a fixture (C22)."
+  "orchestration_note": "Relative Value, Distressed and Deep Research cells on this pack are orchestration proof only (proves_pathway false): Carnival carries no licensed marks (C20), is not a restructuring case (C21) and the brief is a fixture (C22).",
+  "revision": {
+    "date": "2026-09-06",
+    "previous_key_sha256": "b7bde5089164f8b5a72b61cc33886a5f42fe4fa5a51866220e60a7947c5e9694",
+    "method": "Source-first review of pinned document bytes, before evaluation outputs; route and ingest expectations retained.",
+    "review_status": "Self-review only; independent analyst approval pending.",
+    "limitations": [
+      "Literal-match diagnostic scoring is not a semantic correctness proof.",
+      "Synthetic documents test host behaviour; they do not establish issuer economics.",
+      "Machine-authored benchmark prose is not independently approved or automatically scored."
+    ],
+    "documents": {
+      "CCL_2025_annual_report.pdf": "e698de2d9fd6356a5c4cc0b2abc50b903669aca166ddc17dcebb46109a35d19d",
+      "CCL_2025_form_10K.pdf": "dce18829919d84ca999d80a5a5f23492008bafbb6799a5362a17395d9485350d",
+      "CCL_2025_Q1_10Q.pdf": "0588eca5daf04345884d97e3e3ca065d24bccca4187d842d312375ede81f7e71",
+      "CCL_2025_Q1_earnings_guidance.pdf": "a5eee95387dd3e0b3310d493f1bb4abd2de84984b66b48a7b3816e8132b63133",
+      "CCL_2025_Q2_half_year_report.pdf": "18db2b94dfccbe18f593bd4e7290af0d835702eb979dadb7a9907b9ff71627f3",
+      "CCL_2025_Q2_10Q.pdf": "a60ed004e8a7d30006ba59b3c0976b8176c2a8bc9cbd19b7a250b794267eab87",
+      "CCL_2025_Q2_earnings_guidance.pdf": "07efd33ddb4a7a29fdf146f42d590bdf12a31552d8b402951aa4e7e746e1831d",
+      "CCL_2025_Q3_10Q.pdf": "1e909085deea9a22cc6f95beabd6642131308c282b26ad0a4ae2c98c33f65778",
+      "CCL_2025_Q3_earnings_guidance.pdf": "34b931aec5b83f6db71d5c3a4114665271cc0d8c3c9c34d55a247dbf33e0b145",
+      "CCL_2025_Q4_earnings_guidance.pdf": "fd73bd9f5715c80f05df51f37b92bd1f8260f0c6e6bedb6af77c97b57e08a213",
+      "CCL_2025_Q4_earnings_presentation_forecast.pdf": "ef538837b00c4561a8889fed8e0ff41f54fef6ea278e67e88889bbe3788426aa",
+      "CCL_2024_annual_report.pdf": "d743e57e74e6043a7c1c3b01d1bc5f97b134ea36ec17b9933cabaaf577d7b35e",
+      "CCL_2024_form_10K.pdf": "e15747a877c8bd84a5478855ad1da956d8488119a99abc6dd913fa29950e3cbf",
+      "CCL_2024_Q1_10Q.pdf": "7ed70859fb038d5b1b21b24872b47f987611d6dd8bfac71c4d0ed44fc234a31e",
+      "CCL_2024_Q1_earnings_guidance.pdf": "03c702d5e0baabd32e907b2c3074b9f6456cdfd31043eafe436b3a0fc8972698",
+      "CCL_2024_Q2_10Q_term_loan_agreements.pdf": "cfa615d35c661d5e80787fbab9d6b03f84fd72a40a637cd0ba80ff8c511eae8c",
+      "CCL_2024_Q2_earnings_guidance.pdf": "71f5fbf3984dc205b7856b2352ebcd892cd2a5562725893dedae4e1fab1b3919",
+      "CCL_2024_Q3_10Q.pdf": "00c52081038ccab1f664aeaf9c751af0ff1ca279b143636391f0880db4609b95",
+      "CCL_2024_Q3_earnings_guidance.pdf": "39435afb7977881e2da531b35cb0a8f38717eb3ae14c25150f686c97ca86890b",
+      "CCL_2024_Q4_earnings_guidance.pdf": "a77f39f1899d3c3e3a8bde69297028da4a312c5f6927b20a532297e4a80e47f8",
+      "CCL_2023_annual_report.pdf": "98686a468ec743faab4ff1fdfa93d37978a827a5d2e4f667623662bd7bcea834",
+      "CCL_2023_form_10K.pdf": "e8eda87fed73e5e31fa89ca21b73befec4329f66f48390e6eb6d788d12aa7ded",
+      "CCL_2023_investor_day_forecast.pdf": "a2498633cda45fe99de5dd7ac13fb12cdbb63b684da0991c54ffa11e0c8f4641",
+      "CCL_2023_Q1_10Q.pdf": "80ae7f9b4a43eed41be5ff349057f3cf0dbb4eeea0fba4fa76bf351cd229c6db",
+      "CCL_2023_Q1_business_update_guidance.pdf": "b754fbfdba908de0c424c197920bf37d96907f7b2015ea67fff566cbfa42948f",
+      "CCL_2023_Q2_10Q.pdf": "ee8ffa50b6540dad589f77f80cfc8f022914ea1e437a04742db338d47d03cf43",
+      "CCL_2023_Q2_earnings_guidance.pdf": "b11f7a33261273aa0a5ee4ef71ba2b07003177b4ec5661b5fcb5681f22ea8bc5",
+      "CCL_2023_Q3_10Q.pdf": "2a5374b744994a5ff896a451b440db59df7096034ba439c8696f7a0fd950a9d6",
+      "CCL_2023_Q3_earnings_guidance.pdf": "da56f324e8d633a1536e4a63a077f297bdcaa346c78d0bc409b010a19e07c7db",
+      "CCL_2023_Q4_earnings_guidance.pdf": "e0f8a235dd982e450c310250369278c0e0d88a4a3578efb8ea91c4016516d981"
+    }
+  }
 }

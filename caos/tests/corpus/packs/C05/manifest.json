@@ -1,7 +1,7 @@
 {
   "schema_version": "caos.corpus-pack.v1",
   "pack_id": "C05",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "title": "Multi-currency issuer with explicit and missing foreign-exchange rates",
   "purpose": "C05: euro annual accounts with a disclosed EUR/USD rate, a dollar interim statement and a sterling facility with no rate; the missing rate is a named gap.",
   "kind": "negative",
@@ -64,14 +64,14 @@
   ],
   "answer_key": {
     "file": "answer_key.json",
-    "version": "1.0.0",
-    "sha256": "29438b30f8ec7202f7e9ffda8b05409a647f51d75c7fbf9c56c0d22c44fbb62d",
+    "version": "1.1.0",
+    "sha256": "02619860a40e685c64028b5c6b343cd3075f46805a35d41d6939437a7a428f29",
     "approvals": [
       {
         "scope": "host_control",
-        "reviewer": "Claude Fable 5.1 (ER-G6 implementer)",
-        "approved_at": "2026-09-03",
-        "note": "host-control attestation of the draft key: orchestration proof only, never analysis"
+        "reviewer": "Codex (GPT-6 Astra); machine author, self-reviewed against pinned source bytes",
+        "approved_at": "2026-09-06",
+        "note": "Machine self-check and digest pin for host control or explicit live_evaluation only; no independent analyst approval or qualification."
       }
     ]
   }

@@ -1,7 +1,7 @@
 {
   "schema_version": "caos.corpus-pack.v1",
   "pack_id": "C01",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "title": "Carnival Corporation & plc — complete performing-credit pack",
   "purpose": "C01: complete audited annual financials, every quarterly statement, management guidance and forecasts, the debt schedule and executed term-loan documentation for one performing leveraged credit. Shared with C17, C18 and C19. Market marks are not issuer documents and live in C20.",
   "kind": "positive",
@@ -448,14 +448,14 @@
   ],
   "answer_key": {
     "file": "answer_key.json",
-    "version": "1.0.0",
-    "sha256": "b7bde5089164f8b5a72b61cc33886a5f42fe4fa5a51866220e60a7947c5e9694",
+    "version": "1.1.0",
+    "sha256": "7ba9e0a4353aa862e25cd6cba7bfc4a54e33b744905e636009398b8909558a0a",
     "approvals": [
       {
         "scope": "host_control",
-        "reviewer": "Claude Fable 5.1 (ER-G6 implementer)",
-        "approved_at": "2026-09-03",
-        "note": "host-control attestation of the draft key: orchestration proof only, never analysis"
+        "reviewer": "Codex (GPT-6 Astra); machine author, self-reviewed against pinned source bytes",
+        "approved_at": "2026-09-06",
+        "note": "Machine self-check and digest pin for host control or explicit live_evaluation only; no independent analyst approval or qualification."
       }
     ]
   }

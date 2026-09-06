@@ -1,7 +1,7 @@
 {
   "schema_version": "caos.corpus-pack.v1",
   "pack_id": "C08",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "title": "Valid and invalid spreadsheets",
   "purpose": "C08: hidden sheets, formulas, external links, macros, blank cells and extreme dimensions through the loan-universe import; valid workbooks import, each invalid one is a typed finding.",
   "kind": "negative",
@@ -124,14 +124,14 @@
   ],
   "answer_key": {
     "file": "answer_key.json",
-    "version": "1.0.0",
-    "sha256": "7f82426a5a0a29e475776033135a8a420278473e45cf8c7e853fbebc1722d6d7",
+    "version": "1.1.0",
+    "sha256": "7c1c91b6c21ee7bb0b32798dcaa1286bf6a97d0c5ced88226c3994c754d78f14",
     "approvals": [
       {
         "scope": "host_control",
-        "reviewer": "Claude Fable 5.1 (ER-G6 implementer)",
-        "approved_at": "2026-09-03",
-        "note": "host-control attestation of the draft key: orchestration proof only, never analysis"
+        "reviewer": "Codex (GPT-6 Astra); machine author, self-reviewed against pinned source bytes",
+        "approved_at": "2026-09-06",
+        "note": "Machine self-check and digest pin for host control or explicit live_evaluation only; no independent analyst approval or qualification."
       }
     ]
   }

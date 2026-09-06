@@ -1,9 +1,9 @@
 {
   "schema_version": "caos.answer-key.v1",
   "pack_id": "C06",
-  "version": "1.0.0",
-  "authored_by": "Claude Fable 5.1 (ER-G6 implementer)",
-  "status": "draft-host-control",
+  "version": "1.1.0",
+  "authored_by": "Codex (GPT-6 Astra); machine author, self-reviewed against pinned source bytes",
+  "status": "draft-machine-authored-source-grounded",
   "intake": {
     "status": "started",
     "route": [
@@ -22,27 +22,70 @@
       "id": "F1",
       "statement": "Industrial perimeter total debt",
       "value": "2,400",
-      "unit": "USD millions",
+      "unit": "not specified in synthetic source",
       "period": "FY2024",
       "source": "northstar-10k-fy2024.txt",
       "match": [
         "Industrial perimeter total debt 2,400"
       ],
       "required": true,
-      "cells": null
+      "cells": null,
+      "source_evidence": {
+        "sha256": "818f616b62f56525d3d2db1bc349f06e4c167a8e7004860451544d4155ddf651",
+        "normalization": "NFC",
+        "locator": {
+          "kind": "text_lines",
+          "start_line": 10,
+          "end_line": 14
+        },
+        "quote": "Term Loan B 2,400 maturing March 15, 2030\nSenior notes 1,000 due June 1, 2028\nIndustrial perimeter total debt 2,400\nNorthstar Finance Co. (financing subsidiary) debt 1,000, non-recourse to the industrial group\nConsolidated total debt 3,400 includes the financing subsidiary."
+      }
     },
     {
       "id": "F2",
       "statement": "Financing subsidiary debt (non-recourse)",
       "value": "1,000",
-      "unit": "USD millions",
+      "unit": "not specified in synthetic source",
       "period": "FY2024",
       "source": "northstar-10k-fy2024.txt",
       "match": [
         "Northstar Finance Co. (financing subsidiary) debt 1,000"
       ],
       "required": true,
-      "cells": null
+      "cells": null,
+      "source_evidence": {
+        "sha256": "818f616b62f56525d3d2db1bc349f06e4c167a8e7004860451544d4155ddf651",
+        "normalization": "NFC",
+        "locator": {
+          "kind": "text_lines",
+          "start_line": 11,
+          "end_line": 15
+        },
+        "quote": "Senior notes 1,000 due June 1, 2028\nIndustrial perimeter total debt 2,400\nNorthstar Finance Co. (financing subsidiary) debt 1,000, non-recourse to the industrial group\nConsolidated total debt 3,400 includes the financing subsidiary.\nItem 7. Management's discussion and analysis of financial condition."
+      }
+    },
+    {
+      "id": "F3",
+      "statement": "Consolidated debt includes the financing subsidiary and differs from industrial-only debt",
+      "value": "3,400",
+      "unit": "not specified in synthetic source",
+      "period": "FY2024",
+      "source": "northstar-10k-fy2024.txt",
+      "match": [
+        "Consolidated total debt 3,400"
+      ],
+      "required": true,
+      "cells": null,
+      "source_evidence": {
+        "sha256": "818f616b62f56525d3d2db1bc349f06e4c167a8e7004860451544d4155ddf651",
+        "normalization": "NFC",
+        "locator": {
+          "kind": "text_lines",
+          "start_line": 12,
+          "end_line": 15
+        },
+        "quote": "Industrial perimeter total debt 2,400\nNorthstar Finance Co. (financing subsidiary) debt 1,000, non-recourse to the industrial group\nConsolidated total debt 3,400 includes the financing subsidiary.\nItem 7. Management's discussion and analysis of financial condition."
+      }
     }
   ],
   "conflicts": [],
@@ -72,6 +115,22 @@
         "gaps": []
       },
       "after_run": null
+    }
+  },
+  "revision": {
+    "date": "2026-09-06",
+    "previous_key_sha256": "c0739e2e17ca2c10c7fe8fb142722443cf1bcd311c660920183d1f9fc532af18",
+    "method": "Source-first review of pinned document bytes, before evaluation outputs; route and ingest expectations retained.",
+    "review_status": "Self-review only; independent analyst approval pending.",
+    "limitations": [
+      "Literal-match diagnostic scoring is not a semantic correctness proof.",
+      "Synthetic documents test host behaviour; they do not establish issuer economics.",
+      "Machine-authored benchmark prose is not independently approved or automatically scored."
+    ],
+    "documents": {
+      "northstar-10k-fy2024.txt": "818f616b62f56525d3d2db1bc349f06e4c167a8e7004860451544d4155ddf651",
+      "northstar-10q-q3-2025.txt": "9693c5af5106a7477ae6d9be04b03fc124e74fda8f0f51f68f9a4f383f789966",
+      "northstar-credit-agreement.txt": "d8e07f5fee49f0ea46df09beed10d8493e315476bdbca273c573862bf5e81223"
     }
   }
 }

@@ -771,6 +771,21 @@ Consolidation note: where §6 conflicts with §10/§11/§12 (output Σ vs Σ+max
     approvals and the external packs are external inputs recorded in
     `.superpowers/sdd/enterprise-task-11-report.md`.
 
+    **Development reruns (2026-09-06).** The explicit `--binding
+    live_evaluation` mode uses the ordinary provider path with digest-pinned
+    host-control-scoped draft keys. It defaults to three cold repetitions,
+    retains every scoring dimension, and never feeds answer-key fixtures to
+    the provider. Its verdict is `DEVELOPMENT_EVALUATION` or
+    `DEVELOPMENT_EVALUATION_INCOMPLETE`; no pathway receives `qualified=true`.
+    Binding kind is included in result identity and checked when aggregating,
+    so these results cannot be reused as live qualification. Repetition counts
+    must be positive integers, and a passing cell needs distinct result IDs
+    across distinct cold repetition indices. C01–C19 answer keys v1.1.0 add
+    machine-authored source excerpts, page/line locators and source digests;
+    their self-review is not independent analyst approval. C20–C22 remain
+    unacquired and unsigned. The normal `live` mode still requires analyst
+    approval. Signed-in Codex remains a development-only provider.
+
 21. **Database truth, retained simulations, the single-instance lock and the
     backup snapshot point (2026-09-03, Task 12a, ETR-B07, ETR-B10, G6).**
     Serialisation of every governed race is a property of the database, proven

@@ -1,7 +1,7 @@
 {
   "schema_version": "caos.corpus-pack.v1",
   "pack_id": "C19",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "title": "Real-issuer Covenant and Refinancing pack",
   "purpose": "C19: the Carnival pack for the Covenant & Refinancing route — executed term-loan agreements and repricing amendments (2024 Q2 legal package), covenant disclosures and the scheduled-maturity table.",
   "kind": "positive",
@@ -33,14 +33,14 @@
   ],
   "answer_key": {
     "file": "answer_key.json",
-    "version": "1.0.0",
-    "sha256": "9ccaff33b9703ea7e631227d45bf44458f3ee1fe67a907435de5ca3a0666e321",
+    "version": "1.1.0",
+    "sha256": "89a6ab202d52f6f850b4bab08ac62839d117af655748590c52e43711e06e705e",
     "approvals": [
       {
         "scope": "host_control",
-        "reviewer": "Claude Fable 5.1 (ER-G6 implementer)",
-        "approved_at": "2026-09-03",
-        "note": "host-control attestation of the draft key: orchestration proof only, never analysis"
+        "reviewer": "Codex (GPT-6 Astra); machine author, self-reviewed against pinned source bytes",
+        "approved_at": "2026-09-06",
+        "note": "Machine self-check and digest pin for host control or explicit live_evaluation only; no independent analyst approval or qualification."
       }
     ]
   }

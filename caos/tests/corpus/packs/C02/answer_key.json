@@ -1,9 +1,9 @@
 {
   "schema_version": "caos.answer-key.v1",
   "pack_id": "C02",
-  "version": "1.0.0",
-  "authored_by": "Claude Fable 5.1 (ER-G6 implementer)",
-  "status": "draft-host-control",
+  "version": "1.1.0",
+  "authored_by": "Codex (GPT-6 Astra); machine author, self-reviewed against pinned source bytes",
+  "status": "draft-machine-authored-source-grounded",
   "intake": {
     "status": "started",
     "route": [
@@ -64,6 +64,21 @@
         ]
       },
       "after_run": null
+    }
+  },
+  "revision": {
+    "date": "2026-09-06",
+    "previous_key_sha256": "79f8e23168891ffe29e84d255ed5fece4f2ea5ba40ddfcb14bdf3a49ec6f2093",
+    "method": "Source-first review of pinned document bytes, before evaluation outputs; route and ingest expectations retained.",
+    "review_status": "Self-review only; independent analyst approval pending.",
+    "limitations": [
+      "Literal-match diagnostic scoring is not a semantic correctness proof.",
+      "Synthetic documents test host behaviour; they do not establish issuer economics.",
+      "Machine-authored benchmark prose is not independently approved or automatically scored."
+    ],
+    "documents": {
+      "northstar-fy2025-guidance.txt": "9ad163c93e15f9380428fab411358ff2c05067982e3903e6ff769a4aabbbae9b",
+      "northstar-investor-note.txt": "0817b718cad2b7330d44e4c6b9a46b61b1cec927d45d24c295bfc1f3b4eedba0"
     }
   }
 }

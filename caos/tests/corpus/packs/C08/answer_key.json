@@ -1,9 +1,9 @@
 {
   "schema_version": "caos.answer-key.v1",
   "pack_id": "C08",
-  "version": "1.0.0",
-  "authored_by": "Claude Fable 5.1 (ER-G6 implementer)",
-  "status": "draft-host-control",
+  "version": "1.1.0",
+  "authored_by": "Codex (GPT-6 Astra); machine author, self-reviewed against pinned source bytes",
+  "status": "draft-machine-authored-source-grounded",
   "intake": null,
   "expected_facts": [],
   "conflicts": [],
@@ -93,5 +93,26 @@
       },
       "note": "Refused at the source boundary (MAX_XLSX_EXTRACT_COLUMNS) before the loan-universe importer sees it."
     }
-  ]
+  ],
+  "revision": {
+    "date": "2026-09-06",
+    "previous_key_sha256": "7f82426a5a0a29e475776033135a8a420278473e45cf8c7e853fbebc1722d6d7",
+    "method": "Source-first review of pinned document bytes, before evaluation outputs; route and ingest expectations retained.",
+    "review_status": "Self-review only; independent analyst approval pending.",
+    "limitations": [
+      "Literal-match diagnostic scoring is not a semantic correctness proof.",
+      "Synthetic documents test host behaviour; they do not establish issuer economics.",
+      "Machine-authored benchmark prose is not independently approved or automatically scored."
+    ],
+    "documents": {
+      "marks-valid.xlsx": "a66cbf28c3b4cc33f466cce7d68a68daeac7b010eb76e7e8bf8b202d7f7c930d",
+      "marks-hidden-sheet.xlsx": "23a00ca6505e70e186a5070a607960067188879f82f40b4a8540132ac5088c7d",
+      "marks-formula.xlsx": "a094fa40c4681177b75bc9b370bc42765f83266a11d635bcd4a3f56c63e6807b",
+      "marks-external-link.xlsx": "22239a0c8431b243592245c0f2355fba635e82cf86e45e10c92775d529413f3f",
+      "marks-macro.xlsx": "31d715614ba772357451f158a8558717aa0a91f7ad4312abe0dc096f4a37f0bd",
+      "marks-blank-optional.xlsx": "d59bd7f04f5f0d624f33d3052b30e336f76e3d55d6ced915fa839e710bf7308d",
+      "marks-empty.xlsx": "01818dc7ca76253902a3b90e19828a753a397f89f9fa51bbebb645e4d8947181",
+      "marks-wide.xlsx": "9c69363da34abc5f0d424acd6b7081f64851791aa0937893ba3909b5129a4d61"
+    }
+  }
 }

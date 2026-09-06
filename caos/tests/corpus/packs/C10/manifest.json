@@ -1,7 +1,7 @@
 {
   "schema_version": "caos.corpus-pack.v1",
   "pack_id": "C10",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "title": "Relative-value workbook with duplicates, identifier aliases, conflicting rows and dates",
   "purpose": "C10: duplicate instruments, identifier aliases, date conflicts and blank optional cells through the loan-universe import.",
   "kind": "negative",
@@ -88,14 +88,14 @@
   ],
   "answer_key": {
     "file": "answer_key.json",
-    "version": "1.0.0",
-    "sha256": "b6b58ff0040d8c371cdcd8c70fd88529b8d9c8ba53026a99dd293a3e2e975020",
+    "version": "1.1.0",
+    "sha256": "c50d5f78b83e6c94baaf879d97602a5cff1fc55d60fb5b2b0788f015719fa304",
     "approvals": [
       {
         "scope": "host_control",
-        "reviewer": "Claude Fable 5.1 (ER-G6 implementer)",
-        "approved_at": "2026-09-03",
-        "note": "host-control attestation of the draft key: orchestration proof only, never analysis"
+        "reviewer": "Codex (GPT-6 Astra); machine author, self-reviewed against pinned source bytes",
+        "approved_at": "2026-09-06",
+        "note": "Machine self-check and digest pin for host control or explicit live_evaluation only; no independent analyst approval or qualification."
       }
     ]
   }

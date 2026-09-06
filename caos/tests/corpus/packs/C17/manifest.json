@@ -1,7 +1,7 @@
 {
   "schema_version": "caos.corpus-pack.v1",
   "pack_id": "C17",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "title": "Real-issuer Full Credit pack with an independently authored benchmark conclusion",
   "purpose": "C17: the Carnival pack scored against a Full Credit answer key; the independently authored benchmark conclusion is an analyst input (BLOCKED EXTERNAL) and is compared once supplied.",
   "kind": "positive",
@@ -27,14 +27,14 @@
   ],
   "answer_key": {
     "file": "answer_key.json",
-    "version": "1.0.0",
-    "sha256": "85665d3e507dcacc24019f8f3663e632f258e4ddfefe4bcbbd3b8dc11086b416",
+    "version": "1.1.0",
+    "sha256": "cd613cd4100fed7dadc5c3de7e04577a680f6fbe6e0f4aaaf73de21ac28ba740",
     "approvals": [
       {
         "scope": "host_control",
-        "reviewer": "Claude Fable 5.1 (ER-G6 implementer)",
-        "approved_at": "2026-09-03",
-        "note": "host-control attestation of the draft key: orchestration proof only, never analysis"
+        "reviewer": "Codex (GPT-6 Astra); machine author, self-reviewed against pinned source bytes",
+        "approved_at": "2026-09-06",
+        "note": "Machine self-check and digest pin for host control or explicit live_evaluation only; no independent analyst approval or qualification."
       }
     ]
   }

@@ -1,7 +1,7 @@
 {
   "schema_version": "caos.corpus-pack.v1",
   "pack_id": "C14",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "title": "Unicode pack: normalization variants, bidi controls, confusables, control characters",
   "purpose": "C14: two spellings of one issuer name, a right-to-left override, a confusable and control characters; the boundary keeps them out of every artifact.",
   "kind": "negative",
@@ -76,14 +76,14 @@
   ],
   "answer_key": {
     "file": "answer_key.json",
-    "version": "1.0.0",
-    "sha256": "6da2991f6be0699aac5012d17f1fa9abf4177acacba0785ad07dbdb3d79454b2",
+    "version": "1.1.0",
+    "sha256": "42d869731a1ba48d886f6fed9f63edd7d6491fdedd3a6c492d0c52f959a29967",
     "approvals": [
       {
         "scope": "host_control",
-        "reviewer": "Claude Fable 5.1 (ER-G6 implementer)",
-        "approved_at": "2026-09-03",
-        "note": "host-control attestation of the draft key: orchestration proof only, never analysis"
+        "reviewer": "Codex (GPT-6 Astra); machine author, self-reviewed against pinned source bytes",
+        "approved_at": "2026-09-06",
+        "note": "Machine self-check and digest pin for host control or explicit live_evaluation only; no independent analyst approval or qualification."
       }
     ]
   }

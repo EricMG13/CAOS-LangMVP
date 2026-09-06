@@ -1,7 +1,7 @@
 {
   "schema_version": "caos.corpus-pack.v1",
   "pack_id": "C02",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "title": "Sparse pack with material missing evidence",
   "purpose": "C02: no annual or interim statements and no debt documents; no committee-ready conclusion is supportable, so CP-0 must refuse with the typed insufficiency.",
   "kind": "negative",
@@ -58,14 +58,14 @@
   ],
   "answer_key": {
     "file": "answer_key.json",
-    "version": "1.0.0",
-    "sha256": "79f8e23168891ffe29e84d255ed5fece4f2ea5ba40ddfcb14bdf3a49ec6f2093",
+    "version": "1.1.0",
+    "sha256": "b4387b0b2d2fc8d6f8e9e9155ad4f50b9752ce981d6067b8084922696ba0f381",
     "approvals": [
       {
         "scope": "host_control",
-        "reviewer": "Claude Fable 5.1 (ER-G6 implementer)",
-        "approved_at": "2026-09-03",
-        "note": "host-control attestation of the draft key: orchestration proof only, never analysis"
+        "reviewer": "Codex (GPT-6 Astra); machine author, self-reviewed against pinned source bytes",
+        "approved_at": "2026-09-06",
+        "note": "Machine self-check and digest pin for host control or explicit live_evaluation only; no independent analyst approval or qualification."
       }
     ]
   }

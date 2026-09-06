@@ -341,18 +341,21 @@ def score_cell(key: dict[str, Any], manifest_rows: list[dict[str, Any]], cell_id
 
 def aggregate(plan: list[dict[str, Any]], results: list[dict[str, Any]], *, repetitions: int,
               binding_kind: str, current: dict[str, str], now: datetime | None = None) -> dict[str, Any]:
-    """Fold retained cell results into one binding verdict. A required cell
-    counts only from results bound to the current identity (MOD-023) that
-    have not expired (MOD-024); it needs ``repetitions`` passes and no failure.
-    A refusal cell never proves a pathway; a pathway is proven only by a
-    passing positive cell that declares ``proves_pathway``."""
+    """Require current, unexpired passes and positive evidence for every route.
+
+    Evaluation completion never establishes provider or pathway qualification.
+    """
+    if type(repetitions) is not int or repetitions < 1:
+        raise ValueError("repetitions must be a positive integer")
     now = now or datetime.now(UTC)
     by_cell: dict[str, list[dict[str, Any]]] = {}
     stale: list[str] = []
     expired: list[str] = []
     for result in results:
         bound = result.get("binding_view") or {}
-        if result.get("verdict") != "error" and any(bound.get(field) != current.get(field) for field in current):
+        if result.get("binding_kind") != binding_kind or (
+            result.get("verdict") != "error" and any(bound.get(field) != current.get(field) for field in current)
+        ):
             stale.append(result.get("result_id", "?"))
             continue
         expires = result.get("expires_at")
@@ -360,10 +363,17 @@ def aggregate(plan: list[dict[str, Any]], results: list[dict[str, Any]], *, repe
             expired.append(result.get("result_id", "?"))
             continue
         by_cell.setdefault(result["cell_key"], []).append(result)
+
     cells: list[dict[str, Any]] = []
     for required in plan:
         retained = by_cell.get(required["cell_key"], [])
-        passes = sum(1 for item in retained if item.get("verdict") == "pass")
+        # Keep the last pass ID per valid repetition, then exclude copied IDs.
+        last_pass_ids = {
+            item["repetition"]: item.get("result_id") for item in retained
+            if item.get("verdict") == "pass" and type(item.get("repetition")) is int
+            and 1 <= item["repetition"] <= repetitions
+        }
+        passes = len(set(last_pass_ids.values()) - {None, ""})
         fails = sum(1 for item in retained if item.get("verdict") in ("fail", "error"))
         blocked = sorted({item.get("blocked_code") for item in retained if item.get("verdict") == "blocked"} - {None})
         if fails:
@@ -374,8 +384,9 @@ def aggregate(plan: list[dict[str, Any]], results: list[dict[str, Any]], *, repe
             status = "blocked_external"
         else:
             status = "missing"
-        cells.append({**required, "status": status, "passes": passes, "fails": fails, "blocked": blocked,
-                      "needed": repetitions})
+        cells.append({**required, "status": status, "passes": passes, "fails": fails,
+                      "blocked": blocked, "needed": repetitions})
+
     pathways: dict[str, dict[str, Any]] = {}
     for cell in cells:
         route = f"{cell['pathway']}/{cell['depth']}"
@@ -383,11 +394,16 @@ def aggregate(plan: list[dict[str, Any]], results: list[dict[str, Any]], *, repe
         entry["required"].append({"pack": cell["pack_id"], "status": cell["status"]})
         if cell["proves_pathway"] and cell["status"] == "passed":
             entry["proven_by"].append(cell["pack_id"])
+    complete = bool(cells)
     for entry in pathways.values():
-        entry["qualified"] = bool(entry["proven_by"]) and all(item["status"] == "passed" for item in entry["required"])
-    complete = all(cell["status"] == "passed" for cell in cells) and all(entry["qualified"] for entry in pathways.values())
+        route_passed = bool(entry["proven_by"]) and all(item["status"] == "passed" for item in entry["required"])
+        complete = complete and route_passed
+        entry["qualified"] = route_passed and binding_kind != "live_evaluation"
+
     if binding_kind == "live":
         verdict = "QUALIFIED" if complete else "UNQUALIFIED"
+    elif binding_kind == "live_evaluation":
+        verdict = "DEVELOPMENT_EVALUATION" if complete else "DEVELOPMENT_EVALUATION_INCOMPLETE"
     else:
         verdict = "ORCHESTRATION_PROOF" if complete else "ORCHESTRATION_PROOF_INCOMPLETE"
     return {

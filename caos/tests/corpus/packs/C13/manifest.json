@@ -1,7 +1,7 @@
 {
   "schema_version": "caos.corpus-pack.v1",
   "pack_id": "C13",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "title": "Boundary pack at the file-size, line-length and empty-source limits",
   "purpose": "C13: exactly-admitted and just-refused uploads at the size, line-length and empty boundaries (block-count, row, column and sheet limits are exercised in C08 and the spec suite).",
   "kind": "negative",
@@ -76,14 +76,14 @@
   ],
   "answer_key": {
     "file": "answer_key.json",
-    "version": "1.0.0",
-    "sha256": "83ede20f75e4de55b203c4fa2f35a628b952be10cfd2f87ea125e37f348d9fc5",
+    "version": "1.1.0",
+    "sha256": "84d4e1ae363a219f7e8f4c887f0724b7b8ee38605906592f632a95fb2f8dfba3",
     "approvals": [
       {
         "scope": "host_control",
-        "reviewer": "Claude Fable 5.1 (ER-G6 implementer)",
-        "approved_at": "2026-09-03",
-        "note": "host-control attestation of the draft key: orchestration proof only, never analysis"
+        "reviewer": "Codex (GPT-6 Astra); machine author, self-reviewed against pinned source bytes",
+        "approved_at": "2026-09-06",
+        "note": "Machine self-check and digest pin for host control or explicit live_evaluation only; no independent analyst approval or qualification."
       }
     ]
   }

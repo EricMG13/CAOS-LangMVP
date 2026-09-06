@@ -1,7 +1,7 @@
 {
   "schema_version": "caos.corpus-pack.v1",
   "pack_id": "C16",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "title": "Subsequent-event pack with post-period refinancing and disposal",
   "purpose": "C16: a press release after the balance-sheet date extends the term loan and approves a disposal; the analysis flags the subsequent event and never restates the period.",
   "kind": "negative",
@@ -112,14 +112,14 @@
   ],
   "answer_key": {
     "file": "answer_key.json",
-    "version": "1.0.0",
-    "sha256": "ae02bc976e3c644c8d3d04ccea762dab54d9186381f5c418a3ceca521e58fb7e",
+    "version": "1.1.0",
+    "sha256": "46dd421882a9e5bdf160e3cd804633bbdedaf399bfe67ee980f8aa364af59664",
     "approvals": [
       {
         "scope": "host_control",
-        "reviewer": "Claude Fable 5.1 (ER-G6 implementer)",
-        "approved_at": "2026-09-03",
-        "note": "host-control attestation of the draft key: orchestration proof only, never analysis"
+        "reviewer": "Codex (GPT-6 Astra); machine author, self-reviewed against pinned source bytes",
+        "approved_at": "2026-09-06",
+        "note": "Machine self-check and digest pin for host control or explicit live_evaluation only; no independent analyst approval or qualification."
       }
     ]
   }

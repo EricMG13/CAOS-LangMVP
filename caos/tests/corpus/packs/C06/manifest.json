@@ -1,7 +1,7 @@
 {
   "schema_version": "caos.corpus-pack.v1",
   "pack_id": "C06",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "title": "Finance-company perimeter requiring industrial and finance debt separation",
   "purpose": "C06: the annual report carries industrial debt and a non-recourse financing-subsidiary debt separately; the analysis must keep both perimeters distinct.",
   "kind": "negative",
@@ -64,14 +64,14 @@
   ],
   "answer_key": {
     "file": "answer_key.json",
-    "version": "1.0.0",
-    "sha256": "c0739e2e17ca2c10c7fe8fb142722443cf1bcd311c660920183d1f9fc532af18",
+    "version": "1.1.0",
+    "sha256": "811a1374529ed4c49d329a4b492f71bc0c68fcf6ac401e6b5143922a676a18b6",
     "approvals": [
       {
         "scope": "host_control",
-        "reviewer": "Claude Fable 5.1 (ER-G6 implementer)",
-        "approved_at": "2026-09-03",
-        "note": "host-control attestation of the draft key: orchestration proof only, never analysis"
+        "reviewer": "Codex (GPT-6 Astra); machine author, self-reviewed against pinned source bytes",
+        "approved_at": "2026-09-06",
+        "note": "Machine self-check and digest pin for host control or explicit live_evaluation only; no independent analyst approval or qualification."
       }
     ]
   }
