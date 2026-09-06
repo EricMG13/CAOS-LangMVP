@@ -408,6 +408,8 @@ with one working file per artboard beside it and `canvas.json`). Retained
 export: `.superpowers/sdd/frontend/design/fe-d1-align-shell-1440.png`, SHA-256
 `45ea2f8ffa4bfe72b88acba992fe561664986c1af2c0dc3de4108d49cb9cb51e`. The canvas
 binds the layout, hierarchy, states and copy of those artboards; tokens stay in
-`caos/frontend/app/globals.css`. The FE-D2 hi-fi screens, once approved, extend
-this addendum with their artboards and digests rather than replace it.
-Everything else in this document and the 31 Aug addendum still governs.
+`caos/frontend/app/globals.css`. FE-D2 (hi-fi screens) is skipped by the
+decision owner's instruction of 2026-09-06 (FE-A1 decision D13): this addendum
+is the complete approval record, and FE-G3 builds the surfaces from the Align
+artboards named above. Everything else in this document and the 31 Aug
+addendum still governs.

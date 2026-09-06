@@ -879,7 +879,9 @@ Consolidation note: where §6 conflicts with §10/§11/§12 (output Σ vs Σ+max
     FE-D1 canvas
     https://claude.ai/code/artifact/5de66539-7954-45fd-8f8f-d40349fe736e,
     chosen 2026-09-05 with no changes; `DESIGN.md` 2026-09-06 addendum with
-    the artboards and the export digest). The route set is a pure function of
+    the artboards and the export digest — the complete approval record, since
+    the FE-D2 hi-fi canvas was skipped on 2026-09-06, decision D13, and FE-G3
+    builds from the FE-D1 artboards). The route set is a pure function of
     one declaration (`caos/frontend/src/lib/workbench.ts`:
     `routeDestinations` and `forwardedRoutes`): `generateStaticParams`, the
     rail, the palette and the accessibility sweep read it and nothing else,

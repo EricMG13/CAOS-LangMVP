@@ -52,6 +52,11 @@ FE-D2 hi-fi screens, when approved, extend the addendum rather than replace it. 
 this task redraws a surface interior, so the missing hi-fi canvas blocks none of the
 structural work.
 
+Resolved 2026-09-06 after the pull request opened: the decision owner instructed "FE-G3
+proceeds on the FE-D1 artboards; skip FE-D2". Recorded as D13 in
+`frontend-a1-ia-audit.md` `## Decisions`; the DESIGN.md addendum and DECISIONS §14.23 now
+say the addendum is the complete approval record.
+
 ## 1. Before-and-after route table
 
 | Destination | Before (slug · label · kicker · title · tab) | After (slug · label · kicker · title · tab) | Old slug behaviour |
@@ -210,8 +215,8 @@ earlier session, so this task used `:8770` and `CAOS_URL`.
   and Node 24 prints `MODULE_TYPELESS_PACKAGE_JSON` (it re-parses the `.ts` file as ESM).
   Harmless; silencing it means `"type": "module"` in `package.json`, which
   `next.config.js` (CommonJS) forbids, or a `.mjs` re-export of the two tables.
-- **FE-D2 has not run** (§0): the DESIGN.md addendum binds the FE-D1 Align artboards
-  and says the hi-fi screens extend it.
+- **FE-D2 is skipped** (§0, D13): the DESIGN.md addendum binds the FE-D1 Align artboards
+  and is the complete approval record for FE-G3.
 
 ## 6. Server files
 
