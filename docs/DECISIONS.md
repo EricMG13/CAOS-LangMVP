@@ -908,7 +908,9 @@ Consolidation note: where §6 conflicts with §10/§11/§12 (output Σ vs Σ+max
     switch labels and the link targets and nothing else, and the authority
     machine and the reducer did not move (D3). Every load-bearing test
     literal moved in the same commit as the code it pins
-    (`.superpowers/sdd/frontend/frontend-g2-report.md` §3). No server file
-    changed: `contracts.DESTINATIONS` (unread) and the intake fallback
-    `next_action` phrase "the run console" are follow-ups. The surfaces'
-    interiors are FE-G3's; this entry binds structure only.
+    (`.superpowers/sdd/frontend/frontend-g2-report.md` §3). The server keeps
+    no copy of the destination set: `contracts.DESTINATIONS` (the old nine
+    names, read by nothing) was deleted, and the intake fallback
+    `next_action` now reads "open Run and retry execution" (folded into the
+    same pull request at the decision owner's instruction, 2026-09-06). The
+    surfaces' interiors are FE-G3's; this entry binds structure only.

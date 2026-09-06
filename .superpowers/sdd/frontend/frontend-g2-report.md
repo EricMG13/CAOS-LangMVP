@@ -192,13 +192,13 @@ earlier session, so this task used `:8770` and `CAOS_URL`.
 
 ## 5. Follow-ups
 
-- **Server strings that still say the old words (not changed; the audit listed them
-  under change cost, not as proven necessary).** `caos/server/caos/contracts.py::DESTINATIONS`
-  is the old nine-name tuple and is read by nothing (`grep` finds only the definition);
-  `caos/server/caos/intake/service.py::_unavailable` falls back to the wire text "The
-  documents are admitted; retry execution from the run console." for an engine code
-  `_NEXT_ACTIONS` does not name. Both are wire-adjacent server edits with their own spec
-  pins and belong to a server change, not this one.
+- **Server strings that said the old words — folded in on 2026-09-06 at the decision
+  owner's instruction (§6).** `caos/server/caos/contracts.py::DESTINATIONS` (the old
+  nine-name tuple, read by nothing) is deleted and replaced by a comment pointing at the
+  frontend's single declaration; `caos/server/caos/intake/service.py::_unavailable`'s
+  fallback `next_action` now reads "The documents are admitted; open Run and retry
+  execution." No test pinned either string (`test_intake_spec.py` asserts only that
+  `next_action` is non-empty); no frontend or smoke literal carries the old text.
 - **Interior copy that still names the old surface (FE-G3).** `ModelBuilder.tsx` panel
   headings and load error ("Model Builder", "Unable to load Model Builder"),
   `ReportStudio.tsx` load error and pathway-change prompt ("Unable to load Report
@@ -220,11 +220,25 @@ earlier session, so this task used `:8770` and `CAOS_URL`.
 
 ## 6. Server files
 
-None changed. The audit's change-cost line named `contracts.py`'s `DESTINATIONS` tuple
-and one intake `next_action` string; neither is a route, the tuple is unread, and the
-string is a fallback for engine codes the intake service does not name, so the
-"no server change unless the audit proved one necessary" constraint holds and both are
-follow-ups (§5).
+None changed in the original scope: the audit's change-cost line named `contracts.py`'s
+`DESTINATIONS` tuple and one intake `next_action` string; neither is a route, the tuple
+is unread, and the string is a fallback for engine codes the intake service does not
+name, so the "no server change unless the audit proved one necessary" constraint held
+and both were listed as follow-ups. On 2026-09-06, after the pull request opened, the
+decision owner instructed "Fold the two server follow-ups into a server change", so the
+same pull request now carries one server commit: `contracts.py` loses the unread tuple
+(a comment points at the frontend's single declaration, DECISIONS §14.23) and
+`intake/service.py`'s fallback reads "open Run and retry execution". Because a server
+file changed, Ruff and the backend suite ran from this worktree
+(`caos/tests/conftest.py` puts this tree's `caos/server` on `sys.path`; the pinned
+Carnival corpus documents were copied from the primary checkout so the corpus test runs
+rather than skips):
+
+| Gate | Command | Result |
+|---|---|---|
+| Ruff | `caos/server/.venv/bin/python -m ruff check --config ruff.toml caos/server caos/tests --exclude caos/server/caos/methodology/vendor` | `All checks passed!` |
+| Backend suite | `caos/server/.venv/bin/python -m pytest caos/tests -q -p no:cacheprovider` (from this worktree, primary checkout's Python 3.14.6 venv; corpus documents present so the corpus test ran) | `1215 passed, 30 skipped, 1 warning in 1422.24s (0:23:42)`; the skips are the PostgreSQL target (`CAOS_TEST_POSTGRES_URL` unset) and the `CORPUS_FULL=1` nightly cells; the warning is starlette's `httpx` deprecation |
+| `run_sec_audit.py`, `CORPUS_FULL=1` corpus | — | not run: the change is one deleted unread constant and one fallback string; neither adds, removes or reshapes a route or a wire field |
 
 ## 7. Commits
 
@@ -233,7 +247,9 @@ follow-ups (§5).
 | `93af3b8` | `feat(frontend): serve the Align destination set with a forwarding page per earlier slug` — `workbench.ts` (tables, `routeFor`, `forwardedSlug`, `destinationFromSlug` → `Destination \| null`, `workflows` derived), `workspaceAuthority.ts` (hydrate replay), `RouteForwarder.tsx` (new), `app/[destination]/page.tsx`, `app/not-found.tsx`, `WorkbenchShell.tsx`, `Workspace.tsx`, `ModelBuilder.tsx`, `ReportStudio.tsx`; `workbench.test.ts`, `workspaceAuthority.test.ts`, `ModelBuilder.test.ts`, `ReportStudio.test.ts`; `workbench-smoke.mjs`, `a11y-axe.mjs`, `focus-restoration-smoke.mjs`, `identity-a11y.mjs`, `draft-history-smoke.mjs` |
 | `709eb37` | `docs: record the Align IA (DESIGN.md addendum, DECISIONS §14.23) and retire the old route names` — `DESIGN.md`, `docs/DECISIONS.md`, `CLAUDE.md`, `.impeccable.md`, `README.md`, `caos/frontend/docs/control-capability-map.md`, the prompt series' frontend addendum, and one line each in the Task 8, 9 and 13 reports |
 | `c7fcec7` | `docs(sdd): FE-G2 report and progress row` — this file and `.superpowers/sdd/frontend/progress.md`, written with the pre-rebase hashes |
-| (this commit) | `docs(sdd): record the FE-G2 pull request and the rebase` — the corrected hashes, the rebase note, the PR URL and the post-rebase Chromium smoke |
+| `a5415c7` | `docs(sdd): record the FE-G2 pull request and the rebase` — the corrected hashes, the rebase note, the PR URL and the post-rebase Chromium smoke |
+| `29ce6f8` | `docs: record D13 — FE-D2 skipped, FE-G3 proceeds on the FE-D1 Align artboards` |
+| (server commit) | `fix(server): drop the unread destination tuple and name Run in the intake fallback` — `contracts.py`, `intake/service.py`, DECISIONS §14.23 amended, this report §5/§6, `progress.md` |
 
 ## 8. Confidence review
 

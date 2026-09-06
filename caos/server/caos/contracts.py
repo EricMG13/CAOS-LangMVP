@@ -69,16 +69,9 @@ PATHWAYS = {
 
 INTERNAL_PATHWAYS = (*PATHWAYS.keys(), "PORTFOLIO_DECISION", "DECISION_LEDGER")
 
-DESTINATIONS = (
-    "Cases",
-    "Sources",
-    "Run Console",
-    "Deep-Dive",
-    "RV Screener",
-    "Command Center",
-    "Model Builder",
-    "Report Studio",
-)
+# The workbench's destination set is declared once, in the frontend
+# (caos/frontend/src/lib/workbench.ts, DECISIONS §14.23); the server serves no
+# copy of it, so the two cannot drift again.
 
 
 # Bidirectional embedding, override and isolate controls (CVE-2021-42574,
