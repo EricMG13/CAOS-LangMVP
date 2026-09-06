@@ -336,3 +336,202 @@ By-design: none. Still open: 7 as a harness follow-up (§6).
   degraded scan is red rather than silently green. The run-tail replay cost itself
   (about ten `GET /api/runs/{id}` per page load of a terminal run) is the frontend's
   refetch-per-event rule and is not changed here.
+
+## 10. Second pass on main (2026-09-06, branch `claude/frontend-surfaces-approved-ia-98bf71`)
+
+Executed in `.claude/worktrees/frontend-destination-migration-1f874e` from `main` at
+`bfeda07` (the FE-G3 merge, PR #72). The FE-G3 prompt was re-issued verbatim after #72
+had merged, so this pass takes the residual of its goal, not a redraw: (1) the interior
+copy FE-G2 §6 handed to FE-G3 ("Panel interiors are FE-G3's scope") and §6 above
+deferred, which is the one place a surface still rendered its pre-IA interior name;
+(2) the evidence the prompt's "done means" asks for and §2 retained only for the three
+artboards — a screenshot of every destination in every reachable drawn state at 1440 and
+720; (3) a drifted row in the capability map that #72's own documentation commit left.
+Assumption stated: everything the Align record binds is in scope, nothing it does not
+draw is approximated (§10.5). Frontend: Node 24.16.0; backend for the combined app: the
+primary checkout's `caos/server/.venv` (Python 3.14.6) running this tree's `dev.py` and
+`worker.py`.
+
+### 10.1 Changes
+
+- **Interior copy names the destination, not the old surface.** `ModelBuilder.tsx`: the
+  three panel headings `<h2>Model Builder</h2>` read `<h2>Model</h2>` and the load
+  fallback reads `Unable to load Model.`; `ReportStudio.tsx`: the load fallback and the
+  `LoadState` title read `Unable to load Report.`, and the pathway-change prompt reads
+  `Discard the unsaved draft before changing pathway?` (the dialog is already headed
+  "Discard draft changes?", so the body no longer names a surface); `states.tsx`: the
+  comment that named the three surfaces. DECISIONS §14.23 binds one word in the URL, the
+  rail, the palette, the kicker and the tab; the Align record's summary is "one vocabulary
+  end to end", and a panel headed "Model Builder" under the kicker "Model / Forecast" was
+  the last seam. No layout, hierarchy or state changed.
+- **Unit pin.** `workbench.test.ts` "no surface interior names the old destination as a
+  place (FE-G3, one vocabulary end to end)": for `ModelBuilder.tsx`, `ReportStudio.tsx`,
+  `WorkbenchShell.tsx` and `Workspace.tsx`, no non-comment line matches
+  `Model Builder|Report Studio|Run Console|Command Center|Deep[- ]Dive|RV Screener|Admin Studio`
+  (the assertion names the offending line), and the four new strings are pinned. Red
+  first: 1 fail on the tree before the rename (`assert.equal(offending, undefined)` on
+  the `<h2>Model Builder</h2>` line), 140/140 after.
+- **Load-bearing literal moved with the code.** `scripts/production-inventory.mjs:507`
+  `errorText: "Unable to load Report Studio."` → `"Unable to load Report."`. That script
+  is not in CI and cannot pass against this build (`CLAUDE.md` known gaps); the pair is
+  named here because it was the only file pinning the old copy. No smoke, sweep or unit
+  literal pinned any of the renamed strings (`grep` over `scripts/` and `src/`: the hits
+  were assertion *messages* and test names, not page text).
+- **Capability map.** `docs/control-capability-map.md`: the row
+  "Admin | Membership | POST …/members | Served; drawn in Report Studio (see above)"
+  contradicted the row two lines above it ("Served and drawn on Admin (FE-G3, D7)") and
+  is deleted; the Admin provisioning row already carries the served route and its rule.
+- **Not changed.** No server file, no token, no route, no test weakened; the reducer
+  tests are untouched (`workspaceAuthority.test.ts` unchanged, 140 unit tests). The
+  Credit and Run artboards were re-verified on this tree (§10.2), not redrawn.
+
+### 10.2 Every destination in every drawn state
+
+Retained under `.superpowers/sdd/frontend/evidence/g3/pass2/` (57 PNGs, `SHA256SUMS`).
+Live states come from a fresh host-control server on `:8783` populated only through
+`POST /api/intake` (a Full Credit pack accepted through `POST /api/runs/{id}/accept`, a
+Deep Research pack paused on `PLAN_APPROVAL_REQUIRED`, a Relative Value pack with the
+CP-3 workbook, accepted) and one ambiguous pack dropped through the surface; fixture
+states are the accessibility sweep's own route fixtures, captured by a scratch fork of
+`scripts/a11y-axe.mjs` that screenshots at each scan point (20 captures, 0 axe
+violations). 1440 captures are the viewport (1440×1000, the artboard frame); 720
+captures are full page at 720×900 (200 % desktop zoom). Every capture reported
+`overflow: false` (no page-level horizontal scroll) and no page error.
+
+| Destination / state | Artboard | App captures (`SHA-256`) | Differences, and why |
+|---|---|---|---|
+| Portfolio | none | `empty-portfolio-1440.png` `e3f9131b…f5d4`, `empty-portfolio-720.png` `fa0c905d…98f0`, `populated-portfolio-1440.png` `a38c004f…3c61`, `populated-portfolio-720.png` `07180b1e…8996` | No artboard. Empty: the register says no credits and the intake panel is the one primary ("Analyze documents"); populated: the register, the case's last intake manifest with the labelled host classification and the "Analysis complete — review it" block whose one primary is "Open review". Refusal (D10) below. |
+| Credit | Align — Shell 1440 / 720 (`artboard-align-shell-1440.png` `a271d279…bfc4d`, `artboard-align-shell-720.png` `697b5806…dd59`) | `empty-credit-1440.png` `1d1c654b…0ece`, `empty-credit-720.png` `bf811485…0c61`, `populated-credit-1440.png` `231c971f…2995`, `populated-credit-720.png` `c1702486…c01d` | Matches the artboard in layout, hierarchy, states and copy (accepted record, conclusion, proof and gaps with the "Binding measure and claim gaps — Not available in this deployment" block, "Read accepted analysis" primary, "Review latest run", the analyst boundary "versioned in Report"). Identities and dates are fixture data. Empty: the route-level empty with "Open Portfolio". |
+| Sources | none | `empty-sources-1440.png` `6199d138…e083`, `empty-sources-720.png` `bba9611e…31f4`, `populated-sources-1440.png` `3d5b22df…82b7`, `populated-sources-720.png` `35ef6342…b42e` | No artboard. Empty: route-level empty. Populated: register, immutable source reader, evidence support with the "Claim coverage — Not available in this deployment" block; the upload form is the one write. |
+| Analysis | none | `empty-analysis-1440.png` `70cde895…29a2`, `empty-analysis-720.png` `6aa85452…290e`, `populated-analysis-1440.png` `401e178a…1bec`, `populated-analysis-720.png` `4f795e0b…0679` | No artboard. Populated: the accepted-module list, the reader on the deterministic payload (sections, artifact identity), the evidence rail with three cited sources. The QA table renders as pipe text (F-18, deferred, no decision). |
+| Run | Align — Analysis paused (`artboard-align-analysis-paused-1440.png` `5bc66a90…0437`) for the paused state; no artboard for the empty or accepted state | `empty-run-1440.png` `30f5d1a2…bc5b`, `empty-run-720.png` `3c878fe1…4680`, `populated-run-1440.png` `3355b76d…35da`, `populated-run-720.png` `463fc065…3843` | Accepted state (no artboard): the execution route with 17 succeeded tiles, "Latest accepted authority" with the snapshot id, and the compile form collapsed to "Advanced: compile a route" because the run came from intake (D11). Paused state: matches the artboard — three tiles, "Pending approval", "Acceptance blocked — Review and approve the persisted research plan below.", the persisted plan, "Approve research plan" as the one primary, the disclosure closed at the bottom; the artboard's receipt line is the submitting session's mutation receipt and is absent on a document load (as #72 recorded). |
+| Market | none | `empty-market-1440.png` `142a8e32…2910`, `empty-market-720.png` `aba8b68a…ddc7`, `populated-market-1440.png` `5cdfba9a…3014`, `populated-market-720.png` `ce2e1a8e…b959` | No artboard. Empty: route-level empty. Populated (the Relative Value intake's case): the workbook upload, "Active authority — ACTIVE · v1" with the source link and digest, the loan screener, and "Relative percentile unavailable" stated in words. |
+| Model | none | `empty-model-1440.png` `267eef3d…778c`, `empty-model-720.png` `b021d985…8f67`, `populated-model-1440.png` `89822311…32ea`, `populated-model-720.png` `1c1034c6…f2ce` | No artboard. Populated under host control: the panel now headed "Model" (this pass) with status "CANONICAL MODEL INPUTS INVALID" and its typed blocker; a READY model is a fixture state (below), never live on a keyless server (F-20). |
+| Report | none | `empty-report-1440.png` `b34849df…118d`, `empty-report-720.png` `5def21ff…b04c`, `populated-report-1440.png` `93d9a51f…2836`, `populated-report-720.png` `00067642…9b5f` | No artboard. Populated: structure, compose and the paper preview on the dark workspace; "What will bind" names the exact saved revision. Follow-up noticed, not changed: "Draft authority vUnavailable" concatenates a version prefix onto the unavailable marker (§10.6). |
+| Admin | none | `empty-admin-1440.png` `f96139c2…5cfb`, `empty-admin-720.png` `2e6f3099…8efd`, `populated-admin-1440.png` `b4a3cd0f…602e`, `populated-admin-720.png` `353d814e…08ad` | No artboard (D7 record from #72). Populated with a case: PARTIAL flag, the five-row contracts table with the two served rows, the "Case governance" panel with "Download audit package" and, for this ANALYST-standing identity, the provisioning rule instead of the form. |
+| Run, paused on `PLAN_APPROVAL_REQUIRED` (Deep Research intake) | Align — Analysis paused | `paused-run-1440.png` `b1413007…4694`, `paused-run-720.png` `124cb913…9339` | See the Run row; the one drawn state beyond the shell. |
+| Portfolio, `INTAKE_ISSUER_AMBIGUOUS` refusal (D10) | none | `refusal-ambiguous-portfolio-1440.png` `b45805d9…be77` | Typed refusal, the server's next action, and the advanced-path sentence with its three links ("create the case", Sources, Run); no case created. |
+| Reader (UX-015) on Portfolio, Run, Model, Admin | none | `reader-portfolio-1440.png` `e13c61c2…602a`, `reader-run-1440.png` `b379def0…4906`, `reader-model-1440.png` `6a3bd7a6…c303`, `reader-admin-1440.png` `976c2f8c…4056` | No write control on any of the four; Portfolio and Admin say why in a sentence; Model and Run say nothing to the reader (F-13, deferred, no decision). |
+| Run, pending plan at 720 (sweep fixture) | Align — Analysis paused | `pending-plan-desktop-200-percent.png` `d1ffb10b…d749` | The sweep's `pending-plan` fixture: single column, disclosure closed, the plan's explicit empty markers. |
+| Admin governance (sweep fixture, ADMIN standing) | none | `admin-governance-desktop-1440.png` `20a019cd…bd7e`, `admin-governance-desktop-200-percent.png` `4ff2993a…f254` | The provisioning form itself (subject, standing, "Provision member") beside the download; the state the smoke's route-intercepted document proves. |
+| Model READY (sweep fixture) | none | `ready-model-desktop-1440-credit-snapshot.png` `fc34e76f…2c3c`, `ready-model-desktop-200-percent-credit-snapshot.png` `f44403a5…eb37` | Worksheet tabs, the assumptions and tornado panels, the sign-off control; the panel heading reads "Model". |
+| Report ready (sweep fixture) | none | `ready-report-desktop-1440.png` `63573057…956d`, `ready-report-desktop-200-percent.png` `68d6f1d4…6d6b` | The paper preview on a signed active revision; freeze checklist rows. |
+| Report review and filed (sweep fixtures) | none | `state-review.png` `ba2a6dc3…02de`, `state-filed.png` `19730a84…cd9e` | "Immutable FROZEN review" with "Pending approval · the frozen bytes never name an approver"; the FILED record with its detached receipt. |
+| Credit loading and error (sweep fixtures) | none | `state-loading.png` `68994266…4080`, `state-error.png` `118155ea…5b15` | The skeleton (`role=status` "Loading"); the typed 503 as "STORE UNAVAILABLE" over "Unable to load this view." with Retry, the proof column degrading to its own unavailable blocks. |
+| Portfolio refusal (sweep fixture) | none | `state-refusal.png` `6a1342ef…6f36` | "Documents not admitted" with the per-file finding. |
+
+The three artboard exports and their digests are unchanged from §2 (`artboard-align-*.png`
+in `evidence/g3/`). States the canvas names that this app has no surface for — "stale",
+"partial" and "offline" as page-level states — exist only where the server serves them:
+Model's `STALE` revision state and Admin's `PARTIAL` flag are drawn (the fixture and the
+populated Admin capture); an offline state is the typed network failure rendered as the
+error block (`state-error.png`) and is not a separate design; none is approximated.
+
+### 10.3 UX-011 to UX-017 on this tree
+
+The §3 map holds; line numbers moved with #71 and the #72 fix commit. Current
+`scripts/workbench-smoke.mjs`: UX-011 accept dialog 1124–1175, `approval_state` 1845/2268,
+D11 disclosure 756; UX-012 `#pathway`/`#depth` only (no provider field; unit "no shipped
+frontend file carries an HTML or script sink"); UX-013 served-cut steps and the
+per-pathway Report template steps; UX-014 `beforeunload` 1667, the history fence
+2124–2135, the discard dialog 1529 — the accept dialog and both discard guards keep
+their synchronous paths (untouched by this pass); UX-015 reader leg 2542–2559 plus the
+four reader captures in §10.2; UX-016 2233 and 2298; UX-017 2252–2341 (the receipt
+`rcpt_frozen_report_2`), provisioning 540–558.
+
+### 10.4 Gates
+
+All from `caos/frontend` on the final tree. Servers: `:8781` (smokes), `:8782` (fresh
+data, the sweep), `:8783` (fresh data, the evidence script), each `dev.py` + `worker.py`
+under `ENVIRONMENT=development CAOS_PROVIDER=host_control AGENT_EXECUTION_ENABLED=true
+ANTHROPIC_API_KEY=` with a scratch `CAOS_DATA_DIR`.
+
+| Gate | Command | Result |
+|---|---|---|
+| Red-first | `npm run test:unit` with the new pin, before the rename | `ℹ fail 1` — "no surface interior names the old destination as a place" (`<h2>Model Builder</h2>`) |
+| Lint | `npm run lint` | `ESLint: No issues found` |
+| Types | `npx tsc --noEmit` | `TypeScript: No errors found` |
+| Unit | `npm run test:unit` | `ℹ tests 140 / ℹ pass 140 / ℹ fail 0` |
+| Build | `npm run build` | `✓ Generating static pages using 5 workers (20/20)` |
+| Smoke, Chromium | `CAOS_URL=http://127.0.0.1:8781 CAOS_BROWSER=chromium npm run test:workbench` | `{"browser":"chromium","browser_version":"151.0.7922.34","status":"passed","duration_ms":142981}`; timing `domContentLoaded 75.8 / firstContentfulPaint 200`, budget enforced |
+| Smoke, Firefox | `CAOS_BROWSER=firefox …` | `{"browser":"firefox","browser_version":"153.0","status":"passed","duration_ms":152860}` |
+| Smoke, WebKit | `CAOS_BROWSER=webkit …` (70 s after Firefox) | `{"browser":"webkit","browser_version":"26.5","status":"passed","duration_ms":150589}` |
+| Server log `:8781` after the three smokes | `grep -c " 429 "`, `grep -c -E " 50[0-9] "`, worker tracebacks, `audit-package` | 0 / 0 / 0 / 4 |
+| Accessibility sweep, fresh server | `CAOS_URL=http://127.0.0.1:8782 npm run a11y` | `{"routes":17,"forwarders":8,"viewports":6,"combinations":125,"pendingPlanFixture":true,"adminGovernanceAxeChecks":2,"readyModelFixture":true,"readyReportFixture":true,"states":["empty","populated","review","filed","loading","error","refusal"],"modelBuilderAxeChecks":12,"modelBuilderKeyboardTabChecks":3,"reportStudioAxeChecks":3,"reportStudioKeyboardTabChecks":3,"violations":0}`; 0 × 429 on that server's log |
+| Backend suite, Ruff | — | not run: no server file changed |
+
+### 10.5 Not approximated, and BLOCKED
+
+- Unchanged from §6: the first APPROVER/ADMIN standing stays **BLOCKED (server)** — route
+  needed: an audited bootstrap for the first case admin; the provisioning control is
+  proven on the sweep's fixture and the smoke's route-intercepted document.
+- No artboard, no decision, therefore not drawn here: F-04, F-13 (Model and Run say
+  nothing to a reader — visible in `reader-model-1440.png` and `reader-run-1440.png`),
+  F-18 (pipe-text tables in the reader — visible in `populated-analysis-1440.png`),
+  F-19, withdrawal and notes (served, not drawn).
+- The intake receipt line on Run (the artboard's first line) remains a session
+  receipt, not persisted state.
+
+### 10.6 Follow-ups noticed, not changed
+
+- Report's "What will bind" renders `Draft authority vUnavailable` on a case with no
+  saved draft (`populated-report-1440.png`): the version prefix is concatenated onto
+  the unavailable marker. Copy defect in `ReportStudio.tsx`, outside this pass.
+- The ambiguous-pack capture scrolled to the alert, so the register above it is cut
+  off; the state is the alert, so the capture stands.
+
+### 10.7 Confidence review (this pass)
+
+1. **A hidden pin on the renamed copy** — worried a smoke `getByRole("heading", { name:
+   "Model Builder" })` or the sweep's model fixture would break. Investigated: grep over
+   `scripts/` and `src/` finds the phrases only in assertion messages, test names and
+   comments, plus the one inventory `errorText` moved above; three smokes and the sweep
+   green. → fine.
+2. **`firstErrorMessage` fallbacks read by a `.includes("Unable")`** — investigated:
+   that check is on `message` (action receipts), not `loadError`; unchanged. → fine.
+3. **The new pin passing vacuously** — the regex excludes comment lines only; a JSX
+   heading, a string literal or a template is checked; red-first proved it fires on
+   the heading, and the four `assert.match` lines fire if the new copy drifts. → fine.
+4. **Duplicated title and body on the Report load failure** (`title="Unable to load
+   Report."` and the fallback message identical) — pre-existing shape (the two strings
+   differed only by a period before); only the case where the server returns no detail.
+   → by design, unchanged.
+5. **The evidence server's "populated" Model state** — worried it would read as a defect.
+   It is `CANONICAL_MODEL_INPUTS_INVALID`, the host-control ceiling (F-20), stated in the
+   table. → fine.
+
+Fixed: none needed. Verified fine: 1–3, 5. By-design: 4.
+
+### 10.8 Commits (this pass)
+
+| Commit | Content |
+|---|---|
+| `d29d716` | `feat(frontend): surface interiors name the destination, not the old surface (FE-G3 second pass)` — `ModelBuilder.tsx`, `ReportStudio.tsx`, `states.tsx`, `workbench.test.ts`, `production-inventory.mjs`, `control-capability-map.md` |
+| (report commit) | this section, the `progress.md` row, `evidence/g3/pass2/` (57 PNGs and `SHA256SUMS`) |
+| (PR commit) | `progress.md` gains the pull-request URL |
+
+### 10.9 After the pull request opened: one CI failure, a harness race
+
+CI run `34033315011` on `ef27525`: every job green except "Browser — workbench journey
+and accessibility (chromium)", whose smoke passed (`status: "passed"`, 166,996 ms) and
+whose accessibility sweep failed 2 m 41 s in at `a11y-axe.mjs:342`,
+`loading state was not on screen when scanned` (`actual: false`). The Firefox and
+WebKit jobs do not run the sweep. Not seen in the last three failed runs on `main`.
+
+Root cause, from the code: `app/layout.tsx` wraps the workspace in
+`<Suspense fallback={<div className="state-skeleton" role="status" aria-label="Loading">…}>`,
+shown until `useSearchParams` hydrates on the static export. The loading fixture waited
+on an unscoped `getByRole("status", { name: "Loading" })`, which that fallback satisfies;
+on a slow runner the fallback unmounts a render before the Credit view hydrates the case
+and mounts its own skeleton (`Workspace.tsx:1897`, `snapshotLoading`), so the instant
+`count()` read 0. The held `/snapshot` route and the mocked `/api/cases/{id}` read are
+not involved (both reads of `refreshCase` are fixture-answered; the reducer's only
+`error` transition is `requestFailed`, which nothing in the fixture can raise). Same
+class as the instant-read races recorded for FE-G1 (`awaitFocus`).
+
+Fix, in the harness only (`scripts/a11y-axe.mjs`): the wait and the count are scoped to
+`.credit-main`, the Credit view's own region, which the layout fallback is outside of.
+The assertion still fails when the Credit skeleton is not on screen at the scan, so the
+anti-vacuity property is unchanged; no product file changed. Local proof on a fresh
+host-control server (`:8782`): `npm run a11y` →
+`{"routes":17,…,"combinations":125,…,"violations":0}`; lint clean; unit 140/140.

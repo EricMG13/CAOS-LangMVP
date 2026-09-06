@@ -431,7 +431,7 @@ export default function ModelBuilder({
       return true;
     } catch (caught) {
       if (generation !== requestGeneration.current || caught instanceof DOMException && caught.name === "AbortError") return false;
-      setLoadError(firstErrorMessage(caught, "Unable to load Model Builder"));
+      setLoadError(firstErrorMessage(caught, "Unable to load Model."));
       setLoadedCaseId(expectedCaseId);
       return false;
     } finally {
@@ -708,8 +708,8 @@ export default function ModelBuilder({
     finally { if (action === actionGeneration.current) setPending(""); }
   };
 
-  if (loadError && loadedCaseId === caseId) return <div className="grid"><section className="panel span-12"><div className="panel-header"><h2>Model Builder</h2><span className="status critical">Unavailable</span></div><div className="panel-body"><LoadState loading={false} error={loadError} /></div></section></div>;
-  if (!caseId || loadedCaseId !== caseId || loading && !inventory) return <div className="grid"><section className="panel span-12"><div className="panel-header"><h2>Model Builder</h2></div><div className="panel-body"><LoadState loading error={loadError} /></div></section></div>;
+  if (loadError && loadedCaseId === caseId) return <div className="grid"><section className="panel span-12"><div className="panel-header"><h2>Model</h2><span className="status critical">Unavailable</span></div><div className="panel-body"><LoadState loading={false} error={loadError} /></div></section></div>;
+  if (!caseId || loadedCaseId !== caseId || loading && !inventory) return <div className="grid"><section className="panel span-12"><div className="panel-header"><h2>Model</h2></div><div className="panel-body"><LoadState loading error={loadError} /></div></section></div>;
   const currentVersionId = conflict?.current?.id || currentHeadRevisionId;
 
   const renderPrimaryAction = () => {
@@ -719,7 +719,7 @@ export default function ModelBuilder({
 
   return <div className="grid model-builder analyst-model-builder">
     <section className="panel span-12 model-builder-command">
-      <div className="panel-header"><h2>Model Builder</h2><span className={`status ${modelStatusTone(status)}`} role="status" aria-live="polite">{status ? humanizeCode(status) : ""}</span></div>
+      <div className="panel-header"><h2>Model</h2><span className={`status ${modelStatusTone(status)}`} role="status" aria-live="polite">{status ? humanizeCode(status) : ""}</span></div>
       <div className="panel-body model-builder-command-body"><div><strong>Application model · {activeRevision ? `R${activeRevision.revision_number}` : "Application version"}</strong><p className="muted">{activeRevision ? `${activeRevision.created_by} · ${formatDate(activeRevision.created_at)} · ${activeRevision.note}` : status === "READY" ? "Built from the accepted application and saved as the starting version. Forecast assumptions create the next version." : "Build the application model from accepted credit analysis."}</p></div><div className="model-primary-action">{renderPrimaryAction()}<button className="button small" type="button" disabled={loading} onClick={() => void refresh()}>{loading ? "Refreshing…" : "Refresh"}</button></div></div>
       {status === "NOT_READY" ? <StateBlock tone="warning" title="Accepted analysis required" body="Accept a completed Full Credit run before building the application model." /> : null}
       {status === "NOT_READY" ? <Link className="button small" href={withQuery("/run", { case: caseId })}>Open Run</Link> : null}

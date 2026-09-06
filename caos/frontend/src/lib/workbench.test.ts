@@ -227,6 +227,23 @@ test("exactly one rail entry is current, and the Run tool renders on every surfa
   assert.match(smoke, /the Run tool is missing from a non-Analysis surface/);
 });
 
+test("no surface interior names the old destination as a place (FE-G3, one vocabulary end to end)", () => {
+  // DECISIONS §14.23 / the Align record: one word in the URL, the rail, the palette,
+  // the kicker and the tab. FE-G2 aligned the chrome and handed the panel interiors
+  // to FE-G3: a heading, a load error or a discard prompt that still says "Model
+  // Builder" or "Report Studio" is the pre-IA interior on a surface whose kicker
+  // says Model or Report.
+  const oldNames = /Model Builder|Report Studio|Run Console|Command Center|Deep[- ]Dive|RV Screener|Admin Studio/;
+  for (const source of [modelBuilder, reportStudio, workbenchShell, workspace]) {
+    const offending = source.split("\n").find((line) => !/^\s*(\/\/|\*|\/\*)/.test(line) && oldNames.test(line));
+    assert.equal(offending, undefined);
+  }
+  assert.match(modelBuilder, /<h2>Model<\/h2>/);
+  assert.match(modelBuilder, /"Unable to load Model\."/);
+  assert.match(reportStudio, /title="Unable to load Report\."/);
+  assert.match(reportStudio, /"Discard the unsaved draft before changing pathway\?"/);
+});
+
 test("the shell omits the redundant reading taxonomy and renders its command shortcut as a key", () => {
   assert.ok(Object.values(destinationMeta).every((meta) => !("reading" in meta)));
   assert.doesNotMatch(workbenchShell, /Reading:/);

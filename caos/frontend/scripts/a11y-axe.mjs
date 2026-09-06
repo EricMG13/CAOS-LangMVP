@@ -338,8 +338,14 @@ try {
   await statePage.unroute(snapshotRoute);
   await statePage.route(snapshotRoute, async (route) => { await snapshotHeld; await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ accepted: null, latest_accepted: null, switch_required: false, diff: null }) }); });
   await statePage.goto(`${baseUrl}/credit/?case=${reportCaseId}&fixture=state-loading`, { waitUntil: "domcontentloaded" });
-  await statePage.getByRole("status", { name: "Loading" }).first().waitFor();
-  assert.ok(await statePage.getByRole("status", { name: "Loading" }).count() >= 1, "loading state was not on screen when scanned");
+  // The Credit skeleton, not any "Loading" status: app/layout.tsx wraps the
+  // workspace in a Suspense fallback with the same role and name, shown until
+  // useSearchParams hydrates. On a slow runner an unscoped wait resolves on that
+  // fallback, which unmounts a render before the Credit skeleton mounts, so the
+  // instant count reads 0 (CI run 34033315011, chromium).
+  const creditLoading = statePage.locator(".credit-main").getByRole("status", { name: "Loading" });
+  await creditLoading.first().waitFor();
+  assert.ok(await creditLoading.count() >= 1, "loading state was not on screen when scanned");
   await scanState("loading", "/credit/");
   releaseSnapshot();
   await statePage.getByRole("status", { name: "Loading" }).waitFor({ state: "detached" });
