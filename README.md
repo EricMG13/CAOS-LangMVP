@@ -26,7 +26,7 @@ success artifact.
 | Path | What lives there |
 |---|---|
 | `caos/server/caos/` | FastAPI edge (`api/`), run engine on LangGraph (`engine/`), domain + run stores (`storage/`), module registry (`modules/`), vendored methodology bundle (`methodology/`), Model Builder (`models/`), Deliverables (`deliverables/`), loan-universe import (`artifacts/`), strict wire models (`responses.py`) |
-| `caos/frontend/` | Next.js workspace (static export) — eight destinations around one `Workspace.tsx` authority machine |
+| `caos/frontend/` | Next.js workspace (static export) — eight destinations plus the Run tool (`/portfolio/`, `/credit/`, `/sources/`, `/analysis/`, `/run/`, `/market/`, `/model/`, `/report/`, `/admin/`) around one `Workspace.tsx` authority machine; every earlier slug forwards to its new home |
 | `caos/tests/` | Phase-2 unit tests + the contractual spec suite (`spec/`) |
 | `caos/deploy/` | Dockerfile, compose, Caddy/oauth2-proxy edge, backup/restore drills |
 | `docs/DECISIONS.md` | The binding migration decision record (§§1–13) |
@@ -66,7 +66,7 @@ Frontend, hot-reloading against that server:
 cd caos/frontend && npm ci && npm run dev
 ```
 
-Then: create a case → upload a source → Run Console → Compile and run. Progress
+Then: create a case → upload a source → Run (`/run/`) → Compile and run. Progress
 streams from the persisted graph event log (`run_events`) over SSE; accept the
 succeeded run to mint the case's analytical snapshot. A run may instead end in
 a typed refusal; only a genuinely succeeded run can be accepted.

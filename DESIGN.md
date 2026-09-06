@@ -367,3 +367,47 @@ dot. Everything else in this document still governs: density with hierarchy,
 color as signal, mono numerics, motion only for live state, the light-paper
 filed-output counterpoint, and every Don't above except the two rules this
 paragraph names.
+
+## 2026-09-06 information-architecture addendum (FE-G2; records the approved "Align" canvas)
+
+The workbench's destinations are the rail's eight words plus Run, the tool of
+Analysis, with one vocabulary in the URL, the rail, the kicker, the page title
+and the tab title (FE-A1 decision D1, "Align"; `docs/DECISIONS.md` §14.23):
+
+| Destination | Route | Kicker | Page title | Tab |
+|---|---|---|---|---|
+| Portfolio | `/portfolio/` | Portfolio / Surveillance | Monitored credits | CAOS — Portfolio |
+| Credit | `/credit/` | Credit / Current state | Current state and what changed | CAOS — Credit |
+| Sources | `/sources/` | Sources / Evidence | Documents, extraction and coverage | CAOS — Sources |
+| Analysis | `/analysis/` | Analysis / Reader | Accepted analysis | CAOS — Analysis |
+| Run (tool of Analysis) | `/run/` | Analysis / Run | Run and acceptance | CAOS — Run |
+| Market | `/market/` | Market / Comparison | Governed loan universe | CAOS — Market |
+| Model | `/model/` | Model / Forecast | Assumptions, lineage and sign-off | CAOS — Model |
+| Report | `/report/` | Report / Publication | Compose, freeze and file | CAOS — Report |
+| Admin | `/admin/` | Admin / Governance | Deployment capability | CAOS — Admin |
+
+Route map (D2): `/cases/` → `/portfolio/`, `/command-center/` → `/credit/`,
+`/deep-dive/` → `/analysis/`, `/run-console/` → `/run/`, `/rv-screener/` →
+`/market/`, `/model-builder/` → `/model/`, `/report-studio/` → `/report/`,
+`/admin-studio/` → `/admin/`. Every earlier slug stays a static forwarding page
+that replaces history to its new home with the query string intact.
+
+One-home rules: run progress, compilation, acceptance and research-plan
+approval live on Run; sign-off, freeze and filing on Report; intake on
+Portfolio, posting files only; Analysis reads accepted artifacts; Admin is an
+unavailable-capability surface with no control drawn for an unserved route.
+The Run tool link and its LIVE badge render on every surface (D12).
+
+Approved canvas: FE-D1 "CAOS Workbench Directions",
+https://claude.ai/code/artifact/5de66539-7954-45fd-8f8f-d40349fe736e, direction
+Align chosen 2026-09-05 by the decision owner ("Align, no changes — record it
+and commit"; `.superpowers/sdd/frontend/frontend-d1-directions.md` §3).
+Artboards: "Align — Shell 1440", "Align — Shell 720", "Align — Analysis
+paused" on page 1 (`docs/design/canvas/workbench-directions/Main.dc.html`,
+with one working file per artboard beside it and `canvas.json`). Retained
+export: `.superpowers/sdd/frontend/design/fe-d1-align-shell-1440.png`, SHA-256
+`45ea2f8ffa4bfe72b88acba992fe561664986c1af2c0dc3de4108d49cb9cb51e`. The canvas
+binds the layout, hierarchy, states and copy of those artboards; tokens stay in
+`caos/frontend/app/globals.css`. The FE-D2 hi-fi screens, once approved, extend
+this addendum with their artboards and digests rather than replace it.
+Everything else in this document and the 31 Aug addendum still governs.

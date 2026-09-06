@@ -128,7 +128,8 @@ authority match.
   case, the host-selected route per pack from the wire, the un-accepted
   completed run, the review link into the run console, reflow at 720px,
   a refused pack that creates nothing, and the reader gate on the intake
-  control; the a11y sweep covers the panel on `/cases/` at six viewports.
+  control; the a11y sweep covers the panel on `/cases/` (since FE-G2
+  `/portfolio/`; the old slug forwards) at six viewports.
 - **Tests.** `caos/tests/spec/test_intake_spec.py` — 30 tests, 34 document
   cases counting parametrizations (success, partial failure ×4, ceilings,
   duplicates within and across intakes, conflicting filenames,

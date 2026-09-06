@@ -261,7 +261,8 @@ Two gate findings worth recording:
 
 - The accessibility sweep against the **populated** `:8000` server (after the
   smoke) reports `landmark-complementary-is-top-level` on `/sources/`
-  (`.source-register`) and `/model-builder/`: those `<aside>` panels sit inside
+  (`.source-register`) and `/model-builder/` (since FE-G2 `/model/`; the old
+  slug forwards): those `<aside>` panels sit inside
   the shell's `<main>` and only render when a case with sources is selected.
   Task 8 ran the sweep against a fresh server on `:8766`, which is what this
   task repeats. On the fresh server the only failing node was the Model
