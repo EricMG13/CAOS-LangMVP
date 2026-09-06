@@ -315,8 +315,8 @@ try {
   // Every non-document response the page saw, by exact URL, and every request
   // the browser abandoned without a response: the evidence the WebKit
   // teardown filter below demands before it drops a page error. Document
-  // loads are excluded so a navigation to /cases/ never vouches for a fetch of
-  // /cases/ that a policy blocked.
+  // loads are excluded so a navigation to /portfolio/ never vouches for a fetch of
+  // /portfolio/ that a policy blocked.
   const responded = new Map();
   const abandoned = new Set();
   page.on("response", (response) => {
@@ -359,7 +359,7 @@ try {
     await route.continue();
   };
   await page.route(heldAuthorityDetail, holdAuthorityDetail);
-  await page.goto(`${baseURL}/command-center/?case=${caseRecord.id}`, { waitUntil: "domcontentloaded" });
+  await page.goto(`${baseURL}/credit/?case=${caseRecord.id}`, { waitUntil: "domcontentloaded" });
   await bounded(authorityDetailSeen, "the command center never requested the selected case's authority");
   const visibleAuthority = page.getByRole("region", { name: "Visible authority" });
   await visibleAuthority.getByText(/Visible snapshot:\s*Loading authority/).waitFor();
@@ -391,7 +391,7 @@ try {
   await page.getByRole("link", { name: "Sources & evidence" }).click();
   await page.waitForURL((url) => url.pathname.replace(/\/$/, "") === "/sources" && url.searchParams.get("case") === caseRecord.id);
   await page.unroute(heldAuthorityDetail, holdAuthorityDetail);
-  await page.goto(`${baseURL}/command-center/?case=${caseRecord.id}`, { waitUntil: "networkidle" });
+  await page.goto(`${baseURL}/credit/?case=${caseRecord.id}`, { waitUntil: "networkidle" });
 
   const failedAuthorityDetail = (url) => url.pathname === `/api/cases/${failedCase.id}`;
   const failAuthorityDetail = (route) => route.fulfill({
@@ -415,7 +415,7 @@ try {
   // F5; WEB-003): a live region names the request, the URL keeps the id, and no
   // other case is selected in its place.
   const missingCaseId = `case_missing_${fixtureSuffix}`;
-  await page.goto(`${baseURL}/run-console/?case=${missingCaseId}&run=${run.id}`, { waitUntil: "domcontentloaded" });
+  await page.goto(`${baseURL}/run/?case=${missingCaseId}&run=${run.id}`, { waitUntil: "domcontentloaded" });
   const unavailableCase = page.getByRole("status").filter({ hasText: "Case unavailable" });
   await unavailableCase.waitFor();
   await unavailableCase.getByText(missingCaseId, { exact: true }).waitFor();
@@ -439,7 +439,7 @@ try {
   const staleRunPath = (url) => url.pathname === `/api/runs/${run.id}`;
   await page.route(staleRunPath, holdStaleRun);
   const staleRunRequest = page.waitForRequest((requestValue) => new URL(requestValue.url()).pathname === `/api/runs/${run.id}`);
-  await page.goto(`${baseURL}/run-console/?case=${caseRecord.id}&run=${run.id}`, { waitUntil: "domcontentloaded" });
+  await page.goto(`${baseURL}/run/?case=${caseRecord.id}&run=${run.id}`, { waitUntil: "domcontentloaded" });
   await staleRunRequest;
   await page.getByRole("combobox", { name: "Select case" }).selectOption(idleCase.id);
   releaseStaleRun();
@@ -458,7 +458,7 @@ try {
   }, [idleCase.id, run.id]);
   assert.notEqual(boundaryUrlWrites.switchedAt, -1, "the case boundary was never written to the URL, so the stale-run check did not run");
   assert.deepEqual(boundaryUrlWrites.reattached, [], "a stale run was re-attached to the URL after the case boundary");
-  assert.equal(await page.getByRole("status", { name: "Loading" }).count(), 0, "case switch left the run console permanently loading");
+  assert.equal(await page.getByRole("status", { name: "Loading" }).count(), 0, "case switch left Run permanently loading");
   assert.equal(await page.getByRole("button", { name: "Accept analytical snapshot" }).count(), 0, "stale run data survived the case boundary");
   await page.getByRole("combobox", { name: "Select case" }).selectOption(caseRecord.id);
   await page.getByRole("region", { name: "Visible authority" }).getByText(new RegExp(`Credit:\\s*${primaryIssuer}`)).waitFor();
@@ -469,7 +469,7 @@ try {
       && new URL(requestValue.url()).pathname === `/api/runs/${crossCaseRun.id}/accept`) crossCaseAcceptRequests += 1;
   };
   page.on("request", countCrossCaseAccept);
-  await page.goto(`${baseURL}/run-console/?case=${caseRecord.id}&run=${crossCaseRun.id}`, { waitUntil: "networkidle" });
+  await page.goto(`${baseURL}/run/?case=${caseRecord.id}&run=${crossCaseRun.id}`, { waitUntil: "networkidle" });
   await page.getByText("Requested run does not belong to the selected case.", { exact: true }).waitFor();
   assert.equal(await page.getByRole("button", { name: "Accept analytical snapshot" }).count(), 0, "cross-case run exposed an acceptance action");
   await page.waitForFunction((runId) => new URL(window.location.href).searchParams.get("run") !== runId, crossCaseRun.id);
@@ -481,11 +481,13 @@ try {
     await page.getByRole("navigation", { name: "Workflows" }).getByRole("link", { name: label, exact: true }).waitFor();
   }
   // Exactly one rail entry per page carries aria-current="page": the most specific
-  // match — a tool link when one targets the destination, else the workflow link.
+  // match — a tool link when one targets the destination, the governance entry on
+  // Admin, else the workflow link. The Run tool renders on every surface (FE-A1 D12).
   for (const [route, navName, linkLabel] of [
-    ["/cases/", "Workflows", "Portfolio"],
-    ["/run-console/", "Analysis tools", "Run"],
-    ["/report-studio/", "Workflows", "Report"],
+    ["/portfolio/", "Workflows", "Portfolio"],
+    ["/run/", "Analysis tools", "Run"],
+    ["/report/", "Workflows", "Report"],
+    ["/admin/", "Governance", "Admin"],
   ]) {
     await page.goto(`${baseURL}${route}?case=${caseRecord.id}`, { waitUntil: "networkidle" });
     await page.getByRole("navigation", { name: navName })
@@ -494,20 +496,36 @@ try {
         if (element.getAttribute("aria-current") !== "page") throw new Error("the most specific nav link is not current");
       });
     assert.equal(await page.locator('[aria-current="page"]').count(), 1, `${route} rendered more than one aria-current="page" entry`);
+    assert.equal(await page.getByRole("navigation", { name: "Analysis tools" }).getByRole("link", { name: "Run", exact: true }).count(), 1, `${route}: the Run tool is missing from a non-Analysis surface`);
   }
-  // Admin Studio states which contracts this build serves (FE-A0 F8; D-D): the
+  // FE-A1 D2: a pre-Align slug is a static page that replaces history — never pushes —
+  // to its new home with the query string and hash intact, and the forward is
+  // invisible to workspace authority: the surface renders once, and the case
+  // snapshot is read once, not again for the new address.
+  await page.goto(`${baseURL}/report/?case=${caseRecord.id}`, { waitUntil: "networkidle" });
+  const entriesBeforeForward = await page.evaluate(() => history.length);
+  const authorityReadsBeforeForward = authorityRequests;
+  await page.goto(`${baseURL}/run-console/?case=${caseRecord.id}&run=${run.id}#forwarded`, { waitUntil: "networkidle" });
+  await page.waitForURL((url) => url.pathname === "/run/" && url.searchParams.get("case") === caseRecord.id && url.searchParams.get("run") === run.id && url.hash === "#forwarded");
+  await page.getByRole("heading", { level: 1, name: "Run and acceptance" }).waitFor();
+  assert.equal(await page.title(), "CAOS — Run", "the forwarded page did not carry its destination's tab title");
+  assert.equal(await page.evaluate(() => history.length), entriesBeforeForward + 1, "the forwarding page pushed a history entry instead of replacing it");
+  assert.equal(authorityRequests - authorityReadsBeforeForward, 1, "the forward re-read case authority for the new address");
+  await page.goBack({ waitUntil: "networkidle" });
+  await page.waitForURL((url) => url.pathname === "/report/");
+  // Admin states which contracts this build serves (FE-A0 F8; D-D): the
   // audit package and membership are served, the rest are not.
-  await page.goto(`${baseURL}/admin-studio/?case=${caseRecord.id}`, { waitUntil: "networkidle" });
+  await page.goto(`${baseURL}/admin/?case=${caseRecord.id}`, { waitUntil: "networkidle" });
   const contractsTable = page.getByRole("region", { name: "Required administrative contracts" });
   for (const [capability, state] of [["Bundle integrity", "Not served"], ["Audit rows", "Not served"], ["Audit package", "Served"], ["Membership", "Served"], ["Step-up", "Not served"]]) {
     const row = contractsTable.getByRole("row").filter({ has: page.getByRole("rowheader", { name: capability, exact: true }) });
-    assert.equal(await row.locator(".status").innerText(), state, `Admin Studio misstates the ${capability} contract`);
+    assert.equal(await row.locator(".status").innerText(), state, `Admin misstates the ${capability} contract`);
   }
   expectedNotFoundURL = `${baseURL}/missing-${fixtureSuffix}`;
   await page.goto(expectedNotFoundURL, { waitUntil: "networkidle" });
   await page.getByRole("heading", { name: "Page not found" }).waitFor();
   assert.equal(await page.getByRole("heading", { name: "Monitored credits" }).count(), 0, "unknown route rendered the default Portfolio page");
-  await page.goto(`${baseURL}/command-center/?case=${caseRecord.id}`, { waitUntil: "networkidle" });
+  await page.goto(`${baseURL}/credit/?case=${caseRecord.id}`, { waitUntil: "networkidle" });
   caseRequests = 0;
   authorityRequests = 0;
 
@@ -524,9 +542,9 @@ try {
   const deepDiveQuestion = "What changed in refinancing capacity?";
   await page.evaluate(({ caseId, question }) => {
     const query = new URLSearchParams({ case: caseId, q: question });
-    window.history.pushState(null, "", `/deep-dive/?${query}`);
+    window.history.pushState(null, "", `/analysis/?${query}`);
   }, { caseId: caseRecord.id, question: deepDiveQuestion });
-  await page.waitForURL((url) => url.pathname === "/deep-dive/" && url.searchParams.get("q") === deepDiveQuestion);
+  await page.waitForURL((url) => url.pathname === "/analysis/" && url.searchParams.get("q") === deepDiveQuestion);
   await page.getByText(deepDiveQuestion, { exact: true }).waitFor();
 
   const rail = page.locator(".analysis-evidence");
@@ -539,9 +557,9 @@ try {
   const commandQuestion = "Which evidence changes the downside case?";
   await page.evaluate(({ caseId, question }) => {
     const query = new URLSearchParams({ case: caseId, q: question });
-    window.history.pushState(null, "", `/command-center/?${query}`);
+    window.history.pushState(null, "", `/credit/?${query}`);
   }, { caseId: caseRecord.id, question: commandQuestion });
-  await page.waitForURL((url) => url.pathname === "/command-center/" && url.searchParams.get("q") === commandQuestion);
+  await page.waitForURL((url) => url.pathname === "/credit/" && url.searchParams.get("q") === commandQuestion);
   await page.getByText(commandQuestion, { exact: true }).waitFor();
 
   for (const label of ["Credit", "Sources", "Analysis"]) {
@@ -564,7 +582,7 @@ try {
     const answer = alternatingSnapshotReads % 2 === 1 ? accepted : { ...accepted, id: `snap_alternate_${fixtureSuffix}` };
     return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ accepted: answer, latest_accepted: answer, switch_required: false, diff: { changed: false } }) });
   });
-  await page.goto(`${baseURL}/command-center/?case=${caseRecord.id}&fixture=alternating-snapshot`, { waitUntil: "networkidle" });
+  await page.goto(`${baseURL}/credit/?case=${caseRecord.id}&fixture=alternating-snapshot`, { waitUntil: "networkidle" });
   await page.locator(".authority-metrics [title]").first().waitFor();
   const stripSnapshotId = await page.getByRole("region", { name: "Visible authority" }).locator("span", { hasText: /^Visible snapshot:/ }).locator("[title]").first().getAttribute("title");
   const creditSnapshotId = await page.locator(".authority-metrics [title]").first().getAttribute("title");
@@ -572,7 +590,7 @@ try {
   assert.ok(stripSnapshotId, "the authority strip names no visible snapshot");
   assert.equal(creditSnapshotId, stripSnapshotId, `the credit screen (${creditSnapshotId}) and the authority strip (${stripSnapshotId}) name different accepted snapshots on one screen`);
   await page.unroute(alternatingSnapshotPath);
-  await page.goto(`${baseURL}/command-center/?case=${caseRecord.id}`, { waitUntil: "networkidle" });
+  await page.goto(`${baseURL}/credit/?case=${caseRecord.id}`, { waitUntil: "networkidle" });
 
   const paletteTrigger = page.getByRole("button", { name: /Open command palette/ });
   await paletteTrigger.focus();
@@ -643,7 +661,7 @@ try {
     assert.ok(record.documents.every((document) => document.disposition === "used"), "a pack document was not used as evidence");
   }
   // One page load for the browser packs: each intake adopts its own new case in place.
-  await page.goto(`${baseURL}/cases/`, { waitUntil: "networkidle" });
+  await page.goto(`${baseURL}/portfolio/`, { waitUntil: "networkidle" });
   const browserCases = intakeCases.filter((item) => item.pathway === "FULL_CREDIT" || item.pathway === "DEEP_RESEARCH");
   for (const [index, intakeCase] of browserCases.entries()) {
     const intakePanel = page.getByRole("region", { name: "Analyze documents" });
@@ -670,21 +688,21 @@ try {
     assert.equal(intakeRecord.run.accepted_snapshot_id, null, "an intake run was accepted on the analyst's behalf");
     if (index === 0) {
       // The golden journey: the run completes on the host-control provider and the
-      // panel opens the review, which is the run console's ready-for-acceptance
+      // panel opens the review, which is Run's ready-for-acceptance
       // state — the analyst still has to decide.
       await intakePanel.getByRole("link", { name: "Open review" }).waitFor({ timeout: 120_000 });
       await intakePanel.getByRole("link", { name: "Open review" }).click();
-      await page.waitForURL((url) => url.pathname === "/run-console/" && url.searchParams.get("case") === intakeCaseRecord.id);
+      await page.waitForURL((url) => url.pathname === "/run/" && url.searchParams.get("case") === intakeCaseRecord.id);
       await page.getByRole("status").getByText("Run status: succeeded", { exact: true }).waitFor();
       await page.getByRole("button", { name: "Accept analytical snapshot" }).waitFor();
       const reviewed = await (await api.get(`/api/cases/${intakeCaseRecord.id}`)).json();
       assert.equal(reviewed.accepted_snapshot_id, null, "completion was presented as the analyst's acceptance");
       await page.setViewportSize({ width: 720, height: 900 });
-      await page.goto(`${baseURL}/cases/?case=${intakeCaseRecord.id}`, { waitUntil: "networkidle" });
+      await page.goto(`${baseURL}/portfolio/?case=${intakeCaseRecord.id}`, { waitUntil: "networkidle" });
       await page.getByRole("region", { name: "Source disposition manifest" }).waitFor();
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth), false, "the intake evidence overflows at 200% desktop zoom width");
       await page.setViewportSize({ width: 1440, height: 1000 });
-      await page.goto(`${baseURL}/cases/`, { waitUntil: "networkidle" });
+      await page.goto(`${baseURL}/portfolio/`, { waitUntil: "networkidle" });
     }
   }
   // The intake header is fenced to the selected case (FE-A0 F6): a switch to a
@@ -696,7 +714,7 @@ try {
   assert.equal(await intakeHeader.getByText(/^Last intake /).count(), 0, "the intake header carried the previous case's last intake across a case switch");
 
   // A refused pack: one malformed PDF refuses the whole pack and creates nothing.
-  await page.goto(`${baseURL}/cases/`, { waitUntil: "networkidle" });
+  await page.goto(`${baseURL}/portfolio/`, { waitUntil: "networkidle" });
   const refusedPanel = page.getByRole("region", { name: "Analyze documents" });
   await refusedPanel.locator("#intake-files").setInputFiles([
     intakeDoc("annual", `Refusedpack-${fixtureSuffix} Holdings`),
@@ -709,7 +727,7 @@ try {
   await refusalBlock.getByText("scan.pdf", { exact: true }).waitFor();
   assert.equal((await listCases()).length, casesBefore + intakeCases.length + browserCases.length, "a refused pack created a case");
 
-  await page.goto(`${baseURL}/run-console/?case=${caseRecord.id}`, { waitUntil: "networkidle" });
+  await page.goto(`${baseURL}/run/?case=${caseRecord.id}`, { waitUntil: "networkidle" });
   // Deep Research availability is derived from runtime truth. This server binds
   // the host-control provider, so the route is offered and the governed journey
   // runs live: brief → host-proposed plan → digest-bound approval → completion.
@@ -729,7 +747,7 @@ try {
   await page.getByRole("status").getByText("Run status: Pending approval", { exact: true }).waitFor();
   const liveRunId = new URL(page.url()).searchParams.get("run")
     || (await (await api.get(`/api/cases/${caseRecord.id}`)).json()).current_execution_id;
-  assert.ok(liveRunId, "neither the run console URL nor the case wire names the live research run");
+  assert.ok(liveRunId, "neither the Run URL nor the case wire names the live research run");
   const livePlanResponse = await api.get(`/api/runs/${liveRunId}/research-plan`);
   assert.equal(livePlanResponse.status(), 200, "the research plan route is not served");
   const livePlanState = await livePlanResponse.json();
@@ -793,12 +811,12 @@ try {
   await page.route(goneEventsPath, (route) => route.fulfill({ status: 200, contentType: "text/event-stream", body: "retry: 60000\n\n" }));
   await page.route(goneApprovePath, (route) => route.fulfill({ status: 404, contentType: "application/json", body: JSON.stringify({ detail: "Not Found" }) }));
   expectedNotFoundURL = `${baseURL}/api/runs/${goneResearchRun.id}/research-plan/approve`;
-  await page.goto(`${baseURL}/run-console/?case=${caseRecord.id}&run=${goneResearchRun.id}`, { waitUntil: "networkidle" });
+  await page.goto(`${baseURL}/run/?case=${caseRecord.id}&run=${goneResearchRun.id}`, { waitUntil: "networkidle" });
   await page.getByRole("heading", { name: "Proposed research plan" }).waitFor();
   await page.getByRole("button", { name: "Approve research plan" }).click();
   await page.getByText("Not available in this deployment.", { exact: true }).waitFor();
   assert.equal(await page.getByRole("button", { name: "Approve research plan" }).count(), 0, "a 404 on approval left the action live on the same run");
-  await page.evaluate(({ caseId, runId }) => { window.history.pushState(null, "", `/run-console/?case=${caseId}&run=${runId}`); }, { caseId: caseRecord.id, runId: pendingResearchRun.id });
+  await page.evaluate(({ caseId, runId }) => { window.history.pushState(null, "", `/run/?case=${caseId}&run=${runId}`); }, { caseId: caseRecord.id, runId: pendingResearchRun.id });
   await page.waitForURL((url) => url.searchParams.get("run") === pendingResearchRun.id);
   await page.getByRole("button", { name: "Approve research plan" }).waitFor();
   assert.equal(await page.getByText("Not available in this deployment.", { exact: true }).count(), 0, "a run-scoped 404 marked plan approval unavailable for every run");
@@ -806,7 +824,7 @@ try {
   await page.unroute(goneEventsPath);
   await page.unroute(goneApprovePath);
 
-  await page.goto(`${baseURL}/run-console/?case=${caseRecord.id}&fixture=pending-plan`, { waitUntil: "networkidle" });
+  await page.goto(`${baseURL}/run/?case=${caseRecord.id}&fixture=pending-plan`, { waitUntil: "networkidle" });
   await page.getByRole("combobox", { name: "Purpose" }).selectOption("DEEP_RESEARCH");
   const depth = page.getByRole("combobox", { name: "Depth" });
   assert.equal(await depth.inputValue(), "full", "Deep Research did not force full depth");
@@ -906,7 +924,7 @@ try {
   page.on("request", countCutStart);
   let servedCut = ["FULL_CREDIT"];
   await page.route(caseDetailFixturePath, (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ...caseDetailFixture, available_pathways: servedCut, deep_research_available: false, deep_research_unavailable_reason: "Controlled fixture." }) }));
-  await page.goto(`${baseURL}/run-console/?case=${caseRecord.id}&fixture=cut`, { waitUntil: "networkidle" });
+  await page.goto(`${baseURL}/run/?case=${caseRecord.id}&fixture=cut`, { waitUntil: "networkidle" });
   await page.waitForFunction(() => document.querySelector("#pathway")?.value === "FULL_CREDIT");
   assert.equal(await page.locator('#pathway option[value="EARNINGS_UPDATE"]').isDisabled(), true, "a pathway outside the cut stayed selectable");
   assert.equal(await page.getByRole("button", { name: "Compile and run" }).isDisabled(), false, "a one-pathway cut disabled the compile action");
@@ -921,7 +939,7 @@ try {
   page.off("request", countCutStart);
   await page.unroute(caseDetailFixturePath);
 
-  await page.goto(`${baseURL}/run-console/?case=${caseRecord.id}&run=${run.id}`, { waitUntil: "networkidle" });
+  await page.goto(`${baseURL}/run/?case=${caseRecord.id}&run=${run.id}`, { waitUntil: "networkidle" });
   let markStartRunIntercepted;
   const startRunIntercepted = new Promise((resolve) => { markStartRunIntercepted = resolve; });
   let releaseStartRun;
@@ -953,7 +971,7 @@ try {
   }, { expectedCaseId: raceCase.id, rejectedRunId: nextRun.id });
   await page.getByRole("region", { name: "Visible authority" }).getByText(new RegExp(`Credit:\\s*${raceIssuer}`)).waitFor();
   assert.equal(new URL(page.url()).searchParams.get("run"), crossCaseRun.id, "late Case A run creation replaced Case B execution authority");
-  await page.goto(`${baseURL}/run-console/?case=${caseRecord.id}&run=${nextRun.id}`, { waitUntil: "networkidle" });
+  await page.goto(`${baseURL}/run/?case=${caseRecord.id}&run=${nextRun.id}`, { waitUntil: "networkidle" });
   await page.waitForFunction((expectedRunId) => Array.from(document.querySelectorAll('nav[aria-label="Analysis tools"] a'))
     .some((element) => element.textContent?.includes("Run")
       && new URL(element.href).searchParams.get("run") === expectedRunId), nextRun.id);
@@ -1107,7 +1125,7 @@ try {
   // The aftermath: back on the accepted run, acceptance is no longer a live action —
   // the DAG panel renders the accepted state, keyed on run.accepted_snapshot_id
   // matching the case authority, and the accept button must not render.
-  await page.goto(`${baseURL}/run-console/?case=${caseRecord.id}&run=${nextRun.id}`, { waitUntil: "networkidle" });
+  await page.goto(`${baseURL}/run/?case=${caseRecord.id}&run=${nextRun.id}`, { waitUntil: "networkidle" });
   await page.getByText("Latest accepted authority", { exact: true }).waitFor();
   assert.equal(await page.getByRole("button", { name: "Accept analytical snapshot" }).count(), 0, "an accepted run still offers a live acceptance action");
 
@@ -1325,7 +1343,7 @@ try {
       { assumption_id: "cash_flow.capex_pct_revenue", label: "Capex % revenue", unit: "PERCENT_DECIMAL", swing: "0.01", low: "4.1", high: "4.3" },
     ] }) });
   });
-  await page.goto(`${baseURL}/model-builder/?case=${caseRecord.id}`, { waitUntil: "networkidle" });
+  await page.goto(`${baseURL}/model/?case=${caseRecord.id}`, { waitUntil: "networkidle" });
   const buildButton = page.getByRole("button", { name: "Build model" });
   await buildButton.click();
   await page.getByText("Build queued", { exact: true }).waitFor();
@@ -1533,7 +1551,7 @@ try {
     const readOnly = checkedRole === "READER";
     modelRole = checkedRole;
     if (readOnly) modelRevisions = modelRevisions.map((item) => ({ ...item, export: { ...item.export, status: "FAILED", error: { code: "MODEL_REVISION_EXPORT_FAILED", detail: "Retry remains a shared write." } } }));
-    await page.goto(`${baseURL}/model-builder/?case=${caseRecord.id}&role=${checkedRole.toLowerCase()}`, { waitUntil: "networkidle" });
+    await page.goto(`${baseURL}/model/?case=${caseRecord.id}&role=${checkedRole.toLowerCase()}`, { waitUntil: "networkidle" });
     const roleInput = page.getByLabel("Revenue growth, FY2025, BASE", { exact: true });
     if (readOnly) {
       assert.equal(await roleInput.isDisabled(), true, `${checkedRole} could edit an assumption`);
@@ -1567,14 +1585,14 @@ try {
   });
   for (const [state, text] of [["FAILED", "MODEL CALCULATION FAILED"], ["NOT_READY", "ACCEPTED FULL CREDIT REQUIRED"]]) {
     modelState = state; modelExportState = "NOT_REQUESTED";
-    await page.goto(`${baseURL}/model-builder/?case=${caseRecord.id}&state=${state}`, { waitUntil: "networkidle" });
+    await page.goto(`${baseURL}/model/?case=${caseRecord.id}&state=${state}`, { waitUntil: "networkidle" });
     await page.getByText(text, { exact: true }).waitFor();
   }
   // Chromium raises the native prompt on a navigation away from a dirty draft;
   // Firefox and WebKit under automation may not, so only Chromium asserts it.
   if (browserName === "chromium") assert.ok(beforeunloadPrompts >= 1, "leaving a dirty Model Builder draft by navigation raised no native beforeunload prompt");
   modelLoadFails = true;
-  await page.goto(`${baseURL}/model-builder/?case=${caseRecord.id}&state=load-error`, { waitUntil: "networkidle" });
+  await page.goto(`${baseURL}/model/?case=${caseRecord.id}&state=load-error`, { waitUntil: "networkidle" });
   await page.getByText("Unavailable", { exact: true }).waitFor();
   modelLoadFails = false;
   await page.unroute(modelPath);
@@ -1913,20 +1931,20 @@ try {
     ...governedReportEligibility,
     active_revision: { ...governedReportEligibility.active_revision, revision_id: "revision_new_authority" },
   };
-  await page.goto(`${baseURL}/report-studio/?case=${caseRecord.id}&prerequisite=stale-model`, { waitUntil: "networkidle" });
-  const staleModelLink = page.getByRole("link", { name: "Open Model Builder" });
+  await page.goto(`${baseURL}/report/?case=${caseRecord.id}&prerequisite=stale-model`, { waitUntil: "networkidle" });
+  const staleModelLink = page.getByRole("link", { name: "Open Model", exact: true });
   await staleModelLink.waitFor();
   assert.equal(new URL(await staleModelLink.getAttribute("href"), baseURL).searchParams.get("case"), caseRecord.id, "stale-model remedy lost case context");
   fullCreditWorkspace.model_eligibility = { active_revision: null, application_build: null, fallback_acknowledgement_required: false, default_model_selection: null };
   fullCreditWorkspace.current = { ...governedReportCurrent, content: { ...governedReportCurrent.content, model_selection: null, model_identity: null } };
   await page.reload({ waitUntil: "networkidle" });
-  const missingModelLink = page.getByRole("link", { name: "Open Run Console" });
+  const missingModelLink = page.getByRole("link", { name: "Open Run", exact: true });
   await missingModelLink.waitFor();
   assert.equal(new URL(await missingModelLink.getAttribute("href"), baseURL).searchParams.get("case"), caseRecord.id, "missing-model remedy lost case context");
   fullCreditWorkspace.model_eligibility = governedReportEligibility;
   fullCreditWorkspace.current = governedReportCurrent;
 
-  await page.goto(`${baseURL}/report-studio/?case=${caseRecord.id}`, { waitUntil: "networkidle" });
+  await page.goto(`${baseURL}/report/?case=${caseRecord.id}`, { waitUntil: "networkidle" });
   await page.getByRole("heading", { name: "Compose", exact: true }).waitFor();
   await page.getByRole("heading", { name: `${caseRecord.issuer} — ${caseRecord.name}` }).waitFor();
   await page.getByText(signedReportRevision.id, { exact: true }).first().waitFor();
@@ -2005,7 +2023,7 @@ try {
   }
   await page.waitForFunction(() => !window.history.state?.caosModelDraftGuard && !window.history.state?.caosReportDraftGuard);
 
-  await page.goto(`${baseURL}/report-studio/?case=${caseRecord.id}`, { waitUntil: "networkidle" });
+  await page.goto(`${baseURL}/report/?case=${caseRecord.id}`, { waitUntil: "networkidle" });
   await page.getByRole("combobox", { name: "Pathway template" }).selectOption("EARNINGS_UPDATE");
   const pathwaySelect = page.getByRole("combobox", { name: "Pathway template" });
   const dirtyPathwayEditor = page.getByRole("textbox", { name: "Credit Snapshot" });
@@ -2200,13 +2218,13 @@ try {
   // Separation of duties: the signer (and freeze actor) holds approver standing but never sees File.
   reportRole = "APPROVER";
   reportSubject = "analyst";
-  await page.goto(`${baseURL}/report-studio/?case=${caseRecord.id}`, { waitUntil: "networkidle" });
+  await page.goto(`${baseURL}/report/?case=${caseRecord.id}`, { waitUntil: "networkidle" });
   await page.getByRole("button", { name: new RegExp(`FROZEN · Draft v${latestFrozenVersion()}`) }).first().click();
   await page.locator("[data-separation-of-duties]").waitFor();
   assert.equal(await page.getByRole("button", { name: "File exact Frozen version" }).count(), 0, "the opinion signer was offered File");
 
   reportSubject = "approver";
-  await page.goto(`${baseURL}/report-studio/?case=${caseRecord.id}`, { waitUntil: "networkidle" });
+  await page.goto(`${baseURL}/report/?case=${caseRecord.id}`, { waitUntil: "networkidle" });
   await page.getByRole("button", { name: new RegExp(`FROZEN · Draft v${latestFrozenVersion()}`) }).first().click();
   await page.getByLabel("Required comment to request changes").fill("Clarify the downside bridge.");
   heldReportLifecycle = "changes";
@@ -2230,7 +2248,7 @@ try {
   await page.getByRole("button", { name: /Freeze saved v8/ }).click();
   await page.getByText(/Immutable FROZEN review/).waitFor();
   reportSubject = "committee-approver";
-  await page.goto(`${baseURL}/report-studio/?case=${caseRecord.id}`, { waitUntil: "networkidle" });
+  await page.goto(`${baseURL}/report/?case=${caseRecord.id}`, { waitUntil: "networkidle" });
   await page.getByRole("button", { name: new RegExp(`FROZEN · Draft v${latestFrozenVersion()}`) }).first().click();
   await page.getByText(/Immutable FROZEN review/).waitFor();
   heldReportLifecycle = "file";
@@ -2277,7 +2295,7 @@ try {
   assert.equal(governedDownloadCount, browserName === "webkit" ? 0 : 3, "filed export clicks bypassed the governed download responses");
 
   reportRole = "READER";
-  await page.goto(`${baseURL}/report-studio/?case=${caseRecord.id}`, { waitUntil: "networkidle" });
+  await page.goto(`${baseURL}/report/?case=${caseRecord.id}`, { waitUntil: "networkidle" });
   assert.equal(await page.getByRole("textbox", { name: "Credit Snapshot" }).isDisabled(), true, "reader could edit shared Deliverable");
   assert.equal(await page.getByRole("button", { name: "File exact Frozen version" }).count(), 0, "reader was shown approval authority");
   await page.setViewportSize({ width: 720, height: 900 });
@@ -2362,7 +2380,7 @@ try {
   assert.equal(overflow, false, "workbench causes page-level horizontal overflow at reflow width");
   assert.deepEqual(errors, []);
 
-  await page.goto(`${baseURL}/cases/?case=${caseRecord.id}`, { waitUntil: "networkidle" });
+  await page.goto(`${baseURL}/portfolio/?case=${caseRecord.id}`, { waitUntil: "networkidle" });
   const registerMeta = page.locator(".cases-register .panel-meta");
   const caseSearch = page.getByRole("searchbox", { name: "Search credits" });
   await caseSearch.fill("zzzz-no-such-issuer");
@@ -2380,7 +2398,7 @@ try {
   await page.locator(".cases-register tbody tr").first().waitFor();
   await snapshotFilter.selectOption("all");
 
-  await page.goto(`${baseURL}/deep-dive/?case=${caseRecord.id}`, { waitUntil: "networkidle" });
+  await page.goto(`${baseURL}/analysis/?case=${caseRecord.id}`, { waitUntil: "networkidle" });
   await page.setViewportSize({ width: 720, height: 900 });
   await page.getByRole("region", { name: "Visible authority" }).getByText(new RegExp(`Credit:\\s*${primaryIssuer}`)).waitFor();
   await page.getByRole("navigation", { name: "Accepted analysis modules" }).waitFor();
@@ -2397,7 +2415,7 @@ try {
     extraHTTPHeaders: identityHeaders,
   }));
   const reducedPage = await reduced.newPage();
-  await reducedPage.goto(`${baseURL}/command-center/?case=${caseRecord.id}`, { waitUntil: "networkidle" });
+  await reducedPage.goto(`${baseURL}/credit/?case=${caseRecord.id}`, { waitUntil: "networkidle" });
   const reducedStyle = await reducedPage.evaluate(() => {
     const style = getComputedStyle(document.querySelector(".app-shell"));
     return { iterationCount: style.animationIterationCount, playState: style.animationPlayState };
@@ -2411,7 +2429,7 @@ try {
     extraHTTPHeaders: identityHeaders,
   }));
   const zoomedPage = await zoomed.newPage();
-  await zoomedPage.goto(`${baseURL}/deep-dive/?case=${caseRecord.id}`, { waitUntil: "networkidle" });
+  await zoomedPage.goto(`${baseURL}/analysis/?case=${caseRecord.id}`, { waitUntil: "networkidle" });
   // A palette route whose client payload 404s degrades into a full document load, but only
   // after the router has pushed the destination URL. `waitForURL` then resolves on that
   // pushed entry and the following `goto` races the fallback load, which cancels it.
@@ -2423,15 +2441,15 @@ try {
   const zoomedPalette = zoomedPage.getByRole("dialog", { name: "Command palette" });
   await zoomedPalette.getByRole("combobox", { name: "Search cases, workflows or evidence IDs" }).fill("Portfolio");
   await zoomedPalette.getByRole("option", { name: "Open Portfolio" }).click();
-  await zoomedPage.waitForURL((url) => url.pathname.replace(/\/$/, "") === "/cases" && url.searchParams.get("case") === caseRecord.id);
+  await zoomedPage.waitForURL((url) => url.pathname.replace(/\/$/, "") === "/portfolio" && url.searchParams.get("case") === caseRecord.id);
   await zoomedPage.getByRole("button", { name: "Open command palette" }).click();
   await zoomedPalette.getByRole("combobox", { name: "Search cases, workflows or evidence IDs" }).fill("Run");
   await zoomedPalette.getByRole("option", { name: "Open Run", exact: true }).click();
-  await zoomedPage.waitForURL((url) => url.pathname.replace(/\/$/, "") === "/run-console"
+  await zoomedPage.waitForURL((url) => url.pathname.replace(/\/$/, "") === "/run"
     && url.searchParams.get("case") === caseRecord.id
     && url.searchParams.get("run") === nextRun.id);
   assert.deepEqual(zoomedDocumentLoads, [], "command palette navigation fell back to a full document load");
-  await zoomedPage.goto(`${baseURL}/report-studio/?case=${caseRecord.id}`, { waitUntil: "networkidle" });
+  await zoomedPage.goto(`${baseURL}/report/?case=${caseRecord.id}`, { waitUntil: "networkidle" });
   assert.equal(await zoomedPage.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth), false, "Report Studio causes page-level horizontal overflow at 200% desktop zoom width");
 
   await zoomed.close();
@@ -2446,7 +2464,7 @@ try {
   const absent = async (page, name) => assert.equal(
     await page.getByRole("button", { name }).count(), 0, `READER was offered "${name}"`);
 
-  await readerPage.goto(`${baseURL}/cases/?case=${caseRecord.id}`, { waitUntil: "networkidle" });
+  await readerPage.goto(`${baseURL}/portfolio/?case=${caseRecord.id}`, { waitUntil: "networkidle" });
   assert.equal(await readerPage.evaluate(() => document.querySelector("main")?.textContent?.includes("Reader access")), true,
     "Cases did not say why the write panels are absent");
   await absent(readerPage, "Create case");
@@ -2457,18 +2475,18 @@ try {
   await absent(readerPage, "Upload and version");
   assert.equal(await readerPage.locator("main input[type=file]").count(), 0, "READER was offered a source file input");
 
-  await readerPage.goto(`${baseURL}/run-console/?case=${raceCase.id}&run=${crossCaseRun.id}`, { waitUntil: "networkidle" });
+  await readerPage.goto(`${baseURL}/run/?case=${raceCase.id}&run=${crossCaseRun.id}`, { waitUntil: "networkidle" });
   await absent(readerPage, "Compile and run");
   await absent(readerPage, "Accept analytical snapshot");
   await readerPage.getByText("Acceptance is an analyst action.", { exact: true }).waitFor();
   assert.equal(await readerPage.locator("#pathway").count(), 0, "READER was offered the compile form");
 
-  await readerPage.goto(`${baseURL}/rv-screener/?case=${caseRecord.id}`, { waitUntil: "networkidle" });
+  await readerPage.goto(`${baseURL}/market/?case=${caseRecord.id}`, { waitUntil: "networkidle" });
   await absent(readerPage, "Upload CP-3 workbook");
 
   // The gate must fail closed even when /api/me never answers successfully.
   await readerPage.route((url) => url.pathname === "/api/me", (route) => route.abort("failed"));
-  await readerPage.goto(`${baseURL}/cases/?case=${caseRecord.id}`, { waitUntil: "networkidle" });
+  await readerPage.goto(`${baseURL}/portfolio/?case=${caseRecord.id}`, { waitUntil: "networkidle" });
   await readerPage.waitForTimeout(500);
   await absent(readerPage, "Create case");
   await absent(readerPage, "Analyze documents");

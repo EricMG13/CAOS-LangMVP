@@ -64,7 +64,7 @@ try {
     const { context, page } = await fixturePage(browser, counters);
     let step = 0;
     try {
-      step = 1; await page.goto(`${baseURL}/model-builder/?case=${caseA.id}`, { waitUntil: "networkidle" });
+      step = 1; await page.goto(`${baseURL}/model/?case=${caseA.id}`, { waitUntil: "networkidle" });
       const editor = page.getByLabel("Revenue growth, FY2025, BASE", { exact: true });
       step = 2; await page.evaluate(() => { const url = new URL(window.location.href); url.searchParams.set("focus-history", "prior"); window.history.pushState({ focus: "prior" }, "", url); });
       step = 3; await editor.fill("0.04"); await editor.press("Enter");

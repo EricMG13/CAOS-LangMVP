@@ -11,7 +11,7 @@ const smoke = readFileSync(new URL("../../../scripts/workbench-smoke.mjs", impor
 
 test("Workspace delegates Report Studio to the structured component", () => {
   assert.match(workspace, /import ReportStudio from "\.\/report\/ReportStudio";/);
-  assert.match(workspace, /case "Report Studio": return <ReportStudio/);
+  assert.match(workspace, /case "Report": return <ReportStudio/);
   assert.doesNotMatch(workspace, /function ReportView\(/);
   assert.doesNotMatch(workspace, /caos-report-draft|sessionStorage/);
 });
@@ -71,8 +71,8 @@ test("freeze remains a reserved approval sequence with complete blockers and gov
   for (const label of ["Write access", "Exact saved revision", "Current model selection", "Required model availability", "Current opinion sign-off"]) {
     assert.match(approval, new RegExp(label));
   }
-  assert.match(approval, /withQuery\("\/model-builder", \{ case: caseId \}\)/);
-  assert.match(approval, /withQuery\("\/run-console", \{ case: caseId \}\)/);
+  assert.match(approval, /withQuery\("\/model", \{ case: caseId \}\)/);
+  assert.match(approval, /withQuery\("\/run", \{ case: caseId \}\)/);
   assert.match(approval, /canWrite \? <button[^>]+data-primary-report-action/);
   assert.match(approval, /className="status idle">Reader mode/);
 });

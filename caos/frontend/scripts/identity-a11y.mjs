@@ -82,7 +82,7 @@ try {
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(body) });
   });
 
-  await page.goto(`http://127.0.0.1:${address.port}/cases/?case=${caseId}&run=${shortIdentity}`, { waitUntil: "domcontentloaded" });
+  await page.goto(`http://127.0.0.1:${address.port}/portfolio/?case=${caseId}&run=${shortIdentity}`, { waitUntil: "domcontentloaded" });
   const longValue = page.locator(`.authority-strip [title="${longIdentity}"]`).first();
   const shortValue = page.locator(`.authority-strip [title="${shortIdentity}"]`).first();
   await longValue.waitFor();

@@ -6,6 +6,7 @@
 import assert from "node:assert/strict";
 import { chromium } from "playwright";
 import AxeBuilder from "@axe-core/playwright";
+import { destinationFromSlug, forwardedRoutes, routeDestinations } from "../src/lib/workbench.ts";
 
 const baseUrl = process.env.CAOS_URL || "http://127.0.0.1:8000";
 const identityHeaders = process.env.CAOS_EDGE_SECRET ? {
@@ -15,7 +16,11 @@ const identityHeaders = process.env.CAOS_EDGE_SECRET ? {
   "x-forwarded-groups": process.env.CAOS_TEST_GROUPS || "caos-analyst",
 } : {};
 const caseQuery = process.env.CAOS_CASE_ID ? `?case=${encodeURIComponent(process.env.CAOS_CASE_ID)}` : "";
-const routes = ["/cases/", "/sources/", "/run-console/", "/deep-dive/", "/rv-screener/", "/command-center/", "/model-builder/", "/report-studio/", "/admin-studio/"];
+// The sweep walks the app's own route declaration: every destination and every
+// pre-Align forwarding page (FE-A1 D2). A forwarder is scanned where it lands, and
+// the sweep asserts that it landed at its destination with the query intact.
+const routes = [...routeDestinations, ...forwardedRoutes].map(([slug]) => `/${slug}/`);
+const forwards = new Map(forwardedRoutes.map(([from, to]) => [`/${from}/`, `/${to}/`]));
 const viewports = [
   { name: "desktop-1280", width: 1280, height: 800 },
   { name: "desktop-1366", width: 1366, height: 768 },
@@ -33,7 +38,13 @@ try {
     const context = await browser.newContext({ viewport, extraHTTPHeaders: identityHeaders });
     const page = await context.newPage();
     for (const route of routes) {
-      await page.goto(`${baseUrl}${route}${route === "/admin-studio/" ? "" : caseQuery}`, { waitUntil: "networkidle" });
+      const requested = `${baseUrl}${route}${destinationFromSlug(route.slice(1, -1)) === "Admin" ? "" : caseQuery}`;
+      await page.goto(requested, { waitUntil: "networkidle" });
+      if (forwards.has(route)) {
+        await page.waitForURL((url) => url.pathname === forwards.get(route), { timeout: 10_000 });
+        const landed = new URL(page.url());
+        for (const [key, value] of new URL(requested).searchParams) assert.equal(landed.searchParams.get(key), value, `${route} forwarded to ${forwards.get(route)} without its ${key} query`);
+      }
       const result = await new AxeBuilder({ page }).analyze();
       for (const violation of result.violations) violations.push({ viewport: viewport.name, route, id: violation.id, impact: violation.impact, nodes: violation.nodes.map((node) => ({ target: node.target, html: node.html, summary: node.failureSummary })) });
       // WCAG 1.4.10: wide content (loan table, worksheet grid, artifact tables)
@@ -98,7 +109,7 @@ try {
     return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(runFixture) });
   });
   await pendingPage.route((url) => url.pathname === `/api/runs/${runId}/events`, (route) => route.fulfill({ status: 200, contentType: "text/event-stream", body: "retry: 60000\n\n" }));
-  await pendingPage.goto(`${baseUrl}/run-console/?case=${caseId}&run=${runId}&fixture=pending-plan`, { waitUntil: "networkidle" });
+  await pendingPage.goto(`${baseUrl}/run/?case=${caseId}&run=${runId}&fixture=pending-plan`, { waitUntil: "networkidle" });
   await pendingPage.getByRole("heading", { name: "Proposed research plan" }).waitFor();
   const pendingPlan = pendingPage.locator(".research-plan");
   assert.ok(await pendingPlan.getByText("None", { exact: true }).count() >= 9, "pending-plan axe fixture did not render explicit empty-scalar markers");
@@ -110,7 +121,7 @@ try {
   assert.equal(await workstreams.first().getByText("Liquidity runway?", { exact: true }).count(), 2, "pending-plan axe fixture did not preserve repeated workstream values");
   assert.equal(pendingConsoleErrors.some((message) => /children with the same key|duplicate key/i.test(message)), false, "pending-plan axe fixture emitted a React duplicate-key warning");
   const pendingResult = await new AxeBuilder({ page: pendingPage }).analyze();
-  for (const violation of pendingResult.violations) violations.push({ viewport: "pending-plan-desktop-200-percent", route: "/run-console/", id: violation.id, impact: violation.impact, nodes: violation.nodes.map((node) => ({ target: node.target, html: node.html, summary: node.failureSummary })) });
+  for (const violation of pendingResult.violations) violations.push({ viewport: "pending-plan-desktop-200-percent", route: "/run/", id: violation.id, impact: violation.impact, nodes: violation.nodes.map((node) => ({ target: node.target, html: node.html, summary: node.failureSummary })) });
   assert.ok(caseFixtureHits > 0, "pending-plan case fixture was not exercised");
   assert.ok(runFixtureHits > 0, "pending-plan run fixture was not exercised");
   await pendingContext.close();
@@ -136,7 +147,7 @@ try {
   const populatedModelViewports = [{ name: "desktop-1440", width: 1440, height: 1000 }, { name: "desktop-1280", width: 1280, height: 800 }, { name: "desktop-200-percent", width: 720, height: 900 }];
   for (const viewport of populatedModelViewports) {
     await modelPage.setViewportSize({ width: viewport.width, height: viewport.height });
-    await modelPage.goto(`${baseUrl}/model-builder/?case=${modelCaseId}&fixture=ready-model-${viewport.name}`, { waitUntil: "networkidle" });
+    await modelPage.goto(`${baseUrl}/model/?case=${modelCaseId}&fixture=ready-model-${viewport.name}`, { waitUntil: "networkidle" });
     await modelPage.getByRole("tab", { name: "Credit Snapshot" }).waitFor();
     await modelPage.getByRole("button", { name: /Show lineage for account::revenue/ }).click();
     await modelPage.locator("#model-cell-lineage").getByText(/SRC-1/).waitFor();
@@ -152,7 +163,7 @@ try {
     for (const tabName of ["Credit Snapshot", "Model", "KPIs"]) {
       await builderTabs.getByRole("tab", { name: tabName, exact: true }).click();
       const modelResult = await new AxeBuilder({ page: modelPage }).analyze();
-      for (const violation of modelResult.violations) violations.push({ viewport: `ready-model-${viewport.name}-${tabName.toLowerCase()}`, route: "/model-builder/", id: violation.id, impact: violation.impact, nodes: violation.nodes.map((node) => ({ target: node.target, html: node.html, summary: node.failureSummary })) });
+      for (const violation of modelResult.violations) violations.push({ viewport: `ready-model-${viewport.name}-${tabName.toLowerCase()}`, route: "/model/", id: violation.id, impact: violation.impact, nodes: violation.nodes.map((node) => ({ target: node.target, html: node.html, summary: node.failureSummary })) });
     }
   }
   await modelContext.close();
@@ -228,7 +239,7 @@ try {
   const populatedReportViewports = [{ name: "desktop-1440", width: 1440, height: 1000 }, { name: "desktop-1280", width: 1280, height: 800 }, { name: "desktop-200-percent", width: 720, height: 900 }];
   for (const viewport of populatedReportViewports) {
     await reportPage.setViewportSize({ width: viewport.width, height: viewport.height });
-    await reportPage.goto(`${baseUrl}/report-studio/?case=${reportCaseId}&fixture=ready-report-${viewport.name}`, { waitUntil: "networkidle" });
+    await reportPage.goto(`${baseUrl}/report/?case=${reportCaseId}&fixture=ready-report-${viewport.name}`, { waitUntil: "networkidle" });
     await reportPage.getByRole("region", { name: "Deliverable paper preview" }).waitFor();
     const governedPaper = reportPage.getByRole("article", { name: "Draft Deliverable preview" });
     await governedPaper.getByRole("heading", { name: "Accepted Analysis" }).waitFor();
@@ -243,7 +254,7 @@ try {
     await evidenceInspector.locator(".evidence-source-list > details > summary").filter({ hasText: "earnings.txt" }).click();
     await evidenceInspector.getByText("Liquidity was $210 million at quarter end.", { exact: true }).waitFor();
     const reportResult = await new AxeBuilder({ page: reportPage }).analyze();
-    for (const violation of reportResult.violations) violations.push({ viewport: `ready-report-${viewport.name}`, route: "/report-studio/", id: violation.id, impact: violation.impact, nodes: violation.nodes.map((node) => ({ target: node.target, html: node.html, summary: node.failureSummary })) });
+    for (const violation of reportResult.violations) violations.push({ viewport: `ready-report-${viewport.name}`, route: "/report/", id: violation.id, impact: violation.impact, nodes: violation.nodes.map((node) => ({ target: node.target, html: node.html, summary: node.failureSummary })) });
   }
   await reportContext.close();
 
@@ -280,49 +291,49 @@ try {
   const snapshotRoute = (url) => url.pathname === `/api/cases/${reportCaseId}/snapshot`;
   await statePage.route(snapshotRoute, json({ accepted: null, latest_accepted: null, switch_required: false, diff: null }));
 
-  await statePage.goto(`${baseUrl}/report-studio/?case=${reportCaseId}&fixture=state-review`, { waitUntil: "networkidle" });
+  await statePage.goto(`${baseUrl}/report/?case=${reportCaseId}&fixture=state-review`, { waitUntil: "networkidle" });
   await statePage.getByRole("button", { name: /FROZEN · Draft v2/ }).click();
   await statePage.getByText(/Immutable FROZEN review/).waitFor();
   await statePage.getByText("Pending approval · the frozen bytes never name an approver", { exact: true }).waitFor();
-  await scanState("review", "/report-studio/");
+  await scanState("review", "/report/");
   await statePage.getByRole("button", { name: "Return to shared Draft" }).click();
   await statePage.getByRole("button", { name: /FILED · Draft v1/ }).click();
   await statePage.getByText(/Immutable FILED review/).waitFor();
   await statePage.locator("[data-filing-receipt]").waitFor();
   assert.match(await statePage.locator("[data-filing-receipt]").textContent(), /rcpt_frozen_a11y_filed/, "filed state did not render the detached receipt");
-  await scanState("filed", "/report-studio/");
+  await scanState("filed", "/report/");
 
   // Loading: the credit authority read is held open; the skeleton is the state.
   let releaseSnapshot;
   const snapshotHeld = new Promise((resolve) => { releaseSnapshot = resolve; });
   await statePage.unroute(snapshotRoute);
   await statePage.route(snapshotRoute, async (route) => { await snapshotHeld; await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ accepted: null, latest_accepted: null, switch_required: false, diff: null }) }); });
-  await statePage.goto(`${baseUrl}/command-center/?case=${reportCaseId}&fixture=state-loading`, { waitUntil: "domcontentloaded" });
+  await statePage.goto(`${baseUrl}/credit/?case=${reportCaseId}&fixture=state-loading`, { waitUntil: "domcontentloaded" });
   await statePage.getByRole("status", { name: "Loading" }).first().waitFor();
   assert.ok(await statePage.getByRole("status", { name: "Loading" }).count() >= 1, "loading state was not on screen when scanned");
-  await scanState("loading", "/command-center/");
+  await scanState("loading", "/credit/");
   releaseSnapshot();
   await statePage.getByRole("status", { name: "Loading" }).waitFor({ state: "detached" });
 
   // Error: the same read fails typed; the alert with its Retry is the state.
   await statePage.unroute(snapshotRoute);
   await statePage.route(snapshotRoute, json({ detail: { code: "STORE_UNAVAILABLE" } }, 503));
-  await statePage.goto(`${baseUrl}/command-center/?case=${reportCaseId}&fixture=state-error`, { waitUntil: "networkidle" });
+  await statePage.goto(`${baseUrl}/credit/?case=${reportCaseId}&fixture=state-error`, { waitUntil: "networkidle" });
   const failedRead = statePage.getByRole("alert").filter({ hasText: "Unable to load this view." });
   await failedRead.first().waitFor();
   await failedRead.first().getByRole("button", { name: "Retry" }).waitFor();
-  await scanState("error", "/command-center/");
+  await scanState("error", "/credit/");
 
   // Refusal: the intake refuses a pack; the alert with its findings is the state.
   await statePage.route((url) => url.pathname === "/api/intake", json({ detail: { code: "INTAKE_ADMISSION_REFUSED", message: "1 of 1 documents failed admission; the pack was not admitted.", next_action: "Remove or replace the refused document and drop the pack again.", findings: [{ filename: "scan.pdf", detail: "PDF could not be parsed", status: 422 }] } }, 422));
-  await statePage.goto(`${baseUrl}/cases/?case=${reportCaseId}&fixture=state-refusal`, { waitUntil: "networkidle" });
+  await statePage.goto(`${baseUrl}/portfolio/?case=${reportCaseId}&fixture=state-refusal`, { waitUntil: "networkidle" });
   const intakePanel = statePage.getByRole("region", { name: "Analyze documents" });
   await intakePanel.locator("#intake-files").setInputFiles([{ name: "scan.pdf", mimeType: "application/pdf", buffer: Buffer.from("%PDF-1.4\nnot a pdf object stream") }]);
   await intakePanel.getByRole("button", { name: /^Analyze 1 document$/ }).click();
   const refusal = statePage.getByRole("alert").filter({ hasText: "Documents not admitted" });
   await refusal.waitFor();
   await refusal.getByText("scan.pdf", { exact: true }).waitFor();
-  await scanState("refusal", "/cases/");
+  await scanState("refusal", "/portfolio/");
   assert.deepEqual(stateScans, ["review", "filed", "loading", "error", "refusal"], "every material state was scanned");
   await stateContext.close();
 } finally {
@@ -333,5 +344,5 @@ if (violations.length) {
   console.error(JSON.stringify({ violations }, null, 2));
   process.exitCode = 1;
 } else {
-  console.log(JSON.stringify({ routes: routes.length, viewports: viewports.length, combinations: routes.length * viewports.length + 21, pendingPlanFixture: true, readyModelFixture: true, readyReportFixture: true, states: ["empty", "populated", "review", "filed", "loading", "error", "refusal"], modelBuilderAxeChecks: 12, modelBuilderKeyboardTabChecks: 3, reportStudioAxeChecks: 3, reportStudioKeyboardTabChecks: 3, violations: 0 }));
+  console.log(JSON.stringify({ routes: routes.length, forwarders: forwardedRoutes.length, viewports: viewports.length, combinations: routes.length * viewports.length + 21, pendingPlanFixture: true, readyModelFixture: true, readyReportFixture: true, states: ["empty", "populated", "review", "filed", "loading", "error", "refusal"], modelBuilderAxeChecks: 12, modelBuilderKeyboardTabChecks: 3, reportStudioAxeChecks: 3, reportStudioKeyboardTabChecks: 3, violations: 0 }));
 }

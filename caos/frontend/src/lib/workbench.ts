@@ -1,14 +1,37 @@
+// Align (FE-A1 D1, DECISIONS §14.23): eight destinations plus Run, the tool of
+// Analysis, with one vocabulary in URL, rail, kicker, page title and tab title —
+// the slug is the destination word. Every route below is a static page.
 export const routeDestinations = [
-  ["cases", "Cases"],
+  ["portfolio", "Portfolio"],
+  ["credit", "Credit"],
   ["sources", "Sources"],
-  ["run-console", "Run Console"],
-  ["deep-dive", "Deep-Dive"],
-  ["rv-screener", "RV Screener"],
-  ["command-center", "Command Center"],
-  ["model-builder", "Model Builder"],
-  ["report-studio", "Report Studio"],
-  ["admin-studio", "Admin Studio"],
+  ["analysis", "Analysis"],
+  ["run", "Run"],
+  ["market", "Market"],
+  ["model", "Model"],
+  ["report", "Report"],
+  ["admin", "Admin"],
 ] as const;
+
+// Route compatibility (FE-A1 D2): every pre-Align slug stays a static page that
+// replaces history to the destination that absorbed it, query string intact, so
+// deep links in retained evidence packages keep resolving. A static export cannot
+// serve a redirect, so the page forwards itself (components/RouteForwarder.tsx).
+export const forwardedRoutes = [
+  ["cases", "portfolio"],
+  ["command-center", "credit"],
+  ["deep-dive", "analysis"],
+  ["run-console", "run"],
+  ["rv-screener", "market"],
+  ["model-builder", "model"],
+  ["report-studio", "report"],
+  ["admin-studio", "admin"],
+] as const;
+
+// The static route set is a pure function of the two tables above:
+// generateStaticParams, the rail, the palette and the accessibility sweep read
+// them and nothing else.
+export const routeSlugs: readonly string[] = [...routeDestinations.map(([slug]) => slug), ...forwardedRoutes.map(([from]) => from)];
 
 export type Destination = (typeof routeDestinations)[number][1];
 export type WorkflowId = "portfolio" | "credit" | "sources" | "analysis" | "market" | "model" | "report";
@@ -19,15 +42,15 @@ export type DestinationMeta = {
 };
 
 export const destinationMeta: Record<Destination, DestinationMeta> = {
-  Cases: { kicker: "Portfolio / Surveillance", title: "Monitored credits" },
-  "Command Center": { kicker: "Credit / Current state", title: "Current state and what changed" },
+  Portfolio: { kicker: "Portfolio / Surveillance", title: "Monitored credits" },
+  Credit: { kicker: "Credit / Current state", title: "Current state and what changed" },
   Sources: { kicker: "Sources / Evidence", title: "Documents, extraction and coverage" },
-  "Run Console": { kicker: "Analysis / Execution", title: "Run and acceptance" },
-  "Deep-Dive": { kicker: "Analysis / Reader", title: "Accepted analysis" },
-  "RV Screener": { kicker: "Market / Comparison", title: "Governed loan universe" },
-  "Model Builder": { kicker: "Model / Forecast", title: "Assumptions, lineage and sign-off" },
-  "Report Studio": { kicker: "Report / Publication", title: "Compose, freeze and file" },
-  "Admin Studio": { kicker: "Admin / Governance", title: "Deployment capability" },
+  Analysis: { kicker: "Analysis / Reader", title: "Accepted analysis" },
+  Run: { kicker: "Analysis / Run", title: "Run and acceptance" },
+  Market: { kicker: "Market / Comparison", title: "Governed loan universe" },
+  Model: { kicker: "Model / Forecast", title: "Assumptions, lineage and sign-off" },
+  Report: { kicker: "Report / Publication", title: "Compose, freeze and file" },
+  Admin: { kicker: "Admin / Governance", title: "Deployment capability" },
 };
 
 export type Snapshot = {
@@ -90,19 +113,20 @@ export type Workflow = {
   tools?: readonly { label: string; href: string; destination: Destination }[];
 };
 
-// One vocabulary: a rail entry is named for the destination it opens, so the label
-// in the rail, the label in the command palette, and the page title are the same
-// word. Ids, hrefs, destinations and the group structure are unchanged — routes are
-// pinned by workbench.test.ts and the aria-current rule keys on destinations, never
-// on labels.
+// One vocabulary: a rail entry is named for the destination it opens, so the word
+// in the URL, the rail, the command palette, the kicker and the tab title is the
+// same. Every href is derived from the destination table (`routeFor`), never a
+// second literal; the route table is pinned by workbench.test.ts and the
+// aria-current rule keys on destinations. Admin is the governance entry the shell
+// draws outside this list, at `routeFor("Admin")`.
 export const workflows: readonly Workflow[] = [
-  { id: "portfolio", label: "Portfolio", href: "/cases", destinations: ["Cases"] },
-  { id: "credit", label: "Credit", href: "/command-center", destinations: ["Command Center"] },
-  { id: "sources", label: "Sources", href: "/sources", destinations: ["Sources"] },
-  { id: "analysis", label: "Analysis", href: "/deep-dive", destinations: ["Run Console", "Deep-Dive"], tools: [{ label: "Run", href: "/run-console", destination: "Run Console" }] },
-  { id: "market", label: "Market", href: "/rv-screener", destinations: ["RV Screener"] },
-  { id: "model", label: "Model", href: "/model-builder", destinations: ["Model Builder"] },
-  { id: "report", label: "Report", href: "/report-studio", destinations: ["Report Studio"] },
+  { id: "portfolio", label: "Portfolio", href: routeFor("Portfolio"), destinations: ["Portfolio"] },
+  { id: "credit", label: "Credit", href: routeFor("Credit"), destinations: ["Credit"] },
+  { id: "sources", label: "Sources", href: routeFor("Sources"), destinations: ["Sources"] },
+  { id: "analysis", label: "Analysis", href: routeFor("Analysis"), destinations: ["Analysis", "Run"], tools: [{ label: "Run", href: routeFor("Run"), destination: "Run" }] },
+  { id: "market", label: "Market", href: routeFor("Market"), destinations: ["Market"] },
+  { id: "model", label: "Model", href: routeFor("Model"), destinations: ["Model"] },
+  { id: "report", label: "Report", href: routeFor("Report"), destinations: ["Report"] },
 ];
 
 // Human module names beside the ids. Every name is the module's own `skill_slug`
@@ -270,8 +294,23 @@ export function formatBlockLocator(locator: unknown): string {
   return json;
 }
 
-export function destinationFromSlug(slug: string): Destination {
-  return routeDestinations.find(([route]) => route === slug)?.[1] ?? "Cases";
+// The route of a destination: `/${slug}`, without the trailing slash `withQuery`
+// restores, so callers compose it exactly as they composed the old literals.
+export function routeFor(destination: Destination): string {
+  return `/${routeDestinations.find(([, name]) => name === destination)![0]}`;
+}
+
+// The destination slug a pre-Align slug forwards to, or null for a live route.
+export function forwardedSlug(slug: string): string | null {
+  return forwardedRoutes.find(([from]) => from === slug)?.[1] ?? null;
+}
+
+// A forwarded slug resolves to the destination that absorbed it, so the shell
+// renders that surface while the forwarder replaces the address; an unknown slug
+// is null, and the caller — not this table — decides what an unknown route shows.
+export function destinationFromSlug(slug: string): Destination | null {
+  const resolved = forwardedSlug(slug) ?? slug;
+  return routeDestinations.find(([route]) => route === resolved)?.[1] ?? null;
 }
 
 export function workflowFor(destination: Destination): Workflow {

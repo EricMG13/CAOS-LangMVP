@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
-import { acceptanceSlotSummary, acceptedAuthorityMatch, destinationMeta, evidenceKind, formatBlockLocator, humanizeCode, moduleLabel, protectDirtyDraftUnload, supersededAcceptance, withQuery, workflows } from "./workbench.ts";
+import { acceptanceSlotSummary, acceptedAuthorityMatch, destinationFromSlug, destinationMeta, evidenceKind, forwardedRoutes, formatBlockLocator, humanizeCode, moduleLabel, protectDirtyDraftUnload, routeDestinations, routeFor, routeSlugs, supersededAcceptance, withQuery, workflows } from "./workbench.ts";
 
 const workbenchShell = readFileSync(new URL("../components/WorkbenchShell.tsx", import.meta.url), "utf8");
 const workspace = readFileSync(new URL("../components/Workspace.tsx", import.meta.url), "utf8");
@@ -11,6 +11,9 @@ const deliverableDocument = readFileSync(new URL("../components/report/Deliverab
 const reportStudio = readFileSync(new URL("../components/report/ReportStudio.tsx", import.meta.url), "utf8");
 const styles = readFileSync(new URL("../../app/globals.css", import.meta.url), "utf8");
 const smoke = readFileSync(new URL("../../scripts/workbench-smoke.mjs", import.meta.url), "utf8");
+const destinationPage = readFileSync(new URL("../../app/[destination]/page.tsx", import.meta.url), "utf8");
+const notFoundPage = readFileSync(new URL("../../app/not-found.tsx", import.meta.url), "utf8");
+const a11y = readFileSync(new URL("../../scripts/a11y-axe.mjs", import.meta.url), "utf8");
 
 function shippedFiles(root: URL): URL[] {
   try {
@@ -45,16 +48,126 @@ test("browser proof watches every context for Google font requests through final
   assert.match(smoke, /await reader\.close\(\);\s*assert\.deepEqual\(externalGoogleFontRequests, \[\], "workbench requested an external Google font"\);\s*report\(\{ status: "passed" \}\);\s*} catch \(error\) \{[\s\S]*?} finally/);
 });
 
-test("approved workspace labels preserve the existing routes", () => {
-  assert.deepEqual(workflows.map(({ label, href }) => [label, href]), [
-    ["Portfolio", "/cases"],
-    ["Credit", "/command-center"],
-    ["Sources", "/sources"],
-    ["Analysis", "/deep-dive"],
-    ["Market", "/rv-screener"],
-    ["Model", "/model-builder"],
-    ["Report", "/report-studio"],
+test("the rail's words are the route slugs, and every rail href is derived from the destination table", () => {
+  // Align (FE-A1 D1): one vocabulary in URL, rail, kicker, page title and tab title.
+  assert.deepEqual(routeDestinations.map(([slug, destination]) => [slug, destination]), [
+    ["portfolio", "Portfolio"],
+    ["credit", "Credit"],
+    ["sources", "Sources"],
+    ["analysis", "Analysis"],
+    ["run", "Run"],
+    ["market", "Market"],
+    ["model", "Model"],
+    ["report", "Report"],
+    ["admin", "Admin"],
   ]);
+  assert.deepEqual(workflows.map(({ label, href }) => [label, href]), [
+    ["Portfolio", "/portfolio"],
+    ["Credit", "/credit"],
+    ["Sources", "/sources"],
+    ["Analysis", "/analysis"],
+    ["Market", "/market"],
+    ["Model", "/model"],
+    ["Report", "/report"],
+  ]);
+  // The route set is a pure function of the destination table: a rail entry and a
+  // tool link carry the slug of the destination they open, never a second literal.
+  for (const workflow of workflows) {
+    assert.equal(workflow.href, routeFor(workflow.destinations[0]));
+    for (const tool of workflow.tools ?? []) assert.equal(tool.href, routeFor(tool.destination));
+  }
+  assert.deepEqual(workflows.flatMap((workflow) => workflow.tools ?? []), [{ label: "Run", href: "/run", destination: "Run" }]);
+  assert.equal(routeFor("Admin"), "/admin");
+  assert.deepEqual(Object.entries(destinationMeta).map(([destination, meta]) => [destination, meta.kicker]), [
+    ["Portfolio", "Portfolio / Surveillance"],
+    ["Credit", "Credit / Current state"],
+    ["Sources", "Sources / Evidence"],
+    ["Analysis", "Analysis / Reader"],
+    ["Run", "Analysis / Run"],
+    ["Market", "Market / Comparison"],
+    ["Model", "Model / Forecast"],
+    ["Report", "Report / Publication"],
+    ["Admin", "Admin / Governance"],
+  ]);
+  // The tab title is the destination word on a document load and after a client
+  // navigation alike; before the move the two disagreed.
+  assert.match(destinationPage, /title: known \? `CAOS — \$\{destinationFromSlug\(destination\)\}`/);
+  assert.match(workspace, /document\.title = `CAOS — \$\{active\}`;/);
+});
+
+test("every pre-Align slug is a static forwarding page to its destination, and the static route set is one declaration", () => {
+  // FE-A1 D2: a static export cannot serve redirects, so each old slug stays a page
+  // that replaces history to its new home with the query string intact.
+  assert.deepEqual(forwardedRoutes.map(([from, to]) => [from, to]), [
+    ["cases", "portfolio"],
+    ["command-center", "credit"],
+    ["deep-dive", "analysis"],
+    ["run-console", "run"],
+    ["rv-screener", "market"],
+    ["model-builder", "model"],
+    ["report-studio", "report"],
+    ["admin-studio", "admin"],
+  ]);
+  const destinationSlugs: readonly string[] = routeDestinations.map(([slug]) => slug);
+  for (const [from, to] of forwardedRoutes) {
+    assert.ok(destinationSlugs.includes(to), `${from} forwards to ${to}, which is not a destination`);
+    assert.ok(!destinationSlugs.includes(from), `${from} is both a forwarder and a destination`);
+    assert.equal(destinationFromSlug(from), destinationFromSlug(to));
+  }
+  assert.deepEqual(routeSlugs, [...destinationSlugs, ...forwardedRoutes.map(([from]) => from)]);
+  assert.equal(destinationFromSlug("nowhere"), null);
+  // generateStaticParams emits exactly routeSlugs; a forwarded slug renders the
+  // forwarder and nothing else, and an unknown slug is still the 404.
+  assert.match(destinationPage, /return routeSlugs\.map\(\(destination\) => \(\{ destination \}\)\);/);
+  assert.match(destinationPage, /const forward = forwardedSlug\(destination\);[\s\S]*if \(forward\) return <RouteForwarder to=\{`\/\$\{forward\}\/`\} \/>;/);
+  assert.match(destinationPage, /if \(destinationFromSlug\(destination\) === null\) notFound\(\);/);
+  assert.match(notFoundPage, /href="\/portfolio\/">Return to Portfolio</);
+  // The forwarder replaces history (never pushes) and carries the query and hash.
+  const forwarder = readFileSync(new URL("../components/RouteForwarder.tsx", import.meta.url), "utf8");
+  assert.match(forwarder, /window\.history\.replaceState\(historyStateForExternalReplace\(window\.history\.state\), "", `\$\{to\}\$\{window\.location\.search\}\$\{window\.location\.hash\}`\)/);
+  assert.doesNotMatch(forwarder, /router\.(?:push|replace)\(|history\.pushState\(/);
+  // The accessibility sweep and the smoke walk the same declaration: every destination
+  // and every forwarder is swept, and the sweep asserts where each forwarder lands.
+  assert.match(a11y, /import \{ destinationFromSlug, forwardedRoutes, routeDestinations \} from "\.\.\/src\/lib\/workbench\.ts";/);
+  assert.match(a11y, /const routes = \[\.\.\.routeDestinations, \.\.\.forwardedRoutes\]\.map\(\(\[slug\]\) => `\/\$\{slug\}\/`\);/);
+  for (const [from] of forwardedRoutes) assert.doesNotMatch(workspace + workbenchShell + modelBuilder + reportStudio, new RegExp(`"/${from}[/"?]`), `a link still targets the forwarded slug /${from}/`);
+});
+
+test("the palette offers every destination once, under its rail word, at its route", () => {
+  // The palette derives from `workflows`: one "Open <word>" per rail entry plus one
+  // per tool, and nothing else — no entry for a route the table does not declare.
+  assert.match(workbenchShell, /const workflowItems = useMemo\(\(\) => workflows\.filter\(/);
+  assert.match(workbenchShell, /const toolItems = useMemo\(\(\) => workflows\.flatMap\(\(workflow\) => workflow\.tools \?\? \[\]\)/);
+  assert.deepEqual([
+    ...workflows.map((workflow) => [`Open ${workflow.label}`, workflow.href]),
+    ...workflows.flatMap((workflow) => workflow.tools ?? []).map((tool) => [`Open ${tool.label}`, tool.href]),
+  ], [
+    ["Open Portfolio", "/portfolio"],
+    ["Open Credit", "/credit"],
+    ["Open Sources", "/sources"],
+    ["Open Analysis", "/analysis"],
+    ["Open Market", "/market"],
+    ["Open Model", "/model"],
+    ["Open Report", "/report"],
+    ["Open Run", "/run"],
+  ]);
+});
+
+test("exactly one rail entry is current, and the Run tool renders on every surface", () => {
+  // FE-A1 D12 (F-15): the tool group is no longer gated on the active workflow. The
+  // aria-current rule keys on destinations: a tool link when one targets the active
+  // destination, the governance entry on Admin, else the workflow link.
+  assert.doesNotMatch(workbenchShell, /activeWorkflow\.tools\?\.length \?/);
+  assert.match(workbenchShell, /\{workflows\.filter\(\(workflow\) => workflow\.tools\?\.length\)\.map\(\(workflow\) => <nav aria-label=\{`\$\{workflow\.label\} tools`\}/);
+  assert.match(workbenchShell, /&& !activeWorkflow\.tools\?\.some\(\(tool\) => tool\.destination === active\)\s*&& active !== "Admin";/);
+  assert.match(workbenchShell, /aria-current=\{active === tool\.destination \? "page" : undefined\}/);
+  assert.match(workbenchShell, /aria-current=\{active === "Admin" \? "page" : undefined\} href=\{workflowHref\(routeFor\("Admin"\)\)\}/);
+  assert.match(workbenchShell, /tool\.destination === "Run" && runIsLive && <span className="shortcut">LIVE/);
+  assert.doesNotMatch(workbenchShell, /"Admin Studio"|"Run Console"|"Report Studio"|"\/admin-studio"|"\/cases"/);
+  // The browser proof: one aria-current per page on a workflow route, the tool route
+  // and the governance route, and the Run tool present on a non-Analysis surface.
+  assert.match(smoke, /\["\/portfolio\/", "Workflows", "Portfolio"\],\s*\["\/run\/", "Analysis tools", "Run"\],\s*\["\/report\/", "Workflows", "Report"\],\s*\["\/admin\/", "Governance", "Admin"\],/);
+  assert.match(smoke, /the Run tool is missing from a non-Analysis surface/);
 });
 
 test("the shell omits the redundant reading taxonomy and renders its command shortcut as a key", () => {
@@ -251,16 +364,16 @@ test("the report panels' header row takes the header's own height", () => {
 });
 
 test("every route path keeps its trailing slash", () => {
-  assert.equal(withQuery("/run-console", { case: "case_1" }), "/run-console/?case=case_1");
+  assert.equal(withQuery("/run", { case: "case_1" }), "/run/?case=case_1");
   assert.equal(withQuery("/sources/", { case: "case_1" }), "/sources/?case=case_1");
-  assert.equal(withQuery("/cases", {}), "/cases/");
+  assert.equal(withQuery("/portfolio", {}), "/portfolio/");
   assert.equal(withQuery("/", {}), "/");
 });
 
 test("values set, replace, and clear query keys", () => {
-  assert.equal(withQuery("/run-console?run=run_old", { run: "run_new" }), "/run-console/?run=run_new");
-  assert.equal(withQuery("/run-console?run=run_old", { run: undefined }), "/run-console/");
-  assert.equal(withQuery("/run-console?case=case_1", { run: "run_1" }), "/run-console/?case=case_1&run=run_1");
+  assert.equal(withQuery("/run?run=run_old", { run: "run_new" }), "/run/?run=run_new");
+  assert.equal(withQuery("/run?run=run_old", { run: undefined }), "/run/");
+  assert.equal(withQuery("/run?case=case_1", { run: "run_1" }), "/run/?case=case_1&run=run_1");
 });
 
 test("acceptance stays live until the run's snapshot is the case authority", () => {
