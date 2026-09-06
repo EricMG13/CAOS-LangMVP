@@ -558,7 +558,7 @@ try {
   await provisionForm.getByRole("button", { name: "Provision member" }).click();
   await page.getByText("qa.approver@local.invalid provisioned as case APPROVER.", { exact: false }).waitFor();
   assert.deepEqual(memberPostBody, { subject: "qa.approver@local.invalid", role: "APPROVER" }, "provisioning posted something other than the subject and standing");
-  assert.equal(await provisionForm.getByLabel("Provision a distinct approver (subject)").inputValue(), "", "the form kept the provisioned subject after the receipt");
+  await page.waitForFunction(() => document.getElementById("member-subject")?.value === "", null, { timeout: 5_000 }).catch(() => { throw new Error("the form kept the provisioned subject after the receipt"); });
   await page.unroute(adminIdentityPath); await page.unroute(adminCasePath); await page.unroute(adminMembersPath);
   expectedNotFoundURL = `${baseURL}/missing-${fixtureSuffix}`;
   await page.goto(expectedNotFoundURL, { waitUntil: "networkidle" });
@@ -758,7 +758,10 @@ try {
       assert.equal(await page.locator("main .button.primary:visible").count(), 1, "an intake-created paused run offers more than one primary action");
       await advanced.locator("summary").click();
       await page.locator("#pathway").waitFor({ state: "visible" });
-      await page.goto(`${baseURL}/portfolio/`, { waitUntil: "networkidle" });
+      // Back to this case's Portfolio: the fenced-header check below expects the
+      // intake header of the case the loop left selected.
+      await page.goto(`${baseURL}/portfolio/?case=${intakeCaseRecord.id}`, { waitUntil: "networkidle" });
+      await intakePanel.getByRole("region", { name: "Source disposition manifest" }).waitFor();
     }
   }
   // The intake header is fenced to the selected case (FE-A0 F6): a switch to a

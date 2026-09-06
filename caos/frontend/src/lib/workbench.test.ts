@@ -172,7 +172,7 @@ test("Admin draws the two served governance contracts and Report no longer provi
   // The mutation is the workspace's governed write with its receipt and a case re-read.
   assert.match(workspace, /const provisionMember = async \(member: \{ subject: string; role: string \}\) => \{/);
   assert.match(workspace, /await request\(`\/api\/cases\/\$\{expectedCaseId\}\/members`, \{ method: "POST", body: JSON\.stringify\(\{ subject: memberSubject, role: member\.role \}\) \}\);/);
-  assert.match(workspace, /setNotice\(`\$\{memberSubject\} provisioned as case \$\{member\.role\}\.`\);\s*await refreshCase\(expectedCaseId\);/);
+  assert.match(workspace, /setNotice\(`\$\{memberSubject\} provisioned as case \$\{member\.role\}\.`\);[\s\S]{0,400}?void refreshCase\(expectedCaseId\);\s*return true;/);
   assert.doesNotMatch(reportStudio, /data-member-form|\/members`/);
   // Browser proof: the audit package is driven live with its digest; provisioning is
   // proven on a route-intercepted page (no served route grants the first standing, F-12).

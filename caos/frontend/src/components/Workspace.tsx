@@ -1045,7 +1045,10 @@ export default function Workspace({ destination, children }: { destination?: Des
       await request(`/api/cases/${expectedCaseId}/members`, { method: "POST", body: JSON.stringify({ subject: memberSubject, role: member.role }) });
       if (!matchesAuthority(authorityRef.current, context)) return false;
       setNotice(`${memberSubject} provisioned as case ${member.role}.`);
-      await refreshCase(expectedCaseId);
+      // The receipt and the cleared form land in the same render; the case re-read
+      // that carries the new standing into `members` follows on its own (CI caught
+      // the form still holding the subject while the re-read was in flight).
+      void refreshCase(expectedCaseId);
       return true;
     } catch (caught) {
       if (matchesAuthority(authorityRef.current, context)) setError(firstErrorMessage(caught, "Unable to provision the member"));

@@ -226,9 +226,45 @@ CI runs the sweep after the smoke on one server and has passed the same way sinc
 
 | Commit | Content |
 |---|---|
-| `9353033` | `feat(frontend): Run to the Align artboard, governance controls on Admin, the advanced path on refusal` — `Workspace.tsx`, `ReportStudio.tsx`, `globals.css`; `workbench.test.ts`, `ReportStudio.test.ts`; `workbench-smoke.mjs`, `a11y-axe.mjs` |
-| `dab857e` | `docs(frontend): capability map — provisioning and the audit package are drawn on Admin` |
-| (report commit) | this file, `progress.md`, `evidence/g3/` (ten PNGs and `SHA256SUMS`) |
+| `d50b997` (was `9353033` before the rebase, below) | `feat(frontend): Run to the Align artboard, governance controls on Admin, the advanced path on refusal` — `Workspace.tsx`, `ReportStudio.tsx`, `globals.css`; `workbench.test.ts`, `ReportStudio.test.ts`; `workbench-smoke.mjs`, `a11y-axe.mjs` |
+| `95df2af` (was `dab857e`) | `docs(frontend): capability map — provisioning and the audit package are drawn on Admin` |
+| `64dbf6c` (was `e1d1679`) | this file, `progress.md`, `evidence/g3/` (ten PNGs and `SHA256SUMS`) |
+| `da79ee1` (was `3c9c636`) | `docs(sdd): record the FE-G3 pull request URL` |
+| (fix commit) | `fix(frontend): provisioning clears its form with the receipt; the smoke's Deep Research leg returns to its case` — `Workspace.tsx`, `workbench.test.ts`, `workbench-smoke.mjs`, and this report's §9 |
+
+## 9. After the pull request opened: the rebase and two CI failures
+
+While the first CI run (`34028165311`, head `3c9c636`) was in flight, `main` took PR #70
+(the backend suite under pytest-xdist in CI) and PR #71 (`webkit-teardown.mjs`: drop the
+D-016 rejections that emit no `requestfailed`), and the branch was rebased onto
+`387e6d1` and force-pushed by the pull-request babysit loop, not by this session
+(same four commits, new hashes above; `git diff 3c9c636 origin/claude/fe-task-03-surfaces`
+is exactly main's two commits). That first run had already failed WebKit on the D-016
+class this task's local WebKit run did not hit — the journey's final console-error check
+retained
+`/admin/__next.$d$destination.__PAGE__.txt?case=…&_rsc=… due to access control checks.`,
+a Next prefetch of the Admin payload rejected at a document navigation with no evidence
+under the old rule — which is what #71 fixes; the rerun on the rebased branch passed
+WebKit.
+
+The rebased run (`34029799042`, head `da79ee1`) failed Chromium and Firefox on the new
+FE-G3 steps, both real ordering defects the local runs had passed by luck:
+
+- **Chromium, 13 s in, the provisioning step:** "the form kept the provisioned subject
+  after the receipt". `provisionMember` resolved only after `await refreshCase(...)`, so
+  the receipt (`setNotice`) rendered while the form still held the subject until the
+  case re-read landed. Root cause in the app, not the harness: the write's completion
+  was two renders. Fixed: the write resolves on the POST, the receipt and the cleared
+  form land in one render, and `void refreshCase(...)` follows on its own; the unit pin
+  moved with it; the smoke waits for the cleared field with `waitForFunction`.
+- **Firefox, 64 s in, the fenced-intake-header check:** the new Deep Research leg ended
+  on a bare `/portfolio/`, whose auto-selected first case has no intake, so
+  `getByText(/^Last intake /)` never appeared. Fixed: the leg returns to its own case's
+  Portfolio and waits for the manifest, restoring the state the following check expects.
+
+Local proof of the fix (fresh host-control server on `:8773`): unit 139/139 (one test
+came with #71), lint and tsc clean, build 20/20, Chromium smoke passed (144844 ms),
+Firefox smoke passed (154971 ms).
 
 ## 8. Confidence review
 
