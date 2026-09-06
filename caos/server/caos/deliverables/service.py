@@ -42,7 +42,7 @@ from ..engine.provider import AgentError
 from ..engine.state import source_set_digest
 from ..observability import log_event
 from ..publishing.document import build_publication
-from ..publishing.renderers import render_frozen_export
+from ..publishing.renderers import RENDERER_VERSION, render_frozen_export
 from ..storage.deliverables import (  # noqa: F401 — conflicts re-raised to callers
     DeliverableStore,
     DeliverableVersionConflict,
@@ -957,7 +957,7 @@ class DeliverableService:
             },
             "evidence": self._frozen_evidence(case_id, revision["content"]["blocks"]),
             "methodology": {"build_id": methodology_build_id},
-            "renderer": {"version": "caos.deliverable-renderer.v3"},
+            "renderer": {"version": RENDERER_VERSION},
             "input_fingerprint": input_fingerprint,
         }
         thread_id = filing_thread_id(

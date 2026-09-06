@@ -40,6 +40,7 @@ from test_deliverables_spec import (
 GOLDEN_DIR = Path(__file__).resolve().parents[1] / "fixtures" / "deliverables" / "publication"
 REGENERATE = os.environ.get("CAOS_REGENERATE_GOLDENS") == "1"
 STATES = ("normal", "dense", "long_text", "multilingual", "held", "filed")
+FORMATS = ("md", "xlsx", "pdf")
 
 _ID = re.compile(r"\b(?:src|snap|dlv|dth|opn|frz|rcpt|dlbld|dlrevn|set|case|run|aud|intake|mdl)-[0-9a-f]{6,}")
 _SHA = re.compile(r"\b[0-9a-f]{64}\b")
@@ -282,13 +283,45 @@ def test_every_format_carries_the_same_facts_and_matches_its_golden(service, sto
             "first_lines": [normalise(line) for line in pdf_lines[:6]],
         }, ensure_ascii=False, indent=1),
     }
-    GOLDEN_DIR.mkdir(parents=True, exist_ok=True)
+    assert set(observed) == set(FORMATS)
     for fmt, text in observed.items():
         path = GOLDEN_DIR / f"{state}.{fmt}.golden"
-        if REGENERATE or not path.exists():
+        if REGENERATE:
+            GOLDEN_DIR.mkdir(parents=True, exist_ok=True)
             path.write_text(text, encoding="utf-8")
+        # A missing golden is a failure, never a file minted from the current
+        # render and passed uninspected (W11, 2026-09-06 review).
+        assert path.exists(), f"{state}.{fmt} has no approved golden; inspect the render and regenerate deliberately"
         expected = path.read_text(encoding="utf-8")
         assert text == expected, f"{state}.{fmt} drifted from its approved golden; inspect the render and regenerate deliberately"
+
+
+def test_the_golden_set_is_exactly_every_state_in_every_format():
+    """The file set is pinned, not just each file's bytes: nothing missing (a
+    state whose render nobody approved) and nothing extra (an orphan a renamed
+    state left behind, which no test would ever read again)."""
+    expected = {f"{state}.{fmt}.golden" for state in STATES for fmt in FORMATS}
+    assert GOLDEN_DIR.is_dir(), GOLDEN_DIR
+    assert {path.name for path in GOLDEN_DIR.iterdir()} == expected
+    assert len(expected) == len(STATES) * len(FORMATS) == 18
+
+
+def test_the_goldens_embed_the_declared_renderer_version():
+    """The frozen payload's renderer version is one declared constant
+    (renderers.RENDERER_VERSION, W12) and every approved golden that carries a
+    version carries that one — so the constant cannot move without the
+    goldens, and the goldens cannot carry a version the renderer no longer
+    declares."""
+    from caos.publishing.renderers import RENDERER_VERSION
+
+    versions: dict[str, set[str]] = {}
+    for path in sorted(GOLDEN_DIR.glob("*.golden")):
+        found = set(re.findall(r"caos\.deliverable-renderer\.v\d+", path.read_text(encoding="utf-8")))
+        if found:
+            versions[path.name] = found
+    assert set(versions) == {f"{state}.{fmt}.golden" for state in STATES for fmt in ("md", "xlsx")}, \
+        "every Markdown and XLSX golden names the renderer; the PDF structure golden does not"
+    assert all(found == {RENDERER_VERSION} for found in versions.values()), versions
 
 
 def test_held_and_filed_bytes_are_the_frozen_bytes(service, store):
