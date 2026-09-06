@@ -90,3 +90,13 @@ test("flattenValue flattens the pinned loan-universe shape into labeled rows", (
     { label: "rows / 1 / margin_bps", value: 425 },
   ]);
 });
+
+
+test("markdown tables preserve escaped pipes and hostile text, and malformed rows remain readable", () => {
+  const parsed = markdownBlocks("## Results\n\n| Measure | Value |\n| --- | ---: |\n| EBITDA \\| adjusted | <script>alert(1)</script> |\n\nAfter");
+  assert.deepEqual(parsed[1], { kind: "table", text: "| Measure | Value |\n| --- | ---: |\n| EBITDA \\| adjusted | <script>alert(1)</script> |", headers: ["Measure", "Value"], rows: [["EBITDA | adjusted", "<script>alert(1)</script>"]] });
+  assert.equal(parsed[2].text, "After");
+  const malformed = markdownBlocks("| A | B |\n| --- | --- |\n| Only one |");
+  assert.equal(malformed[0].kind, "paragraph");
+  assert.ok(malformed[0].text.includes("Only one"));
+});

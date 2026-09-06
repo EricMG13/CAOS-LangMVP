@@ -1,3 +1,5 @@
+import { canApproveCase } from "../../lib/workbench.ts";
+
 export type FreezeChecklistInput = {
   canWrite: boolean;
   exactSavedRevision: boolean;
@@ -25,8 +27,7 @@ export function freezeJobIsPending(status: string): boolean {
 
 /** Separation of duties, mirrored from the server: the opinion signer and the
  * freeze actor never see a File control for their own output. */
-export function canFileFrozen(role: string, subject: string, frozen: { signed_by?: string | null; frozen_by?: string | null }): boolean {
-  if (role !== "APPROVER" && role !== "ADMIN") return false;
-  if (!subject) return false;
+export function canFileFrozen(role: string, subject: string, frozen: { signed_by?: string | null; frozen_by?: string | null }, members?: Record<string, string>): boolean {
+  if (!canApproveCase(role, subject, members)) return false;
   return subject !== frozen.signed_by && subject !== frozen.frozen_by;
 }

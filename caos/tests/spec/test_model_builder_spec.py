@@ -2053,6 +2053,51 @@ async def test_two_concurrent_sign_offs_have_one_atomic_winner(models, engine, s
     assert len([e for e in store.audit_trail() if e["action"] == "model.revision.signed"]) == 1
 
 
+def test_signed_workbook_semantics_match_xlsx_number_encoding_and_refuse_changes(tmp_path):
+    from openpyxl import Workbook
+    from caos.models.engine import ModelInputError
+    from caos.models.service import _assert_workbook_semantics
+
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "Assumptions"
+    path = tmp_path / "signed.xlsx"
+    expected = {"tabs": [{"title": sheet.title, "cells": [
+        {"row": 1, "column": 1, "value": 0.07 - 0.01, "formula": None},
+    ]}]}
+    try:
+        sheet.cell(1, 1).value = 0.07 - 0.01
+        workbook.save(path)
+        _assert_workbook_semantics(path, expected)
+        for changed in (0.06000000000001, "0.06", "=0.06"):
+            sheet.cell(1, 1).value = changed
+            workbook.save(path)
+            with pytest.raises(ModelInputError, match="signed worksheet changed"):
+                _assert_workbook_semantics(path, expected)
+        expected["tabs"][0]["cells"][0]["value"] = 0
+        sheet.cell(1, 1).value = False
+        workbook.save(path)
+        with pytest.raises(ModelInputError, match="signed worksheet changed"):
+            _assert_workbook_semantics(path, expected)
+        signed_cell = expected["tabs"][0]["cells"][0]
+        signed_cell.update(value=None, formula="=1+1")
+        sheet.cell(1, 1).value = "=1+1"
+        workbook.save(path)
+        _assert_workbook_semantics(path, expected)
+        sheet.cell(1, 1).data_type = "s"
+        workbook.save(path)
+        with pytest.raises(ModelInputError, match="signed worksheet changed"):
+            _assert_workbook_semantics(path, expected)
+        signed_cell.update(value="=1+1", formula=None)
+        _assert_workbook_semantics(path, expected)
+        sheet.cell(1, 1).value = "=1+1"
+        workbook.save(path)
+        with pytest.raises(ModelInputError, match="signed worksheet changed"):
+            _assert_workbook_semantics(path, expected)
+    finally:
+        workbook.close()
+
+
 async def test_signed_export_is_runtime_pinned_hash_verified_and_never_demotes(models, engine, store, settings):
     """Rows 159+160+106 merged (one guarantee cluster): exports run only under the
     signed revision's pinned calculation runtime, failures are bounded and never touch

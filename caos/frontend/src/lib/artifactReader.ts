@@ -13,7 +13,24 @@
 
 export type NormalizedEvidenceRef = { sourceId: string; blockIds: string[] };
 
-export type MarkdownBlock = { kind: "heading" | "paragraph"; text: string };
+export type MarkdownBlock = { kind: "heading" | "paragraph"; text: string }
+  | { kind: "table"; text: string; headers: string[]; rows: string[][] };
+
+function tableCells(line: string): string[] | null {
+  const cells: string[] = [];
+  let cell = "";
+  let hasPipe = false;
+  for (let index = 0; index < line.length; index += 1) {
+    if (line[index] === "\\" && ["|", "\\"].includes(line[index + 1])) cell += line[++index];
+    else if (line[index] === "|") { cells.push(cell.trim()); cell = ""; hasPipe = true; }
+    else cell += line[index];
+  }
+  cells.push(cell.trim());
+  if (!hasPipe) return null;
+  if (!cells[0]) cells.shift();
+  if (!cells.at(-1)) cells.pop();
+  return cells.length > 0 && cells.length <= 64 ? cells : null;
+}
 
 export function stripFrontmatter(markdown: string): string {
   if (markdown.startsWith("---\n")) {
@@ -32,7 +49,27 @@ export function markdownBlocks(markdown: string): MarkdownBlock[] {
     if (text) blocks.push({ kind: "paragraph", text });
     paragraph = [];
   };
-  for (const line of stripFrontmatter(markdown).split("\n")) {
+  const lines = stripFrontmatter(markdown).split("\n");
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+    const headers = tableCells(line);
+    const separator = tableCells(lines[index + 1] ?? "");
+    if (headers && separator?.length === headers.length && separator.every((value) => /^:?-{3,}:?$/.test(value))) {
+      let end = index + 2;
+      const rows: string[][] = [];
+      while (end < lines.length && lines[end].trim()) {
+        const cells = tableCells(lines[end]);
+        if (!cells) break;
+        rows.push(cells);
+        end += 1;
+      }
+      const text = lines.slice(index, end).join("\n");
+      flush();
+      if (rows.length <= 2000 && rows.every((row) => row.length === headers.length)) blocks.push({ kind: "table", text, headers, rows });
+      else blocks.push({ kind: "paragraph", text });
+      index = end - 1;
+      continue;
+    }
     if (line.startsWith("## ")) {
       flush();
       const heading = line.slice("## ".length).trim();

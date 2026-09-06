@@ -21,10 +21,12 @@ import { IdentityValue } from "./states";
 export type DrawerState = {
   kind: "evidence";
   evidenceId: string;
+  blockId?: string;
   source: {
     id: string;
     filename: string;
     sha256: string;
+    withdrawn?: boolean;
     blocks: { block_id: string; locator: Record<string, unknown>; text?: string }[];
   };
   // The control that opened the drawer, passed from its click: focus returns
@@ -106,6 +108,10 @@ export default function WorkbenchShell({
   const dialogRef = useRef<HTMLDialogElement>(null);
   const drawerRef = useRef<HTMLDialogElement>(null);
   const drawerHeadingRef = useRef<HTMLHeadingElement>(null);
+  const [drawerBlockLimit, setDrawerBlockLimit] = useState(20);
+  const minimumDrawerBlockLimit = drawer ? Math.max(20, drawer.source.blocks.findIndex((block) => block.block_id === drawer.blockId) + 1) : 20;
+  // Render an exact target in the first drawer commit, before focus is scheduled.
+  const visibleDrawerBlockLimit = Math.max(drawerBlockLimit, minimumDrawerBlockLimit);
   const drawerTriggerRef = useRef<HTMLElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const resultRef = useRef<HTMLDivElement>(null);
@@ -170,9 +176,12 @@ export default function WorkbenchShell({
       drawerTriggerRef.current = drawer.opener ?? (document.activeElement instanceof HTMLElement ? document.activeElement : null);
       dialog.showModal();
     }
-    const frame = window.requestAnimationFrame(() => drawerHeadingRef.current?.focus());
+    // Exact evidence navigation reveals the cited block before focus moves.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setDrawerBlockLimit(minimumDrawerBlockLimit);
+    const frame = window.requestAnimationFrame(() => (drawer.blockId ? document.getElementById(`drawer-block-${drawer.blockId}`) : drawerHeadingRef.current)?.focus());
     return () => { dialog.removeEventListener("cancel", cancel); window.cancelAnimationFrame(frame); };
-  }, [drawer]);
+  }, [drawer, minimumDrawerBlockLimit]);
 
   useEffect(() => {
     const openShortcut = (event: globalThis.KeyboardEvent) => {
@@ -239,17 +248,18 @@ export default function WorkbenchShell({
         <dt className="meta-label">Visible snapshot</dt><dd>{visibleSnapshotId ? <IdentityValue value={visibleSnapshotId} /> : visibleSnapshotIdentity}</dd>
         <dt className="meta-label">Visible source set</dt><dd className="mono">{visibleSourceSetIdentity}</dd>
       </dl>
-      <p className="status warning">Source-level reference; no block locator supplied by this artifact.</p>
+      {drawer.blockId ? <p className="status success">Exact block reference · {drawer.blockId}</p> : <p className="status warning">Source-level reference; no block locator supplied by this artifact.</p>}
+      {drawer.source.withdrawn ? <p className="status warning">Withdrawn source · historical evidence only.</p> : null}
       <h3>Available source text</h3>
       <div className="source-blocks">
-        {drawer.source.blocks.slice(0, 20).map((block) => <article className="source-block" key={block.block_id}>
+        {drawer.source.blocks.slice(0, visibleDrawerBlockLimit).map((block) => <article id={`drawer-block-${block.block_id}`} tabIndex={-1} className={drawer.blockId === block.block_id ? "source-block is-selected" : "source-block"} key={block.block_id}>
           <div className="meta-label">{block.block_id}</div>
           <p>{block.text || "No extracted text."}</p>
         </article>)}
         {!drawer.source.blocks.length && <p className="muted">No extracted source text.</p>}
-        {drawer.source.blocks.length > 20 && <p className="muted">Showing the first 20 blocks. Open the full source for the remaining {drawer.source.blocks.length - 20} blocks.</p>}
+        {drawer.source.blocks.length > visibleDrawerBlockLimit && <button className="button small" type="button" onClick={() => setDrawerBlockLimit(visibleDrawerBlockLimit + 20)}>Show more blocks</button>}
       </div>
-      <Link className="button small" href={`${withQuery(routeFor("Sources"), { case: caseId })}#source-${drawer.source.id}`} onNavigate={closeDrawer}>Open full source</Link>
+      <Link className="button small" href={withQuery(routeFor("Sources"), { case: caseId, source: drawer.source.id, block: drawer.blockId })} onNavigate={closeDrawer}>Open full source</Link>
     </div>;
   }
   const evidenceHref = exactEvidenceKind === "source"

@@ -34,7 +34,7 @@ API = ROOT / "caos" / "server" / "caos" / "api" / "__init__.py"
 EXCLUDED_PREFIXES = (".agents/", ".claude/", ".github/skills/", ".github/hooks/",
                      "notes/", "DESIGN-IS-2026-08-27/", ".agent-reviews/", ".impeccable/",
                      ".superpowers/")
-EXCLUDED_FILES = {".gitattributes", ".gitignore", ".fallowrc.json", ".gitleaks.toml", "LICENSE",
+EXCLUDED_FILES = {".gitattributes", ".gitignore", ".dockerignore", ".fallowrc.json", ".gitleaks.toml", "LICENSE",
                   "caos/tests/corpus/.gitignore"}
 
 FILE_MAP = {
@@ -69,14 +69,14 @@ FILE_MAP = {
     r"^caos/frontend/app/": "F-UI-01, F-UI-13, F-UI-14, F-UI-15",
     r"^caos/frontend/src/": "F-UI-01..12",
     r"^caos/frontend/scripts/a11y-axe": "F-UI-14, F-UI-15",
-    r"^caos/frontend/scripts/identity-a11y": "F-UI-14",
-    r"^caos/frontend/scripts/draft-history-smoke": "F-UI-09, F-UI-11",
     r"^caos/frontend/scripts/workbench-smoke": "F-UI-02, F-UI-04",
     r"^caos/frontend/scripts/focus-restoration-smoke": "F-UI-09, F-UI-11, F-UI-14 (focus restoration through the dirty-draft discard prompts; issue #38)",
     r"^caos/frontend/scripts/run-browsers": "F-UI-02, F-UI-04 (the three-engine runner for the workbench journey)",
     r"^caos/frontend/scripts/webkit-teardown": "F-UI-02, F-UI-04 (WebKit's navigation-time fetch rejections, filtered only with server evidence; D-016)",
-    r"^caos/frontend/scripts/draft-history-smoke": "F-UI-02, F-UI-04",
+    r"^caos/frontend/scripts/draft-history-smoke": "F-UI-02, F-UI-04, F-UI-09, F-UI-11",
     r"^caos/frontend/scripts/identity-a11y": "F-UI-14, F-UI-15",
+    r"^caos/frontend/scripts/enterprise-ui-smoke": "F-UI-03, F-UI-05, F-UI-09, F-UI-10",
+    r"^caos/frontend/scripts/production-browser-journey": "F-OPS-02, F-UI-09, F-AUTH-08",
     r"^caos/frontend/scripts/production-inventory": "F-OPS-02 (D-009)",
     r"^caos/frontend/(next\.config|eslint\.config|tsconfig|package)": "F-OPS-04, F-OPS-09",
     r"^caos/scripts/build_frontend\.sh": "F-OPS-04",
@@ -84,6 +84,8 @@ FILE_MAP = {
     r"^caos/scripts/recorded_review\.py": "F-OPS-10",
     r"^caos/scripts/scan_floors\.py": "F-OPS-09, F-OPS-11",
     r"^caos/deploy/(backup|restore_drill)\.sh": "F-OPS-05",
+    r"^caos/deploy/clamav-supervise\.sh": "F-OPS-19",
+    r"^caos/deploy/provider-config/": "F-RUN-27",
     r"^caos/deploy/verify_image_resources\.py": "F-OPS-06",
     r"^caos/deploy/Dockerfile": "F-OPS-06, F-OPS-11",
     r"^caos/deploy/docker-compose\.yml": "F-CFG-03, F-OPS-08",

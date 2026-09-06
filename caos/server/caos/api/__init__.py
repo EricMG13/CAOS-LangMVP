@@ -12,7 +12,7 @@ import json
 from time import monotonic
 from typing import Any, AsyncIterator
 
-from fastapi import Body, FastAPI, HTTPException, Request, Response
+from fastapi import Body, FastAPI, HTTPException, Query, Request, Response
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy.exc import OperationalError
@@ -29,6 +29,7 @@ from ..config import Settings
 from ..contracts import (
     ApproveResearchPlanRequest,
     BoundaryText,
+    BootstrapApproverRequest,
     CreateCaseRequest,
     DeliverableDraftRequest,
     FileDeliverableRequest,
@@ -42,13 +43,18 @@ from ..contracts import (
     ModelTornadoRequest,
     NoteRequest,
     OneWaySensitivityRequest,
+    ProviderDefaultRequest,
     RequestDeliverableChangesRequest,
     SignOpinionRequest,
     StartRunRequest,
     finite_or_none,
 )
-from ..identity import EdgeIdentityGate, identity_from_request, require_case, require_role
+from ..identity import (
+    EdgeIdentityGate, identity_from_request, is_enterprise_operator,
+    require_case, require_enterprise_operator, require_role,
+)
 from ..observability import log_event
+from ..sources.health import ScannerReadiness
 from ..storage.store import DomainStore
 
 WORKSHEET_SCHEMA_VERSION = "caos.model.worksheet.v1"
@@ -340,10 +346,11 @@ def create_app(*, settings: Settings, store: DomainStore, engine: Any) -> FastAP
     from ..intake.service import MAX_INTAKE_FILES, IntakeRefused, IntakeService
 
     intake_service = IntakeService(store=store, engine=engine, settings=settings)
+    scanner_readiness = ScannerReadiness(settings)
 
     @app.get("/api/health", response_model=wire.HealthResponse)
     def health(response: Response) -> dict[str, Any]:
-        # Liveness is "this answered at all"; readiness is the three booleans.
+        # Liveness is "this answered at all"; readiness includes the engine and scanner.
         # 503 when any subsystem is down, so a probe can stop routing to an
         # instance whose bundle no longer verifies instead of reading a body.
         # `create_app(..., engine=None)` is a real assembly (auth-edge tests);
@@ -351,14 +358,56 @@ def create_app(*, settings: Settings, store: DomainStore, engine: Any) -> FastAP
         # route that answers before authentication.
         checks = engine.readiness() if engine is not None else dict.fromkeys(
             ("store", "bundle", "checkpointer"), False)
-        if not all(checks.values()):
+        scanner = scanner_readiness.status()
+        ready = all(checks.values()) and scanner != "unavailable"
+        if not ready:
             response.status_code = 503
-        return {"status": "ok" if all(checks.values()) else "degraded", **checks}
+        return {"status": "ok" if ready else "degraded", **checks, "scanner": scanner}
 
     @app.get("/api/me", response_model=wire.IdentityResponse)
     def me(request: Request) -> dict[str, Any]:
         who = identity(request)
-        return {"subject": who.subject, "email": who.email, "role": who.role}
+        operator = is_enterprise_operator(who, settings)
+        return {"subject": who.subject, "email": who.email, "role": who.role,
+                "can_bootstrap_approver": operator, "can_manage_providers": operator}
+
+    @app.post("/api/admin/cases/{case_id}/bootstrap-approver", status_code=201,
+              response_model=wire.BootstrapApproverResponse)
+    def bootstrap_approver(case_id: str, request: Request,
+                          body: BootstrapApproverRequest = Body(...)) -> dict[str, Any]:
+        who = identity(request)
+        require_enterprise_operator(who, settings)
+        try:
+            return store.bootstrap_approver(case_id, who.subject, body.subject, body.rationale)
+        except ValueError as exc:
+            code = str(exc)
+            status = 404 if code == "CASE_NOT_FOUND" else 403 if code == "BOOTSTRAP_NOT_INDEPENDENT" else 409
+            raise HTTPException(status_code=status, detail={"code": code}) from None
+
+    @app.get("/api/admin/providers", response_model=wire.ProviderCatalogResponse)
+    def provider_catalog(request: Request) -> dict[str, Any]:
+        require_enterprise_operator(identity(request), settings)
+        if engine is None:
+            raise HTTPException(status_code=503, detail={"code": "AGENT_PROVIDER_UNAVAILABLE"})
+        return engine.provider_catalog()
+
+    @app.post("/api/admin/provider-default", response_model=wire.ProviderCatalogResponse)
+    def provider_default(request: Request, body: ProviderDefaultRequest = Body(...)) -> dict[str, Any]:
+        who = identity(request)
+        require_enterprise_operator(who, settings)
+        if engine is None:
+            raise HTTPException(status_code=503, detail={"code": "AGENT_PROVIDER_UNAVAILABLE"})
+        try:
+            engine.validate_provider_binding(body.binding_id)
+            catalog = engine.provider_catalog()
+            store.set_provider_default(body.binding_id, who.subject, body.expected_version,
+                                       catalog["default_binding_id"])
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail={"code": str(exc)}) from None
+        except RuntimeError as exc:
+            code = getattr(exc, "code", "AGENT_PROVIDER_UNAVAILABLE")
+            raise HTTPException(status_code=503, detail={"code": code}) from None
+        return engine.provider_catalog()
 
     def _wire_case(case: dict[str, Any]) -> dict[str, Any]:
         # ponytail: two reads per case (N+1 on the list route) — the pinned
@@ -504,6 +553,24 @@ def create_app(*, settings: Settings, store: DomainStore, engine: Any) -> FastAP
     def list_sources(case_id: str, request: Request) -> list[dict[str, Any]]:
         require_case(store, case_id, identity(request))
         return [_wire_source(source) for source in store.list_sources(case_id)]
+
+    @app.get("/api/cases/{case_id}/source-summaries", response_model=wire.SourceSummaryPageResponse)
+    def source_summaries(case_id: str, request: Request,
+                         cursor: BoundaryText = Query("", max_length=200),
+                         limit: int = Query(50, ge=1, le=100)) -> dict[str, Any]:
+        require_case(store, case_id, identity(request))
+        return store.source_summaries(case_id, cursor=cursor, limit=limit)
+
+    @app.get("/api/cases/{case_id}/evidence-search", response_model=wire.EvidenceSearchResponse)
+    def evidence_search(case_id: str, request: Request,
+                        q: BoundaryText = Query("", max_length=200),
+                        cursor: BoundaryText = Query("", max_length=512),
+                        limit: int = Query(25, ge=1, le=100)) -> dict[str, Any]:
+        require_case(store, case_id, identity(request))
+        try:
+            return store.search_evidence(case_id, q, cursor=cursor, limit=limit)
+        except ValueError:
+            raise HTTPException(status_code=422, detail={"code": "EVIDENCE_PAGE_INVALID"}) from None
 
     @app.get("/api/cases/{case_id}/sources/{source_id}", response_model=wire.SourceResponse,
              response_model_exclude_unset=True)

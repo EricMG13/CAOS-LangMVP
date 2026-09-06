@@ -63,7 +63,7 @@ def test_restore_drill_asserts_exactly_tables_the_store_creates_at_startup(tmp_p
     startup = _startup_tables(tmp_path)
     assert required, "the drill asserts a table set"
     assert required <= startup, f"the drill requires tables no fresh deployment has: {sorted(required - startup)}"
-    assert LAZY_TABLES_ONCE - {"deliverable_threads"} <= required, \
+    assert (LAZY_TABLES_ONCE - {"deliverable_threads"}) | {"case_approver_bootstraps", "provider_policy"} <= required, \
         "the formerly lazy model and deliverable tables are asserted now that startup creates them"
 
 
@@ -74,7 +74,8 @@ def test_ci_boot_check_asserts_the_startup_schema(tmp_path):
     listed = set(re.findall(r"'([a-z_]+)'", match.group(1)))
     startup = _startup_tables(tmp_path)
     assert listed <= startup, sorted(listed - startup)
-    assert LAZY_TABLES_ONCE <= listed, "the boot check proves the whole schema, not the eager half"
+    assert LAZY_TABLES_ONCE | {"case_approver_bootstraps", "provider_policy"} <= listed, \
+        "the boot check proves the whole schema, including enterprise governance"
 
 
 # --- item 11: one app, one worker, recorded ---------------------------------------------

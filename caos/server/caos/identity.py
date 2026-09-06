@@ -105,6 +105,15 @@ def require_role(identity: Identity, *roles: str) -> None:
         raise HTTPException(status_code=403, detail="insufficient role")
 
 
+def is_enterprise_operator(identity: Identity, settings: Settings) -> bool:
+    return identity.role == "ADMIN" and identity.subject in settings.enterprise_operator_subjects
+
+
+def require_enterprise_operator(identity: Identity, settings: Settings) -> None:
+    if not is_enterprise_operator(identity, settings):
+        raise HTTPException(status_code=403, detail="enterprise operator authority required")
+
+
 class EdgeIdentityGate:
     """Authentication precedes request-shape validation.
 

@@ -261,7 +261,7 @@ try {
     if (url.pathname === "/api/cases") return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(cases) });
     const caseId = url.pathname.match(/^\/api\/cases\/([^/]+)/)?.[1];
     if (url.pathname.endsWith("/snapshot")) return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ accepted: null, latest_accepted: null, switch_required: false, diff: null }) });
-    if (url.pathname.endsWith("/sources")) return route.fulfill({ status: 200, contentType: "application/json", body: "[]" });
+    if (url.pathname.endsWith("/source-summaries")) return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ sources: [], next_cursor: null }) });
     if (url.pathname.endsWith("/deliverables/FULL_CREDIT/draft")) {
       if (caseId === "history-case-b" && route.request().method() === "GET") await caseBLoad;
       return route.fulfill({ status: route.request().method() === "PUT" ? 503 : 200, contentType: "application/json", body: route.request().method() === "PUT" ? JSON.stringify({ detail: "held dirty for history smoke" }) : JSON.stringify(reportWorkspace) });

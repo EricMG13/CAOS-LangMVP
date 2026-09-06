@@ -29,6 +29,7 @@ import argparse
 import dataclasses
 import hashlib
 import json
+import inspect
 import os
 import platform
 import subprocess
@@ -92,6 +93,7 @@ def build_view() -> dict[str, Any]:
         "methodology_build_id": build_id,
         "methodology_manifest_digest": manifest_digest,
         "image_digest": os.environ.get("CAOS_IMAGE_DIGEST") or None,
+        "image_set_digest": os.environ.get("CAOS_IMAGE_SET_DIGEST") or None,
         "python": platform.python_version(),
     }
 
@@ -106,14 +108,16 @@ def cell_settings(kind: str, workdir: Path):
     if kind == "live":
         if base.environment == "production":
             raise Blocked("ENVIRONMENT_INVALID", "the harness produces qualification evidence; it does not run in production")
-        if base.provider_binding:
+        if base.provider_binding == "host_control":
             raise Blocked("BINDING_CONFLICT", "CAOS_PROVIDER must be unset for a live binding")
-        if not base.anthropic_api_key.strip():
-            raise Blocked("CREDENTIALS_MISSING", "ANTHROPIC_API_KEY is not set; the live binding cannot be built")
-    elif base.anthropic_api_key.strip() or base.openrouter_api_key.strip():
+        if (base.provider_catalog_path is None and base.provider_binding != "codex"
+                and not any((base.anthropic_api_key.strip(), base.openai_api_key.strip(), base.openrouter_api_key.strip()))):
+            raise Blocked("CREDENTIALS_MISSING", "the selected live provider credential is not configured")
+    elif base.anthropic_api_key.strip() or base.openrouter_api_key.strip() or base.openai_api_key.strip() or base.provider_catalog_path:
         raise Blocked("CREDENTIALS_PRESENT", "host control excludes provider credentials; unset them")
     return dataclasses.replace(
-        base, storage_dir=workdir / "vault", database_url="", agent_execution_enabled=True, provider_binding="",
+        base, storage_dir=workdir / "vault", database_url="", agent_execution_enabled=True,
+        provider_binding=base.provider_binding if kind == "live" else "",
     )
 
 
@@ -132,8 +136,10 @@ class RecordingProvider:
     was delivered — the scorer's independent view of tools, prompts, evidence
     and calculation outputs. It changes nothing on the way through."""
 
-    def __init__(self, inner: Any) -> None:
+    def __init__(self, inner: Any, *, owner: Any = None) -> None:
         self.inner = inner
+        self.owner = owner or inner
+        self._closed = False
         self.identity = inner.identity
         self.calls: list[dict[str, Any]] = []
         self.delivered: dict[str, str] = {}
@@ -152,7 +158,7 @@ class RecordingProvider:
     def count_tokens(self, request: Any) -> int:
         return self.inner.count_tokens(request)
 
-    def create_message(self, request: Any) -> Any:
+    async def create_message(self, request: Any) -> Any:
         prompt = json.loads(str(request.messages[0]["content"]).split("\n", 1)[1])
         identity = prompt["host_identity"]
         for result in _tool_results(request.messages):
@@ -162,6 +168,8 @@ class RecordingProvider:
             elif isinstance(result, dict) and "output_digest" in result:
                 self.calculation_outputs.append(json.dumps(result, sort_keys=True))
         response = self.inner.create_message(request)
+        if inspect.isawaitable(response):
+            response = await response
         self.calls.append({
             "run_id": identity["run_id"],
             "module_id": identity["module_id"],
@@ -171,6 +179,15 @@ class RecordingProvider:
             "host_identity": {field: identity.get(field) for field in ("issuer_name", "profile_id", "selection_id")},
         })
         return response
+
+    async def aclose(self) -> None:
+        if not self._closed:
+            close = getattr(self.owner, "aclose", None)
+            if close is not None:
+                result = close()
+                if inspect.isawaitable(result):
+                    await result
+            self._closed = True
 
     def view(self, run_id: str) -> dict[str, Any]:
         calls = [call for call in self.calls if call["run_id"] == run_id]
@@ -193,9 +210,18 @@ def build_binding(kind: str, settings: Any, key: dict[str, Any], cell_id: str) -
     from caos.engine.provider import AgentError
     from run import build_provider
 
+    provider = None
     try:
         provider = build_provider(settings)
+        from caos.engine.catalog import ProviderCatalog
+
+        if isinstance(provider, ProviderCatalog):
+            return RecordingProvider(provider.resolve(provider.default_binding_id), owner=provider)
     except AgentError as refused:
+        if provider is not None:
+            import asyncio
+
+            asyncio.run(provider.aclose())
         # The one binding builder refused (dual credentials, development-only
         # adapter, qualification record problems): a typed block, never a crash.
         raise Blocked("BINDING_REFUSED", refused.code) from refused
@@ -206,17 +232,29 @@ def build_binding(kind: str, settings: Any, key: dict[str, Any], cell_id: str) -
 
 def binding_identity_digest(kind: str) -> str:
     """The identity digest the current environment binds to, without a run."""
-    from caos.engine.provider import host_control_identity
+    from caos.engine.provider import AgentError, host_control_identity
 
     if kind == "host_control":
         return host_control_identity(adapter_version=ADAPTER_VERSION).identity_digest
     from run import build_provider
 
     settings = cell_settings(kind, Path(os.environ.get("TMPDIR", "/tmp")) / "caos-qualification-identity")
-    provider = build_provider(settings)
-    if provider is None:
-        raise Blocked("CREDENTIALS_MISSING", "no provider could be built from the environment")
-    return provider.identity.identity_digest
+    import asyncio
+    from caos.engine.catalog import ProviderCatalog
+
+    provider = None
+    try:
+        provider = build_provider(settings)
+        if provider is None:
+            raise Blocked("CREDENTIALS_MISSING", "no provider could be built from the environment")
+        selected = provider.resolve(provider.default_binding_id) if isinstance(provider, ProviderCatalog) else provider
+        return selected.identity.identity_digest
+    except AgentError as refused:
+        raise Blocked("BINDING_REFUSED", refused.code) from refused
+    finally:
+        close = getattr(provider, "aclose", None)
+        if close is not None:
+            asyncio.run(close())
 
 
 # --- the plan --------------------------------------------------------------------------
@@ -310,12 +348,12 @@ class CellRun:
         from caos.models.service import ModelService
         from caos.storage.store import DomainStore
 
-        self.workdir.mkdir(parents=True, exist_ok=True)
-        self.store = DomainStore.from_url(f"sqlite:///{self.workdir / 'caos.db'}")
-        self.engine = Engine.create(settings=self.settings, store=self.store,
-                                    checkpoint_path=self.workdir / "checkpoints.db", provider=self.provider)
-        self.models = ModelService(store=self.store, vault_dir=self.settings.storage_dir, engine=self.engine)
         try:
+            self.workdir.mkdir(parents=True, exist_ok=True)
+            self.store = DomainStore.from_url(f"sqlite:///{self.workdir / 'caos.db'}")
+            self.engine = Engine.create(settings=self.settings, store=self.store,
+                                        checkpoint_path=self.workdir / "checkpoints.db", provider=self.provider)
+            self.models = ModelService(store=self.store, vault_dir=self.settings.storage_dir, engine=self.engine)
             with TestClient(create_app(settings=self.settings, store=self.store, engine=self.engine)) as client:
                 self.client = client
                 if self.manifest["stage"] == "ingest":
@@ -325,8 +363,15 @@ class CellRun:
                 else:
                     observed = await self._run_stage()
         finally:
-            await self.engine.aclose()
-            self.store.close()
+            try:
+                if self.engine is not None:
+                    await self.engine.aclose()
+            finally:
+                try:
+                    await self.provider.aclose()
+                finally:
+                    if self.store is not None:
+                        self.store.close()
         return observed
 
     # -- admission --------------------------------------------------------------------
@@ -662,6 +707,7 @@ def _binding_view(identity_digest: str, build: dict[str, Any], corpus: str) -> d
         "methodology_build_id": build["methodology_build_id"],
         "methodology_manifest_digest": build["methodology_manifest_digest"],
         "corpus_digest": corpus, "policy_digest": POLICY_DIGEST,
+        "image_set_digest": build.get("image_set_digest"),
     }
 
 
@@ -765,6 +811,7 @@ def main(argv: list[str] | None = None) -> int:
     def common(command: argparse.ArgumentParser, *, binding: bool = True) -> None:
         if binding:
             command.add_argument("--binding", choices=BINDINGS, required=True)
+            command.add_argument("--provider-id", default="", help="Explicit ID in CAOS_PROVIDER_CATALOG_PATH")
         command.add_argument("--out", type=Path, default=DEFAULT_OUT)
 
     common(sub.add_parser("plan"))
@@ -789,6 +836,16 @@ def main(argv: list[str] | None = None) -> int:
     pin.add_argument("--reviewer", default=os.environ.get("CAOS_QUALIFICATION_REVIEWER", ""))
     pin.add_argument("--date", default=_now().date().isoformat())
     args = parser.parse_args(argv)
+    if getattr(args, "provider_id", ""):
+        from caos.engine.catalog import _ID
+
+        if not _ID.fullmatch(args.provider_id):
+            parser.error("--provider-id must be a safe catalog ID")
+        if args.binding != "live" or not os.getenv("CAOS_PROVIDER_CATALOG_PATH"):
+            parser.error("--provider-id requires --binding live and CAOS_PROVIDER_CATALOG_PATH")
+        os.environ["CAOS_DEFAULT_PROVIDER_BINDING"] = args.provider_id
+        # Every binding retains its own cold-repetition evidence and verdict input.
+        args.out = args.out / args.provider_id
 
     try:
         if args.command == "plan":

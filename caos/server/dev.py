@@ -1,7 +1,7 @@
 """Local development entrypoint: run.py's assembly with dev defaults — SQLite
 store + checkpoints under ./.dev-data, loopback bind, no production validation,
 the dev identity edge (x-caos-role trusted). Agent execution stays off unless
-AGENT_EXECUTION_ENABLED=true with exactly one provider key. Fixed deterministic
+AGENT_EXECUTION_ENABLED=true with an explicit provider or unambiguous key. Fixed deterministic
 placeholders are test-only, so ordinary routes typed-refuse until their
 source-computed executors are available.
 """

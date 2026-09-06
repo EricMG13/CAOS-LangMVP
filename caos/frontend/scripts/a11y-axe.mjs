@@ -258,11 +258,12 @@ try {
       default_model_selection: reportModelSelection,
     },
   };
-  const reportSources = [{ id: "source_a11y_report", filename: "earnings.txt", blocks: [{ block_id: "source-block-1", text: "Liquidity was $210 million at quarter end." }] }];
+  const reportSources = [{ id: "source_a11y_report", filename: "earnings.txt", sha256: "a".repeat(64), blocks: [{ block_id: "source-block-1", text: "Liquidity was $210 million at quarter end.", locator: { line: 1 } }] }];
   await reportPage.route((url) => url.pathname === "/api/cases", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([reportCase]) }));
   await reportPage.route((url) => url.pathname === `/api/cases/${reportCaseId}`, (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(reportCase) }));
   await reportPage.route((url) => url.pathname === `/api/cases/${reportCaseId}/snapshot`, (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ accepted: null, latest_accepted: null, switch_required: false, diff: null }) }));
-  await reportPage.route((url) => url.pathname === `/api/cases/${reportCaseId}/sources`, (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(reportSources) }));
+  await reportPage.route((url) => url.pathname === `/api/cases/${reportCaseId}/source-summaries`, (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ sources: reportSources.map(({ blocks, ...source }) => ({ ...source, block_count: blocks.length })), next_cursor: null }) }));
+  await reportPage.route((url) => url.pathname === `/api/cases/${reportCaseId}/sources/source_a11y_report`, (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(reportSources[0]) }));
   await reportPage.route((url) => url.pathname === `/api/cases/${reportCaseId}/deliverables/FULL_CREDIT/draft`, (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(reportWorkspace) }));
   await reportPage.route((url) => url.pathname === `/api/cases/${reportCaseId}/models/assumption-registry`, (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ version: "cp-model-assumptions.v1", digest: "9".repeat(64), definitions: [{ assumption_id: "operating.consolidated_revenue_growth", label: "Revenue growth", cases: ["BASE", "DOWNSIDE"], periods: ["FY2025", "FY2026", "FY2027"] }] }) }));
   const populatedReportViewports = [{ name: "desktop-1440", width: 1440, height: 1000 }, { name: "desktop-1280", width: 1280, height: 800 }, { name: "desktop-200-percent", width: 720, height: 900 }];
@@ -313,7 +314,8 @@ try {
   const json = (body, status = 200) => (route) => route.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) });
   await statePage.route((url) => url.pathname === "/api/cases", json([reportCase]));
   await statePage.route((url) => url.pathname === `/api/cases/${reportCaseId}`, json(reportCase));
-  await statePage.route((url) => url.pathname === `/api/cases/${reportCaseId}/sources`, json(reportSources));
+  await statePage.route((url) => url.pathname === `/api/cases/${reportCaseId}/source-summaries`, json({ sources: reportSources.map(({ blocks, ...source }) => ({ ...source, block_count: blocks.length })), next_cursor: null }));
+  await statePage.route((url) => url.pathname === `/api/cases/${reportCaseId}/sources/source_a11y_report`, json(reportSources[0]));
   await statePage.route((url) => url.pathname === `/api/cases/${reportCaseId}/deliverables/FULL_CREDIT/draft`, json(reviewWorkspace));
   await statePage.route((url) => url.pathname === `/api/cases/${reportCaseId}/deliverables/by-id/${filedRecord.id}/receipt`, json(receipt));
   await statePage.route((url) => url.pathname === `/api/cases/${reportCaseId}/models/assumption-registry`, json({ version: "cp-model-assumptions.v1", digest: "9".repeat(64), definitions: [] }));

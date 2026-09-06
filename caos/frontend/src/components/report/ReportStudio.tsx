@@ -1,10 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { LoadState, StateBlock, StateNote } from "../states";
-import { formatDate, humanizeCode, withQuery } from "../../lib/workbench";
-import { api as request, assumptionRegistryPath, firstErrorMessage, networkFetch, type CaseRecord, type SourceRecord } from "../../lib/api";
+import EvidencePicker from "../EvidencePicker";
+import { canApproveCase, formatDate, humanizeCode, withQuery } from "../../lib/workbench";
+import { api as request, assumptionRegistryPath, firstErrorMessage, networkFetch, type CaseRecord, type RunRecord } from "../../lib/api";
 import DeliverableDocument, {
   type DeliverableBlock,
   type EvidenceCitation,
@@ -166,15 +167,39 @@ function clearBrowserRecovery(caseId: string, pathway: Pathway, subject: string)
 
 const EMPTY_OPINION: OpinionForm = { opinion: "", limitations: "", material_overrides: "", rationale: "" };
 
-export default function ReportStudio({ caseId, role, subject = "", selectedCase, onDraftStateChange, requestDraftDiscard }: { caseId: string; role: string; subject?: string; selectedCase: CaseRecord | null; onDraftStateChange: (dirty: boolean) => void; requestDraftDiscard: (detail: string, confirm: () => void, cancel?: () => void, trigger?: HTMLElement | null) => boolean }) {
-  const [pathway, setPathway] = useState<Pathway>("FULL_CREDIT");
+type ReportProps = { caseId: string; role: string; subject?: string; selectedCase: CaseRecord | null; acceptedRunId?: string | null; authorityUnavailable?: boolean; onDraftStateChange: (dirty: boolean) => void; requestDraftDiscard: (detail: string, confirm: () => void, cancel?: () => void, trigger?: HTMLElement | null) => boolean };
+
+export default function ReportStudio(props: ReportProps) {
+  const [initialPathway, setInitialPathway] = useState<Pathway | null>(null);
+  const [contextError, setContextError] = useState("");
+  const [retry, setRetry] = useState(0);
+  useEffect(() => {
+    if (initialPathway || props.acceptedRunId === undefined) return;
+    const controller = new AbortController();
+    const resolve = async () => {
+      setContextError("");
+      if (props.acceptedRunId === null) { setInitialPathway("FULL_CREDIT"); return; }
+      try {
+        const run = await request<RunRecord>(`/api/runs/${encodeURIComponent(props.acceptedRunId!)}`, {}, controller.signal);
+        if (controller.signal.aborted) return;
+        if (run.case_id !== props.caseId || run.id !== props.acceptedRunId || !pathwayOptions.some(([id]) => id === run.plan.pathway)) throw new Error("Accepted report context does not match this case.");
+        setInitialPathway(run.plan.pathway as Pathway);
+      } catch (caught) { if (!controller.signal.aborted) setContextError(firstErrorMessage(caught, "Unable to resolve the accepted report pathway.")); }
+    };
+    void resolve();
+    return () => controller.abort();
+  }, [initialPathway, props.acceptedRunId, props.caseId, retry]);
+  if (!initialPathway) return <div className="panel"><div className="panel-body"><LoadState loading={!contextError && !props.authorityUnavailable} error={contextError || (props.authorityUnavailable ? "Accepted case authority is unavailable. Reload the case to retry." : "")} onRetry={contextError && props.acceptedRunId !== undefined ? () => setRetry((value) => value + 1) : undefined} /></div></div>;
+  // Once the editor exists, default changes never replace its explicit or dirty choice.
+  return <ReportEditor {...props} initialPathway={initialPathway} />;
+}
+
+function ReportEditor({ caseId, role, subject = "", selectedCase, onDraftStateChange, requestDraftDiscard, initialPathway }: ReportProps & { initialPathway: Pathway }) {
+  const [pathway, setPathway] = useState<Pathway>(initialPathway);
   const [workspace, setWorkspace] = useState<WorkspaceResponse | null>(null);
   const [blocks, setBlocks] = useState<DeliverableBlock[]>([]);
   const [modelSelection, setModelSelection] = useState<ModelSelection | null>(null);
   const [selectedBlockId, setSelectedBlockId] = useState("");
-  const [sources, setSources] = useState<SourceRecord[]>([]);
-  const [evidenceError, setEvidenceError] = useState("");
-  const [evidenceQuery, setEvidenceQuery] = useState("");
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
   const [saveState, setSaveState] = useState<SaveState>({ kind: "IDLE" });
@@ -205,7 +230,7 @@ export default function ReportStudio({ caseId, role, subject = "", selectedCase,
   const lifecycleGeneration = useRef(0);
   const lifecycleInFlight = useRef(false);
   const canWrite = role !== "READER";
-  const canApprove = role === "APPROVER" || role === "ADMIN";
+  const canApprove = canApproveCase(role, subject, selectedCase?.members);
   const pathwayLabel = pathwayOptions.find(([id]) => id === pathway)?.[1] || pathway;
 
   const lifecycleIsCurrent = useCallback((token: LifecycleToken) => (
@@ -243,10 +268,7 @@ export default function ReportStudio({ caseId, role, subject = "", selectedCase,
     currentScope.current = scope;
     setLoading(true); setLoadError(""); setError(""); setMessage(""); setSelectedFrozen(null); setReceipt(null); setConflict(null);
     try {
-      const [next, sourceResult] = await Promise.all([
-        reportRequest<WorkspaceResponse>(`/api/cases/${caseId}/deliverables/${pathway}/draft`, {}, signal),
-        request<SourceRecord[]>(`/api/cases/${caseId}/sources`, {}, signal).then((value) => ({ value, error: "" })).catch((caught) => ({ value: [], error: firstErrorMessage(caught, "Evidence inventory unavailable") })),
-      ]);
+      const next = await reportRequest<WorkspaceResponse>(`/api/cases/${caseId}/deliverables/${pathway}/draft`, {}, signal);
       if (generation !== loadGeneration.current || currentScope.current !== scope) return;
       const nextBlocks = next.current?.content.blocks || initializeBlocks(next.template);
       savedVersion.current = next.current?.version || 0;
@@ -254,7 +276,7 @@ export default function ReportStudio({ caseId, role, subject = "", selectedCase,
       setDraftIsUnsaved(false);
       setPersistedVersion(savedVersion.current);
       const nextModelSelection = next.current?.content.model_selection || next.model_eligibility.default_model_selection;
-      setWorkspace(next); setBlocks(nextBlocks); setModelSelection(nextModelSelection); setSelectedBlockId(nextBlocks[0]?.block_id || ""); setSources(sourceResult.value); setEvidenceError(sourceResult.error); setSaveState(next.current ? { kind: "SAVED", version: next.current.version } : { kind: "IDLE" });
+      setWorkspace(next); setBlocks(nextBlocks); setModelSelection(nextModelSelection); setSelectedBlockId(nextBlocks[0]?.block_id || ""); setSaveState(next.current ? { kind: "SAVED", version: next.current.version } : { kind: "IDLE" });
       const recoveryRead = readBrowserRecovery(caseId, pathway, subject);
       const storedRecovery = parseReportRecovery(recoveryRead.raw, caseId, pathway, subject);
       setRecovery(storedRecovery);
@@ -365,15 +387,12 @@ export default function ReportStudio({ caseId, role, subject = "", selectedCase,
 
   const updateNarrative = (blockId: string, patch: Partial<NarrativeBlock>) => markChanged(blocks.map((block) => block.block_id === blockId && block.kind === "NARRATIVE" ? { ...block, ...patch } : block));
   const selectedBlock = blocks.find((block) => block.block_id === selectedBlockId) || null;
-  const normalizedEvidenceQuery = evidenceQuery.trim().toLowerCase();
-  const visibleSources = useMemo(() => sources.filter((source) => !normalizedEvidenceQuery || `${source.filename} ${source.id} ${source.blocks.map((block) => `${block.block_id} ${block.text || ""} ${JSON.stringify(block.locator)}`).join(" ")}`.toLowerCase().includes(normalizedEvidenceQuery)), [normalizedEvidenceQuery, sources]);
-  const visibleEvidenceBlocks = (source: SourceRecord) => source.blocks.filter((block) => !normalizedEvidenceQuery || `${source.filename} ${source.id}`.toLowerCase().includes(normalizedEvidenceQuery) || `${block.block_id} ${block.text || ""} ${JSON.stringify(block.locator)}`.toLowerCase().includes(normalizedEvidenceQuery));
   const scenarioPeriods = [...new Set(registry?.defaults.filter((row) => row.status === "READY" && row.assumption_id === scenarioForm.assumptionId && row.case === scenarioForm.case).map((row) => row.period_id) || [])].sort();
 
-  const cite = (source: SourceRecord, blockId: string) => {
+  const cite = (sourceId: string, blockId: string) => {
     if (selectedBlock?.kind !== "NARRATIVE" && selectedBlock?.kind !== "LIMITATIONS") return;
-    const citation = { source_id: source.id, block_ids: [blockId], claim: selectedBlock.kind === "NARRATIVE" ? selectedBlock.text.slice(0, 1000) || "Evidence supporting this section." : "Evidence supporting this limitation." };
-    markChanged(blocks.map((block) => block.block_id === selectedBlock.block_id && "citations" in block ? { ...block, citations: [...block.citations.filter((item) => !(item.source_id === source.id && item.block_ids.includes(blockId))), citation] } : block));
+    const citation = { source_id: sourceId, block_ids: [blockId], claim: selectedBlock.kind === "NARRATIVE" ? selectedBlock.text.slice(0, 1000) || "Evidence supporting this section." : "Evidence supporting this limitation." };
+    markChanged(blocks.map((block) => block.block_id === selectedBlock.block_id && "citations" in block ? { ...block, citations: [...block.citations.filter((item) => !(item.source_id === sourceId && item.block_ids.includes(blockId))), citation] } : block));
   };
 
   const removeCitation = (sourceId: string, blockId: string) => {
@@ -587,7 +606,7 @@ export default function ReportStudio({ caseId, role, subject = "", selectedCase,
   const opinionFormComplete = Object.values(opinionForm).every((value) => value.trim());
   const pendingFreeze = pendingJobs.find((job) => freezeJobIsPending(job.status)) || null;
   const failedFreeze = pendingJobs.find((job) => job.status === "FAILED") || null;
-  const canFileSelected = selectedFrozen ? canFileFrozen(role, subject, { signed_by: selectedFrozen.signed_by, frozen_by: selectedFrozen.frozen_by }) : false;
+  const canFileSelected = selectedFrozen ? canFileFrozen(role, subject, { signed_by: selectedFrozen.signed_by, frozen_by: selectedFrozen.frozen_by }, selectedCase?.members) : false;
   const lifecycleBusy = pending !== "";
   const authoringLocked = lifecycleBusy;
   const selectedNarrative = selectedBlock?.kind === "NARRATIVE" ? selectedBlock : null;
@@ -612,13 +631,13 @@ export default function ReportStudio({ caseId, role, subject = "", selectedCase,
           {selectedNarrative ? <div className="flow"><div className="field"><label htmlFor={`narrative-${selectedNarrative.block_id}`}>{workspace.template.blocks.find((item) => item.block_id === selectedNarrative.block_id)?.title || "Narrative"}</label><textarea ref={editorFocus} id={`narrative-${selectedNarrative.block_id}`} value={selectedNarrative.text} maxLength={20000} rows={8} onChange={(event) => updateNarrative(selectedNarrative.block_id, { text: event.target.value })} disabled={!canWrite || authoringLocked} /><span className="field-meta">{selectedNarrative.text.length.toLocaleString()} / 20,000</span></div><fieldset><legend>Claim authority</legend><label><input type="radio" name={`mode-${selectedNarrative.block_id}`} checked={selectedNarrative.content_mode === "EVIDENCE"} onChange={() => updateNarrative(selectedNarrative.block_id, { content_mode: "EVIDENCE" })} disabled={!canWrite || authoringLocked} />Evidence-bound</label><label><input type="radio" name={`mode-${selectedNarrative.block_id}`} checked={selectedNarrative.content_mode === "ANALYST_JUDGMENT"} onChange={() => updateNarrative(selectedNarrative.block_id, { content_mode: "ANALYST_JUDGMENT" })} disabled={!canWrite || authoringLocked} />Analyst judgment</label></fieldset>{selectedNarrative.content_mode === "EVIDENCE" && !selectedNarrative.citations.length ? <StateNote tone="critical" live="alert">Evidence-bound narrative requires at least one citation.</StateNote> : null}</div> : selectedBlock ? <div className="generated-block-card"><span className="meta-label">{humanizeCode(selectedBlock.kind)}</span><h3>Read-only structured block</h3><p>Calculated values and Scenario outputs are accepted only from the server response.</p>{!workspace.template.blocks.some((item) => item.block_id === selectedBlock.block_id) ? <button className="button small" type="button" onClick={() => removeOptional(selectedBlock.block_id)} disabled={!canWrite || authoringLocked}>Omit block</button> : null}</div> : null}
           <div className="report-authority-strip"><div><span className="meta-label">Model authority</span><strong>{modelSelection?.kind === "ANALYST_REVISION" ? `Active Revision ${workspace.model_eligibility.active_revision?.revision_number || ""}` : modelSelection?.kind === "APPLICATION_BUILD" ? "Application Model Build · acknowledged fallback" : "No model selected"}</strong></div>{modelStale ? <span className="status critical">Stale model identity</span> : null}</div>
           <fieldset className="report-model-picker"><legend>Deliverable model</legend>{workspace.model_eligibility.active_revision ? <label><input type="radio" name="report-model" checked={modelSelection?.kind === "ANALYST_REVISION"} onChange={() => chooseModel("ACTIVE")} disabled={!canWrite || authoringLocked} />Active Analyst Model <code>{workspace.model_eligibility.active_revision.revision_id}</code></label> : null}{!workspace.model_eligibility.active_revision && workspace.model_eligibility.application_build ? <label><input type="checkbox" checked={modelSelection?.kind === "APPLICATION_BUILD"} onChange={(event) => chooseModel(event.target.checked ? "FALLBACK" : "NONE")} disabled={!canWrite || authoringLocked} />I acknowledge fallback to the Application Model Build <code>{workspace.model_eligibility.application_build.build_id}</code></label> : null}{workspace.template.model_requirement === "OPTIONAL" ? <button className="button small" type="button" onClick={() => chooseModel("NONE")} disabled={!canWrite || authoringLocked || modelSelection === null}>Omit model</button> : null}</fieldset>
-          <details className="evidence-inspector"><summary>Evidence search and citations <span>{normalizedEvidenceQuery ? `${visibleSources.length} of ${sources.length}` : sources.length} sources</span></summary><div className="field"><label htmlFor="report-evidence-search">Find filenames, source IDs, block text or locators</label><input id="report-evidence-search" type="search" value={evidenceQuery} onChange={(event) => setEvidenceQuery(event.target.value)} /></div>{evidenceError ? <StateNote tone="critical" live="alert">{evidenceError}</StateNote> : null}<div className="evidence-source-list">{visibleSources.map((source) => <details key={source.id}><summary>{source.filename}<code>{source.id}</code></summary>{visibleEvidenceBlocks(source).map((item) => <div className="evidence-source-block" key={item.block_id}><p>{item.text || item.block_id}</p>{selectedBlock && "citations" in selectedBlock && selectedBlock.citations.some((citation) => citation.source_id === source.id && citation.block_ids.includes(item.block_id)) ? <button className="button small" type="button" onClick={() => removeCitation(source.id, item.block_id)} disabled={!canWrite || authoringLocked}>Remove citation</button> : <button className="button small" type="button" onClick={() => cite(source, item.block_id)} disabled={!canWrite || authoringLocked || !selectedBlock || !("citations" in selectedBlock)}>Cite block</button>}</div>)}</details>)}</div>{normalizedEvidenceQuery && !visibleSources.length ? <p className="muted">No case evidence matches this search.</p> : null}</details>
+          <EvidencePicker key={caseId} caseId={caseId} canCite={canWrite && !authoringLocked && Boolean(selectedBlock && "citations" in selectedBlock)} isCited={(sourceId, blockId) => Boolean(selectedBlock && "citations" in selectedBlock && selectedBlock.citations.some((citation) => citation.source_id === sourceId && citation.block_ids.includes(blockId)))} onCite={cite} onRemove={removeCitation} />
           {modelSelection && registry ? <details className="scenario-insert"><summary>Scenario insertion <span>Temporary server calculation</span></summary><div className="scenario-fields"><div className="field"><label htmlFor="scenario-assumption">Assumption</label><select id="scenario-assumption" value={scenarioForm.assumptionId} onChange={(event) => { const assumptionId = event.target.value; const available = registry.defaults.find((row) => row.assumption_id === assumptionId && row.case === scenarioForm.case && row.status === "READY") || registry.defaults.find((row) => row.assumption_id === assumptionId && row.status === "READY"); setScenarioForm((current) => ({ ...current, assumptionId, case: available?.case || current.case, periodId: available?.period_id || "" })); }} disabled={authoringLocked}>{registry.definitions.map((definition) => <option key={definition.assumption_id} value={definition.assumption_id}>{definition.label || definition.assumption_id}</option>)}</select></div><div className="field"><label htmlFor="scenario-case">Case</label><select id="scenario-case" value={scenarioForm.case} onChange={(event) => { const caseName = event.target.value as "BASE" | "DOWNSIDE"; const available = registry.defaults.find((row) => row.assumption_id === scenarioForm.assumptionId && row.case === caseName && row.status === "READY"); setScenarioForm((current) => ({ ...current, case: caseName, periodId: available?.period_id || "" })); }} disabled={authoringLocked}><option value="BASE">Base</option><option value="DOWNSIDE">Downside</option></select></div><div className="field"><label htmlFor="scenario-period">Period</label><select id="scenario-period" value={scenarioForm.periodId} onChange={(event) => setScenarioForm((current) => ({ ...current, periodId: event.target.value }))} disabled={authoringLocked}>{scenarioPeriods.map((periodId) => <option key={periodId} value={periodId}>{periodId}</option>)}</select></div><div className="field"><label htmlFor="scenario-value">Shock value</label><input id="scenario-value" inputMode="decimal" value={scenarioForm.value} onChange={(event) => setScenarioForm((current) => ({ ...current, value: event.target.value }))} disabled={authoringLocked} /></div></div><button className="button small" type="button" onClick={() => void insertScenario()} disabled={!canWrite || authoringLocked || !scenarioForm.periodId || !scenarioForm.value}>{pending === "scenario" ? "Calculating…" : "Calculate and insert exact exhibit"}</button></details> : null}
           {conflict ? <StateBlock shape="action" tone="warning" live="alert" title="Shared Draft conflict" body={<>{conflict.author} saved v{conflict.version} at {formatDate(conflict.created_at)}. Your local content remains unchanged.</>}><button className="button small" type="button" onClick={() => { savedVersion.current = conflict.version; setPersistedVersion(conflict.version); setWorkspace((current) => current ? { ...current, current: conflict, history: [...current.history.filter((item) => item.id !== conflict.id), conflict] } : current); setSaveState({ kind: "DIRTY" }); markChanged(blocks); }} disabled={authoringLocked}>Retry over current v{conflict.version}</button><button className="button small" type="button" onClick={() => { setBlocks(conflict.content.blocks); setModelSelection(conflict.content.model_selection); savedVersion.current = conflict.version; unsavedDraft.current = false; setDraftIsUnsaved(false); setPersistedVersion(conflict.version); setConflict(null); setSaveState({ kind: "SAVED", version: conflict.version }); onDraftStateChange(false); }} disabled={authoringLocked}>Use shared v{conflict.version}</button></StateBlock> : null}
           <section className="approval-panel" data-freeze-approval aria-labelledby="freeze-approval-title">
             <div><span className="meta-label">What will bind</span><h3 id="freeze-approval-title">Exact saved Draft revision as an immutable Deliverable</h3></div>
             <dl className="state-facts">
-              <dt>Draft authority</dt><dd><span className="mono">v{workspace.current?.version || "Unavailable"}</span>{workspace.current?.digest ? <div className="mono muted">{workspace.current.digest}</div> : null}</dd>
+              <dt>Draft authority</dt><dd><span className="mono">{workspace.current ? `v${workspace.current.version}` : "Unavailable"}</span>{workspace.current?.digest ? <div className="mono muted">{workspace.current.digest}</div> : null}</dd>
               <dt>Write access</dt><dd><span className={`status ${writeCheck.ready ? "success" : "warning"}`}>{writeCheck.ready ? "Ready" : "Blocked"}</span></dd>
               <dt>Exact saved revision</dt><dd><span className={`status ${revisionCheck.ready ? "success" : "warning"}`}>{revisionCheck.ready ? "Ready" : "Blocked"}</span>{!revisionCheck.ready ? <div className="muted">Wait for the shared Draft to finish saving at this exact version.</div> : null}</dd>
               <dt>Current model selection</dt><dd><span className={`status ${selectionCheck.ready ? "success" : "warning"}`}>{selectionCheck.ready ? "Ready" : "Blocked"}</span>{!selectionCheck.ready ? <div><Link href={withQuery("/model", { case: caseId })}>Open Model</Link> to resolve the stale model authority.</div> : null}</dd>

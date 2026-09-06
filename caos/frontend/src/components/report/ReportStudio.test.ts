@@ -3,6 +3,8 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 
 const workspace = readFileSync(new URL("../Workspace.tsx", import.meta.url), "utf8");
+const picker = readFileSync(new URL("../EvidencePicker.tsx", import.meta.url), "utf8");
+const search = readFileSync(new URL("../../lib/useEvidenceSearch.ts", import.meta.url), "utf8");
 const studio = readFileSync(new URL("./ReportStudio.tsx", import.meta.url), "utf8");
 const document = readFileSync(new URL("./DeliverableDocument.tsx", import.meta.url), "utf8");
 const documentTypes = readFileSync(new URL("./documentTypes.ts", import.meta.url), "utf8");
@@ -51,7 +53,7 @@ test("exact Frozen and Filed lifecycle is identity-bound and role-gated", () => 
   assert.match(studio, /draft_digest/);
   assert.match(studio, /preview_digest/);
   assert.match(studio, /input_fingerprint/);
-  assert.match(studio, /role === "APPROVER" \|\| role === "ADMIN"/);
+  assert.match(studio, /canApproveCase\(role, subject, selectedCase\?\.members\)/);
   assert.match(studio, /request-changes/);
   assert.match(studio, /export\/\$\{format\}/);
   assert.match(studio, /frozen_history/);
@@ -88,12 +90,14 @@ test("model fallback, evidence, scenario, focus, and case fences remain explicit
   assert.match(studio, /onDraftStateChange/);
 });
 
-test("evidence search covers every served source block without silent truncation", () => {
-  assert.match(studio, /block\.text/);
-  assert.match(studio, /JSON\.stringify\(block\.locator\)/);
-  assert.match(studio, /visibleEvidenceBlocks/);
-  assert.doesNotMatch(studio, /visibleSources\.slice/);
-  assert.doesNotMatch(studio, /source\.blocks\.slice/);
+test("evidence search is bounded across the case and detail loading is explicit", () => {
+  assert.match(picker, /source-summaries\?limit=50/);
+  assert.match(picker, /Show more blocks/);
+  assert.match(picker, /More sources/);
+  assert.match(search, /evidence-search/);
+  assert.match(search, /AbortController/);
+  assert.match(search, /next_cursor/);
+  assert.doesNotMatch(studio, /request<SourceRecord\[\]>/);
 });
 
 test("the selected editor leads and expert composition tools are progressively disclosed", () => {
@@ -101,7 +105,9 @@ test("the selected editor leads and expert composition tools are progressively d
   const editor = compose.indexOf('narrative-${selectedNarrative.block_id}');
   assert.ok(editor >= 0 && editor < compose.indexOf('className="report-authority-strip"'), "model authority precedes the selected editor");
   assert.match(compose, /rows=\{8\}/);
-  for (const label of ["Evidence search and citations", "Scenario insertion"]) assert.match(compose, new RegExp(`<summary>${label}`));
+  assert.match(compose, /<EvidencePicker/);
+  assert.match(picker, /<summary>Evidence search and citations/);
+  assert.match(compose, /<summary>Scenario insertion/);
   const outline = studio.slice(studio.indexOf('className="panel-body report-rail-scroll"'), studio.indexOf('className="panel report-compose"'));
   assert.match(outline, /<details className="report-optional"><summary>Optional composition<\/summary>/);
 });
@@ -135,8 +141,9 @@ test("one lifecycle lock disables every draft-mutating authoring control", () =>
   assert.match(studio, /name="report-model"[\s\S]*?disabled=\{!canWrite \|\| authoringLocked\}/);
   assert.match(studio, /disabled=\{[^}]*authoringLocked[^}]*\}>Add \{humanizeCode\(policy\.kind\)\.toLowerCase\(\)\}/);
   assert.match(studio, /disabled=\{[^}]*authoringLocked[^}]*\}>Omit block/);
-  assert.match(studio, /disabled=\{[^}]*authoringLocked[^}]*\}>Remove citation/);
-  assert.match(studio, /disabled=\{[^}]*authoringLocked[^}]*\}>Cite block/);
+  assert.match(studio, /canCite=\{canWrite && !authoringLocked/);
+  assert.match(picker, /disabled=\{!canCite\}>Remove citation/);
+  assert.match(picker, /disabled=\{!canCite \|\| withdrawn\}>Cite block/);
   for (const id of ["scenario-assumption", "scenario-case", "scenario-period", "scenario-value"]) {
     assert.match(studio, new RegExp(`id="${id}"[\\s\\S]{0,500}?disabled=\\{authoringLocked\\}`));
   }
@@ -210,7 +217,7 @@ test("freeze is a worker job the studio tracks to a server-served frozen record"
 });
 
 test("separation of duties and the detached receipt are explicit in the frozen review", () => {
-  assert.match(studio, /canFileFrozen\(role, subject, \{ signed_by: selectedFrozen\.signed_by, frozen_by: selectedFrozen\.frozen_by \}\)/);
+  assert.match(studio, /canFileFrozen\(role, subject, \{ signed_by: selectedFrozen\.signed_by, frozen_by: selectedFrozen\.frozen_by \}, selectedCase\?\.members\)/);
   assert.match(studio, /data-separation-of-duties/);
   assert.match(studio, /selectedFrozen\.status === "FROZEN" && canFileSelected \? <div className="approval-panel">/);
   assert.match(studio, /deliverables\/by-id\/\$\{frozen\.id\}\/receipt/);

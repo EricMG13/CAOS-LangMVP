@@ -55,12 +55,19 @@ export const destinationMeta: Record<Destination, DestinationMeta> = {
 
 export type Snapshot = {
   id: string;
+  run_id?: string;
   digest: string;
   accepted_at: string;
   source_set_id?: string | null;
   source_set_version?: number | null;
   artifacts: { id: string; module_id: string; digest: string }[];
 };
+
+// Current identity and stored standing both govern privileged case actions.
+export function canApproveCase(role: string, subject: string, members?: Record<string, string>): boolean {
+  return Boolean(subject && ["ANALYST", "APPROVER", "ADMIN"].includes(role)
+    && ["APPROVER", "ADMIN"].includes(members?.[subject] ?? ""));
+}
 
 export type SnapshotDiffEntry = { module_id: string; digest: string };
 export type SnapshotDiff = {

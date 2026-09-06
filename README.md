@@ -56,9 +56,13 @@ Production runs the same assembly through `caos/server/run.py` (the Docker
 XLSX exports through the current Python renderer. The worker image contains
 LibreOffice for the separately verified bundle path, but runtime exports do not
 yet invoke that path. `caos/deploy/` has the compose stack and
-`caos/.env.example` the environment to fill in. Production agent execution is
-Anthropic-only and additionally requires an exact, digest-bound provider
-qualification record; dual credentials and OpenRouter are refused.
+`caos/.env.example` the environment to fill in. Production agent execution supports
+explicit OpenAI and Anthropic catalog bindings, each with its own model, account
+policy, and exact, digest-bound qualification record. Authorized operators can
+change the default for new runs; existing runs retain their pinned binding.
+See the [environment manifest](caos/deploy/ENVIRONMENT_MANIFEST.md) for configuration
+and candidate qualification requirements. Signed-in Codex is a development
+evaluation transport and does not qualify either production adapter.
 
 Frontend, hot-reloading against that server:
 

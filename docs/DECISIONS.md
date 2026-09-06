@@ -914,3 +914,41 @@ Consolidation note: where §6 conflicts with §10/§11/§12 (output Σ vs Σ+max
     `next_action` now reads "open Run and retry execution" (folded into the
     same pull request at the decision owner's instruction, 2026-09-06). The
     surfaces' interiors are FE-G3's; this entry binds structure only.
+
+24. **Enterprise workflow completion and provider switching (2026-09-06).**
+    The user's approved execution plan supersedes §14.5's Anthropic-only,
+    one-binding/no-picker restriction and UX-012's prohibition on an operator
+    selector. A server-configured catalog supports OpenAI and Anthropic model
+    identifiers. Each enabled enterprise binding is independently qualified;
+    adding an adapter does not qualify every model it can address. Admin's
+    default selector changes new runs only. Existing runs, research approvals,
+    upgrades, recovery and acceptance resolve their immutable recorded binding.
+    There is no implicit vendor fallback. Historical bytes and identities remain
+    readable without calling a provider. The aggregate two-call/twenty-job limits
+    do not multiply with the number of adapters.
+
+    Deployment operators are current trusted global ADMIN subjects explicitly
+    included in CAOS_ENTERPRISE_OPERATOR_SUBJECTS. Their two narrow powers are
+    changing the versioned provider default and bootstrapping one independent
+    case approver. Bootstrap is a dedicated operation for a known case ID:
+    creator, operator and target must be distinct; target standing is APPROVER;
+    the grant, permanent receipt and audit event share one transaction. Exact
+    retries do not grant twice and revocation does not reopen bootstrap. This
+    authority does not confer ordinary case visibility or relax filing's stored
+    standing and signer/freezer independence. Production identity still comes
+    from the trusted edge; client role headers confer no authority.
+
+    Scanner status extends health with ready/unavailable/not_required; only the
+    development bypass may be not_required. Production admission still scans
+    every upload. Daemon death must cause container restart while preserving
+    signature initialization/updates. Readiness probes never trigger application
+    restart loops. Source summary/search routes preserve complete evidence and
+    case privacy; exact citations and Report defaults resolve authoritative
+    source/block and latest accepted run identities.
+
+    The user additionally authorized the signed-in Codex runtime for qualification.
+    Its evidence must identify that runtime separately: Codex execution is not
+    automatically proof of the direct OpenAI or Anthropic API adapters. Corpus
+    answer-key attestation, model-specific qualification and production-image
+    acceptance remain separate gates. The implementation plan and dated execution
+    report record any unavailable external inputs and measured limitations.

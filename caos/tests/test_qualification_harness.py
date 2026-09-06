@@ -32,7 +32,40 @@ from corpus import scoring  # noqa: E402
 from corpus import synthetic  # noqa: E402
 
 HOST_CONTROL_ENV = {**os.environ, "ANTHROPIC_API_KEY": "", "OPENROUTER_API_KEY": "", "CAOS_PROVIDER": "",
+                    "OPENAI_API_KEY": "", "CAOS_PROVIDER_CATALOG_PATH": "", "CAOS_DEFAULT_PROVIDER_BINDING": "",
                     "CAOS_CORPUS_EXTERNAL_DIR": ""}
+
+
+@pytest.mark.parametrize("asynchronous", [False, True])
+async def test_recorder_awaits_real_ports_and_closes_ownership_once(asynchronous):
+    from types import SimpleNamespace
+    from caos.engine.provider import ProviderBlock, ProviderMessage, ProviderUsage, host_control_identity
+
+    response = ProviderMessage(content=[ProviderBlock(type="text", text='{}')], stop_reason="end_turn",
+                               usage=ProviderUsage(input_tokens=1, output_tokens=1))
+
+    class Inner:
+        identity = host_control_identity()
+        closes = 0
+
+        def create_message(self, request):
+            async def answered():
+                return response
+            return answered() if asynchronous else response
+
+        async def aclose(self):
+            self.closes += 1
+
+    inner = Inner()
+    recorder = qualify.RecordingProvider(inner)
+    request = SimpleNamespace(system="system", effective_tools=lambda: (), messages=[{
+        "role": "user", "content": 'HOST\n{"host_identity":{"run_id":"r","module_id":"m"}}',
+    }])
+    assert await recorder.create_message(request) is response
+    assert recorder.calls[0]["module_id"] == "m"
+    await recorder.aclose()
+    await recorder.aclose()
+    assert inner.closes == 1
 
 
 def _cli(*args: str, env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
@@ -311,3 +344,43 @@ def test_every_mod_check_maps_to_the_harness_or_an_external_input():
         if row["Status"] == "BLOCKED EXTERNAL":
             assert "owner" in row["Notes"]
     assert not any("QUALIFIED" == row["Status"] for row in rows), "no MOD row may claim live qualification"
+
+
+def test_unavailable_catalog_closes_allocated_ports_and_returns_typed_block(monkeypatch):
+    from types import SimpleNamespace
+    from caos.config import Settings
+    from caos.engine.catalog import ProviderCatalog
+    from caos.engine.provider import host_control_identity
+    import run
+
+    closed = []
+    async def close():
+        closed.append(True)
+    port = SimpleNamespace(identity=host_control_identity(), aclose=close)
+    catalog = ProviderCatalog({"other": port}, "missing", settings=Settings(), unavailable={"missing": {}})
+    monkeypatch.setattr(run, "build_provider", lambda settings: catalog)
+    with pytest.raises(qualify.Blocked, match="BINDING_REFUSED"):
+        qualify.build_binding("live", Settings(), {}, "test")
+    assert closed == [True]
+
+
+async def test_harness_closes_provider_and_store_when_engine_initialization_fails(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+    from caos.config import Settings
+    from caos.engine.runtime import Engine
+    from caos.storage.store import DomainStore
+
+    closed = []
+    async def close():
+        closed.append("provider")
+    def fail(**kwargs):
+        raise RuntimeError("engine init failed")
+    monkeypatch.setattr(DomainStore, "from_url", lambda url: SimpleNamespace(close=lambda: closed.append("store")))
+    monkeypatch.setattr(Engine, "create", fail)
+    cell = object.__new__(qualify.CellRun)
+    cell.workdir, cell.settings = tmp_path, Settings()
+    cell.provider = SimpleNamespace(aclose=close)
+    cell.engine = cell.store = None
+    with pytest.raises(RuntimeError, match="engine init failed"):
+        await cell.execute()
+    assert closed == ["provider", "store"]

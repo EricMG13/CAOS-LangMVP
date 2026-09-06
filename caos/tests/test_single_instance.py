@@ -41,19 +41,24 @@ def _qualified_anthropic_settings(tmp_path: Path, **record_overrides):
         edge_proxy_secret="edge-secret-that-is-long-enough-000000",
         session_secret="session-secret-that-is-long-enough-000",
         anthropic_api_key="inert-anthropic-key",
+        provider_account_policy="enterprise-policy-v1",
+        candidate_commit="a" * 40, image_set_digest="b" * 64, corpus_digest="c" * 64,
         agent_execution_enabled=True,
     )
     context_digest = parameter_context_digest(
         provider_name="anthropic", model=settings.anthropic_model, provider_version=None,
         adapter_version=ADAPTER_VERSION,
         runtime_dependencies=installed_dependencies("langchain-anthropic", "anthropic"),
-        transport={"mode": "anthropic-messages"},
+        transport={"mode": "anthropic-messages", "account_policy": settings.provider_account_policy},
         counting={"mode": "provider-count-tokens"},
     )
     build_id, manifest_digest = methodology_binding(settings.deploy_v_root)
     now = datetime.now(UTC).replace(microsecond=0)
     record = {
-        "schema_version": "caos.provider-qualification.v1",
+        "schema_version": "caos.provider-qualification.v2",
+        "candidate_commit": settings.candidate_commit,
+        "image_set_digest": settings.image_set_digest,
+        "corpus_digest": settings.corpus_digest,
         "record_id": "qualification-startup-1",
         "status": "qualified",
         "provider_name": "anthropic",
@@ -436,6 +441,32 @@ async def test_production_builds_only_the_exact_qualified_anthropic_binding(tmp_
         assert provider.identity.qualification_record_digest == settings.provider_qualification_digest
     finally:
         await provider.aclose()
+
+
+@pytest.mark.parametrize("policy", ["", "   ", "contains space", "x" * 161])
+def test_production_legacy_binding_requires_approved_account_policy(tmp_path, policy):
+    from caos.engine.provider import AgentError
+
+    settings = _qualified_anthropic_settings(tmp_path)
+    with pytest.raises(AgentError, match="approved account-policy"):
+        run.build_provider(replace(settings, provider_account_policy=policy))
+
+
+def test_legacy_codex_binding_forwards_explicit_account_policy(monkeypatch):
+    from caos.config import Settings
+    from caos.engine import codex
+
+    calls = []
+    provider = object()
+    def build(model, **kwargs):
+        calls.append((model, kwargs))
+        return provider
+    monkeypatch.setattr(codex, "CodexProvider", build)
+    settings = Settings(provider_binding="codex", openai_model="gpt-6-astra", agent_execution_enabled=True,
+                        provider_account_policy="signed-in-local-development-test")
+    assert run.build_provider(settings) is provider
+    assert calls == [(settings.openai_model, {"methodology_root": settings.deploy_v_root,
+                                              "account_policy": settings.provider_account_policy})]
 
 
 @pytest.mark.parametrize(

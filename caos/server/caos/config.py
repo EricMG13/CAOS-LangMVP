@@ -1,14 +1,15 @@
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import unquote, urlsplit
 
 
 def _provider_binding(value: str) -> str:
-    if value not in {"", "host_control"}:
-        raise RuntimeError("CAOS_PROVIDER must be unset or host_control")
+    if value not in {"", "host_control", "anthropic", "openai", "codex"}:
+        raise RuntimeError("CAOS_PROVIDER must name a supported adapter")
     return value
 
 
@@ -49,16 +50,25 @@ class Settings:
     deploy_v_root: Path = Path(__file__).parent / "methodology" / "vendor" / "deploy_v"
     anthropic_api_key: str = ""
     anthropic_model: str = "claude-sonnet-4-6"
+    openai_api_key: str = ""
+    openai_model: str = ""
+    provider_catalog_path: Path | None = None
+    provider_account_policy: str = ""
+    default_provider_binding: str = ""
+    candidate_commit: str = ""
+    image_set_digest: str = ""
+    corpus_digest: str = ""
+    enterprise_operator_subjects: tuple[str, ...] = ()
     # OpenRouter is a development-only binding for the same provider port. It
-    # estimates tokens locally; startup rejects multiple credentials rather
-    # than applying provider precedence. Production accepts qualified Anthropic.
+    # estimates tokens locally. Multiple credentials require an explicit binding
+    # or catalog; production accepts qualified direct Anthropic and OpenAI APIs.
     openrouter_api_key: str = ""
     openrouter_model: str = "z-ai/glm-5.3-flash"
     provider_qualification_path: Path | None = None
     provider_qualification_digest: str = ""
     # `host_control` binds the development-only answer-keyed provider so the
     # keyless browser gates can drive an ordinary run (DECISIONS §14 D8). It is
-    # refused outside development; production knows only qualified Anthropic.
+    # refused outside development.
     provider_binding: str = ""
     # Fail-closed posture: agent (LLM) execution stays off without explicit opt-in.
     agent_execution_enabled: bool = False
@@ -86,6 +96,10 @@ class Settings:
             if value <= 0:
                 raise ValueError(f"{name} must be greater than 0")
         qualification_path = os.getenv("CAOS_PROVIDER_QUALIFICATION_PATH", "")
+        catalog_path = os.getenv("CAOS_PROVIDER_CATALOG_PATH", "")
+        operators = tuple(value.strip() for value in os.getenv("CAOS_ENTERPRISE_OPERATOR_SUBJECTS", "").split(",") if value.strip())
+        if len(operators) > 100 or any(not re.fullmatch(r"[^\s\x00-\x1f\x7f]{1,160}", value) for value in operators):
+            raise ValueError("CAOS_ENTERPRISE_OPERATOR_SUBJECTS contains an invalid subject")
         return cls(
             environment=os.getenv("ENVIRONMENT", "development"),
             database_url=os.getenv("DATABASE_URL", ""),
@@ -101,6 +115,15 @@ class Settings:
             clamav_host=os.getenv("CLAMAV_HOST", ""),
             clamav_port=clamav_port,
             anthropic_api_key=os.getenv("ANTHROPIC_API_KEY", ""),
+            openai_api_key=os.getenv("OPENAI_API_KEY", ""),
+            openai_model=os.getenv("OPENAI_MODEL", ""),
+            provider_catalog_path=Path(catalog_path) if catalog_path else None,
+            provider_account_policy=os.getenv("CAOS_PROVIDER_ACCOUNT_POLICY", ""),
+            default_provider_binding=os.getenv("CAOS_DEFAULT_PROVIDER_BINDING", ""),
+            candidate_commit=os.getenv("CAOS_BUILD_COMMIT", ""),
+            image_set_digest=os.getenv("CAOS_IMAGE_SET_DIGEST", ""),
+            corpus_digest=os.getenv("CAOS_CORPUS_DIGEST", ""),
+            enterprise_operator_subjects=operators,
             openrouter_api_key=os.getenv("OPENROUTER_API_KEY", ""),
             openrouter_model=os.getenv("OPENROUTER_MODEL", "z-ai/glm-5.3-flash"),
             anthropic_model=os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-6"),
@@ -135,8 +158,8 @@ class Settings:
         if self.environment not in {"development", "production"}:
             raise RuntimeError("ENVIRONMENT must be development or production")
         _provider_binding(self.provider_binding)
-        if self.environment == "production" and self.provider_binding:
-            raise RuntimeError("CAOS_PROVIDER=host_control is development-only; production binds qualified Anthropic")
+        if self.environment == "production" and self.provider_binding in {"host_control", "codex"}:
+            raise RuntimeError("the selected CAOS_PROVIDER binding is development-only")
         if self.environment == "production":
             if not self.database_url.startswith(("postgresql://", "postgresql+psycopg://")):
                 raise RuntimeError("production requires a PostgreSQL DATABASE_URL")

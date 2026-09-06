@@ -538,7 +538,7 @@ try {
   await governance.getByText(`audit-package-${caseRecord.id}.zip`, { exact: false }).waitFor();
   await governance.getByText(auditDigest.slice(0, 12), { exact: false }).first().waitFor();
   assert.equal(await governance.getByRole("button", { name: "Provision member" }).count(), 0, "provisioning was offered without APPROVER/ADMIN standing");
-  await governance.getByText("Provisioning a member needs a current APPROVER or ADMIN role", { exact: false }).waitFor();
+  await governance.getByText("Provisioning a member needs a current writer role", { exact: false }).waitFor();
   const adminSubject = "qa.admin@local.invalid";
   const adminIdentityPath = (url) => url.pathname === "/api/me";
   const adminCasePath = (url) => url.pathname === `/api/cases/${caseRecord.id}`;
@@ -1685,6 +1685,16 @@ try {
   const reportIdentityPath = (url) => url.pathname === "/api/me";
   let reportRole = "ANALYST";
   let reportSubject = "analyst";
+  // Report defaults to accepted-run authority. These report fixtures represent a
+  // Full Credit acceptance, independently of the earlier live Earnings journey.
+  const reportSnapshotPath = (url) => url.pathname === `/api/cases/${caseRecord.id}/snapshot`;
+  const reportAcceptedRunPath = (url) => url.pathname === "/api/runs/run-report-accepted-fixture";
+  const reportSnapshotFixture = await (await api.get(`/api/cases/${caseRecord.id}/snapshot`)).json();
+  await page.route(reportSnapshotPath, (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ...reportSnapshotFixture, latest_accepted: { ...reportSnapshotFixture.latest_accepted, run_id: "run-report-accepted-fixture" } }) }));
+  await page.route(reportAcceptedRunPath, (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ id: "run-report-accepted-fixture", case_id: caseRecord.id, status: "succeeded", nodes: [], plan: { pathway: "FULL_CREDIT", depth: "full" } }) }));
+  const reportCasePath = (url) => url.pathname === `/api/cases/${caseRecord.id}`;
+  const reportCaseFixture = await (await api.get(`/api/cases/${caseRecord.id}`)).json();
+  await page.route(reportCasePath, (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ...reportCaseFixture, members: { ...(reportCaseFixture.members || {}), analyst: "APPROVER", approver: "APPROVER", "committee-approver": "APPROVER" } }) }));
   await page.route(reportIdentityPath, (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ role: reportRole, subject: reportSubject }) }));
 
   const reportSections = {
@@ -2384,6 +2394,7 @@ try {
   assert.equal(reportOverflow.scrollWidth > reportOverflow.clientWidth, false, `Report Studio causes page-level horizontal overflow at 200% desktop zoom width: ${JSON.stringify(reportOverflow)}`);
   await page.setViewportSize({ width: 1440, height: 1000 });
 
+  await page.unroute(reportSnapshotPath); await page.unroute(reportAcceptedRunPath); await page.unroute(reportCasePath);
   await page.goto(`${baseURL}/sources/?case=${caseRecord.id}&artifact=${artifact.id}`, { waitUntil: "networkidle" });
   const matching = page.locator(`[data-evidence-id="${source.id}"]`);
   assert.equal(await matching.count(), 1);
@@ -2417,7 +2428,7 @@ try {
   await evidence.getByText("earnings.txt").waitFor();
   await evidence.getByText(/Source-level reference; no block locator supplied/).waitFor();
   await evidence.getByRole("link", { name: "Open full source" }).click();
-  await page.waitForURL((url) => url.pathname.replace(/\/$/, "") === "/sources" && url.hash === `#source-${source.id}`);
+  await page.waitForURL((url) => url.pathname.replace(/\/$/, "") === "/sources" && url.searchParams.get("source") === source.id);
   await evidence.waitFor({ state: "hidden" });
   await page.locator(`#source-${source.id}`).waitFor();
 
@@ -2432,7 +2443,7 @@ try {
   }));
   assert.equal(await evidence.isVisible(), false, "same-route source query reopened after the drawer was closed");
 
-  const sourceListURL = `${baseURL}/api/cases/${caseRecord.id}/sources`;
+  const sourceListURL = `${baseURL}/api/cases/${caseRecord.id}/source-summaries?limit=50`;
   const failedSourceList = (url) => url.href === sourceListURL;
   const failSourceList = (route) => route.fulfill({
     status: 200,

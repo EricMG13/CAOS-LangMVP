@@ -24,64 +24,69 @@ from caos.storage.store import DomainStore
 
 
 def build_provider(settings: Settings):
-    """Build one explicit provider binding; production requires qualified Anthropic."""
+    """Assemble an explicit catalog, or preserve a single legacy development binding."""
+    from caos.engine.catalog import load_catalog, require_account_policy
     from caos.engine.provider import AgentError, ProviderQualification
 
-    anthropic_configured = bool(settings.anthropic_api_key.strip())
-    openrouter_configured = bool(settings.openrouter_api_key.strip())
-    if anthropic_configured and openrouter_configured:
-        raise AgentError("AGENT_PROVIDER_UNQUALIFIED", "multiple provider credentials are configured")
-    qualification_configured = (
-        settings.provider_qualification_path is not None
-        or bool(settings.provider_qualification_digest)
-    )
-    if qualification_configured and (
-        settings.provider_qualification_path is None
-        or not settings.provider_qualification_digest
-    ):
+    if settings.provider_catalog_path is not None:
+        if settings.provider_binding == "host_control":
+            raise AgentError("AGENT_PROVIDER_UNQUALIFIED", "host control cannot select an external catalog")
+        return load_catalog(settings)
+    configured = {
+        "anthropic": bool(settings.anthropic_api_key.strip()),
+        "openai": bool(settings.openai_api_key.strip()),
+        "openrouter": bool(settings.openrouter_api_key.strip()),
+    }
+    selected = settings.provider_binding
+    if not selected:
+        names = [name for name, present in configured.items() if present]
+        if len(names) > 1:
+            raise AgentError("AGENT_PROVIDER_UNQUALIFIED", "multiple provider credentials require explicit selection")
+        selected = names[0] if names else ""
+    qualification_configured = settings.provider_qualification_path is not None or bool(settings.provider_qualification_digest)
+    if qualification_configured and (settings.provider_qualification_path is None or not settings.provider_qualification_digest):
         raise AgentError("AGENT_QUALIFICATION_MISSING", "qualification path and digest are both required")
-    if settings.environment == "production" and openrouter_configured:
-        raise AgentError("AGENT_PROVIDER_UNQUALIFIED", "OpenRouter is development-only")
-    if settings.environment == "production" and settings.provider_binding:
-        raise AgentError("AGENT_PROVIDER_UNQUALIFIED", "the host-control binding is development-only")
+    if settings.environment == "production" and (selected in {"openrouter", "host_control", "codex"} or configured["openrouter"]):
+        raise AgentError("AGENT_PROVIDER_UNQUALIFIED", "the selected adapter is development-only")
     if not settings.agent_execution_enabled:
         return None
-    if settings.provider_binding == "host_control":
-        if anthropic_configured or openrouter_configured:
+    if selected == "host_control":
+        if any(configured.values()):
             raise AgentError("AGENT_PROVIDER_UNQUALIFIED", "the host-control binding excludes provider credentials")
         from caos.engine.host_control import HostControlProvider
 
         return HostControlProvider()
-    if settings.environment == "production" and not anthropic_configured:
-        raise AgentError("AGENT_PROVIDER_UNAVAILABLE", "ANTHROPIC_API_KEY is not configured")
+    if selected == "codex":
+        from caos.engine.codex import CodexProvider
 
+        return CodexProvider(settings.openai_model, methodology_root=settings.deploy_v_root,
+                             account_policy=settings.provider_account_policy)
+    if not selected or not configured.get(selected):
+        if settings.environment == "production" or selected:
+            raise AgentError("AGENT_PROVIDER_UNAVAILABLE", "the selected provider credential is not configured")
+        return None
     qualification = None
     if qualification_configured:
-        qualification = ProviderQualification.from_path(
-            settings.provider_qualification_path,
-            settings.provider_qualification_digest,
-        )
-    if settings.environment == "production" and qualification is None:
-        raise AgentError("AGENT_QUALIFICATION_MISSING", "production agent execution requires qualification")
-
-    if anthropic_configured:
+        qualification = ProviderQualification.from_path(settings.provider_qualification_path, settings.provider_qualification_digest)
+    if settings.environment == "production":
+        if qualification is None:
+            raise AgentError("AGENT_QUALIFICATION_MISSING", "production agent execution requires qualification")
+        qualification.validate_candidate(candidate_commit=settings.candidate_commit,
+                                         image_set_digest=settings.image_set_digest, corpus_digest=settings.corpus_digest)
+        require_account_policy(settings.provider_account_policy)
+    if selected == "anthropic":
         from caos.engine.anthropic import AnthropicProvider
 
-        return AnthropicProvider(
-            settings.anthropic_api_key,
-            settings.anthropic_model,
-            qualification=qualification,
-            methodology_root=settings.deploy_v_root,
-        )
-    if openrouter_configured:
-        from caos.engine.openrouter import OpenRouterProvider
+        return AnthropicProvider(settings.anthropic_api_key, settings.anthropic_model, qualification=qualification,
+                                 methodology_root=settings.deploy_v_root, account_policy=settings.provider_account_policy)
+    if selected == "openai":
+        from caos.engine.openai import OpenAIProvider
 
-        return OpenRouterProvider(
-            settings.openrouter_api_key,
-            settings.openrouter_model,
-            qualification=qualification,
-        )
-    return None
+        return OpenAIProvider(settings.openai_api_key, settings.openai_model, qualification=qualification,
+                              methodology_root=settings.deploy_v_root, account_policy=settings.provider_account_policy)
+    from caos.engine.openrouter import OpenRouterProvider
+
+    return OpenRouterProvider(settings.openrouter_api_key, settings.openrouter_model, qualification=qualification)
 
 
 def build(settings: Settings, data: Path) -> tuple[FastAPI, Engine]:
@@ -148,7 +153,7 @@ def serve(app: FastAPI, engine: Engine, *, host: str, port: int) -> None:
 
 
 async def _close_owned(engine: Engine | None, provider: object | None = None) -> None:
-    resource_provider = provider if provider is not None else getattr(engine, "provider", None)
+    resource_provider = provider if provider is not None else (getattr(engine, "_provider_catalog", None) or getattr(engine, "provider", None))
     close_provider = getattr(resource_provider, "aclose", None)
     try:
         if engine is not None:

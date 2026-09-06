@@ -696,7 +696,8 @@ def test_a_malformed_checkpoint_schema_is_not_ready(engine):
 def test_health_serves_the_readiness_checks_on_the_strict_wire_model(client):
     response = client.get("/api/health")
     assert response.status_code == 200
-    assert response.json() == {"status": "ok", "store": True, "bundle": True, "checkpointer": True}
+    assert response.json() == {"status": "ok", "store": True, "bundle": True, "checkpointer": True,
+                               "scanner": "not_required"}
 
 
 def test_readiness_is_rechecked_continuously_but_bounded_for_anonymous_callers(engine):
@@ -769,7 +770,7 @@ def test_health_reports_degraded_when_the_app_has_no_engine(settings, store):
         response = client.get("/api/health")
         assert response.status_code == 503
         assert response.json() == {"status": "degraded", "store": False, "bundle": False,
-                                   "checkpointer": False}
+                                   "checkpointer": False, "scanner": "not_required"}
 
 
 def test_health_fails_closed_when_the_bundle_no_longer_verifies(client, engine):
@@ -786,7 +787,8 @@ def test_health_fails_closed_when_the_bundle_no_longer_verifies(client, engine):
     engine.bundle = Tampered()
     response = client.get("/api/health")
     assert response.status_code == 503
-    assert response.json() == {"status": "degraded", "store": True, "bundle": False, "checkpointer": True}
+    assert response.json() == {"status": "degraded", "store": True, "bundle": False, "checkpointer": True,
+                               "scanner": "not_required"}
 
 
 def test_health_fails_closed_when_the_store_is_unreachable(client, engine, store):
@@ -802,4 +804,4 @@ def test_health_fails_closed_when_the_store_is_unreachable(client, engine, store
     response = client.get("/api/health")
     assert response.status_code == 503
     assert response.json() == {"status": "degraded", "store": False, "bundle": True,
-                               "checkpointer": True}
+                               "checkpointer": True, "scanner": "not_required"}
