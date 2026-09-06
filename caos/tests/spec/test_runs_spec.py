@@ -689,6 +689,90 @@ async def test_engine_close_refuses_owner_loop_stopped_during_waiter_handoff(
         assert finished.is_set()
 
 
+@pytest.mark.parametrize("closes_before", ["recheck", "submit"])
+async def test_engine_close_treats_owner_loop_closed_after_drain_as_drained(
+    tmp_path, settings, store, monkeypatch, closes_before,
+):
+    """The owner loop runs the cancel, finishes the waiter, stops and closes before
+    the closing thread re-checks runnability (CI run 34016749498 failed exactly
+    here), or closes before the waiter is even submitted. Either way the
+    continuation is drained; only a live task on a dead loop is refused."""
+    from caos.engine.runtime import Engine
+
+    engine = Engine.create(settings=settings, store=store, checkpoint_path=tmp_path / "closed-loop.db")
+    ready = threading.Event()
+    cancelled = threading.Event()
+    finished = threading.Event()
+    owned = {}
+
+    def stop_owner() -> None:
+        loop = asyncio.get_running_loop()
+        loop.call_soon(loop.stop)
+
+    async def wait_then_stop(task):
+        await asyncio.gather(task, return_exceptions=True)
+        stop_owner()  # same batch as the waiter's done callback: the bridge resolves, then the loop exits
+
+    if closes_before == "recheck":
+        monkeypatch.setattr(engine, "_wait_for_task", wait_then_stop)
+
+    def own_continuation() -> None:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+
+        async def pending() -> None:
+            try:
+                await asyncio.Event().wait()
+            finally:
+                cancelled.set()
+                if closes_before == "submit":
+                    stop_owner()
+
+        def prepare() -> None:
+            task = loop.create_task(pending())
+            owned["task"] = task
+            engine._continuations.add(task)
+            ready.set()
+
+        loop.call_soon(prepare)
+        try:
+            loop.run_forever()
+        finally:
+            loop.close()
+            finished.set()
+
+    owner = threading.Thread(target=own_continuation)
+    owner.start()
+    try:
+        await asyncio.to_thread(ready.wait)
+        owner_loop = owned["task"].get_loop()
+        real_submit = owner_loop.call_soon_threadsafe
+
+        def close_owner_first(callback, *args, **kwargs):
+            if getattr(callback, "__name__", "") != "wait_on_owner":
+                return real_submit(callback, *args, **kwargs)
+            if closes_before == "submit":
+                assert finished.wait(timeout=5)
+            handle = real_submit(callback, *args, **kwargs)  # raises "Event loop is closed" once closed
+            assert finished.wait(timeout=5)
+            return handle
+
+        monkeypatch.setattr(owner_loop, "call_soon_threadsafe", close_owner_first)
+        await engine.aclose()
+
+        assert cancelled.is_set() and owner_loop.is_closed()
+        assert asyncio.all_tasks(owner_loop) == set()  # the waiter finished; nothing was left pending
+        assert engine._closed is True
+        assert engine._continuations == set()
+    finally:
+        owner_loop = owned.get("task") and owned["task"].get_loop()
+        if owner_loop is not None and owner_loop.is_running():
+            owner_loop.call_soon_threadsafe(owner_loop.stop)
+        await asyncio.to_thread(owner.join)
+        assert finished.is_set()
+        await engine.aclose()
+
+
 # --- the offered cut is the startable cut ----------------------------------------
 
 

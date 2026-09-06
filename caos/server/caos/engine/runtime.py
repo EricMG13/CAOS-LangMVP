@@ -545,13 +545,21 @@ class Engine:
 
                 waiter.add_done_callback(finish_waiter)
 
-            owner.call_soon_threadsafe(wait_on_owner)
-            if not self._owner_loop_runnable(owner, loop):
+            try:
+                owner.call_soon_threadsafe(wait_on_owner)
+                runnable = self._owner_loop_runnable(owner, loop)
+            except RuntimeError:  # the owner closed between the check above and this call
+                runnable = False
+            if not runnable:
                 if waiter_ref.done() and not waiter_ref.cancelled():
                     try:
                         owner.call_soon_threadsafe(waiter_ref.result().cancel)
                     except BaseException:
                         pass
+                if task.done():
+                    # The owner ran the cancel and stopped before this thread looked again:
+                    # drained, not a refusal. Only a live task on a dead loop is refused.
+                    continue
                 raise RuntimeError("cannot close a task without a runnable owner loop")
             foreign.append((owner, bridge, waiter_ref))
         bridges = [asyncio.wrap_future(bridge) for _owner, bridge, _waiter in foreign]
