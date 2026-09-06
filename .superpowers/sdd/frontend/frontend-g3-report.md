@@ -509,3 +509,29 @@ Fixed: none needed. Verified fine: 1–3, 5. By-design: 4.
 | `d29d716` | `feat(frontend): surface interiors name the destination, not the old surface (FE-G3 second pass)` — `ModelBuilder.tsx`, `ReportStudio.tsx`, `states.tsx`, `workbench.test.ts`, `production-inventory.mjs`, `control-capability-map.md` |
 | (report commit) | this section, the `progress.md` row, `evidence/g3/pass2/` (57 PNGs and `SHA256SUMS`) |
 | (PR commit) | `progress.md` gains the pull-request URL |
+
+### 10.9 After the pull request opened: one CI failure, a harness race
+
+CI run `34033315011` on `ef27525`: every job green except "Browser — workbench journey
+and accessibility (chromium)", whose smoke passed (`status: "passed"`, 166,996 ms) and
+whose accessibility sweep failed 2 m 41 s in at `a11y-axe.mjs:342`,
+`loading state was not on screen when scanned` (`actual: false`). The Firefox and
+WebKit jobs do not run the sweep. Not seen in the last three failed runs on `main`.
+
+Root cause, from the code: `app/layout.tsx` wraps the workspace in
+`<Suspense fallback={<div className="state-skeleton" role="status" aria-label="Loading">…}>`,
+shown until `useSearchParams` hydrates on the static export. The loading fixture waited
+on an unscoped `getByRole("status", { name: "Loading" })`, which that fallback satisfies;
+on a slow runner the fallback unmounts a render before the Credit view hydrates the case
+and mounts its own skeleton (`Workspace.tsx:1897`, `snapshotLoading`), so the instant
+`count()` read 0. The held `/snapshot` route and the mocked `/api/cases/{id}` read are
+not involved (both reads of `refreshCase` are fixture-answered; the reducer's only
+`error` transition is `requestFailed`, which nothing in the fixture can raise). Same
+class as the instant-read races recorded for FE-G1 (`awaitFocus`).
+
+Fix, in the harness only (`scripts/a11y-axe.mjs`): the wait and the count are scoped to
+`.credit-main`, the Credit view's own region, which the layout fallback is outside of.
+The assertion still fails when the Credit skeleton is not on screen at the scan, so the
+anti-vacuity property is unchanged; no product file changed. Local proof on a fresh
+host-control server (`:8782`): `npm run a11y` →
+`{"routes":17,…,"combinations":125,…,"violations":0}`; lint clean; unit 140/140.
