@@ -8,6 +8,7 @@ import {
   SnapshotView,
   WorkflowId,
   destinationMeta,
+  evidenceBlockPreview,
   evidenceKind,
   routeFor,
   withQuery,
@@ -236,6 +237,7 @@ export default function WorkbenchShell({
   const drawerTitle = drawer?.source.filename || "Context";
   let drawerBody: ReactNode = null;
   if (drawer) {
+    const blockPreview = evidenceBlockPreview(drawer.source.blocks, drawer.blockIds);
     drawerBody = <div className="state-block">
       <dl>
         <dt className="meta-label">Source ID</dt><dd className="mono">{drawer.evidenceId}</dd>
@@ -248,12 +250,14 @@ export default function WorkbenchShell({
         : <p className="status warning">Source-level reference; no block locator supplied by this artifact.</p>}
       <h3>Available source text</h3>
       <div className="source-blocks">
-        {[...drawer.source.blocks].sort((a, b) => Number(drawer.blockIds.includes(b.block_id)) - Number(drawer.blockIds.includes(a.block_id))).slice(0, 20).map((block) => <article className="source-block" key={block.block_id} data-cited-block={drawer.blockIds.includes(block.block_id) ? block.block_id : undefined}>
+        {/* Every cited block, then the first UNCITED_BLOCK_PREVIEW others; the note
+            says which of the two it shows and how many the full source still holds. */}
+        {blockPreview.blocks.map((block) => <article className="source-block" key={block.block_id} data-cited-block={drawer.blockIds.includes(block.block_id) ? block.block_id : undefined}>
           <div className="meta-label">{block.block_id}{drawer.blockIds.includes(block.block_id) ? <> · <span className="status success">Cited</span></> : null}</div>
           <p>{block.text || "No extracted text."}</p>
         </article>)}
         {!drawer.source.blocks.length && <p className="muted">No extracted source text.</p>}
-        {drawer.source.blocks.length > 20 && <p className="muted">Showing the first 20 blocks. Open the full source for the remaining {drawer.source.blocks.length - 20} blocks.</p>}
+        {blockPreview.note && <p className="muted">{blockPreview.note}</p>}
       </div>
       <Link className="button small" href={`${withQuery(routeFor("Sources"), { case: caseId })}#source-${drawer.source.id}`} onNavigate={closeDrawer}>Open full source</Link>
     </div>;

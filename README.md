@@ -14,12 +14,16 @@ scaling, production service levels, or unrestricted external deployment. See
 `ENTERPRISE_TESTING_READINESS.md` for the binding gate.
 
 The run engine executes the vendored `deploy_v` methodology bundle on LangGraph
-with durable SQLite checkpoints and a SQLite/PostgreSQL domain store. Four pathways are in the MVP cut
-(Full Credit, Earnings Update, Covenant & Refinancing, Relative Value) at two
-depths (screen, full). Screen-depth routes are statically compiled and require
-source-computed deterministic executors. Executors that are still placeholders
-fail with `DETERMINISTIC_EXECUTOR_UNAVAILABLE`; they cannot create an ordinary
-success artifact.
+with durable SQLite checkpoints and a SQLite/PostgreSQL domain store. Six pathways
+are in the enterprise cut (Full Credit, Earnings Update, Covenant & Refinancing,
+Relative Value, Distressed & Restructuring, Deep Research — `MVP_PATHWAYS` in
+`caos/server/caos/engine/runtime.py`) at two depths (screen, full). Every route
+is provider-backed at both depths (`docs/DECISIONS.md` §14.3, §14.12), so no
+route runs without a provider binding: development uses exactly one provider
+key or `CAOS_PROVIDER=host_control`, the keyless orchestration proof that is
+never analysis. The placeholder deterministic executor is test-only and fails
+with `DETERMINISTIC_EXECUTOR_UNAVAILABLE` on any ordinary path; it cannot create
+a success artifact.
 
 ## Layout
 

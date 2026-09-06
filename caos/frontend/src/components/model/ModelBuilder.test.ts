@@ -125,7 +125,11 @@ test("export polling fetches only lightweight revision export states", () => {
 });
 
 test("revision export polling retries without overlapping requests", () => {
-  assert.match(modelBuilder, /const poll = async \(\) => \{[\s\S]*await refreshRevisionExports\(\);[\s\S]*if \(active\) timer = window\.setTimeout\(poll, 1500\)/);
+  // The interval is one named constant (W18), and the re-arm still rides it:
+  // a poll schedules the next only after its own await, and only while mounted.
+  assert.match(modelBuilder, /^const EXPORT_POLL_MS = \d+;$/m);
+  assert.match(modelBuilder, /const poll = async \(\) => \{[\s\S]*await refreshRevisionExports\(\);[\s\S]*if \(active\) timer = window\.setTimeout\(poll, EXPORT_POLL_MS\)/);
+  assert.doesNotMatch(modelBuilder, /setTimeout\(poll, \d+\)/);
   assert.match(modelBuilder, /active = false;[\s\S]*window\.clearTimeout\(timer\)/);
 });
 

@@ -448,7 +448,7 @@ try {
     const url = new URL(window.location.href);
     return url.searchParams.get("case") === expectedCaseId && !url.searchParams.has("run");
   }, idleCase.id);
-  await page.getByText("No current execution. Drop documents on Cases to start analysis, or compile a route here.", { exact: true }).waitFor();
+  await page.getByText("No current execution. Drop documents on Portfolio to start analysis, or compile a route here.", { exact: true }).waitFor();
   // The URL settling correctly is not enough: a stale route replay can re-attach the
   // previous issuer's run and then self-correct, which is still a wrong read.
   const boundaryUrlWrites = await page.evaluate(([boundaryCaseId, staleRunId]) => {
