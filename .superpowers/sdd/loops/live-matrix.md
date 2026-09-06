@@ -53,3 +53,94 @@ are under `.superpowers/sdd/candidates/2026-09-04-b88c0f8/gates/qualification/`;
 copy the live results there under `evidence/live/` when they exist. A cell
 whose binding view names a different commit, build or corpus digest is not
 this candidate's evidence.
+
+> **Superseded binding.** Ticks 1–12 below bound to candidate
+> `2026-09-03-c4f0270`, which the section above supersedes. They executed no
+> cell and retained no result, so nothing needs re-running; the live matrix
+> restarts from zero under `2026-09-04-b88c0f8`.
+
+### 2026-09-03 tick 1 — no cell runnable
+
+- **Candidate identity**: commit `c4f0270`, methodology build
+  `237bf4bc…6bae9d`, corpus digest `460e3ad6…0ae7e3`, policy digest
+  `986e6523…98f3f`, `live_repetitions` = 3, Python 3.14.6.
+- **Command**: `caos/server/.venv314/bin/python caos/tests/corpus/qualify.py plan --binding live`
+- **Result**: 37 required cells, 0 runnable. All 22 packs C01–C22 are
+  BLOCKED EXTERNAL.
+- **Verdict**: no cell executed; no scores; budget spent 0.
+
+Missing, per pack:
+
+| Packs | Missing |
+| --- | --- |
+| C01–C19 | analyst-scope approval on the answer key (reviewer, date, digest) |
+| C20 | the above + 1 licensed-marks document under `$CAOS_CORPUS_EXTERNAL_DIR/C20/` |
+| C21 | the above + 24 Lumen documents under `$CAOS_CORPUS_EXTERNAL_DIR/C21/` |
+| C22 | the above + 2 research-pack documents under `$CAOS_CORPUS_EXTERNAL_DIR/C22/` |
+
+Also unset in this shell: `ANTHROPIC_API_KEY`, `CAOS_CORPUS_EXTERNAL_DIR`,
+`CAOS_QUALIFICATION_REVIEWER`. `caos/tests/corpus/evidence/` does not exist —
+nothing retained yet. Every answer key carries `host_control` scope only, so
+`verdict --binding live` is UNQUALIFIED by construction until an analyst signs
+the keys. Nothing skipped, averaged or marked passed.
+
+### 2026-09-03 tick 2 — unchanged, no cell runnable
+
+Identity unchanged (`c4f0270` / `237bf4bc…` / corpus `460e3ad6…` / policy
+`986e6523…`). `plan --binding live`: 37 required cells, 22 packs still
+BLOCKED EXTERNAL, same missing inputs as tick 1. `ANTHROPIC_API_KEY`,
+`CAOS_CORPUS_EXTERNAL_DIR`, `CAOS_QUALIFICATION_REVIEWER` still unset;
+`caos/tests/corpus/evidence/` still absent. No cell executed, no scores,
+budget spent 0.
+
+### 2026-09-03 tick 3 — unchanged, no cell runnable
+
+Identity unchanged. 37 required cells, 22 packs BLOCKED EXTERNAL, same missing
+inputs. Credentials and `$CAOS_CORPUS_EXTERNAL_DIR` still unset, evidence
+directory still absent. No cell executed, no scores, budget spent 0.
+
+### 2026-09-03 tick 4 — unchanged, no cell runnable
+
+Identity unchanged. 37 required cells, 22 packs BLOCKED EXTERNAL, same missing
+inputs. No cell executed, no scores, budget spent 0.
+
+### 2026-09-03 tick 5 — unchanged, no cell runnable
+
+Identity unchanged. 37 required cells, 22 packs BLOCKED EXTERNAL, same missing
+inputs. No cell executed, no scores, budget spent 0.
+
+### 2026-09-03 tick 6 — unchanged, no cell runnable
+
+Identity unchanged. 37 required cells, 22 packs BLOCKED EXTERNAL, same missing
+inputs. No cell executed, no scores, budget spent 0.
+
+### 2026-09-03 tick 7 — unchanged, no cell runnable
+
+Identity unchanged. 37 required cells, 22 packs BLOCKED EXTERNAL, same missing
+inputs. No cell executed, no scores, budget spent 0.
+
+### 2026-09-04 tick 8 — unchanged, no cell runnable
+
+Identity unchanged. 37 required cells, 22 packs BLOCKED EXTERNAL, same missing
+inputs. No cell executed, no scores, budget spent 0.
+
+### 2026-09-04 tick 9 — unchanged, no cell runnable
+
+Identity unchanged. 37 required cells, 22 packs BLOCKED EXTERNAL, same missing
+inputs. No cell executed, no scores, budget spent 0.
+
+### 2026-09-04 tick 10 — unchanged, no cell runnable
+
+Identity unchanged. 37 required cells, 22 packs BLOCKED EXTERNAL, same missing
+inputs. No cell executed, no scores, budget spent 0.
+
+### 2026-09-04 tick 11 — unchanged, no cell runnable
+
+Identity unchanged. 37 required cells, 22 packs BLOCKED EXTERNAL, same missing
+inputs. No cell executed, no scores, budget spent 0.
+
+### 2026-09-06 tick 12 — unchanged, no cell runnable
+
+Identity unchanged (`c4f0270` / `237bf4bc…` / corpus `460e3ad6…` / policy
+`986e6523…`). 37 required cells, 22 packs BLOCKED EXTERNAL, same missing
+inputs. No cell executed, no scores, budget spent 0.
