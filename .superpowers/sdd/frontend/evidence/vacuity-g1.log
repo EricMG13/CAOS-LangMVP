@@ -1,0 +1,46 @@
+# FE-G1 mutation harness — scratch/vacuity-g1.mjs — Chromium smoke against the host-control app on :8769, files restored from git after each mutation.
+# Run 1 (2026-09-05, harness unit invocation = shell glob reaching 71 tests; M6 as the audit wrote it did not compile):
+{"id":"M1","behaviour":"worksheet arrow-key navigation is disconnected","unit":{"exit":0,"pass":71,"fail":0,"failing":[]},"smoke":{"exit":1,"status":"failed","error":"AssertionError [ERR_ASSERTION]: worksheet ArrowDown did not move one row |  | 'A1' !== 'A2'"},"outcome":"CAUGHT by smoke"}
+{"id":"M3","behaviour":"READER can edit every per-period forecast assumption","unit":{"exit":0,"pass":71,"fail":0,"failing":[]},"smoke":{"exit":1,"status":"failed","error":"AssertionError [ERR_ASSERTION]: READER could edit an assumption |  | false !== true"},"outcome":"CAUGHT by smoke"}
+{"id":"M4","behaviour":"beforeunload never protects a dirty draft (listener kept, body inert)","unit":{"exit":0,"pass":71,"fail":0,"failing":[]},"smoke":{"exit":1,"status":"failed","error":"AssertionError [ERR_ASSERTION]: a dirty draft did not arm beforeunload |  | false !== true"},"outcome":"CAUGHT by smoke"}
+{"id":"M5","behaviour":"identity fails OPEN: every write control renders until /api/me answers","unit":{"exit":0,"pass":71,"fail":0,"failing":[]},"smoke":{"exit":1,"status":"failed","error":"AssertionError [ERR_ASSERTION]: READER was offered \"Create case\" |  | 1 !== 0"},"outcome":"CAUGHT by smoke"}
+{"id":"M6","behaviour":"the browser recovery copy is never written","unit":{"exit":0,"pass":71,"fail":0,"failing":[]},"smoke":{"exit":1,"error":"build failed"},"outcome":"CAUGHT by smoke"}
+node:fs:441
+    return binding.readFileUtf8(path, stringToFlags(options.flag));
+                   ^
+
+Error: ENOENT: no such file or directory, open '/Users/ericguei/Claude/Projects/CAOS-LangMVP/.claude/worktrees/caos-workbench-ia-directions-07795b/caos/frontend/test-results/chromium/workbench-report.json'
+    at readFileSync (node:fs:441:20)
+    at file:///private/tmp/claude-501/-Users-ericguei-Claude-Projects-CAOS-LangMVP--claude-worktrees-caos-workbench-ia-directions-07795b/623f9507-8a54-47ed-91d5-cb25a986a146/scratchpad/vacuity-g1.mjs:57:33
+    at ModuleJob.run (node:internal/modules/esm/module_job:439:25)
+    at async node:internal/modules/esm/loader:633:26
+    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5) {
+  errno: -2,
+  code: 'ENOENT',
+  syscall: 'open',
+  path: '/Users/ericguei/Claude/Projects/CAOS-LangMVP/.claude/worktrees/caos-workbench-ia-directions-07795b/caos/frontend/test-results/chromium/workbench-report.json'
+}
+
+Node.js v24.16.0
+# Run 2 (2026-09-05, npm run test:unit; M6 as the audit wrote it did not compile (TS2339: `if (copy) return true;` narrows `copy` to never); then hung inside the M7 smoke on the unbounded authority barrier for thirteen hours and was killed — no M7 record):
+{"id":"M6","behaviour":"the browser recovery copy is never written","unit":{"exit":0,"pass":131,"fail":0,"failing":[]},"smoke":{"exit":1,"error":"build failed:   Running TypeScript ... | src/components/report/ReportStudio.tsx(159,60): error TS2339: Property 'caseId' does not exist on type 'never'. | src/components/report/ReportStudio.tsx(159,73): error TS2339: Property 'pathway' does not exist on type 'never'. | src/components/report/ReportStudio.tsx(159,87): error TS2339: Property 'subject' does not exist on type 'never'."},"outcome":"CAUGHT by smoke"}
+# Run 3 (2026-09-06, smoke bounded at 480 s; M6 with the compiling variant; M11 as the audit wrote it did not compile; the M12 record is void — its mutation was overwritten from the session between the unit run and the build):
+{"id":"M6","behaviour":"the browser recovery copy is never written","unit":{"exit":0,"pass":131,"fail":0,"failing":[]},"smoke":{"exit":1,"status":"failed","error":"AssertionError [ERR_ASSERTION]: an edit did not write a subject-scoped recovery copy | + actual - expected | "},"outcome":"CAUGHT by smoke"}
+{"id":"M7","behaviour":"case authority is never refreshed (effect keeps its deps, body returns early)","unit":{"exit":0,"pass":131,"fail":0,"failing":[]},"smoke":{"exit":1,"status":"failed","error":"Error: the command center never requested the selected case's authority |     at Timeout.<anonymous> (file:///Users/ericguei/Claude/Projects/CAOS-LangMVP/.claude/worktrees/caos-workbench-ia-directions-07795b/caos/frontend/scripts/workbench-smoke.mjs:213:94) |     at listOnTimeout (node:internal/timers:605:17)"},"outcome":"CAUGHT by smoke"}
+{"id":"M8","behaviour":"success status glyph removed: status is colour alone","unit":{"exit":1,"pass":130,"fail":1,"failing":["DAG nodes use neutral containers and shape-coded visible statuses","DAG nodes use neutral containers and shape-coded visible statuses"]},"outcome":"CAUGHT by unit"}
+{"id":"M9","behaviour":"artifact markdown paragraphs rendered as raw HTML in the reader","unit":{"exit":1,"pass":130,"fail":1,"failing":["no shipped frontend file carries an HTML or script sink","no shipped frontend file carries an HTML or script sink"]},"outcome":"CAUGHT by unit"}
+{"id":"M10","behaviour":"evidence drawer never restores focus to its trigger on close","unit":{"exit":0,"pass":131,"fail":0,"failing":[]},"smoke":{"exit":0,"status":"passed","error":""},"outcome":"SURVIVES"}
+{"id":"M11","behaviour":"cross-case run guard removed","unit":{"exit":0,"pass":131,"fail":0,"failing":[]},"smoke":{"exit":1,"error":"build failed: ✓ Compiled successfully in 231ms |   Running TypeScript ... | src/components/Workspace.tsx(435,72): error TS2322: Type 'string | null' is not assignable to type 'string'. |   Type 'null' is not assignable to type 'string'."},"outcome":"CAUGHT by smoke"}
+{"id":"M12","behaviour":"SSE tail never subscribes to any run event","unit":{"exit":0,"pass":131,"fail":0,"failing":[]},"smoke":{"exit":0,"status":"passed","error":""},"outcome":"SURVIVES"}
+{"id":"M13","behaviour":"the drawer opener is no longer passed from the click (F11 regression)","unit":{"exit":0,"pass":131,"fail":0,"failing":[]},"smoke":{"exit":1,"status":"failed","error":"locator.evaluate: Error: closing the evidence drawer opened by a scripted click did not return focus to the chip that passed itself as opener (on BODY[]) |     at check (eval at evaluate (:311:30), <anonymous>:5:53) |     at awaitFocus (/Users/ericguei/Claude/Projects/CAOS-LangMVP/.claude/worktrees/caos-workbench-ia-directions-07795b/caos/frontend/scripts/workbench-smoke.mjs:199:47)"},"outcome":"CAUGHT by smoke"}
+SUMMARY M6:CAUGHT by smoke M7:CAUGHT by smoke M8:CAUGHT by unit M9:CAUGHT by unit M10:SURVIVES M11:CAUGHT by smoke M12:SURVIVES M13:CAUGHT by smoke
+harness exit 0
+# Run 4 (2026-09-06, after 018df28 — scripted-click drawer pass, 30 s barriers; M11 with the compiling variant; the harness process died with the session during M12):
+{"id":"M10","behaviour":"evidence drawer never restores focus to its trigger on close","unit":{"exit":0,"pass":131,"fail":0,"failing":[]},"smoke":{"exit":1,"status":"failed","error":"locator.evaluate: Error: closing the evidence drawer opened by a scripted click did not return focus to the chip that passed itself as opener (on BODY[]) |     at check (eval at evaluate (:311:30), <anonymous>:5:53) |     at awaitFocus (/Users/ericguei/Claude/Projects/CAOS-LangMVP/.claude/worktrees/caos-workbench-ia-directions-07795b/caos/frontend/scripts/workbench-smoke.mjs:199:47)"},"outcome":"CAUGHT by smoke"}
+{"id":"M11","behaviour":"cross-case run guard never fires (kept, condition made unsatisfiable)","unit":{"exit":0,"pass":131,"fail":0,"failing":[]},"smoke":{"exit":1,"status":"failed","error":"locator.waitFor: Timeout 30000ms exceeded. | Call log: |   - waiting for getByText('Requested run does not belong to the selected case.', { exact: true }) to be visible"},"outcome":"CAUGHT by smoke"}
+{"id":"M12","behaviour":"SSE tail never subscribes to any run event","unit":{"exit":0,"pass":131,"fail":0,"failing":[]},"smoke":{"exit":1,"status":"failed","error":"locator.waitFor: Timeout 60000ms exceeded. | Call log: |   - waiting for getByRole('heading', { name: 'Proposed research plan' }) to be visible"},"outcome":"CAUGHT by smoke"}
+SUMMARY M10:CAUGHT by smoke M11:CAUGHT by smoke M12:CAUGHT by smoke
+harness exit 0
+# Run 5 (2026-09-06, M12 alone, foreground):
+{"id":"M12","behaviour":"SSE tail never subscribes to any run event","unit":{"exit":0,"pass":131,"fail":0,"failing":[]},"smoke":{"exit":1,"status":"failed","error":"locator.waitFor: Timeout 60000ms exceeded. | Call log: |   - waiting for getByRole('heading', { name: 'Proposed research plan' }) to be visible"},"outcome":"CAUGHT by smoke"}
+SUMMARY M12:CAUGHT by smoke
