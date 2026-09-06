@@ -69,7 +69,7 @@ typography:
     fontWeight: 700
     lineHeight: 1.35
     letterSpacing: "0.09em"
-    note: "Table heads and rail group labels; tracking runs .09–.14em by site. Chrome floor is 9px (TOC ids, evidence digests, forecast labels)."
+    note: "Table heads and rail group labels; tracking runs .08–.14em by site. Chrome floor is 9px (TOC ids, evidence digests, forecast labels)."
   mono-meta:
     fontFamily: "var(--font-mono), ui-monospace, monospace"
     fontSize: "10px"
@@ -195,7 +195,9 @@ components:
 
 CAOS is a refined institutional terminal for buy-side credit analysts. It should feel calm enough for investment committee work, live enough for desk posture, and exact enough that every number reads as traceable rather than decorative.
 
-The workspace is dark, dense, and single-mode. Density is earned with fixed panel chrome, aligned numerics, small labels, and restrained state color. The Report Studio and research documents deliberately invert the workspace into light paper: ink on cream, file-ready, and visually distinct from the live analytical surface.
+The workspace is dark, dense, and single-mode. Density is earned with fixed panel chrome, aligned numerics, small labels, and restrained state color. Report and research documents deliberately invert the workspace into light paper: ink on cream, file-ready, and visually distinct from the live analytical surface.
+
+The current design is the modern dark terminal adopted on 31 August 2026 at the product owner's instruction: the graphite ramp (`bg` → `panel` → `elevated` → `subtle`), one iris accent, retuned semantic colours, a 6–14px radius scale, faint resting panel shadows, the native display face for chrome headings only, and severity-shaped status glyphs. It replaced the earlier blue accent, all-square geometry and flat panels; those pre-reskin rules are not carried anywhere in this document.
 
 CAOS explicitly rejects friendly consumer SaaS, oversized marketing dashboards, pastel card layouts, decorative gradients, glow effects, and raw terminal dumps. The product can be dense, but it must always be organized.
 
@@ -204,7 +206,7 @@ CAOS explicitly rejects friendly consumer SaaS, oversized marketing dashboards, 
 - Color reserved for state, selection, seniority, and evidence lineage.
 - Mono numerics and small uppercase labels for desk-readable precision.
 - Motion only for live, running, selected, or changed state.
-- Light paper output only inside Report Studio and research deliverables.
+- Light paper output only inside Report and research deliverables.
 
 ## 2. Colors
 
@@ -251,11 +253,11 @@ No web font is shipped (enterprise Task 3 removed the external font dependency; 
 - **Headline** (600, 21px, 1.2, −.01em, display face): The page title.
 - **Title** (600, 13px, 1.55, sentence case): Panel headers, dialog headings.
 - **Body** (400, 14px, 1.55): Workspace copy, state detail, rail text, and tool bodies.
-- **Label** (sans, 10–11px): sentence case at 11px/650 for kickers and field labels; uppercase and tracked (.09–.14em) at 10px/700 for table heads, rail group labels, worksheet tabs and report rail labels. Mono is for identifiers, digests, timestamps and numerics, not for labels. The chrome floor is 9px (TOC ids, evidence digests, forecast labels — FE-A2 F-06).
+- **Label** (sans, 10–11px): sentence case at 11px/650 for kickers and field labels; uppercase and tracked (.08–.14em) at 10px/700 for table heads, rail group labels, worksheet tabs and report rail labels. Mono is for identifiers, digests, timestamps and numerics, not for labels. The chrome floor is 9px (TOC ids, evidence digests, forecast labels — FE-A2 F-06).
 
 ### Filed Output Scale
 
-Report Studio, research exhibits, print views, and research deliverables use a deliberate paper scale rather than workspace labels: **Output Title** (650, 21px, −.01em), **Output Section** (700, 11px, uppercase, .08em), **Output Body** (400, 12px, 1.62), **Output Subtitle** (600, 10px, mono), **Output Meta** (500, 8.5px, mono), **Output Table Label** (650, 9px, uppercase), **Output Table Body** (400, 10px), **Output List** (400, 11px), and a 26px/700 mono filed-copy watermark at 16 % alpha rotated −16°. The full-model appendix scale belongs to the worker's PDF/XLSX renderers and is not in `globals.css`. These sizes are valid only inside paper/output roots; they must not leak into navigation, buttons, panel headers, or analytical tables.
+Report, research exhibits, print views, and research deliverables use a deliberate paper scale rather than workspace labels: **Output Title** (650, 21px, −.01em), **Output Section** (700, 11px, uppercase, .08em), **Output Body** (400, 12px, 1.62), **Output Subtitle** (600, 10px, mono), **Output Meta** (500, 8.5px, mono), **Output Table Label** (650, 9px, uppercase), **Output Table Body** (400, 10px), **Output List** (400, 11px), and a 26px/700 mono filed-copy watermark at 16 % alpha rotated −16°. The full-model appendix scale belongs to the worker's PDF/XLSX renderers and is not in `globals.css`. These sizes are valid only inside paper/output roots; they must not leak into navigation, buttons, panel headers, or analytical tables.
 
 ### Named Rules
 
@@ -273,11 +275,11 @@ Depth comes from the `bg` → `panel` → `elevated` → `subtle` ramp, hairline
 - **Panel Shadow** (`--shadow-panel`, `0 1px 2px rgb(0 0 0 / .25)`): every resting panel.
 - **Modal Shadow** (`--shadow-modal`, `0 24px 80px -24px rgb(0 0 0 / .85)`): dialogs and the context drawer. Dialog backdrops are 60 % black with a 3px blur.
 - **Popover Shadow** (`--shadow-pop`, `0 12px 32px -12px rgb(0 0 0 / .7)`): declared for a popover the product does not have; no rule reads it.
-- **Paper Shadow** (`--shadow-paper`, `0 24px 70px -24px rgb(0 0 0 / .8)`): Report Studio and research document sheets over the dark gutter.
+- **Paper Shadow** (`--shadow-paper`, `0 24px 70px -24px rgb(0 0 0 / .8)`): the Report paper and research document sheets over the dark gutter.
 
 ### Named Rules
 
-**The Resting Panel Rule.** A resting panel carries a hairline and `--shadow-panel`, nothing larger; a larger shadow means the object floats above the workflow. (Supersedes the Flat-Until-Floating rule, retired by the 31 Aug addendum.)
+**The Resting Panel Rule.** A resting panel carries a hairline and `--shadow-panel`, nothing larger; a larger shadow means the object floats above the workflow. (The pre-reskin flat-until-floating rule is retired.)
 
 ## 5. Components
 
@@ -288,6 +290,7 @@ Depth comes from the `bg` → `panel` → `elevated` → `subtle` ramp, hairline
 - **Quiet:** `.button.quiet` keeps the elevated fill and mutes the text.
 - **Pressed toggle:** `.button.is-active` (with `aria-pressed`) takes an accent border on a 16 % accent tint with `accent-strong` text — the linked-chip idiom.
 - **Disabled:** 55 % opacity; the primary variant reads 2.96:1 (exempt from 1.4.3, below this document's own "remains readable" bar — FE-A2 F-04, open).
+- **Targets:** 36px buttons, 30px small buttons and 24px chips under a fine pointer; under `pointer: coarse` every button, rail link, select, input, chip, worksheet tab and cell link takes a 44px minimum height (`globals.css`, the one coarse-pointer rule).
 
 ### Chips
 - **Style:** Evidence chips are 24px pills in mono 10px: `accent-strong` on a 7 % accent tint with a 65 % accent border.
@@ -306,20 +309,19 @@ Depth comes from the `bg` → `panel` → `elevated` → `subtle` ramp, hairline
 - **Error / Disabled:** Error is semantic Critical with text or glyph. Disabled is 55 % opacity (the primary button reads 2.96:1 — FE-A2 F-04).
 
 ### Navigation
-- **Style:** Rail links show a 14px stroke glyph and the label at every width; no tooltips. Below 900px the rail is a horizontally scrolling strip (Model, Report, Governance and the rail meta sit off-canvas at 720px — FE-A2 F-07, open).
+- **Style:** Rail links show a 14px stroke glyph and the label at every width; no tooltips. The rail has three groups: "Workspace" (the seven workflows Portfolio, Credit, Sources, Analysis, Market, Model, Report), "Analysis tools" (Run, carrying a mono `LIVE` badge while a run is in progress, rendered on every surface) and "Governance" (Admin). The rail is 224px wide, 156px below 1100px, and below 900px a horizontally scrolling strip (Model, Report, Governance and the rail meta sit off-canvas at 720px and are reached by scrolling or by the active link's `scrollIntoView` — FE-A2 F-07, open).
 - **Typography:** Sans; the group labels are 10px uppercase tracked; the rail meta is mono 10px.
 - **State:** Active is elevated fill, hairline border, `accent-strong` text and a 2px accent leading bar. Hover is elevated fill and text colour without changing layout.
 
 ### Enterprise Workbench Anatomy
 
-Every route uses the same ordered contract: the authority strip (credit, visible snapshot, selected run, source set), exactly one page-level primary action, one dominant work region, contextual evidence (evidence chips open the context drawer; Deep-Dive and Command Center carry evidence rails), and sticky approval panels where a governed action waits. Surface kinds preserve specialist behavior: worklists own filter anatomy; analytical objects own conclusion state; Model Builder and Report Studio retain their editor overflow.
+Every destination uses the same ordered contract: the authority strip (credit, visible snapshot, selected run, source set), exactly one page-level primary action, one dominant work region, contextual evidence (evidence chips open the context drawer; Analysis carries an evidence rail and Credit a proof column), and sticky approval panels where a governed action waits. Surface kinds preserve specialist behavior: worklists own filter anatomy; analytical objects own conclusion state; Model and Report retain their editor overflow.
 
 - **Decision states:** `loading` (skeleton), `observed-empty`, `error`, `unavailable` (observed 404), `stale` (Model and Report authority changed) and `offline` (a request that never reached the server renders one sentence in the page-level alert, never engine text — FE-G1) render distinctly. `ready` carries no marker of its own, and `partial` renders through warning statuses and inline notes; neither has a dedicated component (FE-A2 F-08). "No material change" is legal only for a successful timestamped `observed-empty` response.
 - **Authority:** Every ready conclusion carries observation time, origin, method, approval/ratification, and freshness. `LIVE` describes source origin only. Every surface on a screen renders the shell's one snapshot; no surface mints a second accepted identity (FE-G1).
-- **Worklists:** The Cases toolbar is search plus one filter, one action per row; the five-action toolbar and batch state are not implemented (FE-A2 §11; FE-G4 decides whether the rule or the product moves).
-- **Utilities:** Not implemented — there is no utility drawer; the one drawer is the evidence context drawer, whose opener is passed from the click and regains focus on Escape.
-- **Evidence Atlas:** Not implemented as one inspector; the context drawer and the per-surface evidence rails are what exist. Never show a duplicate inspector.
-- **Role composition:** Not implemented — the rail shows the served role read-only; there is no `View: Analyst / PM / QA` switch and it must never grant permission or approval authority if drawn.
+- **Worklists:** The Portfolio register is search plus one filter and one action per row; batch state does not exist (FE-A1 D-I retired the five-action toolbar rule in FE-G4).
+- **Drawer:** The one drawer is the evidence context drawer, whose opener is passed from the click and regains focus on Escape; there is no utility drawer and no second inspector (the context drawer and the per-surface evidence rail are the whole evidence surface).
+- **Role:** The rail shows the served role read-only. No view switch exists; a role control, if ever drawn, never grants permission or approval authority.
 
 ### Panel
 
@@ -327,7 +329,7 @@ The shared panel is the signature CAOS frame: Panel Surface, hairline border, 10
 
 ### Status Glyphs
 
-Status meaning must never be color alone. Pair severity color with a drawn glyph, text label, position, or all three. Emoji are forbidden in product chrome.
+Status meaning must never be color alone. Severity is shape plus hue: success and running are a 7px disc, warning a triangle, critical a 7px rounded square, idle a flat 8×3 dot (`.status::before`). Pair severity color with the glyph, a 700 text label, position, or all three. Emoji are forbidden in product chrome.
 
 ## 6. Do's and Don'ts
 
@@ -337,7 +339,7 @@ Status meaning must never be color alone. Pair severity color with a drawn glyph
 - **Do** pair every semantic color with a label, glyph, or spatial convention.
 - **Do** use the shared class idioms — `.panel`, `.field`, `.status`, `.button`, `.nav-link`, `.evidence-chip`, `.state-block` — and the `StateBlock`, `StateNote`, `LoadState`, `Unavailable` and `MutationReceipt` components before inventing new chrome.
 - **Do** honor reduced motion. The only animation is the loading shimmer, confined to `prefers-reduced-motion: no-preference`; the only non-hover transition is the live progress width. There is no running pulse, no flash cue and no dialog entrance motion.
-- **Do** reserve Paper Surface and Paper Ink for Report Studio and research deliverables.
+- **Do** reserve Paper Surface and Paper Ink for Report and research deliverables.
 
 ### Don't:
 - **Don't** drift toward friendly consumer SaaS.
@@ -349,24 +351,6 @@ Status meaning must never be color alone. Pair severity color with a drawn glyph
 - **Don't** use emoji in product chrome.
 - **Don't** add shadows to ordinary panels or cards.
 - **Don't** use side-stripe borders, gradient text, huge rounded cards, or identical decorative card grids.
-
-## 2026-08-31 reskin addendum (supersedes where noted)
-
-At the product owner's instruction the workspace moved to the **modern dark
-terminal**: a graphite ramp (`#0a0c10` → `#101319` → `#181d28`), iris accent
-`#8b93f8`, retuned semantics (emerald `#34d399`, amber `#fbbf24`, red
-`#f87171`), a 6–14px radius scale, faint resting panel shadows, `--font-display`
-(`"Avenir Next", "Segoe UI", system-ui`; no web font since enterprise Task 3) as
-the display face (wordmark, page titles, display headings only), and
-severity-*shaped* status glyphs (disc / triangle / rounded square / flat dot).
-
-This addendum supersedes, for the current design: the all-square geometry, the
-flat-until-floating rule (panels now carry `--shadow-panel`; floating surfaces
-keep the larger shadows), the old blue accent `#63a1ff`, and the uniform status
-dot. Everything else in this document still governs: density with hierarchy,
-color as signal, mono numerics, motion only for live state, the light-paper
-filed-output counterpoint, and every Don't above except the two rules this
-paragraph names.
 
 ## 2026-09-06 information-architecture addendum (FE-G2; records the approved "Align" canvas)
 
@@ -411,5 +395,5 @@ binds the layout, hierarchy, states and copy of those artboards; tokens stay in
 `caos/frontend/app/globals.css`. FE-D2 (hi-fi screens) is skipped by the
 decision owner's instruction of 2026-09-06 (FE-A1 decision D13): this addendum
 is the complete approval record, and FE-G3 builds the surfaces from the Align
-artboards named above. Everything else in this document and the 31 Aug
-addendum still governs.
+artboards named above. Everything else in this document still governs (the 31
+Aug reskin addendum is folded into §1–§5 by FE-G4, 2026-09-06).

@@ -250,6 +250,17 @@ test("the shell omits the redundant reading taxonomy and renders its command sho
   assert.match(workbenchShell, /Command <kbd aria-hidden="true">⌘K<\/kbd>/);
 });
 
+test("the Report grid reflows instead of clipping its paper column, and checkboxes keep their own width (FE-G4)", () => {
+  // Audit P1: three pixel minima summing past 900px under overflow: hidden clipped the
+  // paper preview between 901 and ~1283px; the paper column now has no pixel minimum.
+  const studio = styles.match(/\.report-studio \{[^}]*\}/)?.[0] ?? "";
+  assert.match(studio, /minmax\(0, 5\.5fr\)/);
+  assert.doesNotMatch(studio, /minmax\(440px/);
+  // Critique P1: `.field input { width: 100% }` stretched the intake bind checkbox 748px
+  // wide, severing it from its label; the rule excludes checkboxes as the coarse-pointer rule does.
+  assert.match(styles, /\.field input:not\(\[type="checkbox"\]\), \.field select, \.field textarea \{ width: 100%/);
+});
+
 test("navigation and data captions use the four-role label taxonomy", () => {
   assert.equal(workbenchShell.match(/className="nav-label palette-group-label"/g)?.length, 3);
   assert.doesNotMatch(styles, /\.palette-group-label\s*\{[^}]*text-transform/);
