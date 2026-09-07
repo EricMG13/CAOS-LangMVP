@@ -1113,10 +1113,10 @@ async def test_distressed_publication_retains_existing_identity_and_frozen_expor
     assert {c["calculator_id"] for c in effect["calculations"]} == {"funding_gap", "recovery_waterfall"}
     harness.store.add_member(case_id, "analyst", "approver-user", "APPROVER", actor_role="ADMIN")
     filed = service.approve_filing(case_id, frozen["deliverable_id"], file_request(frozen), actor="approver-user")
-    before = service.export(filed["deliverable_id"], "md")
+    before = {fmt: service.export(filed["deliverable_id"], fmt) for fmt in ("md", "pdf", "xlsx")}
     # Historical reads stay available when live authority is subsequently revoked.
     harness.store.withdraw(case_id, source["id"], "analyst")
-    assert service.export(filed["deliverable_id"], "md") == before
+    assert {fmt: service.export(filed["deliverable_id"], fmt) for fmt in before} == before
     assert service.frozen_record(case_id, filed["deliverable_id"])["payload"] == frozen["payload"]
 
 

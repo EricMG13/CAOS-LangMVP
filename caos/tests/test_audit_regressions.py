@@ -42,7 +42,8 @@ def _service(store, tmp_path):
 def _draft(service, store, case, source):
     from caos.contracts import DeliverableDraftRequest
 
-    template = service.templates()["FULL_CREDIT"]
+    # This retry/identity fixture predates accepted-module report composition.
+    template = service.templates(template_version="caos.deliverable-template.v1")["FULL_CREDIT"]
     service.seed_accepted_authority_for_tests(case["id"])
     model = service.seed_signed_revision_for_tests(
         case["id"], outputs={"total_leverage": 4.2},

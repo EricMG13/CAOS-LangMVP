@@ -198,6 +198,13 @@ def service(tmp_path, store):
     return make_service(store, tmp_path / "deliverable-vault")
 
 
+@pytest.fixture(autouse=True)
+def historical_renderer(monkeypatch):
+    # These retained v1 fixtures represent historical freezes, independently
+    # of today's default template and renderer. Their approved bytes stay put.
+    monkeypatch.setattr("caos.deliverables.service.RENDERER_VERSION", "caos.deliverable-renderer.v3")
+
+
 @pytest.mark.parametrize("state", STATES)
 def test_every_format_carries_the_same_facts_and_matches_its_golden(service, store, state, tmp_path):
     case, source, model, frozen, exports, receipt = _build(service, store, state)
@@ -312,7 +319,7 @@ def test_the_goldens_embed_the_declared_renderer_version():
     version carries that one — so the constant cannot move without the
     goldens, and the goldens cannot carry a version the renderer no longer
     declares."""
-    from caos.publishing.renderers import RENDERER_VERSION
+    from caos.publishing.renderers import HISTORICAL_RENDERER_VERSION
 
     versions: dict[str, set[str]] = {}
     for path in sorted(GOLDEN_DIR.glob("*.golden")):
@@ -321,7 +328,7 @@ def test_the_goldens_embed_the_declared_renderer_version():
             versions[path.name] = found
     assert set(versions) == {f"{state}.{fmt}.golden" for state in STATES for fmt in ("md", "xlsx")}, \
         "every Markdown and XLSX golden names the renderer; the PDF structure golden does not"
-    assert all(found == {RENDERER_VERSION} for found in versions.values()), versions
+    assert all(found == {HISTORICAL_RENDERER_VERSION} for found in versions.values()), versions
 
 
 def test_held_and_filed_bytes_are_the_frozen_bytes(service, store):

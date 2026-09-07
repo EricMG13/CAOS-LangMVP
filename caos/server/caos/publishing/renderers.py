@@ -39,6 +39,7 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
+from .charts import CHART_HEIGHT, PAPER_COLORS, add_xlsx_chart, prepare_chart, vector_chart
 from .markdown import (  # noqa: F401 — re-exported for callers and tests
     FORMULA_PREFIXES,
     MASTHEAD_FIELDS,
@@ -70,7 +71,9 @@ FONT_DIR = Path(__file__).resolve().parent / "fonts"
 # The renderer's own identity, stamped into every frozen payload and embedded
 # in every approved golden. It lives here, with the code whose output it names,
 # so a render change and its version move together (W12, 2026-09-06 review).
-RENDERER_VERSION = "caos.deliverable-renderer.v3"
+HISTORICAL_RENDERER_VERSION = "caos.deliverable-renderer.v3"
+CHART_RENDERER_VERSION = "caos.deliverable-renderer.v4"
+RENDERER_VERSION = CHART_RENDERER_VERSION
 
 FONT_BUNDLE = {
     "DejaVuSans.ttf": "7da195a74c55bef988d0d48f9508bd5d849425c1770dba5d7bfc6ce9ed848954",
@@ -148,12 +151,14 @@ class _Block:
     stay with the next block, and the table header it should repeat after a
     page split (for table rows)."""
 
-    __slots__ = ("lines", "keep_with_next", "repeat_header")
+    __slots__ = ("lines", "keep_with_next", "repeat_header", "chart")
 
-    def __init__(self, lines: list[str], *, keep_with_next: bool = False, repeat_header: list[str] | None = None) -> None:
+    def __init__(self, lines: list[str], *, keep_with_next: bool = False, repeat_header: list[str] | None = None,
+                 chart: Any = None) -> None:
         self.lines = lines
         self.keep_with_next = keep_with_next
         self.repeat_header = repeat_header
+        self.chart = chart
 
 
 def _wrap_cell(text: str, width: int) -> list[str]:
@@ -255,7 +260,7 @@ def _prose_lines(text: str, *, indent: str = "") -> list[str]:
     return [_span(part, size=9.5) for part in parts] or [_span(" ", size=9.5)]
 
 
-def _section_blocks(section: dict[str, Any], depth: int) -> list[_Block]:
+def _section_blocks(section: dict[str, Any], depth: int, *, charts: bool = False) -> list[_Block]:
     heading = [
         _span(section["title"], size=10.5 - depth, weight="bold")
         + "  " + _span(_origin_label(section), size=7, family=MONO, color=_META),
@@ -266,15 +271,27 @@ def _section_blocks(section: dict[str, Any], depth: int) -> list[_Block]:
     if kind == "columns":
         for column in section["items"]:
             for item in column:
-                blocks.extend(_section_blocks(item, depth + 1))
+                blocks.extend(_section_blocks(item, depth + 1, charts=charts))
         return blocks
     rows = _section_rows(section)
     model_owned = (section.get("origin") or {}).get("kind") == "MODEL"
     if kind in {"table", "chart"}:
         if kind == "chart":
-            blocks.append(_Block([_span(
-                f"Chart exhibit · {section.get('recipe', {}).get('chart_kind', 'chart')} · authoritative data table",
-                size=8, color=_META)]))
+            recipe, reason = prepare_chart(section) if charts else (None, "")
+            if recipe:
+                blocks.append(_Block(_prose_lines(f"{recipe.kind} · {recipe.unit} · equivalent table follows"), keep_with_next=True))
+                # One Pango line with an absolute height: never split or top-up
+                # this reservation. Position is measured only after pagination.
+                space = _span(" ", size=1).replace('line_height="1228"', f'line_height="{CHART_HEIGHT * 1024}"')
+                blocks.append(_Block([space], chart=recipe, keep_with_next=True))
+                blocks.append(_Block([
+                    _span(f"Series key · ■ {name}", size=8, color="#" + PAPER_COLORS[index % len(PAPER_COLORS)])
+                    for index, name in enumerate(dict.fromkeys(point.series for point in recipe.points))
+                ]))
+            else:
+                blocks.append(_Block([_span(reason or
+                    f"Chart exhibit · {section.get('recipe', {}).get('chart_kind', 'chart')} · authoritative data table",
+                    size=8, color=_META)]))
         if rows[1:]:
             blocks.extend(_mono_table(rows, model_owned=model_owned))
         else:
@@ -394,7 +411,7 @@ def _estimate(lines: list[str]) -> float:
     return total
 
 
-def _paginate(executable: str, workspace: Path, masthead: dict[str, Any], pages: list[dict[str, Any]]) -> list[tuple[str, list[_Block]]]:
+def _paginate(executable: str, workspace: Path, masthead: dict[str, Any], pages: list[dict[str, Any]], *, charts: bool = False) -> list[tuple[str, list[_Block]]]:
     """Flow every logical page's blocks into physical pages by measurement.
 
     Logical pages (Decision, Financials, Control, …) open with a band block
@@ -413,7 +430,7 @@ def _paginate(executable: str, workspace: Path, masthead: dict[str, Any], pages:
         ], keep_with_next=True)
         stream.append((page["name"], band))
         for section in page["sections"]:
-            for block in _section_blocks(section, 0):
+            for block in _section_blocks(section, 0, charts=charts):
                 stream.append((page["name"], block))
     laid_out: list[tuple[str, list[_Block]]] = []
     chrome = 6 * 9.5 * 1.45 + 2 * 18 * 1.45  # masthead and rules
@@ -423,10 +440,10 @@ def _paginate(executable: str, workspace: Path, masthead: dict[str, Any], pages:
         page_name = pending[0][0]
         current: list[tuple[str, _Block]] = []
         estimate = chrome
-        while pending and estimate + _estimate(pending[0][1].lines) <= BODY_HEIGHT:
+        while pending and estimate + (CHART_HEIGHT if pending[0][1].chart else _estimate(pending[0][1].lines)) <= BODY_HEIGHT:
             item = pending.pop(0)
             current.append(item)
-            estimate += _estimate(item[1].lines)
+            estimate += CHART_HEIGHT if item[1].chart else _estimate(item[1].lines)
         if not current:
             current.append(pending.pop(0))
 
@@ -462,13 +479,15 @@ def _paginate(executable: str, workspace: Path, masthead: dict[str, Any], pages:
                 name, oversized = carried.pop()
                 current.extend(carried)
                 carried = []
+                if oversized.chart:
+                    raise ValueError("PDF_CHART_LAYOUT_UNAVAILABLE: chart and heading exceed a page")
                 low = fit_prefix(current, name, oversized, floor=1)
                 current.append((name, _Block(oversized.lines[:low])))
                 if not oversized.lines[low:]:
                     break  # indivisible: one line taller than the body; accept it rather than loop
                 carried.append((name, _Block(oversized.lines[low:], keep_with_next=oversized.keep_with_next,
                                              repeat_header=oversized.repeat_header)))
-            if carried and carried[0][1].repeat_header:
+            if not charts and carried and carried[0][1].repeat_header:
                 carried.insert(0, (carried[0][0], _Block(list(carried[0][1].repeat_header), keep_with_next=True)))
             pending = carried + pending
         # Top up in estimated batches (one measurement per batch, halving on
@@ -480,7 +499,7 @@ def _paginate(executable: str, workspace: Path, masthead: dict[str, Any], pages:
             batch: list[tuple[str, _Block]] = []
             spent = 0.0
             for item in pending:
-                cost = _estimate(item[1].lines)
+                cost = CHART_HEIGHT if item[1].chart else _estimate(item[1].lines)
                 if batch and spent + cost > room:
                     break
                 batch.append(item)
@@ -539,6 +558,24 @@ def _white_page(executable: str, workspace: Path):
     return PdfReader(rendered).pages[0]
 
 
+def _chart_page(executable: str, workspace: Path, recipe: Any):
+    from pypdf import PageObject, PdfReader, Transformation
+    from pypdf.generic import DecodedStreamObject, NameObject
+
+    page = PageObject.create_blank_page(width=BODY_WIDTH, height=CHART_HEIGHT)
+    operators, labels = vector_chart(recipe)
+    stream = DecodedStreamObject()
+    stream.set_data(operators)
+    page[NameObject("/Contents")] = stream
+    for index, (x, y, text, width) in enumerate(labels):
+        align = "right" if x == 0 or (recipe.kind == "scatter" and x > BODY_WIDTH / 2) else "left" if recipe.kind == "scatter" else "center"
+        rendered = _pango(executable, workspace, f"chart-label-{index}", _span(text, size=7),
+                          "--markup", "--margin=0", f"--width={width}", f"--align={align}", "--background=transparent")
+        label = PdfReader(rendered).pages[0]
+        page.merge_transformed_page(label, Transformation().translate(x, y))
+    return page
+
+
 def render_frozen_pdf(payload: dict[str, Any]) -> bytes:
     from pypdf import PageObject, PdfReader, PdfWriter, Transformation
 
@@ -556,14 +593,19 @@ def render_frozen_pdf(payload: dict[str, Any]) -> bytes:
     writer = PdfWriter()
     with tempfile.TemporaryDirectory(prefix="caos-pdf-") as directory:
         workspace = Path(directory)
-        laid_out = _paginate(executable, workspace, masthead, [*view["pages"], revision_page])
+        laid_out = _paginate(executable, workspace, masthead, [*view["pages"], revision_page],
+                             charts=(payload.get("renderer") or {}).get("version") == CHART_RENDERER_VERSION)
         watermark = _watermark_page(executable, workspace, str(masthead.get("watermark") or PENDING_APPROVAL))
         paper = _white_page(executable, workspace)
         offset_x = (PAGE_WIDTH - float(watermark.mediabox.width)) / 2
         offset_y = (PAGE_HEIGHT - float(watermark.mediabox.height)) / 2
         for index, (page_name, blocks) in enumerate(laid_out, start=1):
             markup = _page_markup(masthead, page_name, blocks, index, len(laid_out), first=index == 1)
-            rendered = _shape(executable, workspace, f"page-{index:04d}", markup, height=BODY_HEIGHT)
+            # Fixed-height Pango layout can omit trailing lines after a tall
+            # chart spacer even when the natural measured page fits. Render
+            # exactly that measured layout; retain historical v3 shaping.
+            height = None if (payload.get("renderer") or {}).get("version") == CHART_RENDERER_VERSION else BODY_HEIGHT
+            rendered = _shape(executable, workspace, f"page-{index:04d}", markup, height=height)
             content = PdfReader(rendered).pages[0]
             footer = _footer_page(executable, workspace, _footer_markup(masthead, index, len(laid_out)))
             base = PageObject.create_blank_page(width=PAGE_WIDTH, height=PAGE_HEIGHT)
@@ -573,6 +615,17 @@ def render_frozen_pdf(payload: dict[str, Any]) -> bytes:
             # of the letter page so the top margin is exact and the footer band
             # below the body is never overprinted.
             base.merge_transformed_page(content, Transformation().translate(0, PAGE_HEIGHT - float(content.mediabox.height)))
+            for position, block in enumerate(blocks):
+                if block.chart:
+                    # Measure the prefix INCLUDING the reservation: its bottom
+                    # is stable through keep-with-next carries and page top-ups.
+                    height = _measure(executable, workspace, _page_markup(
+                        masthead, page_name, blocks[:position + 1], index, len(laid_out), first=index == 1))
+                    bottom = PAGE_HEIGHT - MARGIN - height
+                    if bottom < MARGIN + FOOTER_HEIGHT or bottom + CHART_HEIGHT > PAGE_HEIGHT - MARGIN:
+                        raise ValueError("PDF_CHART_LAYOUT_UNAVAILABLE: reservation outside page body")
+                    base.merge_transformed_page(_chart_page(executable, workspace, block.chart),
+                                                Transformation().translate(MARGIN, bottom))
             base.merge_transformed_page(footer, Transformation().translate(MARGIN, MARGIN - 4))
             writer.add_page(base)
         output = io.BytesIO()
@@ -627,6 +680,7 @@ def render_frozen_xlsx(payload: dict[str, Any]) -> bytes:
 
     view = publication_view(payload)
     masthead = view["masthead"]
+    charts = (payload.get("renderer") or {}).get("version") == CHART_RENDERER_VERSION
     bold = Font(bold=True)
     head_fill = PatternFill("solid", fgColor="E9E7DF")
     wrap = Alignment(wrap_text=True, vertical="top")
@@ -656,7 +710,8 @@ def render_frozen_xlsx(payload: dict[str, Any]) -> bytes:
     cover = workbook.active
     cover.title = _sheet_title(used_titles, "Cover & Control")
     cover.append(["Field", "Value"])
-    cover.append(["Document", f"{masthead.get('issuer', '')} — {masthead.get('report_type', '')}"])
+    document_title = f"{masthead.get('issuer', '')} — {masthead.get('report_type', '')}"
+    cover.append(["Document", _safe_cell(document_title) if charts else document_title])
     for label, key in MASTHEAD_FIELDS:
         cover.append([label, _safe_cell(str(masthead.get(key, "")))])
     cover.append(["Watermark", _safe_cell(str(masthead.get("watermark", PENDING_APPROVAL)))])
@@ -679,6 +734,8 @@ def render_frozen_xlsx(payload: dict[str, Any]) -> bytes:
         for section, _depth in _walk_sections(page["sections"]):
             origin = section.get("origin") or {}
             base = [page["name"], section["title"], _origin_label(section).split(" · ")[0], origin.get("authority_id", "")]
+            if charts:
+                base = [_safe_cell(value) for value in base]
             kind = section["kind"]
             if kind in {"table", "chart"}:
                 tables.append((page["name"], section, _sheet_title(used_titles, section["title"])))
@@ -704,11 +761,18 @@ def render_frozen_xlsx(payload: dict[str, Any]) -> bytes:
         sheet.append([_safe_cell(value) for value in rows[0]])
         for row in rows[1:]:
             values = [
-                _model_cell(str(value), model_value=model_owned and index > 0)
+                _model_cell(str(value), model_value=model_owned and index > 0 and not (charts and section["kind"] == "chart"))
                 for index, value in enumerate(row)
             ]
             sheet.append(values)
             for index, value in enumerate(values, start=1):
+                if charts and section["kind"] == "chart":
+                    # Keep the accessible string exact, including negative and
+                    # formula-looking labels, as an explicit OOXML text cell.
+                    cell = sheet.cell(row=sheet.max_row, column=index)
+                    cell.value = str(row[index - 1])
+                    cell.data_type = "s"
+                    cell.quotePrefix = cell.value.startswith(FORMULA_PREFIXES)
                 if isinstance(value, (int, float)) and not isinstance(value, bool):
                     sheet.cell(row=sheet.max_row, column=index).number_format = MODEL_NUMBER_FORMAT
         note = [f"{page_name} · {section['title']} · {_origin_label(section)}"]
@@ -716,6 +780,12 @@ def render_frozen_xlsx(payload: dict[str, Any]) -> bytes:
             note.append(section["note"])
         sheet.append([])
         sheet.append([_safe_cell(" · ".join(note))])
+        if charts and section["kind"] == "chart":
+            recipe, reason = prepare_chart(section)
+            if recipe:
+                add_xlsx_chart(sheet, recipe, column=len(rows[0]) + 2, safe_cell=_safe_cell, title=section["title"])
+            else:
+                sheet.append([_safe_cell(reason)])
         finish(sheet, filters=True)
 
     record = workbook.create_sheet(_sheet_title(used_titles, "Revision Record"))

@@ -1,0 +1,79 @@
+# Chart Fixture — Credit Report
+
+CAOS /  / MASTHEAD / PENDING APPROVAL / AS OF  /  / DRAFT v
+
+| Field | Value |
+| --- | --- |
+| Issuer | Chart Fixture |
+| Case |  |
+| Report type | Credit Report |
+| Pathway |  |
+| As-of date |  |
+| Deliverable |  |
+| Draft version |  |
+| Accepted run |  |
+| Accepted snapshot |  |
+| Source set |  |
+| Model identity | MODEL_BUILD model-reviewed |
+| Methodology build |  |
+| Machine assistance |  |
+| Opinion owner |  |
+| Opinion signed at |  |
+| Approval state | PENDING APPROVAL |
+
+> PENDING APPROVAL — the approver is recorded in the detached filing receipt, never in these bytes.
+
+## Financials · Page 1 of 1
+
+### Reviewed line · Locked · artifact · artifact-reviewed
+Chart exhibit · line · USD m · text representation; authoritative data table follows
+| Category / period | Series | Value | Unit | Sources |
+| --- | --- | --- | --- | --- |
+| FY2025 long reviewed category label | Base | 12.5 million | USD m | src-reviewed |
+| FY2026 | Base | -3 million | USD m | src-reviewed |
+| FY2027 | Base | 0 million | USD m | src-reviewed |
+| FY2025 long reviewed category label | Downside | 8 million | USD m | src-reviewed |
+| FY2026 | Downside | -5 million | USD m | src-reviewed |
+| FY2027 | Downside | 2 million | USD m | src-reviewed |
+
+### Reviewed bar · Locked · artifact · artifact-reviewed
+Chart exhibit · bar · USD m · text representation; authoritative data table follows
+| Category / period | Series | Value | Unit | Sources |
+| --- | --- | --- | --- | --- |
+| FY2025 long reviewed category label | Base | 12.5 million | USD m | src-reviewed |
+| FY2026 | Base | -3 million | USD m | src-reviewed |
+| FY2027 | Base | 0 million | USD m | src-reviewed |
+| FY2025 long reviewed category label | Downside | 8 million | USD m | src-reviewed |
+| FY2026 | Downside | -5 million | USD m | src-reviewed |
+| FY2027 | Downside | 2 million | USD m | src-reviewed |
+
+### Reviewed stacked_bar · Locked · artifact · artifact-reviewed
+Chart exhibit · stacked_bar · USD m · text representation; authoritative data table follows
+| Category / period | Series | Value | Unit | Sources |
+| --- | --- | --- | --- | --- |
+| FY2025 long reviewed category label | Base | 12.5 million | USD m | src-reviewed |
+| FY2026 | Base | -3 million | USD m | src-reviewed |
+| FY2027 | Base | 0 million | USD m | src-reviewed |
+| FY2025 long reviewed category label | Downside | 8 million | USD m | src-reviewed |
+| FY2026 | Downside | -5 million | USD m | src-reviewed |
+| FY2027 | Downside | 2 million | USD m | src-reviewed |
+
+### Reviewed scatter · Locked · artifact · artifact-reviewed
+Chart exhibit · scatter · USD m · text representation; authoritative data table follows
+| Category / period | Series | Value | Unit | Sources | X value |
+| --- | --- | --- | --- | --- | ---: |
+| FY2025 long reviewed category label | Base | 12.5 million | USD m | src-reviewed | 1 |
+| FY2026 | Base | -3 million | USD m | src-reviewed | 2 |
+| FY2027 | Base | 0 million | USD m | src-reviewed | 3 |
+| FY2025 long reviewed category label | Downside | 8 million | USD m | src-reviewed | 4 |
+| FY2026 | Downside | -5 million | USD m | src-reviewed | 5 |
+| FY2027 | Downside | 2 million | USD m | src-reviewed | 6 |
+
+## Revision Record
+- Deliverable: 
+- Draft version: 
+- Draft digest: 
+- Content digest: reviewed-digest
+- Input fingerprint: 
+- Methodology build: 
+- Renderer: caos.deliverable-renderer.v4

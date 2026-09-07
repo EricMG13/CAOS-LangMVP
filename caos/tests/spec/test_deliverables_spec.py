@@ -167,9 +167,9 @@ def report_artifacts(source_id):
     ("FULL_CREDIT", "Recurring service contracts", 9),
     ("EARNINGS_UPDATE", "FY2024 Q4 versus FY2023 Q4", 6),
     ("COVENANT_REFINANCING", "Agreement section 7.1", 6),
-    ("RELATIVE_VALUE", "Unsecured spread compensates for subordination", 5),
+    ("RELATIVE_VALUE", "Unsecured spread compensates for subordination", 6),
     ("DISTRESSED_RESTRUCTURING", "Unverified consent threshold", 6),
-    ("DEEP_RESEARCH", "Monitor retention before extending", 5),
+    ("DEEP_RESEARCH", "Monitor retention before extending", 6),
 ])
 def test_v2_six_layout_document_fixtures_without_cp6(service, pathway, fact, page_count):
     from caos.deliverables.document import compose_document, document_blockers
@@ -181,6 +181,8 @@ def test_v2_six_layout_document_fixtures_without_cp6(service, pathway, fact, pag
     assert not document_blockers(sections), document_blockers(sections)
     assert fact in str(sections)
     assert len({s["page"] for s in sections} - {"Limitations", "Evidence"}) == page_count
+    if pathway in {"RELATIVE_VALUE", "DEEP_RESEARCH"}:
+        assert any(s["page"] == "Selected model and pathway effects" and s["origin"]["kind"] == "MODEL" for s in sections)
     assert "Governed output pinned" not in str(sections)
     assert not any(s["editable"] for s in sections)
     assert all(s["origin"]["authority_id"].startswith("artifact-") for s in sections if s["origin"]["kind"] == "ARTIFACT" and s["section_id"] != "evidence_register")
@@ -1818,7 +1820,7 @@ def test_canonical_document_is_the_only_cross_format_export_source(service, stor
     frozen = freeze_now(service, case["id"], revision)
     payload = copy.deepcopy(frozen["payload"])
     expected_titles = [section["title"] for section in payload["content"]["document_sections"]]
-    assert payload["renderer"]["version"] == "caos.deliverable-renderer.v3"
+    assert payload["renderer"]["version"] == "caos.deliverable-renderer.v4"
 
     # The publication document is sufficient: no renderer may fall back to the
     # old generated/block projections once the frozen payload carries it.

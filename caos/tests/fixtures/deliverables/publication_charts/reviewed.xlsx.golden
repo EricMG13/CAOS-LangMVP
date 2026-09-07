@@ -1,0 +1,642 @@
+{
+ "sheets": {
+  "Cover & Control": {
+   "rows": [
+    [
+     "Field",
+     "Value"
+    ],
+    [
+     "Document",
+     "Chart Fixture \u2014 Credit Report"
+    ],
+    [
+     "Issuer",
+     "Chart Fixture"
+    ],
+    [
+     "Case",
+     null
+    ],
+    [
+     "Report type",
+     "Credit Report"
+    ],
+    [
+     "Pathway",
+     null
+    ],
+    [
+     "As-of date",
+     null
+    ],
+    [
+     "Deliverable",
+     null
+    ],
+    [
+     "Draft version",
+     null
+    ],
+    [
+     "Accepted run",
+     null
+    ],
+    [
+     "Accepted snapshot",
+     null
+    ],
+    [
+     "Source set",
+     null
+    ],
+    [
+     "Model identity",
+     "MODEL_BUILD model-reviewed"
+    ],
+    [
+     "Methodology build",
+     null
+    ],
+    [
+     "Machine assistance",
+     null
+    ],
+    [
+     "Opinion owner",
+     null
+    ],
+    [
+     "Opinion signed at",
+     null
+    ],
+    [
+     "Approval state",
+     "PENDING APPROVAL"
+    ],
+    [
+     "Watermark",
+     "PENDING APPROVAL"
+    ],
+    [
+     "Approver identity",
+     "Recorded in the detached filing receipt and the audit chain, never in this workbook"
+    ],
+    [
+     "Deliverable",
+     null
+    ],
+    [
+     "Draft version",
+     null
+    ],
+    [
+     "Draft digest",
+     null
+    ],
+    [
+     "Content digest",
+     "reviewed-digest"
+    ],
+    [
+     "Input fingerprint",
+     null
+    ],
+    [
+     "Methodology build",
+     null
+    ],
+    [
+     "Renderer",
+     "caos.deliverable-renderer.v4"
+    ],
+    [
+     "Sheets",
+     "Report (narrative and profiles), one sheet per table, Revision Record"
+    ]
+   ],
+   "charts": []
+  },
+  "Report": {
+   "rows": [
+    [
+     "Page",
+     "Section",
+     "Origin",
+     "Authority",
+     "Field",
+     "Content"
+    ],
+    [
+     "Financials",
+     "Reviewed line",
+     "Locked",
+     "artifact-reviewed",
+     "Table",
+     "See sheet 'Reviewed line' (6 rows)"
+    ],
+    [
+     "Financials",
+     "Reviewed bar",
+     "Locked",
+     "artifact-reviewed",
+     "Table",
+     "See sheet 'Reviewed bar' (6 rows)"
+    ],
+    [
+     "Financials",
+     "Reviewed stacked_bar",
+     "Locked",
+     "artifact-reviewed",
+     "Table",
+     "See sheet 'Reviewed stacked_bar' (6 rows)"
+    ],
+    [
+     "Financials",
+     "Reviewed scatter",
+     "Locked",
+     "artifact-reviewed",
+     "Table",
+     "See sheet 'Reviewed scatter' (6 rows)"
+    ]
+   ],
+   "charts": []
+  },
+  "Reviewed line": {
+   "rows": [
+    [
+     "Category / period",
+     "Series",
+     "Value",
+     "Unit",
+     "Sources",
+     null,
+     "Category / period",
+     "Base",
+     "Downside"
+    ],
+    [
+     "FY2025 long reviewed category label",
+     "Base",
+     "12.5 million",
+     "USD m",
+     "src-reviewed",
+     null,
+     "FY2025 long reviewed category label",
+     12.5,
+     8
+    ],
+    [
+     "FY2026",
+     "Base",
+     "-3 million",
+     "USD m",
+     "src-reviewed",
+     null,
+     "FY2026",
+     -3,
+     -5
+    ],
+    [
+     "FY2027",
+     "Base",
+     "0 million",
+     "USD m",
+     "src-reviewed",
+     null,
+     "FY2027",
+     0,
+     2
+    ],
+    [
+     "FY2025 long reviewed category label",
+     "Downside",
+     "8 million",
+     "USD m",
+     "src-reviewed",
+     null,
+     null,
+     null,
+     null
+    ],
+    [
+     "FY2026",
+     "Downside",
+     "-5 million",
+     "USD m",
+     "src-reviewed",
+     null,
+     null,
+     null,
+     null
+    ],
+    [
+     "FY2027",
+     "Downside",
+     "2 million",
+     "USD m",
+     "src-reviewed",
+     null,
+     null,
+     null,
+     null
+    ],
+    [
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null
+    ],
+    [
+     "Financials \u00b7 Reviewed line \u00b7 Locked \u00b7 artifact \u00b7 artifact-reviewed",
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null
+    ]
+   ],
+   "charts": [
+    "lineChart"
+   ]
+  },
+  "Reviewed bar": {
+   "rows": [
+    [
+     "Category / period",
+     "Series",
+     "Value",
+     "Unit",
+     "Sources",
+     null,
+     "Category / period",
+     "Base",
+     "Downside"
+    ],
+    [
+     "FY2025 long reviewed category label",
+     "Base",
+     "12.5 million",
+     "USD m",
+     "src-reviewed",
+     null,
+     "FY2025 long reviewed category label",
+     12.5,
+     8
+    ],
+    [
+     "FY2026",
+     "Base",
+     "-3 million",
+     "USD m",
+     "src-reviewed",
+     null,
+     "FY2026",
+     -3,
+     -5
+    ],
+    [
+     "FY2027",
+     "Base",
+     "0 million",
+     "USD m",
+     "src-reviewed",
+     null,
+     "FY2027",
+     0,
+     2
+    ],
+    [
+     "FY2025 long reviewed category label",
+     "Downside",
+     "8 million",
+     "USD m",
+     "src-reviewed",
+     null,
+     null,
+     null,
+     null
+    ],
+    [
+     "FY2026",
+     "Downside",
+     "-5 million",
+     "USD m",
+     "src-reviewed",
+     null,
+     null,
+     null,
+     null
+    ],
+    [
+     "FY2027",
+     "Downside",
+     "2 million",
+     "USD m",
+     "src-reviewed",
+     null,
+     null,
+     null,
+     null
+    ],
+    [
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null
+    ],
+    [
+     "Financials \u00b7 Reviewed bar \u00b7 Locked \u00b7 artifact \u00b7 artifact-reviewed",
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null
+    ]
+   ],
+   "charts": [
+    "barChart"
+   ]
+  },
+  "Reviewed stacked_bar": {
+   "rows": [
+    [
+     "Category / period",
+     "Series",
+     "Value",
+     "Unit",
+     "Sources",
+     null,
+     "Category / period",
+     "Base",
+     "Downside"
+    ],
+    [
+     "FY2025 long reviewed category label",
+     "Base",
+     "12.5 million",
+     "USD m",
+     "src-reviewed",
+     null,
+     "FY2025 long reviewed category label",
+     12.5,
+     8
+    ],
+    [
+     "FY2026",
+     "Base",
+     "-3 million",
+     "USD m",
+     "src-reviewed",
+     null,
+     "FY2026",
+     -3,
+     -5
+    ],
+    [
+     "FY2027",
+     "Base",
+     "0 million",
+     "USD m",
+     "src-reviewed",
+     null,
+     "FY2027",
+     0,
+     2
+    ],
+    [
+     "FY2025 long reviewed category label",
+     "Downside",
+     "8 million",
+     "USD m",
+     "src-reviewed",
+     null,
+     null,
+     null,
+     null
+    ],
+    [
+     "FY2026",
+     "Downside",
+     "-5 million",
+     "USD m",
+     "src-reviewed",
+     null,
+     null,
+     null,
+     null
+    ],
+    [
+     "FY2027",
+     "Downside",
+     "2 million",
+     "USD m",
+     "src-reviewed",
+     null,
+     null,
+     null,
+     null
+    ],
+    [
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null
+    ],
+    [
+     "Financials \u00b7 Reviewed stacked_bar \u00b7 Locked \u00b7 artifact \u00b7 artifact-reviewed",
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null
+    ]
+   ],
+   "charts": [
+    "barChart"
+   ]
+  },
+  "Reviewed scatter": {
+   "rows": [
+    [
+     "Category / period",
+     "Series",
+     "Value",
+     "Unit",
+     "Sources",
+     "X value",
+     null,
+     "Canonical X",
+     "Base",
+     "Downside"
+    ],
+    [
+     "FY2025 long reviewed category label",
+     "Base",
+     "12.5 million",
+     "USD m",
+     "src-reviewed",
+     "1",
+     null,
+     1,
+     12.5,
+     null
+    ],
+    [
+     "FY2026",
+     "Base",
+     "-3 million",
+     "USD m",
+     "src-reviewed",
+     "2",
+     null,
+     2,
+     -3,
+     null
+    ],
+    [
+     "FY2027",
+     "Base",
+     "0 million",
+     "USD m",
+     "src-reviewed",
+     "3",
+     null,
+     3,
+     0,
+     null
+    ],
+    [
+     "FY2025 long reviewed category label",
+     "Downside",
+     "8 million",
+     "USD m",
+     "src-reviewed",
+     "4",
+     null,
+     4,
+     null,
+     8
+    ],
+    [
+     "FY2026",
+     "Downside",
+     "-5 million",
+     "USD m",
+     "src-reviewed",
+     "5",
+     null,
+     5,
+     null,
+     -5
+    ],
+    [
+     "FY2027",
+     "Downside",
+     "2 million",
+     "USD m",
+     "src-reviewed",
+     "6",
+     null,
+     6,
+     null,
+     2
+    ],
+    [
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null
+    ],
+    [
+     "Financials \u00b7 Reviewed scatter \u00b7 Locked \u00b7 artifact \u00b7 artifact-reviewed",
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null
+    ]
+   ],
+   "charts": [
+    "scatterChart"
+   ]
+  },
+  "Revision Record": {
+   "rows": [
+    [
+     "Field",
+     "Value"
+    ],
+    [
+     "Deliverable",
+     null
+    ],
+    [
+     "Draft version",
+     null
+    ],
+    [
+     "Draft digest",
+     null
+    ],
+    [
+     "Content digest",
+     "reviewed-digest"
+    ],
+    [
+     "Input fingerprint",
+     null
+    ],
+    [
+     "Methodology build",
+     null
+    ],
+    [
+     "Renderer",
+     "caos.deliverable-renderer.v4"
+    ]
+   ],
+   "charts": []
+  }
+ },
+ "chart_xml": {
+  "xl/charts/chart1.xml": "<chartSpace xmlns:a=\"http://schemas.openxmlformats.org/drawingml/2006/main\" xmlns=\"http://schemas.openxmlformats.org/drawingml/2006/chart\"><chart><title><tx><rich><a:bodyPr /><a:p><a:pPr><a:defRPr /></a:pPr><a:r><a:t>Reviewed line</a:t></a:r></a:p></rich></tx></title><plotArea><lineChart><grouping val=\"standard\" /><ser><idx val=\"0\" /><order val=\"0\" /><tx><v>Base</v></tx><spPr><a:solidFill><a:srgbClr val=\"2f54c9\" /></a:solidFill><a:ln><a:solidFill><a:srgbClr val=\"2f54c9\" /></a:solidFill><a:prstDash val=\"solid\" /></a:ln></spPr><marker><symbol val=\"square\" /><size val=\"5\" /><spPr><a:solidFill><a:srgbClr val=\"2f54c9\" /></a:solidFill><a:ln><a:solidFill><a:srgbClr val=\"2f54c9\" /></a:solidFill><a:prstDash val=\"solid\" /></a:ln></spPr></marker><cat><numRef><f>'Reviewed line'!$G$2:$G$4</f></numRef></cat><val><numRef><f>'Reviewed line'!$H$2:$H$4</f></numRef></val><smooth val=\"0\" /></ser><ser><idx val=\"1\" /><order val=\"1\" /><tx><v>Downside</v></tx><spPr><a:solidFill><a:srgbClr val=\"6741a5\" /></a:solidFill><a:ln><a:solidFill><a:srgbClr val=\"6741a5\" /></a:solidFill><a:prstDash val=\"solid\" /></a:ln></spPr><marker><symbol val=\"square\" /><size val=\"5\" /><spPr><a:solidFill><a:srgbClr val=\"6741a5\" /></a:solidFill><a:ln><a:solidFill><a:srgbClr val=\"6741a5\" /></a:solidFill><a:prstDash val=\"solid\" /></a:ln></spPr></marker><cat><numRef><f>'Reviewed line'!$G$2:$G$4</f></numRef></cat><val><numRef><f>'Reviewed line'!$I$2:$I$4</f></numRef></val><smooth val=\"0\" /></ser><smooth val=\"0\" /><axId val=\"10\" /><axId val=\"100\" /></lineChart><catAx><axId val=\"10\" /><scaling><orientation val=\"minMax\" /></scaling><axPos val=\"l\" /><majorTickMark val=\"none\" /><minorTickMark val=\"none\" /><tickLblPos val=\"low\" /><crossAx val=\"100\" /><crosses val=\"autoZero\" /><lblOffset val=\"100\" /></catAx><valAx><axId val=\"100\" /><scaling><orientation val=\"minMax\" /></scaling><axPos val=\"l\" /><majorGridlines /><title><tx><rich><a:bodyPr /><a:p><a:pPr><a:defRPr /></a:pPr><a:r><a:t>USD m</a:t></a:r></a:p></rich></tx></title><majorTickMark val=\"none\" /><minorTickMark val=\"none\" /><crossAx val=\"10\" /><crosses val=\"autoZero\" /></valAx></plotArea><legend><legendPos val=\"b\" /></legend><plotVisOnly val=\"1\" /><dispBlanksAs val=\"gap\" /></chart></chartSpace>",
+  "xl/charts/chart2.xml": "<chartSpace xmlns:a=\"http://schemas.openxmlformats.org/drawingml/2006/main\" xmlns=\"http://schemas.openxmlformats.org/drawingml/2006/chart\"><chart><title><tx><rich><a:bodyPr /><a:p><a:pPr><a:defRPr /></a:pPr><a:r><a:t>Reviewed bar</a:t></a:r></a:p></rich></tx></title><plotArea><barChart><barDir val=\"col\" /><grouping val=\"clustered\" /><ser><idx val=\"0\" /><order val=\"0\" /><tx><v>Base</v></tx><spPr><a:solidFill><a:srgbClr val=\"2f54c9\" /></a:solidFill><a:ln><a:solidFill><a:srgbClr val=\"2f54c9\" /></a:solidFill><a:prstDash val=\"solid\" /></a:ln></spPr><invertIfNegative val=\"0\" /><cat><numRef><f>'Reviewed bar'!$G$2:$G$4</f></numRef></cat><val><numRef><f>'Reviewed bar'!$H$2:$H$4</f></numRef></val></ser><ser><idx val=\"1\" /><order val=\"1\" /><tx><v>Downside</v></tx><spPr><a:solidFill><a:srgbClr val=\"6741a5\" /></a:solidFill><a:ln><a:solidFill><a:srgbClr val=\"6741a5\" /></a:solidFill><a:prstDash val=\"solid\" /></a:ln></spPr><invertIfNegative val=\"0\" /><cat><numRef><f>'Reviewed bar'!$G$2:$G$4</f></numRef></cat><val><numRef><f>'Reviewed bar'!$I$2:$I$4</f></numRef></val></ser><gapWidth val=\"150\" /><axId val=\"10\" /><axId val=\"100\" /></barChart><catAx><axId val=\"10\" /><scaling><orientation val=\"minMax\" /></scaling><axPos val=\"l\" /><majorTickMark val=\"none\" /><minorTickMark val=\"none\" /><tickLblPos val=\"low\" /><crossAx val=\"100\" /><crosses val=\"autoZero\" /><lblOffset val=\"100\" /></catAx><valAx><axId val=\"100\" /><scaling><orientation val=\"minMax\" /></scaling><axPos val=\"l\" /><majorGridlines /><title><tx><rich><a:bodyPr /><a:p><a:pPr><a:defRPr /></a:pPr><a:r><a:t>USD m</a:t></a:r></a:p></rich></tx></title><majorTickMark val=\"none\" /><minorTickMark val=\"none\" /><crossAx val=\"10\" /><crosses val=\"autoZero\" /></valAx></plotArea><legend><legendPos val=\"b\" /></legend><plotVisOnly val=\"1\" /><dispBlanksAs val=\"gap\" /></chart></chartSpace>",
+  "xl/charts/chart3.xml": "<chartSpace xmlns:a=\"http://schemas.openxmlformats.org/drawingml/2006/main\" xmlns=\"http://schemas.openxmlformats.org/drawingml/2006/chart\"><chart><title><tx><rich><a:bodyPr /><a:p><a:pPr><a:defRPr /></a:pPr><a:r><a:t>Reviewed stacked_bar</a:t></a:r></a:p></rich></tx></title><plotArea><barChart><barDir val=\"col\" /><grouping val=\"stacked\" /><ser><idx val=\"0\" /><order val=\"0\" /><tx><v>Base</v></tx><spPr><a:solidFill><a:srgbClr val=\"2f54c9\" /></a:solidFill><a:ln><a:solidFill><a:srgbClr val=\"2f54c9\" /></a:solidFill><a:prstDash val=\"solid\" /></a:ln></spPr><invertIfNegative val=\"0\" /><cat><numRef><f>'Reviewed stacked_bar'!$G$2:$G$4</f></numRef></cat><val><numRef><f>'Reviewed stacked_bar'!$H$2:$H$4</f></numRef></val></ser><ser><idx val=\"1\" /><order val=\"1\" /><tx><v>Downside</v></tx><spPr><a:solidFill><a:srgbClr val=\"6741a5\" /></a:solidFill><a:ln><a:solidFill><a:srgbClr val=\"6741a5\" /></a:solidFill><a:prstDash val=\"solid\" /></a:ln></spPr><invertIfNegative val=\"0\" /><cat><numRef><f>'Reviewed stacked_bar'!$G$2:$G$4</f></numRef></cat><val><numRef><f>'Reviewed stacked_bar'!$I$2:$I$4</f></numRef></val></ser><gapWidth val=\"150\" /><overlap val=\"100\" /><axId val=\"10\" /><axId val=\"100\" /></barChart><catAx><axId val=\"10\" /><scaling><orientation val=\"minMax\" /></scaling><axPos val=\"l\" /><majorTickMark val=\"none\" /><minorTickMark val=\"none\" /><tickLblPos val=\"low\" /><crossAx val=\"100\" /><crosses val=\"autoZero\" /><lblOffset val=\"100\" /></catAx><valAx><axId val=\"100\" /><scaling><orientation val=\"minMax\" /></scaling><axPos val=\"l\" /><majorGridlines /><title><tx><rich><a:bodyPr /><a:p><a:pPr><a:defRPr /></a:pPr><a:r><a:t>USD m</a:t></a:r></a:p></rich></tx></title><majorTickMark val=\"none\" /><minorTickMark val=\"none\" /><crossAx val=\"10\" /><crosses val=\"autoZero\" /></valAx></plotArea><legend><legendPos val=\"b\" /></legend><plotVisOnly val=\"1\" /><dispBlanksAs val=\"gap\" /></chart></chartSpace>",
+  "xl/charts/chart4.xml": "<chartSpace xmlns:a=\"http://schemas.openxmlformats.org/drawingml/2006/main\" xmlns=\"http://schemas.openxmlformats.org/drawingml/2006/chart\"><chart><title><tx><rich><a:bodyPr /><a:p><a:pPr><a:defRPr /></a:pPr><a:r><a:t>Reviewed scatter</a:t></a:r></a:p></rich></tx></title><plotArea><scatterChart><scatterStyle val=\"marker\" /><ser><idx val=\"0\" /><order val=\"0\" /><tx><v>Base</v></tx><spPr><a:solidFill><a:srgbClr val=\"2f54c9\" /></a:solidFill><a:ln><a:noFill /><a:prstDash val=\"solid\" /></a:ln></spPr><marker><symbol val=\"square\" /><size val=\"5\" /><spPr><a:solidFill><a:srgbClr val=\"2f54c9\" /></a:solidFill><a:ln><a:solidFill><a:srgbClr val=\"2f54c9\" /></a:solidFill><a:prstDash val=\"solid\" /></a:ln></spPr></marker><xVal><numRef><f>'Reviewed scatter'!$H$2:$H$7</f></numRef></xVal><yVal><numRef><f>'Reviewed scatter'!$I$2:$I$7</f></numRef></yVal><smooth val=\"0\" /></ser><ser><idx val=\"1\" /><order val=\"1\" /><tx><v>Downside</v></tx><spPr><a:solidFill><a:srgbClr val=\"6741a5\" /></a:solidFill><a:ln><a:noFill /><a:prstDash val=\"solid\" /></a:ln></spPr><marker><symbol val=\"square\" /><size val=\"5\" /><spPr><a:solidFill><a:srgbClr val=\"6741a5\" /></a:solidFill><a:ln><a:solidFill><a:srgbClr val=\"6741a5\" /></a:solidFill><a:prstDash val=\"solid\" /></a:ln></spPr></marker><xVal><numRef><f>'Reviewed scatter'!$H$2:$H$7</f></numRef></xVal><yVal><numRef><f>'Reviewed scatter'!$J$2:$J$7</f></numRef></yVal><smooth val=\"0\" /></ser><axId val=\"10\" /><axId val=\"20\" /></scatterChart><valAx><axId val=\"10\" /><scaling><orientation val=\"minMax\" /></scaling><axPos val=\"l\" /><majorGridlines /><majorTickMark val=\"none\" /><minorTickMark val=\"none\" /><tickLblPos val=\"low\" /><crossAx val=\"20\" /><crosses val=\"autoZero\" /></valAx><valAx><axId val=\"20\" /><scaling><orientation val=\"minMax\" /></scaling><axPos val=\"l\" /><majorGridlines /><title><tx><rich><a:bodyPr /><a:p><a:pPr><a:defRPr /></a:pPr><a:r><a:t>USD m</a:t></a:r></a:p></rich></tx></title><majorTickMark val=\"none\" /><minorTickMark val=\"none\" /><crossAx val=\"10\" /><crosses val=\"autoZero\" /></valAx></plotArea><legend><legendPos val=\"b\" /></legend><plotVisOnly val=\"1\" /><dispBlanksAs val=\"gap\" /></chart></chartSpace>"
+ }
+}

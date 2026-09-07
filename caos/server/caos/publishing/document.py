@@ -152,7 +152,7 @@ def _source_register(
             f"{disposition}{' — ' + reason if reason else ''}",
             "Yes" if source.get("id") in cited_source_ids else "No",
         ])
-    return rows[:MAX_TABLE_ROWS]
+    return rows
 
 
 def _origin_counts(sections: list[dict[str, Any]]) -> dict[str, int]:
@@ -192,7 +192,7 @@ def build_publication(
     evidence_rows = [
         [row["source_id"], ", ".join(row["block_ids"]), "withdrawn" if row.get("withdrawn") else "live"]
         for row in payload.get("evidence") or []
-    ][:MAX_TABLE_ROWS]
+    ]
     limitation_texts = _limitation_texts(payload, opinion)
     counts = _origin_counts(sections)
     masthead = {
@@ -269,7 +269,20 @@ def build_publication(
             ],
         },
     ]
-    pages.append({"name": CONTROL_PAGE, "sections": control_sections})
+    # Section rows are bounded; the register itself must cover every supplied
+    # source. Frozen publications already stored are never recomposed here.
+    paged_control: list[dict[str, Any]] = []
+    for section in control_sections:
+        if section["kind"] == "table" and len(section["rows"]) > MAX_TABLE_ROWS:
+            for offset in range(0, len(section["rows"]), MAX_TABLE_ROWS):
+                part = offset // MAX_TABLE_ROWS + 1
+                paged_control.append({**section,
+                    "section_id": section["section_id"] if part == 1 else f"{section['section_id']}_{part}",
+                    "title": section["title"] if part == 1 else f"{section['title']} (continued {part})",
+                    "rows": section["rows"][offset:offset + MAX_TABLE_ROWS]})
+        else:
+            paged_control.append(section)
+    pages.append({"name": CONTROL_PAGE, "sections": paged_control})
     all_sections = [section for page in pages for section in page["sections"]]
     validated = _ADAPTER.dump_python(_ADAPTER.validate_python(all_sections), mode="json")
     by_id = {section["section_id"]: section for section in validated}

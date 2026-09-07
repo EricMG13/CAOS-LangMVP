@@ -185,19 +185,23 @@ def _md_cell(value: Any) -> str:
     return str(value).replace("|", r"\|").replace("\n", " ")
 
 
-def _md_section(section: dict[str, Any], depth: int, lines: list[str]) -> None:
+def _md_section(section: dict[str, Any], depth: int, lines: list[str], *, charts: bool = False) -> None:
     level = "#" * min(3 + depth, 6)
     lines.append(f"{level} {section['title']} · {_origin_label(section)}")
     kind = section["kind"]
     if kind == "columns":
         for column in section["items"]:
             for item in column:
-                _md_section(item, depth + 1, lines)
+                _md_section(item, depth + 1, lines, charts=charts)
         return
     rows = _section_rows(section)
     if kind in {"table", "chart"}:
         if kind == "chart":
-            lines.append(f"Chart exhibit · {section.get('recipe', {}).get('chart_kind', 'chart')} · authoritative data table follows")
+            recipe = section.get("recipe") or {}
+            if charts and set(recipe) == {"schema_version", "recipe_id", "kind", "unit", "points"}:
+                lines.append(f"Chart exhibit · {recipe['kind']} · {recipe['unit']} · text representation; authoritative data table follows")
+            else:
+                lines.append(f"Chart exhibit · {recipe.get('chart_kind', 'chart')} · authoritative data table follows")
         header = rows[0]
         lines.append("| " + " | ".join(_md_cell(cell) for cell in header) + " |")
         lines.append("| " + " | ".join("---:" if all(_is_numeric(row[index]) for row in rows[1:] if index < len(row)) and len(rows) > 1 else "---" for index, _ in enumerate(header)) + " |")
@@ -234,7 +238,7 @@ def render_frozen_markdown(payload: dict[str, Any]) -> bytes:
         lines.append(f"## {page['name']} · Page {index} of {len(view['pages'])}")
         lines.append("")
         for section in page["sections"]:
-            _md_section(section, 0, lines)
+            _md_section(section, 0, lines, charts=(payload.get("renderer") or {}).get("version") == "caos.deliverable-renderer.v4")
     lines.append("## Revision Record")
     lines.extend(f"- {label}: {value}" for label, value in view["revision"])
     return ("\n".join(lines) + "\n").encode("utf-8")
