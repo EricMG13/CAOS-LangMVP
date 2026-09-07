@@ -613,7 +613,7 @@ def test_dev_entrypoint_cannot_bypass_production_validation(monkeypatch, tmp_pat
         classmethod(lambda cls: Settings(environment="production")),
     )
     monkeypatch.setenv("CAOS_DATA_DIR", str(data))
-    monkeypatch.setattr(dev, "serve", lambda *_args, **_kwargs: pytest.fail("invalid app served"))
+    monkeypatch.setattr(dev, "run_app", lambda *_args, **_kwargs: pytest.fail("invalid app served"))
 
     with pytest.raises(RuntimeError, match="ENVIRONMENT=development"):
         dev.main()
@@ -635,23 +635,33 @@ def test_production_entrypoint_cannot_boot_development_defaults(monkeypatch, tmp
     assert not data.exists()
 
 
-def test_app_entrypoint_holds_the_app_lock_while_serving(monkeypatch, tmp_path):
+@pytest.mark.parametrize("entrypoint", (run, dev))
+def test_app_entrypoint_holds_the_app_lock_while_serving(monkeypatch, tmp_path, entrypoint):
     tracker = _LockTracker()
     settings = _settings(tmp_path)
+    settings.environment = "development" if entrypoint is dev else "production"
     engine = SimpleNamespace(store=tracker, provider=None, checkpoint_path=tmp_path / "checkpoints.db")
 
     async def close_engine():
         pass
 
     engine.aclose = close_engine
+    monkeypatch.setenv("HOST", "127.0.0.2")
     monkeypatch.setattr(run.Settings, "from_env", classmethod(lambda cls: settings))
     monkeypatch.setattr(run, "build", lambda _settings, _data: (object(), engine))
-    monkeypatch.setattr(run, "serve", lambda *_args, **_kwargs: tracker.held == ["app"] or pytest.fail("app lock not held"))
 
-    run.main()
+    def serve(_app, served_engine, *, host, port):
+        assert tracker.held == ["app"]
+        assert served_engine is engine and port == settings.port
+        assert host == ("127.0.0.1" if entrypoint is dev else "127.0.0.2")
+
+    monkeypatch.setattr(run, "serve", serve)
+
+    entrypoint.main()
 
 
-def test_app_entrypoint_closes_unserved_resources_when_lock_acquisition_fails(monkeypatch, tmp_path):
+@pytest.mark.parametrize("entrypoint", (run, dev))
+def test_app_entrypoint_closes_unserved_resources_when_lock_acquisition_fails(monkeypatch, tmp_path, entrypoint):
     events = []
 
     class Store(_LockTracker):
@@ -677,13 +687,14 @@ def test_app_entrypoint_closes_unserved_resources_when_lock_acquisition_fails(mo
             events.append("engine.close")
 
     settings = _settings(tmp_path)
+    settings.environment = "development" if entrypoint is dev else "production"
     engine = Engine()
     monkeypatch.setattr(run.Settings, "from_env", classmethod(lambda cls: settings))
     monkeypatch.setattr(run, "build", lambda _settings, _data: (object(), engine))
     monkeypatch.setattr(run, "serve", lambda *_args, **_kwargs: pytest.fail("app served without lock"))
 
     with pytest.raises(RuntimeError, match="app lock refused"):
-        run.main()
+        entrypoint.main()
 
     assert events == ["engine.close", "provider.close", "store.close"]
 
@@ -713,7 +724,8 @@ def test_worker_entrypoint_holds_the_worker_lock_while_polling(monkeypatch, tmp_
 
 
 @pytest.mark.parametrize("raises", (False, True))
-def test_app_entrypoint_closes_owned_resources_in_reverse_order(monkeypatch, tmp_path, raises):
+@pytest.mark.parametrize("entrypoint", (run, dev))
+def test_app_entrypoint_closes_owned_resources_in_reverse_order(monkeypatch, tmp_path, raises, entrypoint):
     events = []
     loops = []
 
@@ -740,6 +752,7 @@ def test_app_entrypoint_closes_owned_resources_in_reverse_order(monkeypatch, tmp
             loops.append(asyncio.get_running_loop())
 
     settings = _settings(tmp_path)
+    settings.environment = "development" if entrypoint is dev else "production"
     engine = Engine()
     monkeypatch.setattr(run.Settings, "from_env", classmethod(lambda cls: settings))
     monkeypatch.setattr(run, "build", lambda _settings, _data: (object(), engine))
@@ -754,9 +767,9 @@ def test_app_entrypoint_closes_owned_resources_in_reverse_order(monkeypatch, tmp
     monkeypatch.setattr(run.uvicorn, "Server", lambda _config: SimpleNamespace(serve=serve))
     if raises:
         with pytest.raises(RuntimeError, match="serve failed"):
-            run.main()
+            entrypoint.main()
     else:
-        run.main()
+        entrypoint.main()
 
     assert events[-3:] == ["engine.close", "provider.close", "store.close"]
     assert loops[0] is loops[1] is loops[2]
@@ -800,7 +813,8 @@ def test_worker_entrypoint_closes_owned_resources_in_reverse_order(monkeypatch, 
     assert events[-2:] == ["engine.close", "store.close"]
 
 
-def test_app_entrypoint_closes_store_when_provider_shutdown_fails(monkeypatch, tmp_path):
+@pytest.mark.parametrize("entrypoint", (run, dev))
+def test_app_entrypoint_closes_store_when_provider_shutdown_fails(monkeypatch, tmp_path, entrypoint):
     events = []
 
     class Store(_LockTracker):
@@ -825,6 +839,7 @@ def test_app_entrypoint_closes_store_when_provider_shutdown_fails(monkeypatch, t
             events.append("engine.close")
 
     settings = _settings(tmp_path)
+    settings.environment = "development" if entrypoint is dev else "production"
     engine = Engine()
     monkeypatch.setattr(run.Settings, "from_env", classmethod(lambda cls: settings))
     monkeypatch.setattr(run, "build", lambda _settings, _data: (object(), engine))
@@ -832,12 +847,13 @@ def test_app_entrypoint_closes_store_when_provider_shutdown_fails(monkeypatch, t
     monkeypatch.setattr(run.uvicorn, "Server", lambda _config: SimpleNamespace(serve=_noop))
 
     with pytest.raises(RuntimeError, match="provider close failed"):
-        run.main()
+        entrypoint.main()
 
     assert events[-2:] == ["provider.close", "store.close"]
 
 
-def test_app_entrypoint_preserves_service_failure_through_all_cleanup_failures(monkeypatch, tmp_path):
+@pytest.mark.parametrize("entrypoint", (run, dev))
+def test_app_entrypoint_preserves_service_failure_through_all_cleanup_failures(monkeypatch, tmp_path, entrypoint):
     events = []
 
     class Store(_LockTracker):
@@ -864,6 +880,7 @@ def test_app_entrypoint_preserves_service_failure_through_all_cleanup_failures(m
             raise RuntimeError("engine close failed")
 
     settings = _settings(tmp_path)
+    settings.environment = "development" if entrypoint is dev else "production"
     engine = Engine()
     monkeypatch.setattr(run.Settings, "from_env", classmethod(lambda cls: settings))
     monkeypatch.setattr(run, "build", lambda _settings, _data: (object(), engine))
@@ -875,12 +892,13 @@ def test_app_entrypoint_preserves_service_failure_through_all_cleanup_failures(m
     monkeypatch.setattr(run.uvicorn, "Server", lambda _config: SimpleNamespace(serve=fail_serve))
 
     with pytest.raises(RuntimeError, match="serve failed"):
-        run.main()
+        entrypoint.main()
 
     assert events[-3:] == ["engine.close", "provider.close", "store.close"]
 
 
-def test_app_entrypoint_preserves_engine_shutdown_failure(monkeypatch, tmp_path):
+@pytest.mark.parametrize("entrypoint", (run, dev))
+def test_app_entrypoint_preserves_engine_shutdown_failure(monkeypatch, tmp_path, entrypoint):
     events = []
 
     class Store(_LockTracker):
@@ -907,6 +925,7 @@ def test_app_entrypoint_preserves_engine_shutdown_failure(monkeypatch, tmp_path)
             raise RuntimeError("engine close failed")
 
     settings = _settings(tmp_path)
+    settings.environment = "development" if entrypoint is dev else "production"
     engine = Engine()
     monkeypatch.setattr(run.Settings, "from_env", classmethod(lambda cls: settings))
     monkeypatch.setattr(run, "build", lambda _settings, _data: (object(), engine))
@@ -914,7 +933,7 @@ def test_app_entrypoint_preserves_engine_shutdown_failure(monkeypatch, tmp_path)
     monkeypatch.setattr(run.uvicorn, "Server", lambda _config: SimpleNamespace(serve=_noop))
 
     with pytest.raises(RuntimeError, match="engine close failed"):
-        run.main()
+        entrypoint.main()
 
     assert events[-3:] == ["engine.close", "provider.close", "store.close"]
 
@@ -1057,7 +1076,8 @@ def _hold_checkpoint_lock_in_another_process(checkpoint: Path):
     return process
 
 
-def test_app_entrypoint_refuses_startup_while_another_process_holds_the_checkpoint_location(monkeypatch, tmp_path):
+@pytest.mark.parametrize("entrypoint", (run, dev))
+def test_app_entrypoint_refuses_startup_while_another_process_holds_the_checkpoint_location(monkeypatch, tmp_path, entrypoint):
     """The proof by a second process: with the lock held elsewhere, `run.main`
     fails typed before recovery or a socket, serves nothing, and closes what it
     built. The advisory lock is never even attempted."""
@@ -1086,12 +1106,13 @@ def test_app_entrypoint_refuses_startup_while_another_process_holds_the_checkpoi
     holder = _hold_checkpoint_lock_in_another_process(tmp_path / "checkpoints.db")
     try:
         settings = _settings(tmp_path)
+        settings.environment = "development" if entrypoint is dev else "production"
         engine = Engine()
         monkeypatch.setattr(run.Settings, "from_env", classmethod(lambda cls: settings))
         monkeypatch.setattr(run, "build", lambda _settings, _data: (object(), engine))
         monkeypatch.setattr(run, "serve", lambda *_args, **_kwargs: pytest.fail("served while another instance holds the checkpoint location"))
         with pytest.raises(InstanceAlreadyRunning, match="INSTANCE_ALREADY_RUNNING"):
-            run.main()
+            entrypoint.main()
         assert events == ["engine.close", "store.close"], "nothing served, no advisory lock taken, resources closed"
     finally:
         holder.stdin.close()
@@ -1101,7 +1122,7 @@ def test_app_entrypoint_refuses_startup_while_another_process_holds_the_checkpoi
     # The holder is gone: the same entrypoint now takes both locks and serves.
     events.clear()
     monkeypatch.setattr(run, "serve", lambda *_args, **_kwargs: events.append("served"))
-    run.main()
+    entrypoint.main()
     assert events[:2] == ["advisory:app", "served"]
 
 

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+from contextlib import suppress
 from pathlib import Path
 
 import uvicorn
@@ -169,11 +170,8 @@ async def _close_owned(engine: Engine | None, provider: object | None = None) ->
         await close_provider()
 
 
-def main() -> None:
-    settings = Settings.from_env()
-    if settings.environment != "production":
-        raise RuntimeError("run.py requires ENVIRONMENT=production; use dev.py for development")
-    data = Path(os.getenv("CAOS_DATA_DIR", str(settings.storage_dir))).resolve()
+def run_app(settings: Settings, data: Path, *, host: str) -> None:
+    """Own the app from assembly through locked serving and ordered shutdown."""
     app, engine = build(settings, data)
     serve_owns_async_resources = False
     try:
@@ -183,19 +181,23 @@ def main() -> None:
         # socket is bound; a second instance fails here, typed, serving nothing.
         with checkpoint_lock(engine.checkpoint_path), engine.store.single_instance("app"):
             serve_owns_async_resources = True
-            serve(app, engine, host=os.getenv("HOST", "0.0.0.0"), port=settings.port)
+            serve(app, engine, host=host, port=settings.port)
     except BaseException:
         if not serve_owns_async_resources:
-            try:
+            with suppress(BaseException):
                 asyncio.run(_close_owned(engine))
-            except BaseException:
-                pass
-        try:
+        with suppress(BaseException):
             engine.store.close()
-        except BaseException:
-            pass
         raise
     engine.store.close()
+
+
+def main() -> None:
+    settings = Settings.from_env()
+    if settings.environment != "production":
+        raise RuntimeError("run.py requires ENVIRONMENT=production; use dev.py for development")
+    data = Path(os.getenv("CAOS_DATA_DIR", str(settings.storage_dir))).resolve()
+    run_app(settings, data, host=os.getenv("HOST", "0.0.0.0"))
 
 
 if __name__ == "__main__":
