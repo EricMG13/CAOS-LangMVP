@@ -1,10 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { createRequire } from "node:module";
 
 import { adaptChartSection } from "./chartRecipe.ts";
 import type { DocumentChartSection } from "../report/documentTypes.ts";
 
 const origin = { kind: "ARTIFACT" as const, authority_id: "artifact-1", block_ids: ["block-1"] };
+const { StackY } = createRequire(import.meta.url)("@antv/g2/lib/transform/stackY");
 
 function section(kind: string, points: Record<string, unknown>[], unit = "USD millions"): DocumentChartSection {
   const columns = ["Category / period", "Series", "Value", "Unit", "Sources"];
@@ -60,6 +62,40 @@ test("stacked bars use G2's diverging stackY and retain negative and zero values
   assert.equal(result.options.type, "interval");
   assert.deepEqual(result.options.transform, [{ type: "stackY" }]);
   assert.deepEqual(result.data.map((point) => point.value), [-2.5, 0, 3.25]);
+});
+
+test("installed G2 stacks each sign outward in global series order without changing reviewed data", () => {
+  for (const rows of [
+    [["Q1", "A", 1], ["Q1", "B", 2], ["Q2", "B", 2], ["Q2", "A", 1]],
+    [["Q1", "A", -1], ["Q1", "B", -2], ["Q2", "B", -2], ["Q2", "A", -1]],
+    [["Q1", "A", 1], ["Q1", "B", -2], ["Q1", "C", 0], ["Q2", "C", -3], ["Q2", "B", 2], ["Q2", "A", -1],
+      ["Q3", "B", 0], ["Q3", "C", -4], ["Q3", "A", -2]],
+  ] as [string, string, number][][]) {
+    const input = section("stacked_bar", rows.map(([x, series, y]) => ({ x, series, y: String(y), display: String(y), source_ids: ["SRC-1"] })));
+    const original = structuredClone(input);
+    const result = adaptChartSection(input, "paper");
+    assert.equal(result.ok, true);
+    if (!result.ok) continue;
+    assert.deepEqual(result.data.map((d) => [d.category, d.series, d.value]), rows);
+    const rendered = result.options.data;
+    assert.deepEqual([...new Set(rendered.map((d) => d.category))], [...new Set(rows.map(([x]) => x))]);
+    const encode = Object.fromEntries(["x", "y", "color"].map((key) => [key, { type: "column", value: rendered.map((d) =>
+      key === "x" ? d.category : key === "y" ? d.value : d.series) }]));
+    const [, stacked] = StackY()(rendered.map((_, i) => i), { data: rendered, encode });
+    for (const category of new Set(rows.map(([x]) => x))) {
+      let positive = 0, negative = 0;
+      for (const name of result.series) {
+        const index = rendered.findIndex((d) => d.category === category && d.series === name);
+        if (index < 0) continue;
+        const value = rendered[index].value;
+        const start = value < 0 ? negative : positive;
+        assert.equal(stacked.encode.y1.value[index], start, `${category}/${name} baseline`);
+        assert.equal(stacked.encode.y.value[index], start + value, `${category}/${name} endpoint`);
+        if (value < 0) negative += value; else positive += value;
+      }
+    }
+    assert.deepEqual(input, original);
+  }
 });
 
 test("ordinary bars dodge same-period series instead of drawing overlapping intervals", () => {

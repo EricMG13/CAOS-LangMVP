@@ -58,7 +58,11 @@ def vector_chart(recipe: ChartRecipe) -> tuple[bytes, list[tuple[float, float, s
     starts = [0.0] * len(values)
     if recipe.kind == "stacked_bar":
         totals: dict[tuple[str, bool], float] = {}
-        for i, point in enumerate(recipe.points):
+        # Native XLSX stacks global first-seen series outward from zero for
+        # each sign. Accumulate in that order; keep draw/table point order.
+        stack_order = sorted(range(len(recipe.points)), key=lambda i: series_index[recipe.points[i].series])
+        for i in stack_order:
+            point = recipe.points[i]
             key = (point.x, values[i] >= 0)
             starts[i] = totals.get(key, 0.0)
             totals[key] = starts[i] + values[i]

@@ -204,6 +204,69 @@ def test_sparse_line_series_preserve_gaps_in_pdf_and_xlsx():
     assert sheet._charts[0].display_blanks == "gap"
 
 
+@pytest.mark.parametrize("rows", [
+    [("Q1", "A", "1"), ("Q1", "B", "2"), ("Q2", "B", "2"), ("Q2", "A", "1")],
+    [("Q1", "A", "-1"), ("Q1", "B", "-2"), ("Q2", "B", "-2"), ("Q2", "A", "-1")],
+    [("Q1", "A", "1"), ("Q1", "B", "-2"), ("Q1", "C", "0"),
+     ("Q2", "C", "-3"), ("Q2", "B", "2"), ("Q2", "A", "-1"),
+     ("Q3", "B", "0"), ("Q3", "C", "-4"), ("Q3", "A", "-2")],
+])
+def test_signed_stacks_follow_global_series_order_without_reordering_exact_rows(rows):
+    import re
+    from caos.publishing.charts import prepare_chart, vector_chart
+    from openpyxl import load_workbook
+
+    payload = chart_payload(("stacked_bar",))
+    section = payload["publication"]["pages"][0]["sections"][0]
+    section["recipe"]["points"] = [{"x": category, "series": series, "y": value,
+        "display": value, "source_ids": ["src-reviewed"]} for category, series, value in rows]
+    section["accessible_columns"], section["accessible_rows"] = ChartRecipe.model_validate(section["recipe"]).accessible_table()
+    before = copy.deepcopy(payload)
+    recipe, reason = prepare_chart(section)
+    assert not reason
+    series = list(dict.fromkeys(row[1] for row in rows))
+    categories = list(dict.fromkeys(row[0] for row in rows))
+    intervals = {}
+    for category in categories:
+        positive = negative = 0.0
+        for name in series:
+            value = next((float(y) for x, s, y in rows if (x, s) == (category, name)), None)
+            if value is None:
+                continue
+            start = negative if value < 0 else positive
+            intervals[category, name] = (start, start + value)
+            if value < 0:
+                negative += value
+            else:
+                positive += value
+    low = min(0, *(min(pair) for pair in intervals.values()))
+    high = max(0, *(max(pair) for pair in intervals.values()))
+    operators, _ = vector_chart(recipe)
+    rectangles = re.findall(rb"([-\d.]+) ([-\d.]+) ([-\d.]+) ([-\d.]+) re f", operators)
+    expected = [intervals[x, s] for x, s, value in rows if float(value) != 0]
+    assert len(rectangles) == len(expected)
+    for rectangle, (start, end) in zip(rectangles, expected):
+        assert float(rectangle[1]) == pytest.approx(52 + (min(start, end) - low) / (high - low) * 166, abs=0.0001)
+        assert float(rectangle[3]) == pytest.approx(abs(end - start) / (high - low) * 166, abs=0.0001)
+    sheet = load_workbook(io.BytesIO(render_frozen_export(payload, "xlsx")))["Reviewed stacked_bar"]
+    chart = sheet._charts[0]
+    assert chart.grouping == "stacked" and chart.overlap == 100
+    assert [entry.tx.v for entry in chart.series] == series
+    assert all(entry.invertIfNegative is False for entry in chart.series)
+    for i, category in enumerate(categories, 2):
+        assert sheet.cell(i, 7).value == category
+        for j, name in enumerate(series, 8):
+            assert sheet.cell(i, j).value == next((float(y) for x, s, y in rows if (x, s) == (category, name)), None)
+    assert payload == before
+    assert [[sheet.cell(i, j).value for j in range(1, 6)] for i in range(2, len(rows) + 2)] == section["accessible_rows"]
+    if os.environ.get("CAOS_CHART_INSPECTION_DIR"):
+        directory = Path(os.environ["CAOS_CHART_INSPECTION_DIR"])
+        directory.mkdir(parents=True, exist_ok=True)
+        name = "positive" if all(float(y) >= 0 for _, _, y in rows) else "negative" if all(float(y) <= 0 for _, _, y in rows) else "mixed"
+        for fmt in ("pdf", "xlsx"):
+            (directory / f"stack-{name}.{fmt}").write_bytes(render_frozen_export(payload, fmt))
+
+
 @pytest.mark.parametrize("kind", ["line", "bar", "stacked_bar", "scatter"])
 def test_zero_single_point_and_numeric_extremes_produce_bounded_marks(kind):
     from caos.publishing.charts import prepare_chart, vector_chart

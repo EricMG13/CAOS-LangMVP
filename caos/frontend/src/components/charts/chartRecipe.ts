@@ -164,10 +164,20 @@ export function adaptChartSection(section: DocumentChartSection, theme: ChartThe
 
   const series = [...new Set(data.map(({ series }) => series))];
   const sourceIds = [...new Set(data.flatMap(({ sourceIds }) => sourceIds))];
+  // G2 5.4.8 reverses negative stack inputs. Order only its copied render
+  // data so both signs stack global first-seen series outward from zero,
+  // matching native XLSX/PDF without changing reviewed/table/category order.
+  const categories = [...new Set(data.map(({ category }) => category))];
+  const renderData = kind === "stacked_bar" ? [...data].sort((a, b) => {
+    const categoryOrder = categories.indexOf(a.category) - categories.indexOf(b.category);
+    const aSeriesOrder = series.indexOf(a.series) * (a.value < 0 ? -1 : 1);
+    const bSeriesOrder = series.indexOf(b.series) * (b.value < 0 ? -1 : 1);
+    return categoryOrder || aSeriesOrder - bSeriesOrder;
+  }) : data;
   const paper = theme === "paper";
   const options: ClosedChartOptions = {
     type: kind === "line" ? "line" : isScatter ? "point" : "interval",
-    data,
+    data: renderData,
     encode: { x: isScatter ? "xValue" : "category", y: "value", color: "series" },
     ...(kind === "stacked_bar" ? { transform: [{ type: "stackY" as const }] }
       : kind === "bar" ? { transform: [{ type: "dodgeX" as const }] } : {}),
