@@ -155,6 +155,7 @@ export default function WorkbenchShell({
   }, []);
 
   const closeDrawer = () => {
+    if (drawerRef.current?.open) return;
     onDrawerChange(null);
     const trigger = drawerTriggerRef.current;
     window.requestAnimationFrame(() => trigger?.focus());
@@ -265,7 +266,7 @@ export default function WorkbenchShell({
         {blockPreview.note && <p className="muted">{blockPreview.note}</p>}
         {blockPreview.remaining > 0 && <button className="button small" type="button" onClick={() => setDrawerBlockLimit(drawerBlockLimit + UNCITED_BLOCK_PREVIEW)}>Show more blocks</button>}
       </div>
-      <Link className="button small" href={withQuery(routeFor("Sources"), { case: caseId, source: drawer.source.id, block: drawer.blockId })} onNavigate={closeDrawer}>Open full source</Link>
+      <Link className="button small" href={withQuery(routeFor("Sources"), { case: caseId, source: drawer.source.id, block: drawer.blockId })} onNavigate={() => onDrawerChange(null)}>Open full source</Link>
     </div>;
   }
   const evidenceHref = exactEvidenceKind === "source"
