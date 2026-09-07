@@ -8,12 +8,14 @@
 
 **Tech Stack:** Existing Python/FastAPI/Pydantic services, React 19/Next.js 16 static export/TypeScript frontend, CSS/SVG, pytest, Node test runner and Playwright/axe. Use AntV G2 v5 for analytical charts, guided by the linked AntVis skills; use native SVG/CSS for the small staged run graph. Preserve the existing pango/pypdf/openpyxl publication stack.
 
-**Status:** Tasks 0–9 were implemented and independently approved in their
-sequential implementer/reviewer cycles. Task 10 owner qualification completed on
-2026-09-07 with durable evidence in
-`.superpowers/sdd/analyst-workbench-task-10-report.md`; its fresh independent
-task review and final whole-branch Astra review remain separate. This status does
-not claim live-provider qualification, merge, deployment or release.
+**Status:** Complete as of 2026-09-08. Tasks 0–10 were implemented, qualified,
+and independently approved. The fresh Astra whole-branch review of
+`31482a7..715000a` is also Spec PASS / Quality Approved with no actionable
+findings. Qualification and handoff evidence is in
+`.superpowers/sdd/analyst-workbench-task-10-report.md`; the final review is in
+`.superpowers/sdd/analyst-workbench-final-findings.md`. This completes the
+fixture-qualified implementation, not live-provider qualification, merge,
+deployment or release.
 
 ## Global Constraints
 
@@ -69,7 +71,7 @@ regressions.
 
 The implemented `2026-08-31-legacy-builder-core-adaptation.md` is history, not an unbuilt backlog. Worksheet endpoints, semantic report sections, preview, exports, model revisions and the six pathway composers already exist. This plan closes the remaining capability gaps.
 
-The legacy URLs are seeded reference views. They establish useful layout and interaction patterns, not live-calculation correctness. Current-side review findings were source/test verified; final browser qualification remains a task below.
+The legacy URLs are seeded reference views. They establish useful layout and interaction patterns, not live-calculation correctness. Current-side review findings were source/test verified; completed browser qualification and its evidence limits are recorded under Task 10.
 
 ### Four independently shippable workstreams
 

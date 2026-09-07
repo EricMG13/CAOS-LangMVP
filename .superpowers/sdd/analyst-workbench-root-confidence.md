@@ -1,6 +1,6 @@
 # Controller confidence review — Analyst Workbench integration
 
-Scope: the isolated branch from `31482a7912c9e58017c2784bf098a6868978cd01`, with independently approved Tasks0–9 and the final Task10 implementation awaiting its separate reviews. This record supplements, rather than replaces, the per-task owner confidence reviews and rewrite tournaments.
+Scope: the isolated branch from `31482a7912c9e58017c2784bf098a6868978cd01` through qualified implementation `715000ac30465aa2a06dc2283af9d0a60bed4894`. All Tasks0–10 have independent approval, and the separate fresh Astra whole-branch review is Spec PASS / Quality Approved. This record supplements, rather than replaces, the per-task owner confidence reviews and rewrite tournaments. Final documentation-only closeout:2026-09-08.
 
 Least confident about, ranked:
 
@@ -20,7 +20,7 @@ Least confident about, ranked:
 
 8. **Qualification counts or historical provenance being overstated.** Investigated: root read every axe loop and found inherited output metadata claiming125scans/12Modelchecks, while actual execution is122/9. Owner corrected output constants; older successful Chromium/Firefox logs remain unaltered with the correction clearly recorded. Original backend output was transcribed rather than captured through tee; its command, exit, timing, unchanged source trees and limitation are explicit. WebKit's first successful chart-stage image was not represented as an overall pass; root later inspected the successful retry. Verdict: **reporting inaccuracies corrected**, evidence limits retained.
 
-9. **Completion being claimed before independent review and cleanup.** Investigated: all4capability qualification evidence is present, but Task10 and fresh whole-branch Astra reviews are still separate pending gates at the time of this record. Original checkout and owned-harness cleanup must be rechecked at final handoff. Verdict: **open process gates**, not a known product bug; the controller must close them before declaring the plan complete.
+9. **Completion being claimed before independent review and cleanup.** Investigated: root read both complete final findings records. Task10's reviewer independently verified262manifestentries,12receipt-bound exports,11DAGs plus refusal,4offline packages and22focused tests; the separate Astra reviewer read all27,777branch-diff lines, traced authority/version/freeze callers and personally sampled10visuals. Both returned Spec PASS / Quality Approved with no actionable findings. Root reverified the original checkout at055af5a with only its pre-existing untracked plan, the clean implementation at715000a, and all262evidence hashes. A wider cleanup check found an earlier owned19275harness; exact PID/cwd/data-directory checks preceded graceful SIGINT, and no19273–19276listeners remain. Verdict: **closed process gates**. No source fix or repeated unchanged suite is needed; only this documentation closeout follows the reviewed implementation.
 
 Fixed: paper source contrast,1024open Report layout, missing test evidence arrays, v2 test controls/save settlement, exact receipt request-settlement proof, platform keyboard assumptions and metadata overcount.
 
@@ -28,4 +28,4 @@ Verified fine: accepted-v2 publication/ancestry and frozen receipt identities; r
 
 By design: host-control fixtures do not qualify live financial analysis; no paid-provider run, real-case mutation, merge or deployment is authorized. Recorded template/renderer versions preserve historical outputs; Markdown is the text/table representation; extreme-precision charts fall back to exact tables. Existing Node/Starlette warnings remain documented.
 
-Still open: Task10 independent review, fresh Astra whole-branch review, final repository/harness handoff checks. No unresolved confirmed production defect is being carried into those reviews.
+Still open: none within the approved implementation and fixture-qualification scope. No unresolved confirmed production defect remains. Live analytical qualification, merge, deployment and external certification remain explicitly outside scope, not silently passed gates. The documentation-only closeout is rewrite-tournament exempt and does not change the tested source or evidence bytes.

@@ -1,8 +1,18 @@
 # Analyst Workbench Task 10 qualification report
 
-**Owner status:** implementation and owner qualification complete; fresh independent Task 10 review and final whole-branch Astra review remain intentionally separate. This report does not claim a merge, deployment, live-provider qualification, or global completion.
+**Status:** Implementation, qualification and independent review are complete. The fresh Task 10 reviewer and separate Astra whole-branch reviewer both returned Spec PASS / Quality Approved with no actionable findings. The reviewed implementation is `715000ac30465aa2a06dc2283af9d0a60bed4894`, based on verified remote main `31482a7912c9e58017c2784bf098a6868978cd01`. This is fixture-qualified completion, not a merge, deployment or live-provider analytical qualification.
 
-**Execution boundary:** branch `codex/analyst-workbench-capabilities`, Task 10 baseline/HEAD at qualification `90403c7ce94e6384fd1f4595eff893935e5530f9`, isolated worktree `/Users/ericguei/Claude/Projects/CAOS-LangMVP/.claude/worktrees/analyst-workbench-codex`. The definitive combined app ran at `http://127.0.0.1:19276` with `--scanner-fixture --report-fixtures`, data `/private/tmp/caos-task10-definitive.oTpXik/harness-data-escalated`, a disposable edge secret and the harness-owned worker. No second worker, port 8000, legacy case, live/paid provider, credential copy, vendored methodology, push, PR, merge or deployment was used.
+**Execution boundary:** branch `codex/analyst-workbench-capabilities`, Task 10 baseline `90403c7ce94e6384fd1f4595eff893935e5530f9` and final qualified source committed as `715000a`, isolated worktree `/Users/ericguei/Claude/Projects/CAOS-LangMVP/.claude/worktrees/analyst-workbench-codex`. The definitive combined app ran at `http://127.0.0.1:19276` with `--scanner-fixture --report-fixtures`, data `/private/tmp/caos-task10-definitive.oTpXik/harness-data-escalated`, a disposable edge secret and the harness-owned worker. No second worker, port 8000, legacy case, live/paid provider, credential copy, vendored methodology, push, PR, merge or deployment was used.
+
+## Controller closeout — 2026-09-08
+
+All Tasks 0–10 have independent per-task approval. The separate final reviewer read the complete 27,777-line branch diff and checked cross-workstream source/model authority, recorded versions, freeze, offline reconstruction and representative visual evidence. Findings are retained in `analyst-workbench-task-10-findings.md` and `analyst-workbench-final-findings.md`; the chronological ledger is `analyst-workbench-progress.md`. No further code change was requested. This closeout changes documentation only.
+
+The controller reverified all 262 retained evidence hashes and the exact reviewed example PDF (`f356a187…`) and XLSX (`f16d746c…`). Both are in `evidence/task10/reviewed-export-example/`, alongside the 46 PDF page images; the 30 native XLSX sheet images remain in `evidence/task10/native-xlsx/`. Impeccable guided the existing-token paper contrast and responsive-layout repairs described below.
+
+The original checkout remains on `codex/refactor` at `055af5a51774ec43485abd2357da514463923271`, with only its pre-existing untracked `docs/superpowers/plans/2026-09-07-analyst-workbench-capabilities.md`; that work was left untouched and unstaged. The isolated implementation worktree was clean at the reviewed commit. The definitive harness was stopped; a final wider check found an earlier owned harness on port 19275, verified its exact task worktree and disposable data directory, and gracefully stopped PID 30342 with its owned worker. No listeners remain on ports 19273–19276. No fixture or evidence file was deleted, and the legacy app on port 8000 was not touched.
+
+No push, PR, merge, deployment, real-case mutation or paid-provider run was performed. The branch and isolated worktree are retained for the user's next step.
 
 ## Acceptance matrix
 
