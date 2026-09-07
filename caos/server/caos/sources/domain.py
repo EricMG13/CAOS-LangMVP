@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import fcntl
 import hashlib
 import io
 import json
@@ -10,6 +11,7 @@ import secrets
 import socket
 import struct
 import zipfile
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
@@ -80,14 +82,32 @@ class Vault:
         """Whether these bytes are already at their content address."""
         return (self.root / self._key(sha256)).exists()
 
-    def discard(self, sha256: str) -> None:
-        """Take out bytes this request published and no row references.
+    @contextmanager
+    def admission(self, catalog: DomainStore, prepared: list[dict[str, Any]]):
+        """Publish and commit under one lock; rollback only unreferenced bytes.
 
-        Content addressing means one file can belong to several cases, so only
-        the caller that published it may call this, and only while its own
-        admission has failed.
+        Preparation owns its bytes in memory. No shared path is touched until
+        this synchronous section, which must run off the event loop.
         """
-        (self.root / self._key(sha256)).unlink(missing_ok=True)
+        # ponytail: vault-wide lock; use digest locks if admission throughput requires it.
+        lock = os.open(self.root, os.O_RDONLY)
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            published: set[str] = set()
+            try:
+                for source in prepared:
+                    sha256 = source["sha256"]
+                    if not self.holds(sha256):
+                        published.add(sha256)
+                    source["vault_path"] = self.put(source.pop("content"), sha256)
+                yield
+            finally:
+                # Also handles a caller that commits successfully and then raises.
+                for sha256 in published:
+                    if not catalog.source_digest_referenced(sha256):
+                        (self.root / self._key(sha256)).unlink(missing_ok=True)
+        finally:
+            os.close(lock)
 
     def put(self, content: bytes, sha256: str) -> str:
         actual = hashlib.sha256(content).hexdigest()
@@ -443,35 +463,30 @@ def pack_blocks(text: str) -> list[dict[str, Any]]:
 
 def _admit_content(vault: Vault, filename: str, media_type: str, content: bytes) -> dict[str, Any]:
     """The synchronous half of admission: the malware scan (a blocking clamd
-    socket in production), the archive screen, extraction, and the vault write
-    with its fsync. Seconds on a large workbook, so `prepare_upload` runs it on
+    socket in production), the archive screen and extraction.
+    Seconds on a large workbook, so `prepare_upload` runs it on
     a worker thread (DECISIONS §10.8, no event-loop starvation).
 
-    `published_now` says whether this call put the bytes at their content
-    address, so a caller whose admission is refused later can take out what it
-    published and leave what another case owns (W2).
+    Bytes stay private until the caller publishes and commits the admission.
     """
     scan_content(content, vault.settings)
     validate_archive(content)
     sha256 = hashlib.sha256(content).hexdigest()
     blocks = extract_blocks(filename, content)
-    published_now = not vault.holds(sha256)
-    vault_path = vault.put(content, sha256)
     return {
         "filename": filename,
         "media_type": media_type,
         "bytes": len(content),
         "sha256": sha256,
-        "vault_path": vault_path,
+        "content": content,
         "blocks": blocks,
         "withdrawn": False,
-        "published_now": published_now,
     }
 
 
 async def prepare_upload(vault: Vault, upload: UploadFile, max_bytes: int) -> dict[str, Any]:
     """Every admission check, in the order the single-source route has always
-    applied them, ending with the content-addressed vault write. Returns the
+    applied them. Returns the prepared bytes and extracted
     source row minus its case binding; nothing touches the store. The intake
     (Task 8) prepares a whole pack through here before admitting any of it, so
     admission stays in one place (the route comment above records the drift a
@@ -499,21 +514,22 @@ async def ingest_upload(
     max_bytes: int,
 ) -> dict[str, Any]:
     prepared = await prepare_upload(vault, upload, max_bytes)
-    published_now = prepared.pop("published_now")
     source = {
         **prepared,
         "case_id": case_id,
         "created_by": actor,
         "created_at": now_iso(),
     }
+    def commit() -> dict[str, Any]:
+        with vault.admission(catalog, [source]):
+            return catalog.ingest(source, actor)
+
     try:
-        return catalog.ingest(source, actor)
-    except BaseException as exc:
-        # Nothing references these bytes: the row that would have is exactly
-        # what failed to commit (W2). Bytes another case already owns stay.
-        if published_now:
-            vault.discard(prepared["sha256"])
-        if isinstance(exc, ValueError) and str(exc) == "source content already active":
+        return await asyncio.to_thread(commit)
+    except ValueError as exc:
+        if str(exc).startswith("CASE_STANDING_REVOKED:"):
+            raise HTTPException(status_code=403, detail="analyst authority required") from exc
+        if str(exc) == "source content already active":
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         raise
 

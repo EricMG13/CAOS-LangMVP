@@ -136,8 +136,15 @@ case "$1" in
       *" $3 "*) echo "[]"; exit 0 ;;
       *) echo "Error: No such volume: $3" >&2; exit 1 ;;
     esac ;;
-  inspect) printf '%s\n' "${FAKE_VAULT_VOLUME:-}"; exit 0 ;;
-  pause|unpause) exit 0 ;;
+  inspect)
+    if [ "$3" = '{{.State.Paused}}' ]; then
+      if [ "${FAKE_INSPECT_FAIL_ID:-}" = "$4" ]; then exit 1; fi
+      if [ "${FAKE_PAUSED_ID:-}" = "$4" ]; then echo true; else echo false; fi
+      exit 0
+    fi
+    printf '%s\n' "${FAKE_VAULT_VOLUME:-}"; exit 0 ;;
+  pause) [ "${FAKE_PAUSE_FAIL_ID:-}" != "$2" ]; exit $? ;;
+  unpause) exit 0 ;;
   run) printf 'fake-tar-bytes'; exit 0 ;;
 esac
 exit 1
@@ -189,7 +196,7 @@ def test_backup_resolves_the_vault_from_the_app_mount_pauses_writers_and_capture
     assert result.returncode == 0, result.stderr
     assert any("inspect --format" in call and "app-1" in call for call in calls), "the volume comes from the app's /vault mount"
     assert not any("--filter" in call and "label=" in call for call in calls), "Compose labels are never consulted (F2)"
-    pause, dump, tar, unpause = (_index(calls, "pause app-1 worker-1"), _index(calls, "pg_dump"),
+    pause, dump, tar, unpause = (_index(calls, "pause worker-1"), _index(calls, "pg_dump"),
                                  _index(calls, "run --rm -v restored_by_hand_vault:/vault:ro"), _index(calls, "unpause app-1 worker-1"))
     assert pause < dump < tar < unpause, f"one snapshot point: writers paused around both captures (F3): {calls}"
     assert "--exclude=./checkpoints.db-shm" in calls[tar], "the regenerable shared-memory index is not archived"
@@ -231,7 +238,26 @@ def test_backup_unpauses_the_writers_and_leaves_no_files_when_the_dump_fails(fak
     result, calls, out = _run_backup(fake_bin, tmp_path, FAKE_APP_ID="app-1", FAKE_WORKER_ID="worker-1",
                                      FAKE_VAULT_VOLUME="vault", FAKE_PGDUMP_FAIL="1")
     assert result.returncode != 0
-    assert calls.index("pause app-1 worker-1") < calls.index("unpause app-1 worker-1"), "the writers resume on the failure path"
+    assert calls.index("pause worker-1") < calls.index("unpause app-1 worker-1"), "the writers resume on the failure path"
     assert not any(name in {"caos.dump.age", "vault.tgz.age", "caos.backup.manifest"} for name in os.listdir(out)), \
         "a failed capture publishes nothing"
     assert not (out / ".caos-backup.lock").exists()
+
+
+@pytest.mark.parametrize("prepaused", ["", "app-1"])
+def test_partial_pause_failure_unwinds_only_this_backups_pauses(fake_bin, tmp_path, prepaused):
+    result, calls, out = _run_backup(fake_bin, tmp_path, FAKE_APP_ID="app-1", FAKE_WORKER_ID="worker-1",
+                                     FAKE_VAULT_VOLUME="vault", FAKE_PAUSED_ID=prepaused,
+                                     FAKE_PAUSE_FAIL_ID="worker-1")
+    assert result.returncode != 0
+    assert not any("pg_dump" in call for call in calls)
+    cleanup = next(call for call in calls if call.startswith("unpause "))
+    assert ("app-1" in cleanup) == (not prepaused)
+    assert not (out / ".caos-backup.lock").exists()
+
+
+def test_pause_state_inspection_failure_unwinds_the_preceding_writer(fake_bin, tmp_path):
+    result, calls, _out = _run_backup(fake_bin, tmp_path, FAKE_APP_ID="app-1", FAKE_WORKER_ID="worker-1",
+                                     FAKE_VAULT_VOLUME="vault", FAKE_INSPECT_FAIL_ID="worker-1")
+    assert result.returncode != 0
+    assert "unpause app-1" in calls and "pause worker-1" not in calls

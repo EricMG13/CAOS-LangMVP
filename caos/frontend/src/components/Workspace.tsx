@@ -843,6 +843,8 @@ export default function Workspace({ destination, children }: { destination?: Des
       casesRequest.current += 1;
       setCases((previous) => [created.case, ...previous.filter((item) => item.id !== created.case.id)]);
       dispatchAuthority({ type: "requestSucceeded", context, scope: "intake" });
+      // Clear this request before selecting its run advances workspace authority.
+      setPendingAction("");
       if (created.case_id !== context.caseId) {
         // A created or resolved case: adopt it through the reducer (case, then its
         // current execution) exactly as a register selection would.
@@ -863,7 +865,7 @@ export default function Workspace({ destination, children }: { destination?: Des
       else setError(firstErrorMessage(caught, "Unable to analyze documents"));
       dispatchAuthority({ type: "requestFailed", context, scope: "intake" });
     } finally {
-      if (matchesAuthority(authorityRef.current, context)) setPendingAction("");
+      if (requestId === intakeRequest.current && matchesAuthority(authorityRef.current, context)) setPendingAction("");
     }
   };
 

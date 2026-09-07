@@ -741,6 +741,14 @@ try {
       await page.getByRole("region", { name: "Source disposition manifest" }).waitFor();
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth), false, "the intake evidence overflows at 200% desktop zoom width");
       await page.setViewportSize({ width: 1440, height: 1000 });
+      // A new run on the same case advances authority before the handler exits.
+      // Its busy state must still clear, so another upload remains available.
+      await fileInput.setInputFiles([intakeDoc("guidance", intakeCase.issuer)]);
+      await intakePanel.getByRole("button", { name: "Analyze 1 document", exact: true }).click();
+      await page.getByRole("status").getByText(/1 document admitted\. .*Execution started\./).waitFor({ timeout: 60_000 });
+      await page.waitForFunction(() => !document.querySelector("#intake-files")?.disabled);
+      const sameCaseIntake = await (await api.get(`/api/cases/${intakeCaseRecord.id}/intake`)).json();
+      assert.notEqual(sameCaseIntake.run.id, intakeRecord.run.id, "the follow-up intake did not start a new run");
       await page.goto(`${baseURL}/portfolio/`, { waitUntil: "networkidle" });
     }
     if (index === 1) {
@@ -1239,7 +1247,7 @@ try {
   const modelBuild = () => ({ id: inventoryModelBuildId, case_id: caseRecord.id, accepted_run_id: run.id, accepted_snapshot_id: accepted.id, source_set_id: "set-model", input_fingerprint: "b".repeat(64), status: modelState, queued_at: "2026-08-24T12:00:00Z", started_at: null, completed_at: modelState === "READY" ? "2026-08-24T12:01:00Z" : null, error: modelState === "FAILED" ? { code: "MODEL_CALCULATION_FAILED", detail: "The model calculation did not complete." } : null, export: { status: modelExportState, error: modelExportState === "FAILED" ? { code: "MODEL_EXPORT_FAILED", detail: "The XLSX export did not complete." } : null }, qa: modelState === "READY" ? { status: "PASS", semantic_check_count: 20, formula_count: 4, worksheet_cell_count: 12 } : undefined, payload_digest: modelState === "READY" ? "c".repeat(64) : undefined });
   const modelInventory = () => ({
     readiness: {
-      status: modelState,
+      status: ["QUEUED", "BUILDING", "FAILED"].includes(modelState) ? "READY_TO_BUILD" : modelState,
       module_id: "CP-MODEL",
       accepted_snapshot: modelState === "NOT_READY" ? null : { id: accepted.id, run_id: run.id, digest: accepted.digest },
       source_set: modelState === "NOT_READY" ? null : { id: "set-model", version: 1, digest: "d".repeat(64) },

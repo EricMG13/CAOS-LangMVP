@@ -379,3 +379,106 @@ def test_the_small_document_path_is_byte_identical_to_the_line_extractor():
     assert [block["block_id"] for block in blocks] == [f"b{index:05d}" for index in expected_lines]
     assert [block["text"] for block in blocks] == lines
     assert {block["extractor_version"] for block in blocks} == {"builtin-v1"}
+
+
+async def test_failed_pack_cannot_delete_a_concurrent_intakes_shared_source(store, settings):
+    from caos.intake.service import IntakeRefused, IntakeService
+    from caos.sources.domain import Vault
+
+    ready, release = asyncio.Event(), asyncio.Event()
+
+    class DelayedEmptyUpload:
+        filename = "empty.txt"
+        content_type = "text/plain"
+
+        async def read(self, _limit):
+            ready.set()
+            await release.wait()
+            return b""
+
+    service = IntakeService(store=store, engine=None, settings=settings)
+    first = make_upload("annual.txt", annual_report())
+    second = make_upload("annual.txt", annual_report())
+    failed = asyncio.create_task(service.submit(actor="first", uploads=[first, DelayedEmptyUpload()], case_id=None))
+    try:
+        await asyncio.wait_for(ready.wait(), 5)
+        admitted, created = await service.submit(actor="second", uploads=[second], case_id=None)
+        assert created
+    finally:
+        release.set()
+        with pytest.raises(IntakeRefused):
+            await failed
+        await first.close()
+        await second.close()
+    source = store.list_sources(admitted["case_id"])[0]
+    assert Vault(settings).verify(store.get_source_private(source["id"])) == annual_report()
+    _assert_no_orphan(settings, store)
+
+
+async def test_post_commit_intake_failure_preserves_committed_bytes(store, settings, monkeypatch):
+    from caos.intake.service import IntakeService
+    from caos.sources.domain import Vault
+
+    service = IntakeService(store=store, engine=None, settings=settings)
+
+    def fail_after_commit(*_args):
+        raise RuntimeError("post-commit failure")
+
+    monkeypatch.setattr(service, "_import_market_marks", fail_after_commit)
+    upload = make_upload("annual.txt", annual_report())
+    try:
+        with pytest.raises(RuntimeError, match="post-commit"):
+            await service.submit(actor="analyst", uploads=[upload], case_id=None)
+    finally:
+        await upload.close()
+    case = store.list_cases("analyst")[0]
+    source = store.list_sources(case["id"])[0]
+    assert Vault(settings).verify(store.get_source_private(source["id"])) == annual_report()
+    _assert_no_orphan(settings, store)
+
+
+async def test_concurrent_identical_intakes_converge_while_commit_is_slow(store, settings, monkeypatch):
+    from caos.intake.service import IntakeService
+
+    service = IntakeService(store=store, engine=None, settings=settings)
+    original = store.admit_intake
+
+    def slow_commit(**kwargs):
+        time.sleep(0.1)
+        return original(**kwargs)
+
+    monkeypatch.setattr(store, "admit_intake", slow_commit)
+    uploads = [make_upload("annual.txt", annual_report()) for _ in range(2)]
+    try:
+        results = await asyncio.gather(*(service.submit(actor="analyst", uploads=[upload], case_id=None) for upload in uploads))
+    finally:
+        for upload in uploads:
+            await upload.close()
+    assert len({record["id"] for record, _created in results}) == 1
+    assert sorted(created for _record, created in results) == [False, True]
+    assert len(store.list_cases("analyst")) == 1
+    _assert_no_orphan(settings, store)
+
+
+async def test_single_upload_rechecks_standing_at_commit(store, settings, monkeypatch):
+    from fastapi import HTTPException
+    from caos.sources.domain import Vault, ingest_upload
+    from caos.storage.store import case_members
+
+    case = store.create_case("Case", "Issuer", "Services", "analyst")
+    original = store.ingest
+
+    def revoke_then_commit(source, actor):
+        with store.engine.begin() as conn:
+            conn.execute(sa.update(case_members).where(case_members.c.case_id == case["id"]).values(role="READER"))
+        return original(source, actor)
+
+    monkeypatch.setattr(store, "ingest", revoke_then_commit)
+    upload = make_upload("annual.txt", annual_report())
+    try:
+        with pytest.raises(HTTPException) as refusal:
+            await ingest_upload(store, Vault(settings), case["id"], "analyst", upload, max_bytes=1024)
+        assert refusal.value.status_code == 403
+    finally:
+        await upload.close()
+    assert store.list_sources(case["id"]) == [] and _vault_files(settings) == []

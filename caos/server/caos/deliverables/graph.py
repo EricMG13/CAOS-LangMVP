@@ -16,14 +16,19 @@ from ..contracts import digest
 APPROVAL_HASH_PATTERN = r"^sha256:[0-9a-f]{64}$"
 
 
-def filing_thread_id(*, case_id: str, pathway: str, draft_version: int, draft_digest: str, build_id: str) -> str:
-    return "dth-" + digest({
+def filing_thread_id(*, case_id: str, pathway: str, draft_version: int, draft_digest: str,
+                     build_id: str, opinion_id: str | None = None) -> str:
+    identity = {
         "case_id": case_id,
         "pathway": pathway,
         "draft_version": draft_version,
         "draft_digest": draft_digest,
         "build_id": build_id,
-    })
+    }
+    # Existing frozen records retain their original identity and approval hash.
+    if opinion_id is None:
+        return "dth-" + digest(identity)
+    return "dth-v2-" + digest({**identity, "opinion_id": opinion_id})
 
 
 def frozen_approval_digest(frozen: dict[str, Any]) -> str:

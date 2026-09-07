@@ -513,7 +513,7 @@ class ModelService:
         self._export_input_reads = 0
         self._evolutions: dict[str, dict[str, tuple[str, ...]]] = {}
         self._resolved_cache: dict[str, dict[str, Any]] = {}
-        self._defaults_cache: dict[str, tuple[list[dict[str, Any]], dict[str, Any]]] = {}
+        self._defaults_cache: dict[str, tuple[str, list[dict[str, Any]], dict[str, Any]]] = {}
         engine.register_model_service(self)
 
     # -- engine hooks -------------------------------------------------------
@@ -1601,7 +1601,7 @@ class ModelService:
         self, build: dict[str, Any], *, deadline: float | None = None,
     ) -> dict[str, Any]:
         cached = self._resolved_cache.get(build["id"])
-        if cached is not None:
+        if cached is not None and cached["input_fingerprint"] == build["input_fingerprint"]:
             return cached
         snapshot = self.engine.runs.get_snapshot(build["snapshot_id"])
         if snapshot is None or snapshot["case_id"] != build["case_id"]:
@@ -1634,13 +1634,13 @@ class ModelService:
 
     def _defaults(self, build: dict[str, Any], deadline: float) -> tuple[list[dict[str, Any]], dict[str, Any]]:
         cached = self._defaults_cache.get(build["id"])
-        if cached is None:
+        if cached is None or cached[0] != build["input_fingerprint"]:
             model, calculations = self._calculate(build, None, deadline)
             rows = _assumption_rows(model)
             rows = self._apply_evolution(build["id"], rows)
-            cached = (rows, _annual_outputs(calculations))
+            cached = (build["input_fingerprint"], rows, _annual_outputs(calculations))
             _remember(self._defaults_cache, build["id"], cached)
-        return copy.deepcopy(cached[0]), copy.deepcopy(cached[1])
+        return copy.deepcopy(cached[1]), copy.deepcopy(cached[2])
 
     def _apply_evolution(self, build_id: str, rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
         evolution = self._evolutions.get(build_id)
@@ -1726,7 +1726,7 @@ class ModelService:
         }
         rows = self._apply_evolution(build["id"], _assumption_rows(model))
         outputs = _annual_outputs(calculations)
-        _remember(self._defaults_cache, build["id"], (rows, outputs))
+        _remember(self._defaults_cache, build["id"], (build["input_fingerprint"], rows, outputs))
         identity = {"assumptions_digest": digest(rows), "outputs_digest": digest(outputs)}
         return result, identity
 

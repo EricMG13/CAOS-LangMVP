@@ -100,11 +100,16 @@ fi
 
 # --- one snapshot point: pause every writer for the whole capture --------------
 writers=$(compose ps -q app worker || true)
-if [ -n "$writers" ]; then
-    # shellcheck disable=SC2086 — a space-separated list of container ids.
-    docker pause $writers >/dev/null
-    paused_containers="$writers"
-fi
+for writer in $writers; do
+    # Preserve an operator's existing pause. Track each attempted pause before
+    # invoking Docker so partial failure (or a signal) still unwinds our work.
+    was_paused=$(docker inspect --format '{{.State.Paused}}' "$writer")
+    if [ "$was_paused" = true ]; then
+        continue
+    fi
+    paused_containers="${paused_containers:+$paused_containers }$writer"
+    docker pause "$writer" >/dev/null
+done
 
 dump_tmp=$(mktemp "$out/.caos.dump.age.XXXXXX")
 # Piped straight into age: the plaintext dump is never a file on this disk.

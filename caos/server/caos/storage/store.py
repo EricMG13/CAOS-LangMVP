@@ -800,6 +800,10 @@ class DomainStore:
         conn.execute(source_sets.insert().values(**source_set))
         return source_set
 
+    def source_digest_referenced(self, sha256: str) -> bool:
+        with self.engine.connect() as conn:
+            return conn.execute(sa.select(sources.c.id).where(sources.c.sha256 == sha256).limit(1)).first() is not None
+
     def ingest(self, source: dict[str, Any], actor: str) -> dict[str, Any]:
         saved = dict(source)
         saved.setdefault("id", new_id("src"))
@@ -808,6 +812,7 @@ class DomainStore:
         saved.setdefault("withdrawn", False)
         try:
             with _AUTHORITY_MUTATION_LOCK, self.engine.begin() as conn:
+                self.require_standing(conn, saved["case_id"], actor, {"ANALYST", "APPROVER", "ADMIN"})
                 duplicate = conn.execute(
                     sa.select(sources.c.id).where(
                         sources.c.case_id == saved["case_id"],
@@ -860,6 +865,7 @@ class DomainStore:
                     ))
                     conn.execute(case_members.insert().values(case_id=case_id, subject=actor, role="ANALYST"))
                     self._audit(conn, "case.created", actor, case_id=case_id)
+                self.require_standing(conn, case_id, actor, {"ANALYST", "APPROVER", "ADMIN"})
                 admitted_ids: list[str] = []
                 for source in prepared:
                     saved = {

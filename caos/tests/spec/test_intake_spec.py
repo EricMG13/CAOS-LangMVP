@@ -558,3 +558,47 @@ async def test_a_completed_intake_run_is_reviewable_but_never_accepted_on_the_an
         assert [node["status"] for node in done["nodes"]] == ["succeeded"] * len(done["nodes"])
     finally:
         await engine.aclose()
+
+
+@pytest.mark.parametrize("global_role", ["ANALYST", "ADMIN"])
+def test_intake_auto_resolution_requires_stored_writer(client, store, global_role):
+    case = store.create_case("Reader case", ISSUER, "Services", "owner")
+    store.add_member(case["id"], "owner", "reader", "READER", actor_role="ADMIN")
+    headers = {"x-forwarded-user": "reader", "x-caos-role": global_role}
+    for target in (case["id"], None):
+        response = submit(client, GOLDEN_PACK[:1], case_id=target, headers=headers)
+        assert response.status_code == 403, response.text
+    assert store.list_sources(case["id"]) == []
+
+
+@pytest.mark.parametrize("standing, status", [(None, 404), ("READER", 403)])
+def test_intake_replay_rechecks_case_standing(client, store, standing, status):
+    import sqlalchemy as sa
+    from caos.storage.store import case_members
+
+    admitted = submit(client, GOLDEN_PACK[:1]).json()
+    with store.engine.begin() as conn:
+        where = (case_members.c.case_id == admitted["case_id"]) & (case_members.c.subject == "analyst")
+        conn.execute(sa.delete(case_members).where(where) if standing is None
+                     else sa.update(case_members).where(where).values(role=standing))
+    replay = submit(client, GOLDEN_PACK[:1])
+    assert replay.status_code == status, replay.text
+    assert admitted["case_id"] not in replay.text
+
+
+def test_intake_commit_rechecks_case_standing(client, store, monkeypatch):
+    import sqlalchemy as sa
+    from caos.storage.store import case_members
+
+    case = store.create_case("Writer case", ISSUER, "Services", "analyst")
+    original = store.admit_intake
+
+    def revoke_then_commit(**kwargs):
+        with store.engine.begin() as conn:
+            conn.execute(sa.update(case_members).where(case_members.c.case_id == case["id"]).values(role="READER"))
+        return original(**kwargs)
+
+    monkeypatch.setattr(store, "admit_intake", revoke_then_commit)
+    response = submit(client, GOLDEN_PACK[:1])
+    assert response.status_code == 403, response.text
+    assert store.list_sources(case["id"]) == []

@@ -30,6 +30,7 @@ import {
   assumptionKey,
   assumptionScope,
   mergeRebasedAssumptions,
+  modelDisplayStatus,
   normalizeAssumptions,
   previewMatchesDraft,
   primaryModelAction,
@@ -370,7 +371,7 @@ export default function ModelBuilder({
         request<{ builds: ModelBuild[] }>(`/api/cases/${expectedCaseId}/models`, {}, signal),
       ]);
       const nextInventory: ModelInventory = { readiness: nextReadiness, builds: nextModels.builds };
-      const nextBuild = nextInventory.readiness.build || nextInventory.builds[0] || null;
+      const nextBuild = nextInventory.readiness.build || null;
       let nextRegistry: AssumptionRegistry | null = null;
       let nextRevisions: ModelRevision[] = [];
       let nextWorksheet: WorksheetResponse | null = null;
@@ -467,8 +468,8 @@ export default function ModelBuilder({
     return () => { controller.abort(); window.clearTimeout(previewTimer.current); requestGeneration.current += 1; };
   }, [refresh]);
 
-  const status = inventory?.readiness.status;
-  const build = inventory?.readiness.build || inventory?.builds[0] || null;
+  const status = modelDisplayStatus(inventory?.readiness);
+  const build = inventory?.readiness.build || null;
   const activeRevision = revisions.find((item) => item.state === "ACTIVE" && item.build_id === build?.id) || null;
   const currentHeadRevisionId = activeRevision?.id || null;
   const dirtyCount = assumptionChangeCount(baseline, draft);
