@@ -217,6 +217,7 @@ def _assert_cash_flow_identities(values) -> None:
     assert values["cfo_calc"] == values["ffo"] + values["working_capital_change"]
     assert values["cfo_variance"] == values["cfo_reported"] - values["cfo_calc"]
     assert values["fcf"] == values["cfo_reported"] + values["capex_and_intangible_investment"]
+    assert values["fcf"] == values["cfo_calc"] + values["capex_and_intangible_investment"]
     assert values["ncf"] == sum(values[key] for key in (
         "fcf", "acquisitions_disposals", "net_debt_issue_repay",
         "net_equity_issue_repay", "dividends_paid", "other_investing_financing",
