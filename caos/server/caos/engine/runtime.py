@@ -24,6 +24,7 @@ from ..config import Settings
 from ..contracts import Depth, digest
 from ..methodology.bundle import DeployVBundle
 from ..methodology.canonical import (
+    MAX_EVIDENCE_REFS_PER_MODULE,
     CanonicalModuleOutput,
     canonicalize_for_tests,
     recompute_confidence,
@@ -64,6 +65,7 @@ from .research import RESEARCH_HANDOFF_FIELDS, build_research_plan, research_han
 from .research import brief_digest as research_brief_digest
 from .provider import (
     READ_EVIDENCE_TOOL,
+    READ_EVIDENCE_BATCH_TOOL,
     AgentError,
     ProviderIdentity,
     ProviderRequest,
@@ -1446,6 +1448,11 @@ class Engine:
                     "sha256": source["sha256"],
                     "filename": source.get("filename", source["id"]),
                     "media_type": source.get("media_type", "application/octet-stream"),
+                    "preparation": {
+                        "representation": "pinned_blocks",
+                        "block_count": len(source.get("blocks") or []),
+                        "content_digest": digest(source.get("blocks") or []),
+                    },
                     "blocks": [
                         {"block_id": block.get("block_id"), "locator": block.get("locator"),
                          "extractor_version": block.get("extractor_version"), "confidence": block.get("confidence")}
@@ -1486,6 +1493,11 @@ class Engine:
                 [{"module_id": a["module_id"], "digest": a["digest"], "markdown": a["markdown"] or ""} for a in upstream],
                 root=self.settings.deploy_v_root,
                 pinned_manifest=self.bundle.integrity,
+                evidence_budget={
+                    "reads": min(EVIDENCE_READS_PER_MODULE, limits["evidence_reads"] - budget["used"].get("evidence_reads", 0)),
+                    "bytes": min(EVIDENCE_BYTES_PER_MODULE, limits["evidence_bytes"] - budget["used"].get("evidence_bytes", 0)),
+                    "references": MAX_EVIDENCE_REFS_PER_MODULE,
+                },
             )
 
             used = budget["used"]
@@ -1499,7 +1511,7 @@ class Engine:
                     EVIDENCE_BYTES_PER_MODULE,
                     limits["evidence_bytes"] - used.get("evidence_bytes", 0),
                 ),
-                on_read=lambda source_id, block_ids, returned_bytes: (
+                on_read=lambda returned_bytes: (
                     self.runs.charge_budget(run_id, "evidence_reads", 1),
                     self.runs.charge_budget(run_id, "evidence_bytes", returned_bytes),
                 ),
@@ -1507,7 +1519,7 @@ class Engine:
             calculation_records: list[dict[str, Any]] = []
             incomplete_calculators: dict[str, int] = {}
             repair_state = {"used": False}
-            tools = (READ_EVIDENCE_TOOL,)
+            tools = (READ_EVIDENCE_TOOL, READ_EVIDENCE_BATCH_TOOL)
             if spec.calculators:
                 tools += (methodology_calculation_tool(spec.calculators),)
 
@@ -1562,7 +1574,11 @@ class Engine:
                     raise AgentError("AGENT_BUDGET_EXCEEDED", "active worker time exhausted")
                 return remaining
 
-            async def call_tool(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
+            async def call_tool(name: str, arguments: dict[str, Any]) -> dict[str, Any] | list[dict[str, Any]]:
+                if name == "read_evidence_batch":
+                    if set(arguments) != {"references"}:
+                        raise AgentError("AGENT_OUTPUT_INVALID", "batch read requires only references")
+                    return reader.read_batch(arguments["references"])
                 if name != "run_methodology_calculation":
                     raise AgentError("AGENT_OUTPUT_INVALID", "unknown host tool")
                 calculator_id, inputs = _parse_calculation_input(arguments)
@@ -2660,7 +2676,7 @@ class Engine:
             messages=[{"role": "user", "content": user}],
             schema=CanonicalModuleOutput.model_json_schema(),
             tools_enabled=True,
-            tools=(READ_EVIDENCE_TOOL,) + (
+            tools=(READ_EVIDENCE_TOOL, READ_EVIDENCE_BATCH_TOOL) + (
                 (methodology_calculation_tool(spec.calculators),) if spec.calculators else ()
             ),
             max_tokens=spec.max_output_tokens,

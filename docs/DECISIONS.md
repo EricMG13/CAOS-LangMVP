@@ -967,3 +967,58 @@ Consolidation note: where §6 conflicts with §10/§11/§12 (output Σ vs Σ+max
     answer-key attestation, model-specific qualification and production-image
     acceptance remain separate gates. The implementation plan and dated execution
     report record any unavailable external inputs and measured limitations.
+
+25. **Live parsing failure remediation (2026-09-07).** The signed-in Codex
+    evaluation exposed transport and execution-contract mismatches at CP-PARSE.
+    Its authority assembly now selects only the requested runnable profile from
+    the verified shared CP-0/CP-PARSE skill, retaining its common core and QA
+    rules. All canonical authority wrappers state the six required H2 headings,
+    exact delivered citation-set requirement, and exact source-ID table contract.
+    Golden authority digests move with these reviewed wrapper changes; vendored
+    bytes remain unchanged. CP-PARSE assesses preparation and fidelity; missing
+    underwriting inputs remain CP-0 readiness findings, never preparation gaps.
+
+    The host's already-extracted, immutable blocks are CP-PARSE's prepared
+    representation. Source metadata records their count and content digest.
+    In this hosted runtime the managed evidence store is the package, and the
+    P1–P8 handoff is its preparation/triage index, not a second transcription of
+    the entire corpus or a claim that an uncreated ZIP exists. Extraction does
+    not attest visual/OCR/table fidelity; required unusable representations
+    still block, and observed limitations remain explicit. This maps the
+    standalone packaging instructions onto the existing host evidence store.
+
+    `read_evidence_batch` accepts at most 50 distinct source/block pairs across
+    pinned sources. A batch is one read operation; the 10-read, 873,814-byte and
+    200-reference module ceilings are unchanged. Every source is reauthorized
+    before any block lookup. Validation/authority/byte failure returns no text
+    and adds no delivered citation. The same reader and ledger cover single-
+    source and batched calls. The tool-set digest changes, invalidating earlier
+    qualifications. The host supplies the evidence ceilings in the initial
+    prompt so the provider can plan bounded retrieval. These ceilings are request
+    metadata, not artifact identity; adding them to the immutable identity would
+    invalidate persisted canonical artifacts.
+
+    Codex CLI adapter v2 constrains the canonical result as a JSON object,
+    reusing the direct OpenAI strict-schema projection, instead of constraining
+    only a wrapper containing an unconstrained JSON string. Host tool arguments
+    are also native schema-constrained objects, and repairs remove tool choices.
+    OpenAI adapter v2 applies the same strict projection to its tool schemas.
+    The provider wire projection removes unsupported array `uniqueItems`;
+    host uniqueness and size validation remain authoritative and unchanged.
+    Signed-in Codex reasoning effort and verbosity are pinned to low and included
+    in its identity. Token reservations
+    use installed `tiktoken` (`o200k_base`, 1.25 margin plus 32,768 CLI allowance)
+    over the serialized prompt and output schema, replacing byte-as-token
+    reservations. This is an estimate, checked against returned usage and
+    recorded in provider identity; exact counting and a hard CLI output-token
+    cap remain unavailable, so Codex stays development-only. Request deadlines,
+    host usage reconciliation, source authority, schema validation, and analyst
+    qualification gates remain enforced. Diagnostic probes are not frozen
+    candidate qualification evidence.
+
+    Live verification reached CP-0 after a Passed CP-PARSE in C02. C03 returned
+    schema-valid preparation with a passing source gate and full field coverage,
+    but a material QA finding still restricted execution. Neither is a passing
+    full-pathway evaluation. The old sealed matrix and machine-authored keys
+    remain unchanged; provider compliance, source sufficiency/fidelity and
+    independent analyst qualification are not inferred from transport fixes.

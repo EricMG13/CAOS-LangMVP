@@ -575,7 +575,7 @@ def test_a_ledger_refused_read_leaves_no_expectation_even_though_rows_were_built
     """
     from caos.engine.provider import AgentError
 
-    def ledger_full(source_id, block_ids, returned_bytes):
+    def ledger_full(returned_bytes):
         raise AgentError("AGENT_BUDGET_EXCEEDED", "evidence_reads budget exhausted")
 
     reader = evidence_lab.make_reader(on_read=ledger_full)
@@ -585,3 +585,51 @@ def test_a_ledger_refused_read_leaves_no_expectation_even_though_rows_were_built
     assert caught.value.code == "AGENT_BUDGET_EXCEEDED"
     assert reader.delivered() == set(), "a ledger-refused read left a citation expectation"
     assert reader.delivered_rows() == {}
+
+
+def test_batch_reads_thirty_pinned_documents_in_one_bounded_delivery(store):
+    from caos.engine.evidence import EvidenceReader, evidence_payload_bytes
+
+    case = store.create_case('Batch', 'Issuer', 'Services', 'analyst')
+    sources = [_ingest_text(store, case['id'], f'Unique document {i}', filename=f'{i}.txt') for i in range(30)]
+    pinned = store.current_source_set(case['id'])
+    charges = []
+    reader = EvidenceReader(store, case['id'], pinned['id'], 'run-batch', on_read=charges.append)
+    refs = [{'source_id':s['id'], 'block_id':'b00001'} for s in sources]
+    rows = reader.read_batch(refs)
+    assert len(rows) == 30 and reader.reads_used == 1
+    assert reader.delivered() == {(r['source_id'], r['block_id']) for r in refs}
+    assert charges == [evidence_payload_bytes(rows)] == [reader.bytes_used]
+    assert [r['source_id'] for r in rows] == [r['source_id'] for r in refs]
+
+
+def test_batch_authority_precedes_block_lookup_and_refuses_without_delivery(store):
+    from caos.engine.evidence import EvidenceReader
+    from caos.engine.provider import AgentError
+
+    case = store.create_case('Batch boundary', 'Issuer', 'Services', 'analyst')
+    first = _ingest_text(store, case['id'], 'first')
+    second = _ingest_text(store, case['id'], 'second')
+    pinned = store.current_source_set(case['id'])
+    store.withdraw(case['id'], second['id'], 'analyst')
+    charges = []
+    reader = EvidenceReader(store, case['id'], pinned['id'], 'run-batch', on_read=charges.append)
+    with pytest.raises(AgentError) as error:
+        reader.read_batch([{'source_id':first['id'], 'block_id':'missing'},
+                           {'source_id':second['id'], 'block_id':'b00001'}])
+    assert error.value.code == 'AGENT_AUTHORITY_MISMATCH'
+    assert not reader.delivered() and not reader.delivered_rows() and not charges
+    assert reader.reads_used == reader.bytes_used == 0
+
+
+@pytest.mark.parametrize('references', [None, {}, [], [None], [{'source_id':[]}],
+    [{'source_id':'s', 'block_id':{}}], [{'source_id':'s', 'block_id':'b', 'extra':True}],
+    [{'source_id':'s', 'block_id':'b'}]*2, [{'source_id':'s', 'block_id':str(i)} for i in range(51)]])
+def test_batch_rejects_malformed_references_without_delivery(evidence_context, references):
+    from caos.engine.provider import AgentError
+
+    reader = evidence_context[-1]
+    with pytest.raises(AgentError) as error:
+        reader.read_batch(references)
+    assert error.value.code == 'AGENT_OUTPUT_INVALID'
+    assert not reader.delivered() and reader.reads_used == reader.bytes_used == 0

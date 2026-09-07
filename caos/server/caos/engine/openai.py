@@ -22,7 +22,7 @@ from .provider import (
 )
 
 BASE_URL = "https://api.openai.com/v1"
-ADAPTER_VERSION = "caos.openai.v1"
+ADAPTER_VERSION = "caos.openai.v2"
 MAX_CONTINUATION_BYTES = 256 * 1024
 MAX_CONTINUATION_ITEMS = 40
 _LINEAGE_CLASSES = ("directly_sourced", "calculated", "assumption_based", "analyst_inference",
@@ -42,6 +42,9 @@ def strict_output_schema(schema: dict[str, Any]) -> dict[str, Any]:
 
     def close_objects(node: Any) -> None:
         if isinstance(node, dict):
+            if node.get("type") == "array":
+                # Responses rejects this keyword; uniqueness remains a host validation rule.
+                node.pop("uniqueItems", None)
             if node.get("type") == "object":
                 if "properties" not in node and node.get("additionalProperties"):
                     raise AgentError("AGENT_PROVIDER_UNQUALIFIED", "OpenAI cannot represent an unbounded object schema")
@@ -76,7 +79,7 @@ class OpenAIProvider:
             runtime_dependencies=installed_dependencies("httpx"),
             transport={"mode": "openai-responses", "base_url": BASE_URL, "store": False,
                        "account_policy": account_policy, "parameters": self.parameters,
-                       "schema_mode": "required-canonical-count-classes-v1",
+                       "schema_mode": "strict-canonical-and-tool-schemas-v2",
                        "continuation_bytes": MAX_CONTINUATION_BYTES,
                        "continuation_items": MAX_CONTINUATION_ITEMS},
             counting={"mode": "provider-input-tokens", "output_includes_reasoning": True},
@@ -143,7 +146,7 @@ class OpenAIProvider:
         tools = request.effective_tools()
         if tools:
             payload["tools"] = [{"type": "function", "name": tool["name"],
-                                 "description": tool["description"], "parameters": tool["input_schema"],
+                                 "description": tool["description"], "parameters": strict_output_schema(tool["input_schema"]),
                                  "strict": tool["strict"]} for tool in tools]
             payload["tool_choice"] = "auto"
         if request.max_tokens is not None:

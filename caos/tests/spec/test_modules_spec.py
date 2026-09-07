@@ -471,3 +471,31 @@ def test_cp1c_is_pinned_to_supplied_only_evidence():
     from caos.modules.registry import MODULES
 
     assert MODULES["CP-1C"].source_mode == "supplied_only", "web discovery is structurally banned by invariant 1"
+
+
+def test_source_preparation_authority_cannot_select_the_readiness_profile():
+    from caos.engine.authority import assemble_authority
+
+    preparation = assemble_authority("CP-PARSE")
+    readiness = assemble_authority("CP-0")
+    assert "## CP-0 runnable profile" not in preparation
+    assert "CP0_PROFILE_ANCHOR_CONTRACT" not in preparation
+    assert "## CP-PARSE runnable profile" in preparation
+    assert "## CP-PARSE runnable profile" not in readiness
+    assert "## CP-0 runnable profile" in readiness
+    assert "source-readiness assessment" in preparation
+    assert "Audit Summary; Analysis; Evidence Trace; Source Registry; Gaps & Conflicts; QA Validation" in preparation
+    assert "every distinct source_id/block_id pair" in preparation
+    assert "a source_id column containing exact delivered source IDs" in preparation
+
+
+def test_remaining_evidence_budget_is_request_metadata_not_artifact_identity():
+    import json
+    from caos.engine.authority import compile_module_prompts
+
+    identity = {"module_id": "CP-PARSE"}
+    budget = {"reads": 10, "bytes": 1000, "references": 200}
+    _, user = compile_module_prompts("CP-PARSE", identity, [], [], evidence_budget=budget)
+    payload = json.loads(user.split("\n", 1)[1])
+    assert payload["evidence_budget"] == budget
+    assert payload["host_identity"] == identity == {"module_id": "CP-PARSE"}

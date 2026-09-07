@@ -18,7 +18,7 @@ from typing import Any
 NUMBER = re.compile(r"\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+\.\d+|\d{4,}")
 YEAR = re.compile(r"^(?:19|20)\d{2}$")
 CLAIM_SECTIONS = ("Audit Summary", "Analysis")
-ALLOWED_TOOLS = frozenset({"read_evidence", "run_methodology_calculation"})
+ALLOWED_TOOLS = frozenset({"read_evidence", "read_evidence_batch", "run_methodology_calculation"})
 DIMENSIONS = (
     "outcome", "facts", "citations", "unsupported_claims", "conflicts", "document_use",
     "model_effect", "refusal", "latency", "budget", "injection", "ingest", "after_run",

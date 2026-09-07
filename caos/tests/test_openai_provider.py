@@ -75,6 +75,8 @@ async def test_count_and_create_share_all_input_fields_and_reasoning_cap(provide
     assert create["store"] is False and create["stream"] is False and create["truncation"] == "disabled"
     assert create["max_output_tokens"] == 1000 and result.usage.output_tokens == 80
     assert create["parallel_tool_calls"] is False and create["tools"][0]["strict"] is True
+    assert "uniqueItems" not in create["tools"][0]["parameters"]["properties"]["block_ids"]
+    assert create["tools"][0]["parameters"]["properties"]["block_ids"]["maxItems"] == 50
     assert create["text"]["format"]["strict"] is True
 
 

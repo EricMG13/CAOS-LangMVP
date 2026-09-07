@@ -48,6 +48,23 @@ READ_EVIDENCE_TOOL = {
     },
 }
 
+READ_EVIDENCE_BATCH_TOOL = {
+    "name": "read_evidence_batch",
+    "description": "Read up to 50 exact blocks across pinned sources in one bounded evidence read. Use for pack inventory and cross-document comparisons.",
+    "strict": True,
+    "input_schema": {
+        "type": "object", "additionalProperties": False,
+        "properties": {"references": {
+            "type": "array", "minItems": 1, "maxItems": MAX_EVIDENCE_BLOCKS_PER_READ,
+            "items": {"type": "object", "additionalProperties": False,
+                      "properties": {key: {"type": "string", "minLength": 1, "maxLength": MAX_EVIDENCE_ID_CHARS}
+                                     for key in ("source_id", "block_id")},
+                      "required": ["source_id", "block_id"]},
+        }},
+        "required": ["references"],
+    },
+}
+
 RUN_METHODOLOGY_CALCULATION_TOOL = {
     "name": "run_methodology_calculation",
     "description": (
@@ -427,7 +444,7 @@ def parameter_context_metadata(
             "max_input_bytes": MAX_CALCULATION_INPUT_BYTES,
             "max_recovery_waterfall_work_units": MAX_RECOVERY_WATERFALL_WORK_UNITS,
         },
-        "tool": {"digest": digest([READ_EVIDENCE_TOOL, RUN_METHODOLOGY_CALCULATION_TOOL])},
+        "tool": {"digest": digest([READ_EVIDENCE_TOOL, READ_EVIDENCE_BATCH_TOOL, RUN_METHODOLOGY_CALCULATION_TOOL])},
         "schema": {"canonical_output_digest": digest(CanonicalModuleOutput.model_json_schema())},
         "modules": {
             module_id: {

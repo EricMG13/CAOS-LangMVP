@@ -38,7 +38,7 @@ class EvidenceReader:
         *,
         read_limit: int = EVIDENCE_READS_PER_MODULE,
         byte_limit: int = EVIDENCE_BYTES_PER_MODULE,
-        on_read: Callable[[str, list[str], int], None] | None = None,
+        on_read: Callable[[int], None] | None = None,
     ) -> None:
         self.store = store
         self.case_id = case_id
@@ -98,29 +98,50 @@ class EvidenceReader:
             or len(block_ids) != len(set(block_ids))
         ):
             raise AgentError("AGENT_OUTPUT_INVALID", "evidence block IDs must be unique and bounded")
-        requested = {(source_id, block_id) for block_id in block_ids}
+        return self.read_batch([{"source_id": source_id, "block_id": block_id} for block_id in block_ids])
+
+    def read_batch(self, references: list[dict[str, str]]) -> list[dict[str, Any]]:
+        if self.reads_used + 1 > self.read_limit:
+            raise AgentError("AGENT_BUDGET_EXCEEDED", "evidence read budget exhausted")
+        if (
+            not isinstance(references, list) or not 1 <= len(references) <= MAX_EVIDENCE_BLOCKS_PER_READ
+            or any(not isinstance(ref, dict) or set(ref) != {"source_id", "block_id"}
+                   or any(not isinstance(value, str) or not 0 < len(value) <= MAX_EVIDENCE_ID_CHARS
+                          for value in ref.values()) for ref in references)
+        ):
+            raise AgentError("AGENT_OUTPUT_INVALID", "evidence references must be bounded source/block pairs")
+        requested = {(ref["source_id"], ref["block_id"]) for ref in references}
+        if len(requested) != len(references):
+            raise AgentError("AGENT_OUTPUT_INVALID", "evidence references must be unique")
         if len(self.delivered() | requested) > MAX_EVIDENCE_REFS_PER_MODULE:
             raise AgentError("AGENT_BUDGET_EXCEEDED", "module evidence reference budget exhausted")
 
-        source = self._authorized_source(source_id)
-
-        blocks = {block.get("block_id"): block for block in source.get("blocks") or []}
-        if any(block_id not in blocks for block_id in block_ids):
+        # Establish every source's live authority before looking up any block.
+        sources = {source_id: self._authorized_source(source_id)
+                   for source_id in dict.fromkeys(ref["source_id"] for ref in references)}
+        blocks = {}
+        for source_id, source in sources.items():
+            for block in source.get("blocks") or []:
+                key = (source_id, block.get("block_id"))
+                if key in requested:
+                    blocks[key] = block
+        if any(ref not in blocks for ref in requested):
             raise AgentError("AGENT_OUTPUT_INVALID", "evidence block is absent")
 
         rows = [
             {
-                "source_id": source_id,
+                "source_id": ref["source_id"],
                 "source_digest": source["sha256"],
                 "origin_family": source.get("origin_family", source["sha256"]),
                 "authority_class": source.get("authority_class", "unclassified"),
-                "block_id": block_id,
-                "locator": blocks[block_id].get("locator"),
-                "extractor_version": blocks[block_id].get("extractor_version"),
-                "confidence": blocks[block_id].get("confidence"),
-                "text": blocks[block_id].get("text"),
+                "block_id": ref["block_id"],
+                "locator": block.get("locator"),
+                "extractor_version": block.get("extractor_version"),
+                "confidence": block.get("confidence"),
+                "text": block.get("text"),
             }
-            for block_id in block_ids
+            for ref in references
+            for source, block in [(sources[ref["source_id"]], blocks[(ref["source_id"], ref["block_id"])])]
         ]
         returned_bytes = evidence_payload_bytes(rows)
         if self.bytes_used + returned_bytes > self.byte_limit:
@@ -134,12 +155,12 @@ class EvidenceReader:
         # above. Updating the delivered set before that charge would leave a
         # citation expectation for rows this call never returns.
         if self._on_read is not None:
-            self._on_read(source_id, block_ids, returned_bytes)
+            self._on_read(returned_bytes)
         self.reads_used += 1
         self.bytes_used += returned_bytes
         self._delivered.update(
             {
-                (source_id, row["block_id"]): {
+                (row["source_id"], row["block_id"]): {
                     "source_digest": row["source_digest"],
                     "origin_family": row["origin_family"],
                     "authority_class": row["authority_class"],

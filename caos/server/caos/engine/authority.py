@@ -32,7 +32,34 @@ WRAPPER = (
     "digest; validates exact evidence references and model-facing source IDs; bounds provider-declared "
     "lineage, coverage, and finding counts; labels those declarations; recomputes confidence arithmetic; "
     "and stamps host provenance. Analyst review remains required. Do not invent values when the pinned "
-    "evidence does not support them."
+    "evidence does not support them. Emit the Markdown body with exactly these six H2 sections, in order: "
+    "Audit Summary; Analysis; Evidence Trace; Source Registry; Gaps & Conflicts; QA Validation. "
+    "evidence_refs must contain every distinct source_id/block_id pair returned by the evidence tools "
+    "exactly once, including inspected blocks not quoted in prose. Include a Source Registry table with "
+    "a source_id column containing exact delivered source IDs, never aliases. "
+    "The host supplies YAML identity and runs canonical validation. Keep every required governed register "
+    "under the module's analytical appendix. Use read_evidence_batch to inspect blocks across documents "
+    "together; each batch costs one evidence read and shares the same byte and citation ceilings. "
+    "The host evidence budget is supplied as evidence_budget; plan reads within it."
+)
+
+PREPARATION_WRAPPER = (
+    "\nHOST CP-PARSE PROFILE: execute DataPreparation only. CP-0's financial source-readiness assessment "
+    "is a later graph node, not a CP-PARSE prerequisite. Missing financial statements or comparison periods "
+    "are readiness gaps for CP-0, not extraction failures. The host has already extracted and pinned the "
+    "complete supplied text blocks; preparation metadata identifies that stored representation and its hash. "
+    "Author the P1-P8 preparation inventory, triage and fidelity dispositions, not a second transcription "
+    "of every source. Use source/block identifiers to refer to the managed evidence store. In this hosted "
+    "runtime the pinned store is the package; ZIP packaging is not requested. Do not invent paths, archives, "
+    "checksums or successful checks. Mark ZIP-only checks NA for this managed-store delivery; inapplicable "
+    "checks are not failed or missing required fields. OCR/image checks are also NA for native text inputs. "
+    "Host extraction is not visual/OCR/table-fidelity attestation: inspect "
+    "the evidence, disclose actual limitations, and block required unusable representations. Classify "
+    "source_gate, field coverage and findings only for this preparation remit. Preparation coverage measures "
+    "completed applicable P1-P8 records and checks. Source metadata that is not stated must be recorded "
+    "as not stated; it does not make an accessible representation unreadable. Do not count absent "
+    "underwriting facts as missing preparation fields. source_gate assesses whether the representations "
+    "required for preparation are usable; CP-0 separately assesses their financial sufficiency."
 )
 
 
@@ -65,9 +92,28 @@ def assemble_authority(module_id: str, root: Path | None = None, pinned_manifest
         raise AgentError("AGENT_AUTHORITY_MISMATCH", f"{module_id} has no skill authority")
     root = root or Settings().deploy_v_root
     manifest = pinned_manifest or _integrity_manifest(root)
-    parts = [read_verified_authority_file(root, spec.skill_slug, "SKILL.md", manifest)]
+    skill = read_verified_authority_file(root, spec.skill_slug, "SKILL.md", manifest)
+    if module_id in {"CP-PARSE", "CP-0"}:
+        # Verify the complete shared skill before selecting its runnable profile.
+        try:
+            qa_start = skill.index("## Deterministic computation")
+            qa_end = skill.index("## Companions")
+            common_qa = skill[qa_start:qa_end]
+            if module_id == "CP-PARSE":
+                common = skill[:skill.index("## Analytical depth")]
+                common = common.replace("CP-0_SCHEMA_REFERENCE", "CP-PARSE_SCHEMA_REFERENCE").replace(
+                    "CP-0__SourceReadiness", "CP-PARSE__DataPreparation",
+                )
+                profile = skill[skill.index("## CP-PARSE runnable profile"):qa_start]
+                skill = common + profile + common_qa
+            else:
+                skill = skill[:skill.index("## CP-PARSE runnable profile")] + common_qa
+        except ValueError as exc:
+            raise AgentError("AGENT_AUTHORITY_MISMATCH", "runnable profile boundaries are absent") from exc
+    parts = [skill]
     parts.extend(read_verified_authority_file(root, spec.skill_slug, relative, manifest) for relative in spec.reference_files)
-    authority = "\n\n".join((WRAPPER, *parts))
+    wrapper = WRAPPER + (PREPARATION_WRAPPER if module_id == "CP-PARSE" else "")
+    authority = "\n\n".join((wrapper, *parts))
     if digest({"authority": authority}) != spec.authority_digest:
         raise AgentError("AGENT_AUTHORITY_MISMATCH", f"unapproved assembled authority: {module_id}")
     return authority
@@ -81,6 +127,7 @@ def compile_module_prompts(
     *,
     root: Path | None = None,
     pinned_manifest: dict[str, Any] | None = None,
+    evidence_budget: dict[str, int] | None = None,
 ) -> tuple[str, str]:
     """System prompt is verified methodology authority only; every source-derived
     value rides the user prompt under an explicit untrusted label."""
@@ -90,6 +137,7 @@ def compile_module_prompts(
     ]
     user_payload = {
         "host_identity": host_identity,
+        **({"evidence_budget": evidence_budget} if evidence_budget is not None else {}),
         "source_metadata_manifest": source_manifest,
         "validated_upstream_artifacts": upstream,
         "confidence_input_contract": {
