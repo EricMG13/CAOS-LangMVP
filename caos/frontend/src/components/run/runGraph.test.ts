@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
-import { runEdgePath, runGraph } from "./runGraph.ts";
+import { runEdgePath, runGraph, servedDependencies } from "./runGraph.ts";
 
 test("siblings are not displayed as dependencies", () => {
   const result = runGraph([
@@ -35,13 +35,21 @@ test("invalid served graphs fail closed", () => {
   ]) assert.throws(() => runGraph(nodes), { message: "RUN_GRAPH_INVALID" });
 });
 
+test("dependency validation preserves valid values and rejects malformed elements", () => {
+  const dependencies = ["A", "B"];
+  assert.strictEqual(servedDependencies(dependencies), dependencies, "valid dependencies were copied or changed");
+  for (const value of [[null], [7], [{}], ["A", null], null]) {
+    assert.equal(servedDependencies(value), null);
+  }
+});
+
 test("the presentational boundary keeps an accessible served-node fallback and exact status vocabulary", () => {
   const component = readFileSync(new URL("./RunGraphView.tsx", import.meta.url), "utf8");
   assert.match(component, /try\s*\{[\s\S]*runGraph\(run\.nodes\)[\s\S]*catch/);
   assert.match(component, /Dependency graph unavailable/);
   assert.match(component, /<ol[\s\S]*run\.nodes\.map/);
   assert.match(component, /Upstream (?:inputs|dependencies)/);
-  assert.match(component, /Array\.isArray\(node\.dependencies\)/, "malformed dependencies cannot break the fallback");
+  assert.match(component, /servedDependencies\(node\.dependencies\)/, "malformed dependencies cannot break the fallback");
   assert.match(component, /downstream === undefined \? "Unavailable while the dependency graph is invalid"/, "invalid edges are unknown, not absent");
   assert.match(component, /selectedNodeId/, "duplicate module ids still select the exact served node");
   for (const status of ["pending", "ready", "running", "succeeded", "failed", "cancelled"]) {

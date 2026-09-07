@@ -5,7 +5,7 @@ import { useState } from "react";
 import type { RunRecord } from "../../lib/api";
 import { humanizeCode, moduleLabel, nodeStatusTone, withQuery } from "../../lib/workbench";
 import styles from "./RunGraph.module.css";
-import { runEdgePath, runGraph } from "./runGraph";
+import { runEdgePath, runGraph, servedDependencies } from "./runGraph";
 
 const STAGE_WIDTH = 208;
 const STAGE_GAP = 56;
@@ -24,7 +24,7 @@ function ModuleIdentity({ moduleId }: { moduleId: string }) {
 
 function NodeButton({ node, selected, onSelect }: { node: RunNode; selected: boolean; onSelect: () => void }) {
   const status = NODE_STATUSES.has(node.status) ? node.status : `unknown (${node.status})`;
-  const dependencies = Array.isArray(node.dependencies) ? node.dependencies : null;
+  const dependencies = servedDependencies(node.dependencies);
   return <button className={styles.node} type="button" data-run-node-id={node.id} data-module-id={node.module_id} aria-pressed={selected} onClick={onSelect}>
     <ModuleIdentity moduleId={node.module_id} />
     <span className={`status ${nodeStatusTone(node.status)}`}>{status}</span>
@@ -33,7 +33,7 @@ function NodeButton({ node, selected, onSelect }: { node: RunNode; selected: boo
 }
 
 function NodeInspector({ caseId, run, node, edges }: { caseId: string; run: RunRecord; node: RunNode; edges: [string, string][] | null }) {
-  const dependencies = Array.isArray(node.dependencies) ? node.dependencies : null;
+  const dependencies = servedDependencies(node.dependencies);
   const downstream = edges?.filter(([source]) => source === node.module_id).map(([, target]) => target);
   const researchPause = run.error?.code === "PLAN_APPROVAL_REQUIRED";
   return <section className={styles.inspector} aria-labelledby="run-node-inspector-title">

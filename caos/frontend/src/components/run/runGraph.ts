@@ -1,6 +1,11 @@
 export type GraphInput = { module_id: string; stage: number; dependencies: string[] };
 export type GraphPoint = { x: number; y: number };
 
+export function servedDependencies(value: unknown): string[] | null {
+  if (!Array.isArray(value) || !value.every((dependency) => typeof dependency === "string")) return null;
+  return value;
+}
+
 export function runGraph<T extends GraphInput>(nodes: T[]) {
   const ids = new Set<string>();
   for (const node of nodes) {
@@ -14,7 +19,9 @@ export function runGraph<T extends GraphInput>(nodes: T[]) {
     const stage = stages.get(node.stage);
     if (stage) stage.push(node);
     else stages.set(node.stage, [node]);
-    for (const dependency of node.dependencies) {
+    const dependencies = servedDependencies(node.dependencies);
+    if (!dependencies) throw new Error("RUN_GRAPH_INVALID");
+    for (const dependency of dependencies) {
       if (!ids.has(dependency) || dependency === node.module_id) throw new Error("RUN_GRAPH_INVALID");
       edges.push([dependency, node.module_id]);
     }

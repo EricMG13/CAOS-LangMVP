@@ -28,7 +28,7 @@ const research = run("run-research", "case-a", "paused", [
 ], { plan: { pathway: "DEEP_RESEARCH", depth: "full", profile_id: "FULL_CREDIT_32", selection_id: "DEEP_RESEARCH" }, error: { code: "PLAN_APPROVAL_REQUIRED", module_id: "CP-DR", message: "Approve the persisted research plan." }, research: { phase: "awaiting_approval", proposed_plan_hash: "sha256:fixture", proposed_plan: null } });
 const invalid = run("run-invalid", "case-a", "running", [
   { id: "duplicate-first", module_id: "CP-1", stage: 0, dependencies: [], status: "pending", artifact_id: null },
-  { id: "duplicate-second", module_id: "CP-1", stage: 1, status: "ready", artifact_id: null },
+  { id: "duplicate-second", module_id: "CP-1", stage: 1, dependencies: [null], status: "ready", artifact_id: null },
 ]);
 const other = run("run-other", "case-b", "succeeded", [{ id: "other-node", module_id: "CP-4C", stage: 0, dependencies: [], status: "succeeded", artifact_id: "art-other" }]);
 let currentLive = running;
@@ -99,9 +99,20 @@ try {
   assert.equal(await page.locator('[data-run-node-id="node-left"]').getAttribute("aria-pressed"), "true", "selection did not survive the RunRecord update");
   assert.equal(await page.locator('[data-run-node-id="node-right"] .status').textContent(), "cancelled");
 
-  await page.goto(`${baseURL}/run/?case=case-a&run=run-research`, { waitUntil: "domcontentloaded" });
+  const documentMarker = await page.evaluate(() => {
+    globalThis.__task4DocumentMarker = crypto.randomUUID();
+    return globalThis.__task4DocumentMarker;
+  });
+  await page.evaluate(() => {
+    window.history.pushState(window.history.state, "", "/run/?case=case-a&run=run-research");
+    window.dispatchEvent(new PopStateEvent("popstate", { state: window.history.state }));
+  });
+  await page.waitForURL((url) => url.searchParams.get("run") === "run-research");
   await page.locator('[data-run-node-id="research-node"]').waitFor();
+  assert.equal(await page.evaluate(() => globalThis.__task4DocumentMarker), documentMarker, "same-case run switch replaced the document");
   assert.equal(await page.getByRole("heading", { name: "Node inspector" }).count(), 0, "node selection crossed a same-case run boundary");
+  assert.equal(await page.getByText("Updates ended", { exact: true }).count(), 0, "old run freshness crossed a same-document run boundary");
+  await page.getByText(/Updates (?:live|reconnecting)/).waitFor();
   await page.locator('[data-run-node-id="research-node"]').focus();
   await page.keyboard.press("Enter");
   await page.getByText("Research pause", { exact: true }).waitFor();
