@@ -306,7 +306,7 @@ class Journey:
         self.record("model_queue", status, queued)
         build = None
         if status == 202:
-            build_id = queued["build"]["id"]
+            build_id = queued["id"]
             deadline = time.monotonic() + self.args.worker_budget
             while time.monotonic() < deadline:
                 status, build, _ = c.json("GET", f"/api/cases/{self.case_id}/models/{build_id}")
@@ -378,7 +378,7 @@ class Journey:
         deadline = time.monotonic() + self.args.worker_budget
         while time.monotonic() < deadline:
             status, tracked, _ = c.json("GET", f"/api/cases/{self.case_id}/deliverables/freeze-jobs/{job['job_id']}")
-            if (tracked or {}).get("status") in {"FROZEN", "FAILED", "CONFLICT"}:
+            if (tracked or {}).get("status") in {"PUBLISHED", "FAILED", "CONFLICT"}:
                 break
             time.sleep(3)
         self.record("freeze_job", status, tracked, job_status=(tracked or {}).get("status"), error=(tracked or {}).get("error"))

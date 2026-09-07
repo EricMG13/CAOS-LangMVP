@@ -367,14 +367,14 @@ def test_unavailable_catalog_closes_allocated_ports_and_returns_typed_block(monk
     from caos.config import Settings
     from caos.engine.catalog import ProviderCatalog
     from caos.engine.provider import host_control_identity
-    import run
+    from caos.engine import catalog as provider_catalog
 
     closed = []
     async def close():
         closed.append(True)
     port = SimpleNamespace(identity=host_control_identity(), aclose=close)
     catalog = ProviderCatalog({"other": port}, "missing", settings=Settings(), unavailable={"missing": {}})
-    monkeypatch.setattr(run, "build_provider", lambda settings: catalog)
+    monkeypatch.setattr(provider_catalog, "build_provider", lambda settings: catalog)
     with pytest.raises(qualify.Blocked, match="BINDING_REFUSED"):
         qualify.build_binding("live", Settings(), {}, "test")
     assert closed == [True]
@@ -423,7 +423,7 @@ def test_development_binding_uses_real_provider_and_preserves_credential_guards(
     from types import SimpleNamespace
     from dataclasses import replace
     from caos.config import Settings
-    import run
+    from caos.engine import catalog as provider_catalog
 
     base = Settings(provider_binding="codex")
     monkeypatch.setattr(Settings, "from_env", lambda: base)
@@ -436,7 +436,7 @@ def test_development_binding_uses_real_provider_and_preserves_credential_guards(
         return port
     def no_answer_keyed_double(*args):
         raise AssertionError("draft key was exposed to an answer-keyed provider")
-    monkeypatch.setattr(run, "build_provider", actual_provider)
+    monkeypatch.setattr(provider_catalog, "build_provider", actual_provider)
     monkeypatch.setattr(qualify, "AnswerKeyedProvider", no_answer_keyed_double)
     cell = qualify.CellRun(qualify.CellSpec("C03", "FULL_CREDIT", "full", 1), "live_evaluation", tmp_path, "Codex")
     assert cell.provider.inner is port and called == [settings]
