@@ -158,6 +158,7 @@ class IntakeService:
                 return self.store.admit_intake(
                     actor=actor, case_id=case["id"] if case else None, new_case=new_case,
                     prepared=admitted, intake_key=intake_key, status=status, record=record, refusal=refusal,
+                    require_standing=True,
                 ), True
 
         try:

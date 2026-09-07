@@ -847,6 +847,7 @@ class DomainStore:
         status: str,
         record: dict[str, Any],
         refusal: dict[str, Any] | None = None,
+        require_standing: bool = False,
     ) -> dict[str, Any]:
         """Admit a whole pack in ONE transaction: the case when it is new (with
         its creator's membership and `case.created`), every source row, one
@@ -867,7 +868,8 @@ class DomainStore:
                     ))
                     conn.execute(case_members.insert().values(case_id=case_id, subject=actor, role="ANALYST"))
                     self._audit(conn, "case.created", actor, case_id=case_id)
-                self.require_standing(conn, case_id, actor, {"ANALYST", "APPROVER", "ADMIN"})
+                if require_standing:
+                    self.require_standing(conn, case_id, actor, {"ANALYST", "APPROVER", "ADMIN"})
                 admitted_ids: list[str] = []
                 for source in prepared:
                     saved = {
