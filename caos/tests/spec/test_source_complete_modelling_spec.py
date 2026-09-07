@@ -443,19 +443,71 @@ async def test_full_credit_build_binds_every_relevant_document_to_the_model_or_t
     ]
     assert harness.audit("snapshot.accepted")[0]["snapshot_id"] == snapshot["id"]
     assert harness.audit("intake.admitted")[0]["case_id"] == case_id
-    # The worksheet an analyst reviews and the workbook they export carry the same lineage sheet.
+    # A changed forward assumption follows the accepted source/model authority
+    # through preview, Sign-Off and the exact revision XLSX.
     registry = harness.models.assumption_registry(case_id, build["id"])
-    from caos.contracts import ModelPreviewRequest
+    assert registry["snapshot_id"] == snapshot["id"]
+    assert registry["input_fingerprint"] == build["input_fingerprint"]
+    assumptions = copy.deepcopy(registry["defaults"])
+    selected = next(row for row in assumptions if (
+        row["assumption_id"] == "operating.revenue_growth.division_1"
+        and row["case"] == "BASE" and row["period_id"] == "FY2025"
+    ))
+    original_value = selected["value"]
+    selected["value"] = float(selected["value"]) + 0.01
+
+    from caos.contracts import ModelPreviewRequest, ModelSignOffRequest
 
     preview = harness.models.preview(case_id, ModelPreviewRequest.model_validate({
         "build_id": build["id"], "parent_revision_id": None,
         "registry_version": registry["version"], "registry_digest": registry["digest"],
-        "assumptions": registry["defaults"], "draft_generation": 1,
+        "assumptions": assumptions, "draft_generation": 1,
     }))
+    assert preview["snapshot_id"] == snapshot["id"]
+    assert preview["build_input_fingerprint"] == build["input_fingerprint"]
+    assert preview["build_payload_digest"] == build["payload_digest"]
+    assert preview["outputs_digest"] != build["outputs_digest"]
+    effective = next(row for row in preview["effective_assumptions"] if (
+        row["assumption_id"] == selected["assumption_id"]
+        and row["case"] == selected["case"] and row["period_id"] == selected["period_id"]
+    ))
+    assert effective["value"] == selected["value"] and effective["value"] != original_value
+    historical = {
+        (tab["id"], cell["address"]): cell["value"]
+        for tab in build["payload"]["tabs"] for cell in tab["cells"]
+        if cell.get("write_class") == "SOURCE"
+    }
+    assert historical
+    assert historical == {
+        (tab["id"], cell["address"]): cell["value"]
+        for tab in preview["worksheet"]["tabs"] for cell in tab["cells"]
+        if cell.get("write_class") == "SOURCE"
+    }
     assert "Source Lineage" in [tab["title"] for tab in preview["worksheet"]["tabs"]]
-    harness.models.queue_export(build["id"], "analyst")
-    harness.models.run_export_for_tests(build["id"])
-    content, _sha = harness.models.download(case_id, build["id"])
+
+    signed = harness.models.sign_off(case_id, ModelSignOffRequest.model_validate({
+        "build_id": build["id"], "parent_revision_id": None,
+        "registry_version": registry["version"], "registry_digest": registry["digest"],
+        "assumptions": assumptions, "draft_generation": 1,
+        "preview_digest": preview["preview_digest"], "expected_head_revision_id": None,
+        "note": "Reviewed changed forward revenue assumption",
+    }))
+    assert signed["state"] == "ACTIVE"
+    assert signed["snapshot_id"] == snapshot["id"]
+    assert signed["build_input_fingerprint"] == build["input_fingerprint"]
+    assert signed["build_payload_digest"] == build["payload_digest"]
+    assert signed["effective_assumptions"] == preview["effective_assumptions"]
+    assert signed["outputs"] == preview["outputs"]
+    assert signed["worksheet"] == preview["worksheet"]
+
+    exported = harness.models.run_export_for_tests(signed["id"])
+    assert exported["export"]["status"] == "READY"
+    content, sha = harness.models.download(case_id, signed["id"])
+    assert sha == exported["export"]["sha256"]
+    from caos.models.service import _assert_workbook_semantics
+
+    export_path = harness.models.vault_dir / exported["export"]["vault_key"]
+    _assert_workbook_semantics(export_path, signed["worksheet"])
     workbook = load_workbook(io.BytesIO(content), data_only=False)
     try:
         assert "Source Lineage" in workbook.sheetnames
@@ -967,4 +1019,3 @@ def test_hard_bounds_apply_one_value_below_at_and_above_each_boundary(value, acc
     else:
         assert any("outside registry bounds" in error for error in errors), errors
         del ModelInputError
-

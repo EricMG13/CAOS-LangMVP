@@ -693,7 +693,108 @@ def test_forecast_addbacks_are_driver_sourced_and_history_invariant():
     assert len(totals) == 1, "forecast addbacks are invariant to the historical series"
 
 
+def test_cash_flow_rows_are_present_in_the_authoritative_worksheet():
+    bundle = _bundle()
+    model, calculations = bundle.calculate(_forecast_paths())
+    result = bundle.serialize_workbook(model, calculations)
+    tab = next(item for item in result["payload"]["tabs"] if item["title"] == "Model")
+    observed = {cell["semantic_id"] for cell in tab["cells"]}
+    required = {
+        "cash_flow_adjusted_ebitda", "cash_interest_paid", "cash_lease_payments",
+        "cash_taxes_paid", "ffo_other", "ffo", "working_capital_change",
+        "cfo_calc", "cfo_reported", "cfo_variance",
+        "capex_and_intangible_investment", "fcf", "acquisitions_disposals",
+        "net_debt_issue_repay", "net_equity_issue_repay", "dividends_paid",
+        "other_investing_financing", "ncf", "net_cash_change", "ncf_variance",
+        "cash_and_equivalents",
+    }
+    assert required <= observed
+
+    declared_groups = {column.group for column in calculations.columns}
+    assert {"QUARTER", "YTD", "LTM", "PF", "BASE", "DOWNSIDE"} <= declared_groups
+    for column in calculations.columns:
+        values = calculations.for_column(column.column_id).values
+        if not column.available:
+            assert not values
+            continue
+        assert values["ffo"] == sum(values[key] for key in (
+            "cash_flow_adjusted_ebitda", "cash_interest_paid", "cash_lease_payments",
+            "cash_taxes_paid", "ffo_other",
+        ))
+        assert values["cfo_calc"] == values["ffo"] + values["working_capital_change"]
+        assert values["fcf"] == values["cfo_calc"] + values["capex_and_intangible_investment"]
+        assert values["ncf"] == sum(values[key] for key in (
+            "fcf", "acquisitions_disposals", "net_debt_issue_repay",
+            "net_equity_issue_repay", "dividends_paid", "other_investing_financing",
+        ))
+        if column.group in {"BASE", "DOWNSIDE"}:
+            prior = calculations.for_column(column.rollforward_column_id)
+            assert values["cash_and_equivalents"] == prior.values["cash_and_equivalents"] + values["ncf"]
+
+    quarter_ids = tuple(period.period_id for period in model.quarters)
+    annual_id = "FY2024"
+    balance_accounts = {
+        "accounts_payable", "cash_and_equivalents", "effective_tax_rate", "inventory",
+        "net_accounts_receivable", "rcf_commitment", "rcf_drawn", "senior_secured_debt",
+        "total_debt", "unsecured_debt",
+    }
+    annual = dataclasses.replace(
+        model.quarters[-1], period_id=annual_id, fiscal_quarter=None, period_type="FY",
+        start_date=model.quarters[0].start_date,
+        day_count=sum(period.day_count for period in model.quarters),
+    )
+    accounts = dict(model.accounts)
+    for metric_id in {metric_id for metric_id, _period_id in accounts}:
+        points = [model.accounts[(metric_id, period_id)] for period_id in quarter_ids]
+        accounts[(metric_id, annual_id)] = dataclasses.replace(
+            points[-1],
+            value=points[-1].value if metric_id in balance_accounts else sum(point.value for point in points),
+        )
+    segments = tuple(dataclasses.replace(series, values={
+        **series.values,
+        annual_id: dataclasses.replace(
+            series.values[quarter_ids[-1]],
+            value=sum(series.values[period_id].value for period_id in quarter_ids),
+        ),
+    }) for series in model.segments)
+    addbacks = tuple(dataclasses.replace(series, values={
+        **series.values,
+        annual_id: dataclasses.replace(
+            series.values[quarter_ids[-1]],
+            value=sum(series.values[period_id].value for period_id in quarter_ids),
+        ),
+    }) for series in model.addbacks)
+    debt = tuple(dataclasses.replace(series, values={
+        **series.values, annual_id: series.values[quarter_ids[-1]],
+    }) for series in model.debt)
+    annual_model = dataclasses.replace(
+        model,
+        annuals=(annual,),
+        reported_periods={**model.reported_periods, annual_id: annual},
+        accounts=accounts,
+        segments=segments,
+        addbacks=addbacks,
+        debt=debt,
+    )
+    annual_calculations = bundle.calculate_model(annual_model)
+    annual_column = annual_calculations.for_column(annual_id)
+    assert annual_column.column.group == "FY"
+    annual_values = annual_column.values
+    assert annual_values["ffo"] == sum(annual_values[key] for key in (
+        "cash_flow_adjusted_ebitda", "cash_interest_paid", "cash_lease_payments",
+        "cash_taxes_paid", "ffo_other",
+    ))
+    assert annual_values["cfo_calc"] == annual_values["ffo"] + annual_values["working_capital_change"]
+    assert annual_values["fcf"] == annual_values["cfo_calc"] + annual_values["capex_and_intangible_investment"]
+    assert annual_values["ncf"] == sum(annual_values[key] for key in (
+        "fcf", "acquisitions_disposals", "net_debt_issue_repay",
+        "net_equity_issue_repay", "dividends_paid", "other_investing_financing",
+    ))
+
+
 def test_workbook_pins_registry_identity_and_cell_expectations_match_engine(tmp_path):
+    from caos.models.engine import json_value
+
     bundle = _bundle()
     model, calculations = bundle.calculate(_forecast_paths())
     rendered = bundle.render_workbook(model, calculations, tmp_path / "parity.xlsx")
@@ -701,9 +802,21 @@ def test_workbook_pins_registry_identity_and_cell_expectations_match_engine(tmp_
         assert item.expected == calculations.for_column(item.column_id).values[item.semantic_id], (
             "every decision-output cell expectation equals the Python calculation"
         )
+    assert len(rendered.formula_values) > len(rendered.formulas), (
+        "formula_values retains every rendered formula while formulas remains the decision-output subset"
+    )
     assert ("covenant_headroom", "BASE::FY2025") not in rendered.model_cells, "unavailable covenant cell omitted"
 
     payload = bundle.serialize_workbook(model, calculations)
+    serialized_formula_values = {
+        (tab["title"], cell["address"]): cell["value"]
+        for tab in payload["payload"]["tabs"]
+        for cell in tab["cells"]
+        if cell["formula"]
+    }
+    assert serialized_formula_values == {
+        target: json_value(value) for target, value in rendered.formula_values.items()
+    }
     for tab in payload["payload"]["tabs"]:
         for cell in tab["cells"]:
             if cell["formula"]:
