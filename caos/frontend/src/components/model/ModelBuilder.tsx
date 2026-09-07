@@ -34,6 +34,7 @@ import {
   normalizeAssumptions,
   previewMatchesDraft,
   primaryModelAction,
+  queueModelCalculation,
   scrubberCommitDecision,
   worksheetCellAuthority,
   worksheetColumns,
@@ -127,14 +128,15 @@ class ModelRequestError extends Error {
 }
 
 async function modelRequest<T>(path: string, options: RequestInit, signal?: AbortSignal): Promise<T> {
-  const response = await networkFetch(path, {
-    ...options,
-    signal,
-    headers: { "Content-Type": "application/json", ...options.headers },
-  });
-  const body = await response.json().catch(() => null);
-  if (!response.ok) throw new ModelRequestError(response.status, body?.detail ?? body);
-  return body as T;
+  return queueModelCalculation(async () => {
+    const response = await networkFetch(path, {
+      ...options,
+      headers: { "Content-Type": "application/json", ...options.headers },
+    });
+    const body = await response.json().catch(() => null);
+    if (!response.ok) throw new ModelRequestError(response.status, body?.detail ?? body);
+    return body as T;
+  }, signal);
 }
 
 function formatWorksheetValue(cell?: WorksheetCell) {
@@ -349,6 +351,8 @@ export default function ModelBuilder({
   const actionGeneration = useRef(0);
   const previewGeneration = useRef(0);
   const tornadoGeneration = useRef(0);
+  const previewController = useRef<AbortController | null>(null);
+  const tornadoController = useRef<AbortController | null>(null);
   const previewTimer = useRef(0);
   const draftGenerationRef = useRef(0);
   const authorityKey = useRef("");
@@ -399,6 +403,8 @@ export default function ModelBuilder({
         actionGeneration.current += 1;
         previewGeneration.current += 1;
         tornadoGeneration.current += 1;
+        previewController.current?.abort();
+        tornadoController.current?.abort();
         const preserveDirtyDraft = draftCaseIdRef.current === expectedCaseId && dirtyRef.current;
         authorityKey.current = nextAuthorityKey;
         if (preserveDirtyDraft) {
@@ -465,7 +471,7 @@ export default function ModelBuilder({
     authorityKey.current = "";
     const controller = new AbortController();
     queueMicrotask(() => { if (!controller.signal.aborted) void refresh(controller.signal); });
-    return () => { controller.abort(); window.clearTimeout(previewTimer.current); requestGeneration.current += 1; };
+    return () => { controller.abort(); previewController.current?.abort(); tornadoController.current?.abort(); window.clearTimeout(previewTimer.current); requestGeneration.current += 1; previewGeneration.current += 1; tornadoGeneration.current += 1; };
   }, [refresh]);
 
   const status = modelDisplayStatus(inventory?.readiness);
@@ -526,13 +532,16 @@ export default function ModelBuilder({
       || assumptionChangeCount(baselineRef.current, nextDraft) === 0) return;
     const generation = ++previewGeneration.current;
     const expectedAuthority = authorityKey.current;
+    previewController.current?.abort();
+    const controller = new AbortController();
+    previewController.current = controller;
     setPending("preview");
     setMessage("");
     try {
       const next = await modelRequest<ModelPreview>(`/api/cases/${caseId}/models/previews`, {
         method: "POST",
         body: JSON.stringify({ build_id: build.id, parent_revision_id: authority.parentRevisionId, registry_version: registry.version, registry_digest: registry.digest, assumptions: nextDraft, draft_generation: nextGeneration }),
-      });
+      }, controller.signal);
       if (generation !== previewGeneration.current || expectedAuthority !== authorityKey.current || nextGeneration !== draftGenerationRef.current || next.draft_generation !== nextGeneration) return;
       setPreview(next);
       setMessage("Forecast recalculated. Historical accounts remain locked; review the model and tornado before saving this version.");
@@ -547,6 +556,8 @@ export default function ModelBuilder({
     actionGeneration.current += 1;
     previewGeneration.current += 1;
     tornadoGeneration.current += 1;
+    previewController.current?.abort();
+    tornadoController.current?.abort();
     draftGenerationRef.current += 1;
     draftRef.current = next;
     dirtyRef.current = assumptionChangeCount(baselineRef.current, next) > 0;
@@ -580,6 +591,9 @@ export default function ModelBuilder({
     const outputPeriodId = `${selectedCase}::${period}`;
     const generation = ++tornadoGeneration.current;
     const expectedAuthority = authorityKey.current;
+    tornadoController.current?.abort();
+    const controller = new AbortController();
+    tornadoController.current = controller;
     const isCurrent = () => generation === tornadoGeneration.current
       && expectedAuthority === authorityKey.current
       && nextGeneration === draftGenerationRef.current;
@@ -589,7 +603,7 @@ export default function ModelBuilder({
       const next = await modelRequest<TornadoResult>(`/api/cases/${caseId}/models/tornado`, {
         method: "POST",
         body: JSON.stringify({ build_id: build.id, parent_revision_id: draftAuthority.parentRevisionId, registry_version: registry.version, registry_digest: registry.digest, assumptions: draftRows, draft_generation: nextGeneration, case: selectedCase, output_period_id: outputPeriodId, output_id: tornadoOutputId, intensity: tornadoIntensity }),
-      });
+      }, controller.signal);
       if (!isCurrent()
         || next.build_id !== build.id
         || next.draft_generation !== nextGeneration
