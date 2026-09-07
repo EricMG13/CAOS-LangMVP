@@ -3,6 +3,18 @@ import type { WorksheetResponse } from "../../lib/api";
 export type ModelCase = "BASE" | "DOWNSIDE";
 export type AssumptionStatus = "READY" | "UNAVAILABLE" | "NOT_APPLICABLE";
 
+// ponytail: one calculation at a time per tab; coordinate across tabs if needed.
+// Cancelling queued work must not release an active server calculation's slot.
+let calculationChain = Promise.resolve();
+export function queueModelCalculation<T>(calculate: () => Promise<T>, signal?: AbortSignal): Promise<T> {
+  const next = calculationChain.then(() => {
+    signal?.throwIfAborted();
+    return calculate();
+  });
+  calculationChain = next.then(() => {}, () => {});
+  return next;
+}
+
 export function worksheetColumns(maxColumn: number): { column: number; letter: string }[] {
   return Array.from({ length: maxColumn }, (_, index) => {
     let value = index + 1;

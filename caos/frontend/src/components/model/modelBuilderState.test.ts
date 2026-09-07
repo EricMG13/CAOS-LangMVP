@@ -10,6 +10,7 @@ import {
   normalizeAssumptions,
   previewMatchesDraft,
   primaryModelAction,
+  queueModelCalculation,
   scrubberCommitDecision,
   sensitivityPeriodRows,
   worksheetCellAuthority,
@@ -18,6 +19,41 @@ import {
   type ModelAssumptionValue,
   type ModelPreview,
 } from "./modelBuilderState.ts";
+
+test("model calculations retain their slot until settled and skip superseded queued work", async () => {
+  const started = Promise.withResolvers<void>();
+  const finished = Promise.withResolvers<void>();
+  const active = new AbortController();
+  const obsolete = new AbortController();
+  const calls: string[] = [];
+  const first = queueModelCalculation(async () => {
+    calls.push("active");
+    started.resolve();
+    await finished.promise;
+    throw new Error("calculation refused");
+  }, active.signal);
+  const failed = assert.rejects(first, /calculation refused/);
+  await started.promise;
+  active.abort();
+  const skipped = assert.rejects(queueModelCalculation(async () => {
+    calls.push("obsolete");
+  }, obsolete.signal), { name: "AbortError" });
+  obsolete.abort();
+  const latest = queueModelCalculation(async () => {
+    calls.push("latest");
+    return 42;
+  });
+  try {
+    await Promise.resolve();
+    assert.deepEqual(calls, ["active"], "a second calculation started before the first settled");
+  } finally {
+    finished.resolve();
+    await Promise.allSettled([failed, skipped, latest]);
+  }
+  await Promise.all([failed, skipped]);
+  assert.equal(await latest, 42);
+  assert.deepEqual(calls, ["active", "latest"]);
+});
 
 test("derives spreadsheet columns from the engine's max-column metadata", () => {
   const columns = worksheetColumns(28);
