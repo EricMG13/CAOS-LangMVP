@@ -472,17 +472,31 @@ async def test_full_credit_build_binds_every_relevant_document_to_the_model_or_t
         and row["case"] == selected["case"] and row["period_id"] == selected["period_id"]
     ))
     assert effective["value"] == selected["value"] and effective["value"] != original_value
-    historical = {
-        (tab["id"], cell["address"]): cell["value"]
-        for tab in build["payload"]["tabs"] for cell in tab["cells"]
-        if cell.get("write_class") == "SOURCE"
-    }
+    forward_periods = {row["period_id"] for row in registry["defaults"]}
+
+    def historical_cells(worksheet):
+        return {
+            (tab["id"], cell["address"]): cell["value"]
+            for tab in worksheet["tabs"] for cell in tab["cells"]
+            if cell.get("write_class") == "SNAPSHOT_SOURCE"
+            or (
+                cell.get("period_id")
+                and not any(
+                    cell["period_id"] == period or cell["period_id"].endswith(f"::{period}")
+                    for period in forward_periods
+                )
+            )
+        }
+
+    historical = historical_cells(build["payload"])
     assert historical
-    assert historical == {
-        (tab["id"], cell["address"]): cell["value"]
-        for tab in preview["worksheet"]["tabs"] for cell in tab["cells"]
-        if cell.get("write_class") == "SOURCE"
+    historical_classes = {
+        cell["write_class"]
+        for tab in build["payload"]["tabs"] for cell in tab["cells"]
+        if (tab["id"], cell["address"]) in historical
     }
+    assert {"SOURCE", "FORMULA", "SNAPSHOT_SOURCE"} <= historical_classes
+    assert historical == historical_cells(preview["worksheet"])
     assert "Source Lineage" in [tab["title"] for tab in preview["worksheet"]["tabs"]]
 
     signed = harness.models.sign_off(case_id, ModelSignOffRequest.model_validate({

@@ -209,6 +209,21 @@ def _tab(payload: dict, title: str) -> str:
     return json.dumps(next(tab for tab in payload["payload"]["tabs"] if tab["title"] == title))
 
 
+def _assert_cash_flow_identities(values) -> None:
+    assert values["ffo"] == sum(values[key] for key in (
+        "cash_flow_adjusted_ebitda", "cash_interest_paid", "cash_lease_payments",
+        "cash_taxes_paid", "ffo_other",
+    ))
+    assert values["cfo_calc"] == values["ffo"] + values["working_capital_change"]
+    assert values["cfo_variance"] == values["cfo_reported"] - values["cfo_calc"]
+    assert values["fcf"] == values["cfo_reported"] + values["capex_and_intangible_investment"]
+    assert values["ncf"] == sum(values[key] for key in (
+        "fcf", "acquisitions_disposals", "net_debt_issue_repay",
+        "net_equity_issue_repay", "dividends_paid", "other_investing_financing",
+    ))
+    assert values["ncf_variance"] == values["ncf"] - values["net_cash_change"]
+
+
 # --- service-side request builders and fixtures -----------------------------------
 
 
@@ -592,6 +607,31 @@ def test_missing_required_forecast_driver_raises_typed_error(tmp_path):
         bundle.calculate(_forecast_paths(tmp_path, overrides={"CP-2G": cp2g}))
 
 
+@pytest.mark.parametrize("corruption", ["missing_cash_flow_row", "unreconciled_cash"])
+def test_strict_calculation_refuses_incomplete_or_unreconciled_cash_flow(tmp_path, corruption):
+    from caos.models.engine import CpModelV3Error
+
+    bundle = _bundle()
+    cp1 = _read("cp1.md")
+    if corruption == "missing_cash_flow_row":
+        row = (
+            "| cash_interest_paid | FY2024_Q1 | -4 | SIGNED_AS_REPORTED | SOURCED | "
+            "Verified | SRC-1 | Annual report 2024 p. 42 | - | - |\n"
+        )
+        cp1 = cp1.replace(row, "", 1)
+        assert row not in cp1
+        assert any("cash_interest_paid" in error for error in _validate(bundle, cp1=cp1))
+        refusal = "cash_interest_paid"
+    else:
+        original = "| net_cash_change | FY2024_Q1 | 9 |"
+        cp1 = cp1.replace(original, "| net_cash_change | FY2024_Q1 | 99 |", 1)
+        assert original not in cp1
+        refusal = "semantic reconciliation failed: FY2024_Q1/net_cash_change"
+
+    with pytest.raises(CpModelV3Error, match=refusal):
+        bundle.calculate(_forecast_paths(tmp_path, overrides={"CP-1": cp1}))
+
+
 def test_effective_overlay_recalculates_decision_outputs_consistently():
     bundle = _bundle()
     model, baseline = bundle.calculate(_forecast_paths())
@@ -710,23 +750,14 @@ def test_cash_flow_rows_are_present_in_the_authoritative_worksheet():
     }
     assert required <= observed
 
-    declared_groups = {column.group for column in calculations.columns}
-    assert {"QUARTER", "YTD", "LTM", "PF", "BASE", "DOWNSIDE"} <= declared_groups
+    available_groups = {column.group for column in calculations.columns if column.available}
+    assert {"QUARTER", "YTD", "LTM", "PF", "BASE", "DOWNSIDE"} <= available_groups
     for column in calculations.columns:
         values = calculations.for_column(column.column_id).values
         if not column.available:
             assert not values
             continue
-        assert values["ffo"] == sum(values[key] for key in (
-            "cash_flow_adjusted_ebitda", "cash_interest_paid", "cash_lease_payments",
-            "cash_taxes_paid", "ffo_other",
-        ))
-        assert values["cfo_calc"] == values["ffo"] + values["working_capital_change"]
-        assert values["fcf"] == values["cfo_calc"] + values["capex_and_intangible_investment"]
-        assert values["ncf"] == sum(values[key] for key in (
-            "fcf", "acquisitions_disposals", "net_debt_issue_repay",
-            "net_equity_issue_repay", "dividends_paid", "other_investing_financing",
-        ))
+        _assert_cash_flow_identities(values)
         if column.group in {"BASE", "DOWNSIDE"}:
             prior = calculations.for_column(column.rollforward_column_id)
             assert values["cash_and_equivalents"] == prior.values["cash_and_equivalents"] + values["ncf"]
@@ -779,17 +810,7 @@ def test_cash_flow_rows_are_present_in_the_authoritative_worksheet():
     annual_calculations = bundle.calculate_model(annual_model)
     annual_column = annual_calculations.for_column(annual_id)
     assert annual_column.column.group == "FY"
-    annual_values = annual_column.values
-    assert annual_values["ffo"] == sum(annual_values[key] for key in (
-        "cash_flow_adjusted_ebitda", "cash_interest_paid", "cash_lease_payments",
-        "cash_taxes_paid", "ffo_other",
-    ))
-    assert annual_values["cfo_calc"] == annual_values["ffo"] + annual_values["working_capital_change"]
-    assert annual_values["fcf"] == annual_values["cfo_calc"] + annual_values["capex_and_intangible_investment"]
-    assert annual_values["ncf"] == sum(annual_values[key] for key in (
-        "fcf", "acquisitions_disposals", "net_debt_issue_repay",
-        "net_equity_issue_repay", "dividends_paid", "other_investing_financing",
-    ))
+    _assert_cash_flow_identities(annual_column.values)
 
 
 def test_workbook_pins_registry_identity_and_cell_expectations_match_engine(tmp_path):
