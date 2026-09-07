@@ -519,6 +519,7 @@ async def ingest_upload(
         "case_id": case_id,
         "created_by": actor,
         "created_at": now_iso(),
+        "_require_standing": True,
     }
     def commit() -> dict[str, Any]:
         with vault.admission(catalog, [source]):
