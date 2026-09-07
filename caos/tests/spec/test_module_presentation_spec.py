@@ -8,6 +8,14 @@ from pydantic import ValidationError
 from caos.contracts import digest
 
 
+# Pinned canonical NULL_CELLS plus model-date NULL_TEXT (reference data only).
+NULL_CELL_FIXTURES = (
+    "", "-", "—", "–", "n/a", "na", "none", "null", "not applicable", "not disclosed",
+    "not assessable", "not calculable", "tbd", "unknown", "insufficient information",
+    "[insufficient information]", "not calculable from provided materials", "unavailable", "not available",
+)
+
+
 def artifact(module="CP-1", markdown=None):
     if markdown is None:
         markdown = (Path(__file__).parents[1] / "fixtures/cp_model" / f"{module.lower().replace('-', '')}.md").read_text()
@@ -187,7 +195,7 @@ def test_raw_id_bounds_and_heading_marker_aliases_remain_safe():
     assert any(row["code"] == "TABLE_MALFORMED" for row in result["unavailable"])
 
 
-@pytest.mark.parametrize("missing_start", ["", "null", "N/A", "Not Available", "Not Calculable", "-"])
+@pytest.mark.parametrize("missing_start", NULL_CELL_FIXTURES)
 def test_period_end_without_start_does_not_poison_quarterly_trends(missing_start):
     from caos.artifacts.presentation import read_tables
     tables, _ = read_tables(artifact()["markdown"])
@@ -431,11 +439,27 @@ def test_full_fixture_segment_edge_activity_needs_no_fabricated_zeros(omitted, p
 
 
 @pytest.mark.parametrize("field,original", [("accounting_basis", "IFRS"), ("entity_perimeter", "Consolidated")])
-@pytest.mark.parametrize("missing", ["", "null", "N/A", "Not Available", "Not Calculable", "-"])
-def test_full_fixture_equal_missing_period_basis_is_not_compatibility(field, original, missing, presentation_bundle):
+@pytest.mark.parametrize("missing", NULL_CELL_FIXTURES)
+@pytest.mark.parametrize("spelling", ["original", "upper", "padded"])
+def test_full_fixture_equal_missing_period_basis_is_not_compatibility(field, original, missing, spelling, presentation_bundle):
+    missing = missing.upper() if spelling == "upper" else f" \t{missing.title()}\t " if spelling == "padded" else missing
     markdown = artifact()["markdown"].replace(f"| {original} |", f"| {missing} |")
     result = validated_fixture_projection(markdown, presentation_bundle)
     assert not charts(result), field
+    assert {"view_id": "cp1.revenue.v1", "code": "PERIOD_BASIS_MISMATCH"} in result["unavailable"]
+
+
+@pytest.mark.parametrize("basis,perimeter", [("IFRS", "Consolidated"), ("US GAAP", "Parent only")])
+def test_full_fixture_disclosed_period_basis_and_perimeter_remain_chartable(basis, perimeter, presentation_bundle):
+    markdown = artifact()["markdown"].replace("| IFRS | Consolidated |", f"| {basis} | {perimeter} |")
+    result = validated_fixture_projection(markdown, presentation_bundle)
+    assert len(charts(result)) == 7
+
+
+@pytest.mark.parametrize("missing", NULL_CELL_FIXTURES)
+def test_full_fixture_null_start_cannot_make_a_flow_period_compatible(missing, presentation_bundle):
+    markdown = artifact()["markdown"].replace("2024-01-01", missing)
+    result = validated_fixture_projection(markdown, presentation_bundle)
     assert {"view_id": "cp1.revenue.v1", "code": "PERIOD_BASIS_MISMATCH"} in result["unavailable"]
 
 

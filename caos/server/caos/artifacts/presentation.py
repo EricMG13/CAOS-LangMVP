@@ -18,10 +18,15 @@ from ..responses import ModelPresentationResponse, ModulePresentationResponse
 from .presentation_bindings import BINDINGS_V1
 
 CURRENT_MAPPING_VERSION = "caos.module-presentation.v1"
-# Host presentation guards, matching the pinned model-input vocabulary. The
-# artifact handoff does not assert model-build readiness; do not import its parser.
+# Host guards: artifact handoff does not assert model-build readiness.
 _PERIOD_TYPES = {"QUARTER", "YTD", "FY", "LTM", "PERIOD_END"}
-_NULL_TEXT = {"", "null", "n/a", "not available", "not calculable", "-"}
+# Union of pinned cp-1-canonical-data-foundation/scripts/cp_tables.py NULL_CELLS
+# and cp-model/scripts/validate_cp_model_inputs.py NULL_TEXT; data, not a parser import.
+_NULL_TEXT = {
+    "", "-", "—", "–", "n/a", "na", "none", "null", "not applicable", "not disclosed",
+    "not assessable", "not calculable", "tbd", "unknown", "insufficient information",
+    "[insufficient information]", "not calculable from provided materials", "unavailable", "not available",
+}
 _MARKER = re.compile(r"^\s*<!--\s*table-id:\s*([a-zA-Z0-9_.-]+)\s*-->\s*$")
 _TABLE_HEADING = re.compile(r"^#{1,6}\s+(T(?:L)?\d+[A-Z]?(?:\.[0-9A-Z]+)?|P\d+)(?=\s|[:.—-]|$)")
 _NAMED_TABLES = {name for _, names, _, _ in BINDINGS_V1 for name in names}
