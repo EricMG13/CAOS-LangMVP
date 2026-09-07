@@ -7,12 +7,19 @@ useDefault = true
 
 [allowlist]
 description = "Prose/vendored/built trees: example tokens + minified noise, not real secrets"
+regexTarget = "line"
 regexes = [
   # C3 observation-identity schema tag (alert_evaluation.py): a public version
   # constant, not a credential. The generic-api-key rule matched the historical
   # `_OBSERVATION_KEY_VERSION` identifier; commit-fingerprint pinning does not
   # survive CI checkout attribution, so allowlist the exact literal value.
-  '''c3-observation-v1''',
+  '''^\s*_OBSERVATION_KEY_VERSION\s*=\s*["']c3-observation-v1["']\s*$''',
+  # Answer-key revision metadata records the SHA-256 of the previous reviewed
+  # manifest. Restrict the exception to that named field and digest shape.
+  '''^\s*"previous_key_sha256": "[0-9a-f]{64}",?\s*$''',
+  # The qualification runbook deliberately shows both credential variables
+  # empty for the keyless host-control fixture.
+  '''^\s*ORCHESTRATION_PROOF, never QUALIFIED\. Run it keyless:\n\s*`ANTHROPIC_API_KEY= CAOS_PROVIDER= caos/server/\.venv314/bin/python\s*$''',
 ]
 paths = [
   # Compiled Next.js export shipped for the single-app deploy — minified bundles
@@ -57,6 +64,5 @@ paths = [
   # Public ClamAV image digests in the deployment pin and its QA runbook are
   # immutable supply-chain identifiers, not credentials. Keep both the current
   # and historical pin allowlisted so the full-history scan stays reproducible.
-  '''761f6c99b8d9134b39431f8c200189cda749b17310091561bfa8b732f32bfada''',
-  '''0e85467cb0d6e7d860a45035707741cd5ffc032ffefc6002a3510c75b6d07027''',
+  '''^\s*(?:image:\s*)?clamav/clamav:1\.[45]@sha256:(?:761f6c99b8d9134b39431f8c200189cda749b17310091561bfa8b732f32bfada|0e85467cb0d6e7d860a45035707741cd5ffc032ffefc6002a3510c75b6d07027)\s*$''',
 ]

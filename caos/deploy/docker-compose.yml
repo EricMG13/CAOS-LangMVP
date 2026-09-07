@@ -84,7 +84,10 @@ services:
       CAOS_PROVIDER_QUALIFICATION_DIGEST: ${CAOS_PROVIDER_QUALIFICATION_DIGEST:-}
     volumes:
       - vault-data:/vault
-      - ${CAOS_PROVIDER_CONFIG_DIR:-./provider-config}:/etc/caos/providers:ro
+      - type: bind
+        source: ${CAOS_PROVIDER_CONFIG_DIR:-./provider-config}
+        target: /etc/caos/providers
+        read_only: true
     security_opt: ["no-new-privileges:true"]
     cap_drop: ["ALL"]
     read_only: true
