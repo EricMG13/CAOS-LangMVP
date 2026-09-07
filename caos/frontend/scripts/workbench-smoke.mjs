@@ -1600,26 +1600,33 @@ try {
   // later. This covers explicit drawer replacement and the opener attached to the
   // winning request rather than whichever element happens to be focused at settle.
   const delayedSourcePath = (url) => url.pathname === `/api/cases/${caseRecord.id}/sources/${source.id}`;
+  const settleHeldResponse = async (heldRequest, release, what) => {
+    const responsePending = page.waitForResponse((response) => response.request() === heldRequest);
+    release();
+    const response = await bounded(responsePending, what);
+    const responseFailure = await bounded(response.finished(), `${what}: response body did not finish`);
+    assert.equal(responseFailure, null, `${what}: ${responseFailure}`);
+    await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  };
   let releaseDelayedSource;
   let markDelayedSourceSeen;
   const delayedSourceBarrier = new Promise((resolve) => { releaseDelayedSource = resolve; });
   const delayedSourceSeen = new Promise((resolve) => { markDelayedSourceSeen = resolve; });
   const holdDelayedSource = async (route) => {
-    markDelayedSourceSeen();
+    markDelayedSourceSeen(route.request());
     await delayedSourceBarrier;
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(source) });
   };
   await page.route(delayedSourcePath, holdDelayedSource);
   await page.getByRole("button", { name: /Show lineage for account::revenue/ }).click();
   await page.locator("#model-cell-lineage").getByRole("button", { name: new RegExp(source.id) }).click();
-  await bounded(delayedSourceSeen, "the delayed Model evidence request never started");
+  const delayedSourceRequest = await bounded(delayedSourceSeen, "the delayed Model evidence request never started");
   await page.getByRole("button", { name: /Show lineage for account::legacy_revenue/ }).click();
   const winningSourceAction = page.locator("#model-cell-lineage").getByRole("button", { name: new RegExp(alternateSource.id) });
   await winningSourceAction.click();
   const winningDrawer = page.getByRole("dialog", { name: alternateSource.filename });
   await winningDrawer.waitFor();
-  releaseDelayedSource();
-  await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  await settleHeldResponse(delayedSourceRequest, releaseDelayedSource, "the delayed Model evidence response never finished");
   assert.equal(await winningDrawer.isVisible(), true, "an older Model evidence response replaced the newer drawer");
   await page.screenshot({ path: path.join(resultsDir, "model-evidence-race-winner.png"), fullPage: false });
   await page.keyboard.press("Escape");
@@ -1634,7 +1641,7 @@ try {
   const detachedSuccessBarrier = new Promise((resolve) => { releaseDetachedSuccess = resolve; });
   const detachedSuccessSeen = new Promise((resolve) => { markDetachedSuccessSeen = resolve; });
   const holdDetachedSuccess = async (route) => {
-    markDetachedSuccessSeen();
+    markDetachedSuccessSeen(route.request());
     await detachedSuccessBarrier;
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(source) });
   };
@@ -1643,11 +1650,10 @@ try {
   await page.getByRole("button", { name: /Show lineage for account::revenue/ }).click();
   const detachedSuccessAction = page.locator("#model-cell-lineage").getByRole("button", { name: new RegExp(source.id) });
   await detachedSuccessAction.click();
-  await bounded(detachedSuccessSeen, "the detached success Model evidence request never started");
+  const detachedSuccessRequest = await bounded(detachedSuccessSeen, "the detached success Model evidence request never started");
   await page.getByRole("tab", { name: "Model", exact: true }).click();
   assert.equal(await detachedSuccessAction.count(), 0, "the replaced worksheet retained the old evidence opener");
-  releaseDetachedSuccess();
-  await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  await settleHeldResponse(detachedSuccessRequest, releaseDetachedSuccess, "the detached success Model evidence response never finished");
   assert.equal(await page.getByRole("dialog").count(), 0, "a successful detached Model request opened a drawer");
   await page.unroute(delayedSourcePath, holdDetachedSuccess);
 
@@ -1658,7 +1664,7 @@ try {
   const detachedFailureBarrier = new Promise((resolve) => { releaseDetachedFailure = resolve; });
   const detachedFailureSeen = new Promise((resolve) => { markDetachedFailureSeen = resolve; });
   const holdDetachedFailure = async (route) => {
-    markDetachedFailureSeen();
+    markDetachedFailureSeen(route.request());
     await detachedFailureBarrier;
     await route.fulfill({ status: 200, contentType: "application/json", body: "not-json" });
   };
@@ -1667,12 +1673,11 @@ try {
   await page.getByRole("button", { name: /Show lineage for account::revenue/ }).click();
   const detachedSourceAction = page.locator("#model-cell-lineage").getByRole("button", { name: new RegExp(source.id) });
   await detachedSourceAction.click();
-  await bounded(detachedFailureSeen, "the detached Model evidence request never started");
+  const detachedFailureRequest = await bounded(detachedFailureSeen, "the detached Model evidence request never started");
   await page.getByRole("link", { name: "Credit", exact: true }).first().click();
   await page.waitForURL((url) => url.pathname.replace(/\/$/, "") === "/credit");
   assert.equal(await detachedSourceAction.count(), 0, "the Model evidence opener remained attached after route departure");
-  releaseDetachedFailure();
-  await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  await settleHeldResponse(detachedFailureRequest, releaseDetachedFailure, "the detached Model evidence error response never finished");
   assert.equal(await page.getByRole("dialog").count(), 0, "a failed detached Model request opened a drawer");
   assert.equal(await page.getByText("Evidence source unavailable.", { exact: true }).count(), 0, "a failed detached Model request published a stale error");
   await page.unroute(delayedSourcePath, holdDetachedFailure);
