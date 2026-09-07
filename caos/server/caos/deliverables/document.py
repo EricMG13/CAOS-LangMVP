@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import math
 import re
+from itertools import batched
 from typing import Any
 
 from pydantic import TypeAdapter
@@ -557,6 +558,29 @@ def citation_union(blocks, sections, artifacts):
     ]
 
 
+def _report_evidence_sections(citations, authority_id):
+    """Bound v2 display sections, never the authoritative citation union."""
+    register = _evidence_section([{"citations": citations}], authority_id)
+    if len(register["origin"]["block_ids"]) <= 500 and len(register["rows"]) <= 500:
+        return [register]
+
+    # One reference per entry bounds both distinct origin IDs and table rows.
+    single_reference_blocks = (
+        {"citations": [{**citation, "block_ids": [block_id]}]}
+        for citation in citations
+        for block_id in citation["block_ids"]
+    )
+    sections = []
+    for section_number, batch in enumerate(batched(single_reference_blocks, 500), 1):
+        batch_citations = citation_union(batch, [], {})
+        section = _evidence_section([{"citations": batch_citations}], authority_id)
+        if section_number > 1:
+            section["section_id"] = f"evidence_register.{section_number}"
+            section["title"] = "Evidence Register · continued"
+        sections.append(section)
+    return sections
+
+
 def document_blockers(sections):
     return [{"code": "REPORT_INPUT_UNAVAILABLE", "section_id": s["section_id"], "detail": s["body"]}
             for s in sections if s["origin"]["kind"] == "SYSTEM" and s["section_id"].endswith(".unavailable")]
@@ -672,7 +696,7 @@ def _module_document(pathway, blocks, artifacts, model, mapping_version, include
             result.append({"kind": "text", "section_id": f"report.{optional['section_id']}.omitted", "title": f"Omitted · {optional['title']}", "page": "Limitations",
                            "editable": False, "origin": _origin("SYSTEM", _artifact_authority(artifacts)), "body": optional["omission_reason"]})
     result.extend(_appendix_sections(blocks[1:], model))
-    result.append(_evidence_section([{"citations": citation_union(blocks, result, artifacts)}], _artifact_authority(artifacts)))
+    result.extend(_report_evidence_sections(citation_union(blocks, result, artifacts), _artifact_authority(artifacts)))
     return result
 
 

@@ -262,6 +262,102 @@ def test_v2_citation_union_never_cross_pairs_repeated_block_ids():
     assert citation_union([], [chart], {"CP-1": artifact}) == [{"source_id": "source-B", "block_ids": ["b2"], "claim": "Accepted module evidence"}]
 
 
+def test_v2_large_generated_evidence_survives_preview_save_freeze_and_audit(service, store, monkeypatch, tmp_path):
+    from caos.audit.package import build_case_package
+    from caos.contracts import digest
+    from caos.methodology.canonical import CanonicalModuleOutput
+    from test_audit_package_spec import _run_verifier
+
+    case = store.create_case("Large report fixture", "Issuer", "Services", "analyst")
+    ids = [f"b{i:05d}" for i in range(1, 601)]
+    body = "\n".join(ids).encode()
+    source = store.ingest({
+        "case_id": case["id"], "filename": "large-report.txt", "media_type": "text/plain",
+        "bytes": len(body), "sha256": hashlib.sha256(body).hexdigest(), "vault_path": None,
+        "blocks": [{"block_id": block_id, "locator": {"line": i}, "text": block_id,
+                    "extractor_version": "builtin-v1", "confidence": "MEDIUM", "untrusted_data": True}
+                   for i, block_id in enumerate(ids, 1)], "withdrawn": False,
+    }, "analyst")
+    service.seed_accepted_authority_for_tests(case["id"])
+    artifacts = report_artifacts(source["id"])
+    for i, module in enumerate(("CP-1", "CP-2", "CP-1A")):
+        artifact = artifacts[module]
+        refs = [{"source_id": source["id"], "block_id": block_id} for block_id in ids[i * 200:(i + 1) * 200]]
+        canonical = CanonicalModuleOutput.model_validate({
+            "markdown": artifact["markdown"], "evidence_refs": refs, "lineage_counts": {},
+            "fields_present": 1, "fields_total": 1, "source_gate": "pass",
+        })
+        artifact["payload"]["canonical_output"] = canonical.model_dump()
+        artifact["payload"]["evidence_refs"] = refs
+        artifact["digest"] = digest(artifact["payload"])
+    # Accepted-artifact seam only; source validation, signing, freeze and audit remain real.
+    monkeypatch.setattr(service, "_accepted_artifacts", lambda _: artifacts)
+    expected = [{"source_id": source["id"], "block_ids": ids, "claim": "Accepted module evidence"}]
+    preview = service.workspace(case["id"], "FULL_CREDIT")["preview"]
+    assert preview["citation_union"] == expected
+    registers = [s for s in preview["document_sections"] if s["page"] == "Evidence"]
+    assert [len(s["origin"]["block_ids"]) for s in registers] == [500, 100]
+    assert [s["section_id"] for s in registers] == ["evidence_register", "evidence_register.2"]
+    assert [block_id for s in registers for row in s["rows"] for block_id in row[1].split(", ")] == ids
+    model = seed_model(service, case)
+    template = service.templates()["FULL_CREDIT"]
+    blocks = required_blocks(template, source)
+    blocks[0]["citations"] = []
+    revision = service.save_draft(case["id"], "FULL_CREDIT", draft_request(template, blocks=blocks, model_selection=revision_selection(model)), actor="analyst")
+    assert revision["content"]["citation_union"] == expected
+    frozen = freeze_now(service, case["id"], revision)
+    assert frozen["payload"]["evidence"] == [{"source_id": source["id"], "sha256": source["sha256"], "block_ids": ids, "withdrawn": False}]
+    assert frozen["payload"]["content"]["document_sections"] == revision["content"]["document_sections"]
+    package = build_case_package(store=store, vault_dir=service.vault_dir, case_id=case["id"], methodology_build_id=frozen["payload"]["methodology"]["build_id"], generated_by="analyst", generated_at="2026-09-07T00:00:00Z")
+    code, report = _run_verifier(tmp_path, package)
+    assert code == 0, report
+    get_source = store.get_source
+    with monkeypatch.context() as missing_tail:
+        missing_tail.setattr(store, "get_source", lambda source_id: {**get_source(source_id), "blocks": source["blocks"][:-1]})
+        with pytest.raises(ValueError, match="EVIDENCE_BLOCK_MISMATCH.*b00600"):
+            service.sign_opinion(case["id"], "FULL_CREDIT", sign_request(revision), actor="analyst")
+        with pytest.raises(ValueError, match="EVIDENCE_BLOCK_MISMATCH.*b00600"):
+            service.freeze(case["id"], freeze_request(revision), actor="analyst")
+    store.withdraw(case["id"], source["id"], "analyst")
+    with pytest.raises(ValueError, match="EVIDENCE_SOURCE_WITHDRAWN"):
+        service.sign_opinion(case["id"], "FULL_CREDIT", sign_request(revision), actor="analyst")
+    with pytest.raises(ValueError, match="EVIDENCE_SOURCE_WITHDRAWN"):
+        service.freeze(case["id"], freeze_request(revision), actor="analyst")
+
+
+@pytest.mark.parametrize("count", [0, 499, 500, 501, 600, 2000])
+@pytest.mark.parametrize("grouping", ["one_source", "distinct_sources", "shared_ids"])
+def test_v2_evidence_register_bounds_preserve_pairs_and_bounded_bytes(count, grouping):
+    from caos.contracts import DocumentTableSection
+    from caos.deliverables.document import _evidence_section, _report_evidence_sections, citation_union
+
+    citations = [{"source_id": "source" if grouping == "one_source" else f"source-{i:05d}",
+                  "block_ids": ["shared" if grouping == "shared_ids" else f"b{i:05d}"], "claim": "Accepted module evidence"}
+                 for i in range(count)]
+    union = citation_union([{"citations": citations}], [], {})
+    before = copy.deepcopy(union)
+    sections = _report_evidence_sections(union, "snapshot")
+    assert len(sections) == max(1, (count + 499) // 500)
+    assert union == before
+    assert sections == _report_evidence_sections(union, "snapshot")
+    for section in sections:
+        DocumentTableSection.model_validate(section)
+    actual = {(row[0], block_id, row[2]) for section in sections for row in section["rows"] for block_id in row[1].split(", ")}
+    expected = {(c["source_id"], block_id, c["claim"]) for c in union for block_id in c["block_ids"]}
+    assert actual == expected
+    if count <= 500:
+        assert sections == [_evidence_section([{"citations": union}], "snapshot")]
+    assert len({s["section_id"] for s in sections}) == len(sections)
+
+
+def test_v2_evidence_register_bounds_keep_preexisting_shared_id_claim_rows():
+    from caos.deliverables.document import _evidence_section, _report_evidence_sections
+    # More than 500 reference occurrences can already fit one valid legacy-shaped section.
+    citations = [{"source_id": source, "block_ids": [f"b{i:05d}" for i in range(500)], "claim": source}
+                 for source in ("source-A", "source-B")]
+    assert _report_evidence_sections(citations, "snapshot") == [_evidence_section([{"citations": citations}], "snapshot")]
+
+
 def test_v2_missing_recorded_mapping_refuses_save_without_reinterpreting(service, store, monkeypatch):
     case, source, _ = seed_ready_case(service, store)
     monkeypatch.setattr(service, "_accepted_artifacts", lambda _: report_artifacts(source["id"]))

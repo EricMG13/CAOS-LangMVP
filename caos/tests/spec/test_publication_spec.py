@@ -195,7 +195,7 @@ def test_frozen_payload_carries_the_signed_opinion_and_the_signer(service, store
 ])
 def test_analyst_judgment_cannot_carry_an_uncited_quantitative_fact(service, store, text):
     case, source, _authority = seed_ready_case(service, store)
-    template = service.templates()["FULL_CREDIT"]
+    template = service.templates(template_version="caos.deliverable-template.v1")["FULL_CREDIT"]
     bind_default_model_for_tests(service, case, template)
     blocks = required_blocks(template, source, narrative_text=text)
     with pytest.raises(Exception, match="ANALYST_JUDGMENT_UNCITED_FACT"):
@@ -217,7 +217,7 @@ def test_analyst_judgment_cannot_carry_an_uncited_quantitative_fact(service, sto
 ])
 def test_explicitly_framed_judgment_or_prose_without_figures_is_accepted(service, store, text):
     case, source, _authority = seed_ready_case(service, store)
-    template = service.templates()["FULL_CREDIT"]
+    template = service.templates(template_version="caos.deliverable-template.v1")["FULL_CREDIT"]
     bind_default_model_for_tests(service, case, template)
     blocks = required_blocks(template, source, narrative_text=text)
     saved = service.save_draft(case["id"], "FULL_CREDIT", draft_request(template, blocks=blocks), actor="analyst")

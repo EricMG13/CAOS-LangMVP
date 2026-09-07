@@ -74,7 +74,7 @@ def _outputs(years: int, metrics: int) -> dict:
 
 def _build(service, store, state: str):
     case, source, _authority = seed_ready_case(service, store)
-    template = service.templates()["FULL_CREDIT"]
+    template = service.templates(template_version="caos.deliverable-template.v1")["FULL_CREDIT"]
     years, metrics = (7, 8) if state == "dense" else (2, 2)
     model = seed_model(service, case, outputs=_outputs(years, metrics))
     if state == "long_text":
