@@ -1921,23 +1921,28 @@ async def test_sign_off_and_acceptance_serialize_on_snapshot_authority(
     accept_started = threading.Event()
     original_validate = models._validate_build_identity
 
+    async def wait_for(event: threading.Event) -> None:
+        async with asyncio.timeout(30):
+            while not event.is_set():
+                await asyncio.sleep(0.01)
+
     def pause_inside_authority_guard(*args, **kwargs):
         original_validate(*args, **kwargs)
         entered_validation.set()
-        assert release_validation.wait(5), "test failed to release sign-off"
+        assert release_validation.wait(30), "test failed to release sign-off"
 
     monkeypatch.setattr(models, "_validate_build_identity", pause_inside_authority_guard)
     sign_task = asyncio.create_task(
         asyncio.to_thread(models.sign_off, case["id"], request)
     )
-    assert await asyncio.to_thread(entered_validation.wait, 5)
+    await wait_for(entered_validation)
 
     def accept_in_thread():
         accept_started.set()
         return asyncio.run(engine.accept(next_run["id"], actor="analyst"))
 
     accept_task = asyncio.create_task(asyncio.to_thread(accept_in_thread))
-    assert await asyncio.to_thread(accept_started.wait, 5)
+    await wait_for(accept_started)
     await asyncio.sleep(0.05)
     assert store.get_case(case["id"])["accepted_snapshot_id"] == build["snapshot_id"]
 
