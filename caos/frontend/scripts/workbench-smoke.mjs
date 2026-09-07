@@ -135,6 +135,57 @@ assert.equal(alternateUpload.status(), 201);
 const alternateSource = await alternateUpload.json();
 const artifact = accepted.artifacts.find((item) => item.module_id === "CP-0");
 assert.ok(artifact);
+const actualAcceptedArtifacts = [];
+for (const acceptedArtifact of accepted.artifacts) {
+  const response = await api.get(`/api/cases/${caseRecord.id}/artifacts/${acceptedArtifact.id}`);
+  assert.equal(response.status(), 200);
+  actualAcceptedArtifacts.push(await response.json());
+}
+const legacySeedArtifact = actualAcceptedArtifacts[0];
+const legacyAcceptedArtifact = {
+  ...legacySeedArtifact,
+  markdown: null,
+  payload: {
+    ...legacySeedArtifact.payload,
+    schema_version: "caos.system_analysis.v1",
+    narrative: { takeaway: "Legacy accepted conclusion", basis: "Legacy accepted basis remains visible.", exceptions: "Legacy accepted exceptions remain visible." },
+    evidence_refs: [{ source_id: source.id, block_id: source.blocks[0].block_id }],
+  },
+  presentation: {
+    schema_version: "caos.module-presentation.v1", artifact_id: legacySeedArtifact.id, artifact_digest: legacySeedArtifact.digest,
+    mapping_version: legacySeedArtifact.presentation?.mapping_version || "qa-task6-route-controlled",
+    sections: [], unavailable: [{ view_id: `${legacySeedArtifact.module_id}.legacy`, code: "MAPPING_UNAVAILABLE" }],
+  },
+};
+const chartArtifactFixtures = new Map(actualAcceptedArtifacts.map((item, index) => {
+  const task6Origin = { kind: "ARTIFACT", authority_id: item.id, block_ids: [source.blocks[0].block_id] };
+  const kind = index === 0 ? "stacked_bar" : "bar";
+  const points = [
+    { x: "FY2024", y: "120", display: "120", series: "Cash", source_ids: [source.id] },
+    { x: "FY2024", y: "-45", display: "-45", series: "Debt", source_ids: [source.id] },
+    { x: "FY2024", y: "0", display: "0", series: "Neutral", source_ids: [source.id] },
+    { x: "FY2025", y: "135", display: "135", series: "Cash", source_ids: [source.id] },
+    { x: "FY2025", y: "-40", display: "-40", series: "Debt", source_ids: [source.id] },
+  ];
+  const recipeId = index < 2 ? "task6.shared-replacement" : `task6.${index}.${item.module_id.toLowerCase()}`;
+  const unit = index === 1 ? "USD thousands" : "USD millions";
+  const title = `${kind === "stacked_bar" ? "Liquidity composition" : "Grouped liquidity"} ${index + 1}`;
+  const chart = {
+    kind: "chart", section_id: recipeId, title, page: "Financial performance", editable: false, origin: task6Origin,
+    recipe: { schema_version: "caos.chart.v1", recipe_id: recipeId, kind, unit, points },
+    accessible_columns: ["Category / period", "Series", "Value", "Unit", "Sources"],
+    accessible_rows: points.map((point) => [point.x, point.series, point.display, unit, point.source_ids.join(", ")]),
+  };
+  const detail = {
+    kind: "table", section_id: `task6.detail.${index}`, title: "Accepted observations", page: "Financial performance", editable: false,
+    origin: task6Origin, columns: ["Observation", "Value"], rows: [["Authority", item.id], ["State", "Accepted"]], note: null,
+  };
+  return [item.id, { ...item, presentation: {
+    schema_version: "caos.module-presentation.v1", artifact_id: item.id, artifact_digest: item.digest,
+    mapping_version: item.presentation?.mapping_version || "qa-task6-route-controlled", sections: [chart, detail],
+    unavailable: item.presentation?.unavailable || [],
+  } }];
+}));
 const researchPlanHash = `sha256:${"a".repeat(64)}`;
 const researchPlanLongText = "The supplied evidence must resolve the complete refinancing perimeter without truncating this deliberately long committee-review sentence.";
 const proposedResearchPlan = {
@@ -265,6 +316,7 @@ try {
     }
   });
   let caseRequests = 0;
+  let caseRequestOrigins = [];
   let authorityRequests = 0;
   let expectedAuthorityFailureURL = "";
   let expectedAuthorityFailureSeen = false;
@@ -354,7 +406,10 @@ try {
   page.on("request", (requestValue) => {
     const url = new URL(requestValue.url());
     const pathname = url.pathname;
-    if (pathname === "/api/cases") caseRequests += 1;
+    if (pathname === "/api/cases") {
+      caseRequests += 1;
+      caseRequestOrigins.push(page.url());
+    }
     if (/^\/api\/cases\/[^/]+\/(?:lens|snapshot)$/.test(pathname)) authorityRequests += 1;
   });
 
@@ -580,6 +635,7 @@ try {
   assert.equal(await page.getByRole("heading", { name: "Monitored credits" }).count(), 0, "unknown route rendered the default Portfolio page");
   await page.goto(`${baseURL}/credit/?case=${caseRecord.id}`, { waitUntil: "networkidle" });
   caseRequests = 0;
+  caseRequestOrigins = [];
   authorityRequests = 0;
 
   await page.keyboard.press(process.platform === "darwin" ? "Meta+K" : "Control+K");
@@ -593,6 +649,8 @@ try {
   await evidenceFocus.getByTitle(artifact.digest, { exact: true }).waitFor();
 
   const deepDiveQuestion = "What changed in refinancing capacity?";
+  const legacyArtifactRoute = (url) => url.pathname.endsWith(`/artifacts/${legacyAcceptedArtifact.id}`);
+  await page.route(legacyArtifactRoute, (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(legacyAcceptedArtifact) }));
   await page.evaluate(({ caseId, question }) => {
     const query = new URLSearchParams({ case: caseId, q: question });
     window.history.pushState(null, "", `/analysis/?${query}`);
@@ -604,8 +662,6 @@ try {
   await rail.getByText("Evidence rail", { exact: true }).waitFor();
   await rail.getByTitle(accepted.digest, { exact: true }).waitFor();
   assert.ok(await rail.locator(".analysis-evidence-card").count() > 0, "accepted analysis lists no cited sources");
-
-
 
   const commandQuestion = "Which evidence changes the downside case?";
   await page.evaluate(({ caseId, question }) => {
@@ -619,10 +675,136 @@ try {
     await page.getByRole("navigation", { name: "Workflows" }).getByRole("link", { name: label, exact: true }).click();
     await page.waitForLoadState("networkidle");
   }
-  assert.equal(caseRequests, 0, "same-client query/workflow navigation repeated the case-list request");
+  assert.equal(caseRequests, 0, `same-client query/workflow navigation repeated the case-list request from ${JSON.stringify(caseRequestOrigins)}`);
   assert.ok(authorityRequests <= 12, `same-client navigation caused an authority refresh loop (${authorityRequests} requests)`);
   await page.getByRole("region", { name: "Visible authority" }).getByText(new RegExp(`Credit:\\s*${primaryIssuer}`)).waitFor();
   await page.getByRole("region", { name: "Visible authority" }).getByText(/Source set:\s*v1/).waitFor();
+
+  // Keep the established first-page and same-client request tripwires cold.
+  // This separate-context proof consumes an unmodified accepted CP-1 response,
+  // after those budgets have already been asserted.
+  const chartCaseResponse = await api.post("/api/cases", { data: { name: "Task 6 actual chart", issuer: `Actual-chart-${fixtureSuffix}`, sector: "Services" } });
+  assert.equal(chartCaseResponse.status(), 201);
+  const chartCase = await chartCaseResponse.json();
+  const chartSourceResponse = await api.post(`/api/cases/${chartCase.id}/sources`, {
+    multipart: { file: { name: "actual-chart.txt", mimeType: "text/plain", buffer: Buffer.from("Canonical answer-key input for isolated chart integration") } },
+  });
+  assert.equal(chartSourceResponse.status(), 201);
+  const chartSource = await chartSourceResponse.json();
+  const chartRunResponse = await api.post(`/api/cases/${chartCase.id}/runs`, { data: { pathway: "FULL_CREDIT", depth: "full", focus_questions: [] } });
+  assert.equal(chartRunResponse.status(), 201);
+  const chartRun = await chartRunResponse.json();
+  let chartRunState;
+  for (let attempt = 0; attempt < 160; attempt += 1) {
+    const response = await api.get(`/api/runs/${chartRun.id}`);
+    chartRunState = await response.json();
+    if (["succeeded", "failed", "paused"].includes(chartRunState.status)) break;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  assert.equal(chartRunState?.status, "succeeded", "Full Credit chart fixture did not succeed");
+  const chartAcceptedResponse = await api.post(`/api/runs/${chartRun.id}/accept`);
+  assert.equal(chartAcceptedResponse.status(), 200);
+  const chartAccepted = await chartAcceptedResponse.json();
+  const cp1Accepted = chartAccepted.artifacts.find((item) => item.module_id === "CP-1");
+  assert.ok(cp1Accepted, "Full Credit fixture accepted no CP-1 artifact");
+  const cp1Response = await api.get(`/api/cases/${chartCase.id}/artifacts/${cp1Accepted.id}`);
+  assert.equal(cp1Response.status(), 200);
+  const actualCp1Artifact = await cp1Response.json();
+  const actualCp1Chart = actualCp1Artifact.presentation?.sections?.find((section) => section.kind === "chart");
+  assert.ok(actualCp1Chart, "unmodified CP-1 presentation has no chart section");
+  assert.ok(actualCp1Chart.recipe.points.some((point) => point.source_ids.includes(chartSource.id)), "CP-1 chart lost the actual fixture source identity");
+  const actualChartContext = watchExternalGoogleFonts(await browser.newContext({ viewport: { width: 1440, height: 1000 }, extraHTTPHeaders: identityHeaders }));
+  const actualChartPage = await actualChartContext.newPage();
+  const actualChartErrors = [];
+  actualChartPage.on("console", (message) => { if (message.type() === "error") actualChartErrors.push(message.text()); });
+  await actualChartPage.goto(`${baseURL}/analysis/?case=${chartCase.id}`, { waitUntil: "networkidle" });
+  await actualChartPage.getByRole("navigation", { name: "Accepted analysis modules" }).getByRole("button").filter({ hasText: "CP-1" }).first().click();
+  await actualChartPage.getByRole("heading", { name: actualCp1Chart.title, exact: true }).waitFor();
+  await actualChartPage.waitForFunction((recipeId) => document.querySelector(`.chart-exhibit-canvas[data-recipe-id="${recipeId}"]`)?.getAttribute("data-chart-lifecycle") === "ready", actualCp1Chart.recipe.recipe_id);
+  const actualTable = actualChartPage.getByRole("region", { name: `${actualCp1Chart.title} exact data table` });
+  await actualTable.getByText(actualCp1Chart.recipe.unit, { exact: true }).first().waitFor();
+  await actualTable.getByText(actualCp1Chart.accessible_rows[0][2], { exact: true }).first().waitFor();
+  const actualSourceLink = actualChartPage.getByRole("navigation", { name: `${actualCp1Chart.title} chart sources` }).getByRole("link", { name: new RegExp(chartSource.id) }).first();
+  assert.equal(new URL(await actualSourceLink.getAttribute("href"), baseURL).searchParams.get("source"), chartSource.id);
+  assert.equal(await actualChartPage.locator(".chart-exhibit-failure").count(), 0, "unmodified CP-1 chart fell back to its table");
+  assert.deepEqual(actualChartErrors, [], "unmodified CP-1 chart emitted a browser console error");
+  await actualChartPage.setViewportSize({ width: 1024, height: 768 });
+  assert.equal(await actualChartPage.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth), false, "actual CP-1 chart overflows at 1024px");
+  await actualChartPage.screenshot({ path: path.join(resultsDir, "analysis-chart-actual-cp1.png"), fullPage: false });
+  await actualChartContext.close();
+
+  // The route-controlled browser proofs run only after the unchanged first-page
+  // and same-client budgets. Their deliberate reload cannot contaminate either.
+  const acceptedModuleNav = page.getByRole("navigation", { name: "Accepted analysis modules" });
+  await acceptedModuleNav.getByRole("button").filter({ hasText: legacyAcceptedArtifact.module_id }).first().click();
+  await page.getByText(legacyAcceptedArtifact.payload.narrative.basis, { exact: true }).waitFor();
+  await page.locator(".module-presentation-unavailable summary").waitFor();
+  await page.unroute(legacyArtifactRoute);
+
+  // Route-controlled visual data is attached only after the accepted identity,
+  // digest, snapshot and source were obtained from the real scanner fixture.
+  // This exercises the browser renderer without claiming the synthetic values
+  // were produced by the analytical engine.
+  const chartArtifactRoute = (url) => chartArtifactFixtures.has(url.pathname.split("/").at(-1));
+  const fulfillChartArtifact = (route) => {
+    const fixture = chartArtifactFixtures.get(new URL(route.request().url()).pathname.split("/").at(-1));
+    return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(fixture) });
+  };
+  await page.route(chartArtifactRoute, fulfillChartArtifact);
+  await page.reload({ waitUntil: "networkidle" });
+  const defaultChartArtifact = actualAcceptedArtifacts.find((item) => item.module_id === "CP-2") || actualAcceptedArtifacts[0];
+  const defaultChart = chartArtifactFixtures.get(defaultChartArtifact.id).presentation.sections[0];
+  const defaultCanvas = page.locator(`.chart-exhibit-canvas[data-recipe-id="${defaultChart.recipe.recipe_id}"]`);
+  await defaultCanvas.waitFor();
+  await page.waitForFunction((recipeId) => document.querySelector(`.chart-exhibit-canvas[data-recipe-id="${recipeId}"]`)?.getAttribute("data-chart-lifecycle") === "ready", defaultChart.recipe.recipe_id);
+  assert.equal(await defaultCanvas.locator("canvas").count(), 1, "G2 did not render exactly one canvas for the accepted exhibit");
+  assert.equal(await defaultCanvas.locator("canvas").getAttribute("aria-hidden"), "true", "the redundant canvas entered the accessibility tree");
+  await page.getByRole("region", { name: `${defaultChart.title} exact data table` }).getByText("-45", { exact: true }).first().waitFor();
+  await page.getByRole("region", { name: `${defaultChart.title} exact data table` }).getByText("0", { exact: true }).first().waitFor();
+  const exactSourceLink = page.getByRole("navigation", { name: `${defaultChart.title} chart sources` }).getByRole("link").first();
+  const exactSourceURL = new URL(await exactSourceLink.getAttribute("href"), baseURL);
+  assert.equal(exactSourceURL.searchParams.get("source"), source.id);
+  assert.equal(exactSourceURL.searchParams.get("block"), source.blocks[0].block_id);
+  await page.getByRole("region", { name: `${defaultChart.title} exact data table` }).focus();
+  assert.equal(await page.getByRole("region", { name: `${defaultChart.title} exact data table` }).evaluate((node) => document.activeElement === node), true, "chart table is not keyboard focusable");
+  await page.screenshot({ path: path.join(resultsDir, "analysis-chart-1440.png"), fullPage: false });
+
+  const firstChartArtifact = actualAcceptedArtifacts[0];
+  const secondChartArtifact = actualAcceptedArtifacts[1];
+  assert.ok(secondChartArtifact, "accepted fixture needs two modules for rapid chart switching");
+  const firstModuleButton = acceptedModuleNav.getByRole("button").filter({ hasText: firstChartArtifact.module_id }).first();
+  const secondModuleButton = acceptedModuleNav.getByRole("button").filter({ hasText: secondChartArtifact.module_id }).first();
+  await firstModuleButton.click();
+  await page.waitForFunction(() => document.querySelector('.chart-exhibit-canvas[data-recipe-id="task6.shared-replacement"][data-chart-kind="stacked_bar"]')?.getAttribute("data-chart-lifecycle") === "ready");
+  await secondModuleButton.click();
+  await page.waitForFunction(() => document.querySelector('.chart-exhibit-canvas[data-recipe-id="task6.shared-replacement"][data-chart-kind="bar"]')?.getAttribute("data-chart-lifecycle") === "ready");
+  await page.locator(".chart-exhibit-meta").getByText("USD thousands", { exact: true }).waitFor();
+  await page.screenshot({ path: path.join(resultsDir, "analysis-chart-grouped.png"), fullPage: false });
+  await firstModuleButton.click();
+  const finalRecipe = chartArtifactFixtures.get(firstChartArtifact.id).presentation.sections[0].recipe.recipe_id;
+  await page.waitForFunction((recipeId) => document.querySelector(`.chart-exhibit-canvas[data-recipe-id="${recipeId}"]`)?.getAttribute("data-chart-lifecycle") === "ready", finalRecipe);
+  assert.equal(await page.locator('.chart-exhibit-canvas[data-chart-kind="stacked_bar"]').count(), 1, "same-id kind/unit replacement kept the stale grouped bar");
+  assert.equal(await page.locator(".chart-exhibit-canvas canvas").count(), 1, "rapid module switching retained a stale chart canvas");
+  assert.equal(await firstModuleButton.getAttribute("aria-pressed"), "true", "rapid switching selected the wrong accepted artifact");
+  assert.equal(await page.locator(".chart-exhibit-failure").count(), 0, "actual G2 rendering fell back during rapid switching");
+
+  await page.setViewportSize({ width: 1024, height: 768 });
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth), false, "chart analysis overflows at 1024px");
+  await page.screenshot({ path: path.join(resultsDir, "analysis-chart-1024.png"), fullPage: false });
+  await page.setViewportSize({ width: 720, height: 900 });
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth), false, "chart analysis overflows at 720px");
+  await page.screenshot({ path: path.join(resultsDir, "analysis-chart-720.png"), fullPage: false });
+  await page.setViewportSize({ width: 1440, height: 1000 });
+
+  // The source-action proof intentionally follows the established same-client
+  // navigation budget: entering and returning through browser history is new
+  // Task 6 coverage and must not dilute that earlier baseline invariant.
+  const finalChart = chartArtifactFixtures.get(firstChartArtifact.id).presentation.sections[0];
+  const navigatedSource = page.getByRole("navigation", { name: `${finalChart.title} chart sources` }).getByRole("link").first();
+  await navigatedSource.focus();
+  await page.keyboard.press("Enter");
+  await page.waitForURL((url) => url.pathname === "/sources/" && url.searchParams.get("source") === source.id && url.searchParams.get("block") === source.blocks[0].block_id);
+  await page.locator(`#block-${source.id}-${source.blocks[0].block_id}`).waitFor();
 
   // One snapshot authority per screen (FE-A0 F3): the credit screen renders the
   // shell's snapshot, never a second read of its own, so with the route answering
@@ -1977,16 +2159,17 @@ try {
     const narratives = blocks.filter((block) => block.kind === "NARRATIVE");
     const evidenceBlock = blocks.find((block) => block.kind === "EVIDENCE_REGISTER");
     const appendices = blocks.filter((block) => block.kind === "SCENARIO_EXHIBIT").map((block) => {
-      const accessibleRows = [];
+      const points = [];
       for (const [caseName, periods] of Object.entries(block.scenario.outputs)) {
         for (const [period, metrics] of Object.entries(periods)) {
-          for (const [metric, value] of Object.entries(metrics)) accessibleRows.push([`${caseName} / ${period} / ${metric}`, String(value)]);
+          for (const [metric, value] of Object.entries(metrics)) points.push({ x: period, y: String(value), display: String(value), series: `${caseName} · ${metric}`, source_ids: [] });
         }
       }
       return {
         kind: "chart", section_id: block.block_id, title: block.title, page: "Appendix", editable: false,
-        origin: reportOrigin("MODEL", block.scenario_digest), recipe: { chart_kind: "scenario", shocks: block.shocks },
-        accessible_columns: ["Scenario / Metric", "Value"], accessible_rows: accessibleRows,
+        origin: reportOrigin("MODEL", block.scenario_digest), recipe: { schema_version: "caos.chart.v1", recipe_id: block.block_id, kind: "bar", unit: "Leverage turns", points },
+        accessible_columns: ["Category / period", "Series", "Value", "Unit", "Sources"],
+        accessible_rows: points.map((point) => [point.x, point.series, point.display, "Leverage turns", ""]),
       };
     });
     const evidence = {
@@ -2429,8 +2612,13 @@ try {
   await page.getByRole("button", { name: "Calculate and insert exact exhibit" }).click();
   await page.getByText("Server-calculated Scenario Exhibit inserted into the Draft.").waitFor();
   await awaitReportSave("FULL_CREDIT", (current) => current.content.blocks.some((block) => block.kind === "SCENARIO_EXHIBIT"), "scenario exhibit");
-  await page.getByText("BASE / FY2027 / total_leverage", { exact: true }).waitFor();
-  await page.getByText("DOWNSIDE / FY2027 / total_leverage", { exact: true }).waitFor();
+  const paperChart = page.locator(".report-paper .chart-exhibit-paper");
+  await paperChart.getByRole("heading", { name: /^Scenario · / }).waitFor();
+  await page.waitForFunction(() => document.querySelector(".report-paper .chart-exhibit-canvas")?.getAttribute("data-chart-lifecycle") === "ready");
+  await paperChart.getByText("BASE · total_leverage", { exact: true }).first().waitFor();
+  await paperChart.getByText("DOWNSIDE · total_leverage", { exact: true }).first().waitFor();
+  await paperChart.scrollIntoViewIfNeeded();
+  await paperChart.screenshot({ path: path.join(resultsDir, "report-paper-chart.png") });
 
   reportConflict = true;
   await thesisEditor.fill("Local conflict value");
@@ -2733,7 +2921,11 @@ try {
     extraHTTPHeaders: identityHeaders,
   }));
   const reducedPage = await reduced.newPage();
-  await reducedPage.goto(`${baseURL}/credit/?case=${caseRecord.id}`, { waitUntil: "networkidle" });
+  await reducedPage.goto(`${baseURL}/analysis/?case=${chartCase.id}`, { waitUntil: "networkidle" });
+  await reducedPage.getByRole("navigation", { name: "Accepted analysis modules" }).getByRole("button").filter({ hasText: "CP-1" }).first().click();
+  await reducedPage.waitForFunction((recipeId) => document.querySelector(`.chart-exhibit-canvas[data-recipe-id="${recipeId}"]`)?.getAttribute("data-chart-lifecycle") === "ready", actualCp1Chart.recipe.recipe_id);
+  assert.equal(await reducedPage.evaluate(() => matchMedia("(prefers-reduced-motion: reduce)").matches), true, "chart context did not receive reduced-motion preference");
+  await reducedPage.screenshot({ path: path.join(resultsDir, "analysis-chart-reduced-1024.png"), fullPage: false });
   const reducedStyle = await reducedPage.evaluate(() => {
     const style = getComputedStyle(document.querySelector(".app-shell"));
     return { iterationCount: style.animationIterationCount, playState: style.animationPlayState };

@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import ChartExhibit from "../charts/ChartExhibit";
 
 import {
   groupDocumentPages,
@@ -111,11 +112,7 @@ function DocumentTable({ section }: { section: DocumentTableSection }) {
 }
 
 function DocumentChart({ section }: { section: DocumentChartSection }) {
-  return <section className="rd-sec" data-section-id={section.section_id}>
-    <SectionHeading section={section} />
-    <p className="rd-chart-label">Chart exhibit · authoritative data table</p>
-    <DocumentTableBody columns={section.accessible_columns} rows={section.accessible_rows} title={`${section.title} chart data`} />
-  </section>;
+  return <ChartExhibit section={section} theme="paper" />;
 }
 
 function DocumentLeaf({ section }: { section: DocumentLeafSection }): ReactNode {
