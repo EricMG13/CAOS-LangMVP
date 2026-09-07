@@ -245,7 +245,11 @@ class ModelStore:
             existing = self.build_for_fingerprint(build["case_id"], build["input_fingerprint"])
             if existing is None:
                 raise
-            return existing, False
+            self.update_build(existing["id"], expected_status=("FAILED",),
+                              expected_input_fingerprint=build["input_fingerprint"],
+                              status="QUEUED", queued_at=row["queued_at"],
+                              started_at=None, completed_at=None, error=None)
+            return self.get_build(existing["id"]), False
 
     def insert_build_row(self, row: dict[str, Any]) -> dict[str, Any]:
         with self.engine.begin() as conn:

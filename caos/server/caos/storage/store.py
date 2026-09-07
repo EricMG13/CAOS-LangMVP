@@ -806,12 +806,15 @@ class DomainStore:
 
     def ingest(self, source: dict[str, Any], actor: str) -> dict[str, Any]:
         saved = dict(source)
+        require_standing = bool(saved.pop("_require_standing", False))
         saved.setdefault("id", new_id("src"))
         saved.setdefault("created_by", actor)
         saved.setdefault("created_at", now_iso())
         saved.setdefault("withdrawn", False)
         try:
             with _AUTHORITY_MUTATION_LOCK, self.engine.begin() as conn:
+                if require_standing:
+                    self.require_standing(conn, saved["case_id"], actor, {"ANALYST", "APPROVER", "ADMIN"})
                 duplicate = conn.execute(
                     sa.select(sources.c.id).where(
                         sources.c.case_id == saved["case_id"],

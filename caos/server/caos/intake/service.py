@@ -122,6 +122,8 @@ class IntakeService:
         issuer, issuer_confidence = self._resolve_issuer(documents, explicit_case)
         case, new_case = self._resolve_case(actor, explicit_case, issuer, documents)
         if case and not self.store.is_member(case["id"], actor, {"ANALYST", "APPROVER", "ADMIN"}):
+            if not self.store.is_member(case["id"], actor):
+                raise HTTPException(status_code=404, detail="case not found")
             raise HTTPException(status_code=403, detail="case write standing required")
         self._apply_existing_sources(case, documents)
         self._apply_dispositions(documents)
@@ -134,6 +136,8 @@ class IntakeService:
         existing = self.store.find_intake_by_key(actor, intake_key)
         if existing is not None and (case is None or existing["case_id"] == case["id"]):
             if not self.store.is_member(existing["case_id"], actor, {"ANALYST", "APPROVER", "ADMIN"}):
+                if not self.store.is_member(existing["case_id"], actor):
+                    raise HTTPException(status_code=404, detail="case not found")
                 raise HTTPException(status_code=403, detail="case write standing required")
             active_ids = {source["id"] for source in self.store.list_sources(existing["case_id"])}
             if all(document["source_id"] in active_ids for document in existing["record"]["documents"]):

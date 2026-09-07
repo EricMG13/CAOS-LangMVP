@@ -514,6 +514,7 @@ async def ingest_upload(
         "case_id": case_id,
         "created_by": actor,
         "created_at": now_iso(),
+        "_require_standing": True,
     }
     def commit() -> dict[str, Any]:
         with publish_sources(catalog, vault, [source]):
@@ -521,8 +522,10 @@ async def ingest_upload(
 
     try:
         return await asyncio.to_thread(commit)
-    except BaseException as exc:
-        if isinstance(exc, ValueError) and str(exc) == "source content already active":
+    except ValueError as exc:
+        if str(exc).startswith("CASE_STANDING_REVOKED:"):
+            raise HTTPException(status_code=403, detail="analyst authority required") from exc
+        if str(exc) == "source content already active":
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         raise
 
