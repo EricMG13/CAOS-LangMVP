@@ -159,7 +159,7 @@ const legacyAcceptedArtifact = {
 };
 const chartArtifactFixtures = new Map(actualAcceptedArtifacts.map((item, index) => {
   const task6Origin = { kind: "ARTIFACT", authority_id: item.id, block_ids: [source.blocks[0].block_id] };
-  const kind = index === 0 ? "stacked_bar" : "bar";
+  const kind = index === 0 ? "stacked_bar" : index === 1 ? "bar" : "line";
   const points = [
     { x: "FY2024", y: "120", display: "120", series: "Cash", source_ids: [source.id] },
     { x: "FY2024", y: "-45", display: "-45", series: "Debt", source_ids: [source.id] },
@@ -167,7 +167,7 @@ const chartArtifactFixtures = new Map(actualAcceptedArtifacts.map((item, index) 
     { x: "FY2025", y: "135", display: "135", series: "Cash", source_ids: [source.id] },
     { x: "FY2025", y: "-40", display: "-40", series: "Debt", source_ids: [source.id] },
   ];
-  const recipeId = index < 2 ? "task6.shared-replacement" : `task6.${index}.${item.module_id.toLowerCase()}`;
+  const recipeId = index < 2 ? "task6.shared-replacement" : index < 4 ? "task6.equal-recipe" : `task6.${index}.${item.module_id.toLowerCase()}`;
   const unit = index === 1 ? "USD thousands" : "USD millions";
   const title = `${kind === "stacked_bar" ? "Liquidity composition" : "Grouped liquidity"} ${index + 1}`;
   const chart = {
@@ -787,6 +787,41 @@ try {
   assert.equal(await page.locator(".chart-exhibit-canvas canvas").count(), 1, "rapid module switching retained a stale chart canvas");
   assert.equal(await firstModuleButton.getAttribute("aria-pressed"), "true", "rapid switching selected the wrong accepted artifact");
   assert.equal(await page.locator(".chart-exhibit-failure").count(), 0, "actual G2 rendering fell back during rapid switching");
+
+  const equalFirstArtifact = actualAcceptedArtifacts[2];
+  const equalSecondArtifact = actualAcceptedArtifacts[3];
+  assert.ok(equalFirstArtifact && equalSecondArtifact, "accepted fixture needs two modules for equal-recipe replacement");
+  const equalFirstButton = acceptedModuleNav.getByRole("button").filter({ hasText: equalFirstArtifact.module_id }).first();
+  const equalSecondButton = acceptedModuleNav.getByRole("button").filter({ hasText: equalSecondArtifact.module_id }).first();
+  await equalFirstButton.click();
+  const equalCanvas = page.locator('.chart-exhibit-canvas[data-recipe-id="task6.equal-recipe"]');
+  await page.waitForFunction(() => document.querySelector('.chart-exhibit-canvas[data-recipe-id="task6.equal-recipe"]')?.getAttribute("data-chart-lifecycle") === "ready");
+  await equalCanvas.evaluate((host) => {
+    const visual = host.querySelector("canvas, svg");
+    if (!visual) throw new Error("equal-recipe fixture rendered no visual node");
+    visual.setAttribute("data-equal-recipe-marker", "retained");
+    const transitions = [];
+    const observer = new MutationObserver(() => transitions.push(host.getAttribute("data-chart-lifecycle")));
+    observer.observe(host, { attributes: true, attributeFilter: ["data-chart-lifecycle"] });
+    window.__caosEqualRecipeProbe = { observer, transitions };
+  });
+  await equalSecondButton.click();
+  await page.waitForFunction((moduleId) => [...document.querySelectorAll('.analysis-toc button[aria-pressed="true"]')]
+    .some((button) => button.textContent?.includes(moduleId)), equalSecondArtifact.module_id);
+  await page.getByRole("heading", { name: chartArtifactFixtures.get(equalSecondArtifact.id).presentation.sections[0].title, exact: true }).waitFor();
+  await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  const equalTransitions = await equalCanvas.evaluate(() => {
+    const probe = window.__caosEqualRecipeProbe;
+    probe?.observer.disconnect();
+    return probe?.transitions ?? [];
+  });
+  assert.deepEqual(equalTransitions, [], "equal render identity restarted the chart lifecycle");
+  assert.equal(await equalCanvas.locator('[data-equal-recipe-marker="retained"]').count(), 1, "equal render identity replaced the ready G2 canvas");
+  assert.equal(await page.locator(".chart-exhibit-loading").count(), 0, "equal render identity exposed a stale loading state");
+  assert.equal(await page.locator(".chart-exhibit-failure").count(), 0, "equal render identity exposed a stale failure state");
+  await page.screenshot({ path: path.join(resultsDir, "analysis-chart-equal-recipe.png"), fullPage: false });
+  await firstModuleButton.click();
+  await page.waitForFunction(() => document.querySelector('.chart-exhibit-canvas[data-recipe-id="task6.shared-replacement"][data-chart-kind="stacked_bar"]')?.getAttribute("data-chart-lifecycle") === "ready");
 
   await page.setViewportSize({ width: 1024, height: 768 });
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth), false, "chart analysis overflows at 1024px");

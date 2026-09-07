@@ -1,7 +1,7 @@
 export type ChartInstance = {
   options: (options: Record<string, unknown>) => void;
+  attr: (key: "width" | "height", value: number) => unknown;
   render: () => Promise<unknown>;
-  changeSize: (width: number, height: number) => Promise<unknown>;
   destroy: () => void;
 };
 
@@ -34,13 +34,14 @@ export function startChartLifecycle(
   onStatus: (status: "ready" | "failed") => void,
   environment: ChartLifecycleEnvironment = browserEnvironment,
 ) {
+  host.hidden = false;
+  host.dataset.chartLifecycle = "loading";
   let active = true;
   let failed = false;
-  let pendingOperations = 0;
+  let renderPending = false;
   let instance: ChartInstance | null = null;
   let observer: SizeObserver | null = null;
   let resizeFrame = 0;
-  let resizeRunning = false;
   let queuedWidth = 0;
   const destroy = () => {
     observer?.disconnect();
@@ -49,8 +50,9 @@ export function startChartLifecycle(
     instance = null;
     owned?.destroy();
   };
-  const destroyIfIdle = () => {
-    if (pendingOperations === 0 && (!active || failed)) destroy();
+  const settleRender = () => {
+    renderPending = false;
+    if (!active || failed) destroy();
   };
   const fail = () => {
     if (!active || failed) return;
@@ -60,38 +62,42 @@ export function startChartLifecycle(
     environment.cancelFrame(resizeFrame);
     queuedWidth = 0;
     host.hidden = true;
-    destroyIfIdle();
+    if (!renderPending) destroy();
     onStatus("failed");
-  };
-  const operationSettled = () => {
-    pendingOperations -= 1;
-    destroyIfIdle();
   };
   const runResize = () => {
     if (!active || failed || !instance || queuedWidth < 1) return;
     const width = queuedWidth;
     queuedWidth = 0;
-    resizeRunning = true;
-    pendingOperations += 1;
+    renderPending = true;
     let resizing: Promise<unknown>;
     try {
-      resizing = instance.changeSize(Math.max(240, width), HEIGHT);
+      instance.attr("width", Math.max(240, width));
+      instance.attr("height", HEIGHT);
+      resizing = instance.render();
     } catch {
-      resizeRunning = false;
       fail();
-      operationSettled();
+      settleRender();
       return;
     }
-    void Promise.resolve(resizing).catch(fail).finally(() => {
-      resizeRunning = false;
-      operationSettled();
-      if (active && !failed && queuedWidth > 0) resizeFrame = environment.requestFrame(runResize);
-    });
+    void Promise.resolve(resizing).then(
+      () => {
+        settleRender();
+        if (active && !failed && queuedWidth > 0) resizeFrame = environment.requestFrame(runResize);
+      },
+      () => {
+        try {
+          fail();
+        } finally {
+          settleRender();
+        }
+      },
+    );
   };
   const queueResize = (width: number) => {
     if (!active || failed || !instance || width < 1) return;
     queuedWidth = width;
-    if (resizeRunning) return;
+    if (renderPending) return;
     environment.cancelFrame(resizeFrame);
     resizeFrame = environment.requestFrame(runResize);
   };
@@ -101,11 +107,11 @@ export function startChartLifecycle(
     const width = Math.max(240, Math.floor(host.getBoundingClientRect().width));
     instance = new Chart({ container: host, width, height: HEIGHT, autoFit: false });
     instance.options(options);
-    pendingOperations += 1;
+    renderPending = true;
     try {
       await instance.render();
     } finally {
-      operationSettled();
+      settleRender();
     }
     if (!active) {
       destroy();
@@ -129,9 +135,9 @@ export function startChartLifecycle(
     queuedWidth = 0;
     environment.cancelFrame(resizeFrame);
     observer?.disconnect();
-    // G2 render and changeSize both own the canvas while their promises are in
-    // flight; release the runtime after the last operation settles.
-    if (pendingOperations === 0) destroy();
+    // Initial and resize renders both own the canvas while their promises are
+    // in flight; release the runtime after the last operation settles.
+    if (!renderPending) destroy();
     host.dataset.chartLifecycle = "destroyed";
   };
 }

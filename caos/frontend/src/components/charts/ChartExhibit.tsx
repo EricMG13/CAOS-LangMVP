@@ -28,13 +28,14 @@ function ExactChartTable({ section }: { section: DocumentChartSection }) {
 
 function ChartCanvas({ chart }: { chart: AdaptedChart }) {
   const hostRef = useRef<HTMLDivElement>(null);
+  const [options] = useState(() => chart.options);
   const [status, setStatus] = useState<"loading" | "ready" | "failed">("loading");
 
   useEffect(() => {
     const host = hostRef.current;
     if (!host) return;
-    return startChartLifecycle(host, chart.options as unknown as Record<string, unknown>, setStatus);
-  }, [chart]);
+    return startChartLifecycle(host, options as unknown as Record<string, unknown>, setStatus);
+  }, [options]);
 
   return <>
     <div className="chart-exhibit-canvas" data-chart-kind={chart.kind} data-recipe-id={chart.recipeId} ref={hostRef} aria-hidden="true" />
@@ -50,6 +51,7 @@ export default function ChartExhibit({ section, theme, caseId, evidenceRefs = []
   evidenceRefs?: NormalizedEvidenceRef[];
 }) {
   const adapted = useMemo(() => adaptChartSection(section, theme), [section, theme]);
+  const renderIdentity = adapted.ok ? JSON.stringify([theme, adapted.recipeId, adapted.kind, adapted.unit, adapted.data]) : "";
   return <section className={`chart-exhibit chart-exhibit-${theme}`} data-section-id={section.section_id}>
     <header className="chart-exhibit-head">
       <div>
@@ -61,7 +63,7 @@ export default function ChartExhibit({ section, theme, caseId, evidenceRefs = []
     {adapted.ok ? <>
       <div className="chart-exhibit-meta"><span>{adapted.kind.replace("_", " ")}</span><span>{adapted.unit}</span><span>{adapted.data.length} point{adapted.data.length === 1 ? "" : "s"}</span></div>
       {adapted.series.length > 1 ? <ul className="chart-exhibit-legend" aria-label="Chart series">{adapted.series.map((series, index) => <li key={series}><span className={`chart-series-${index % 8}`} aria-hidden="true" />{series}</li>)}</ul> : null}
-      <ChartCanvas chart={adapted} key={JSON.stringify([theme, adapted.recipeId, adapted.kind, adapted.unit, adapted.data])} />
+      <ChartCanvas chart={adapted} key={renderIdentity} />
       {caseId && adapted.sourceIds.length ? <nav className="chart-exhibit-sources" aria-label={`${section.title} chart sources`}><span>Sources</span>{adapted.sourceIds.flatMap((sourceId) => {
         const exactBlocks = evidenceRefs.find((ref) => ref.sourceId === sourceId)?.blockIds.filter((blockId) => section.origin.block_ids.includes(blockId)) ?? [];
         return exactBlocks.length ? exactBlocks.map((blockId) => <Link href={withQuery("/sources/", { case: caseId, source: sourceId, block: blockId })} key={`${sourceId}:${blockId}`}>{sourceId} · {blockId}</Link>)

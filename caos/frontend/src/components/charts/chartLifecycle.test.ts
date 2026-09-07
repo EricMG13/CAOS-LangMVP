@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
+import { createRequire } from "node:module";
 import test from "node:test";
 
 import { startChartLifecycle, type ChartInstance, type ChartLifecycleEnvironment } from "./chartLifecycle.ts";
+
+const require = createRequire(import.meta.url);
+const { Chart } = require("@antv/g2") as { Chart: { prototype: object } };
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -15,10 +19,11 @@ const flush = () => new Promise<void>((resolve) => setImmediate(resolve));
 function harness(render: Promise<unknown>, resize: Promise<unknown> = Promise.resolve()) {
   const events: string[] = [];
   let onWidth: ((width: number) => void) | null = null;
+  let renderCount = 0;
   const instance: ChartInstance = {
     options: () => { events.push("options"); },
-    render: () => { events.push("render"); return render; },
-    changeSize: () => { events.push("resize"); return resize; },
+    attr: (key, value) => { events.push(`attr:${key}:${value}`); },
+    render: () => { events.push("render"); return renderCount++ === 0 ? render : resize; },
     destroy: () => { events.push("destroy"); },
   };
   const environment: ChartLifecycleEnvironment = {
@@ -97,10 +102,10 @@ test("a rejected resize disarms a queued resize before releasing the chart", asy
   await flush();
   fixture.width(640);
   fixture.width(720);
-  assert.equal(fixture.events.filter((event) => event === "resize").length, 1, "resizes were not serialized");
+  assert.equal(fixture.events.filter((event) => event === "render").length, 2, "resizes were not serialized");
   firstResize.reject(new Error("first resize failed"));
   await flush();
-  assert.equal(fixture.events.filter((event) => event === "resize").length, 1, "a queued resize started after failure");
+  assert.equal(fixture.events.filter((event) => event === "render").length, 2, "a queued resize started after failure");
   assert.equal(fixture.events.filter((event) => event === "destroy").length, 1);
   assert.equal(fixture.events.filter((event) => event === "failed").length, 1);
   assert.equal(fixture.host.hidden, true, "failed chart canvas remained visible");
@@ -111,7 +116,7 @@ test("a synchronous resize throw follows the same failed fallback boundary", asy
   fixture.environment.load = async () => class {
     options() {}
     async render() {}
-    changeSize(): Promise<unknown> { throw new Error("sync resize failure"); }
+    attr(): void { throw new Error("sync resize failure"); }
     destroy() { fixture.events.push("destroy"); }
   } as unknown as new () => ChartInstance;
   startChartLifecycle(fixture.host, {}, (status) => fixture.events.push(status), fixture.environment);
@@ -119,4 +124,69 @@ test("a synchronous resize throw follows the same failed fallback boundary", asy
   fixture.width(640);
   await flush();
   assert.deepEqual(fixture.events.filter((event) => ["failed", "destroy"].includes(event)), ["failed", "destroy"]);
+});
+
+test("installed G2 attr plus owned render contains resize rejection", async () => {
+  const events: string[] = [];
+  let onWidth: ((width: number) => void) | null = null;
+  let renders = 0;
+  const instance = Object.create(Chart.prototype) as ChartInstance & { value: Record<string, unknown> };
+  instance.value = {};
+  Object.assign(instance, { _width: 640, _height: 300, emit: () => instance });
+  instance.options = () => { events.push("options"); };
+  instance.render = () => {
+    events.push("render");
+    return renders++ === 0 ? Promise.resolve() : Promise.reject(new Error("native resize rejected"));
+  };
+  instance.destroy = () => { events.push("destroy"); };
+  const environment: ChartLifecycleEnvironment = {
+    load: async () => class { constructor() { return instance; } } as unknown as new () => ChartInstance,
+    observe: (callback) => { onWidth = callback; return { observe: () => {}, disconnect: () => {} }; },
+    requestFrame: (callback) => { callback(); return 1; },
+    cancelFrame: () => {},
+  };
+  const host = {
+    hidden: false,
+    dataset: {},
+    getBoundingClientRect: () => ({ width: 640 }),
+    querySelectorAll: () => [],
+  } as unknown as HTMLElement;
+  const unhandled: unknown[] = [];
+  const onUnhandled = (error: unknown) => { unhandled.push(error); };
+  process.on("unhandledRejection", onUnhandled);
+  try {
+    startChartLifecycle(host, {}, (status) => events.push(status), environment);
+    await flush();
+    (onWidth as unknown as (width: number) => void)(720);
+    await flush();
+    await flush();
+    assert.deepEqual(unhandled, []);
+    assert.equal(instance.value.width, 720);
+    assert.equal(instance.value.height, 300);
+    assert.deepEqual(events.filter((event) => ["ready", "failed", "destroy"].includes(event)), ["ready", "failed", "destroy"]);
+  } finally {
+    process.off("unhandledRejection", onUnhandled);
+  }
+});
+
+test("a successful lifecycle recovers visibility and loading state on the same host", async () => {
+  const failedResize = deferred<unknown>();
+  const failed = harness(Promise.resolve(), failedResize.promise);
+  const firstCleanup = startChartLifecycle(failed.host, {}, (status) => failed.events.push(status), failed.environment);
+  await flush();
+  failed.width(720);
+  failedResize.reject(new Error("resize failed"));
+  await flush();
+  assert.equal(failed.host.hidden, true);
+  firstCleanup();
+
+  const recoveredEvents: string[] = [];
+  const recovered = harness(Promise.resolve());
+  startChartLifecycle(failed.host, {}, (status) => recoveredEvents.push(status), recovered.environment);
+  assert.equal(failed.host.hidden, false);
+  assert.equal(failed.host.dataset.chartLifecycle, "loading");
+  await flush();
+  assert.deepEqual(recoveredEvents, ["ready"]);
+  assert.equal(failed.host.hidden, false);
+  assert.equal(failed.host.dataset.chartLifecycle, "ready");
 });
