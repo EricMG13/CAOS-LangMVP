@@ -845,6 +845,20 @@ class FreezeJobResponse(WireModel):
     completed_at: str | None
 
 
+class ReportInputBlockerResponse(WireModel):
+    code: str
+    section_id: str
+    detail: str
+
+
+class ReportPreviewResponse(WireModel):
+    document_sections: list[CanonicalDocumentSection]
+    mapping_version: str
+    publication_blockers: list[ReportInputBlockerResponse]
+    included_optional_section_ids: list[str]
+    citation_union: list[Any]
+
+
 class DeliverableWorkspaceResponse(WireModel):
     template: Any
     current: DeliverableRevisionResponse | None
@@ -853,6 +867,8 @@ class DeliverableWorkspaceResponse(WireModel):
     model_eligibility: ModelEligibilityResponse
     opinion: OpinionStateResponse
     pending_freezes: list[FreezeJobResponse]
+    preview: ReportPreviewResponse | None
+    latest_template: Any
 
 
 class FrozenDeliverableResponse(OpenWireModel):

@@ -71,6 +71,310 @@ _TEST_MODEL_SELECTION = "_default_model_selection_for_tests"
 
 # --- helpers (unbuilt imports stay inside; called only from test bodies) ----------
 
+def test_v2_default_is_evidence_only_and_populates_real_module_facts(service, store, monkeypatch):
+    from caos.artifacts.presentation import project_artifact
+    from test_module_presentation_spec import artifact
+
+    case, source, _ = seed_ready_case(service, store)
+    model = seed_model(service, case)
+    value = artifact()
+    value["payload"]["evidence_refs"] = [{"source_id": source["id"], "block_id": "b00001"}]
+    value["markdown"] = value["markdown"].replace("SRC-1", source["id"])
+    monkeypatch.setattr(service, "_accepted_artifacts", lambda _: {"CP-1": value})
+    template = service.templates()["FULL_CREDIT"]
+    assert template["template_version"] == "caos.deliverable-template.v2"
+    assert template["title"] == "Credit Report"
+    assert [b["kind"] for b in template["blocks"]] == ["EVIDENCE_REGISTER"]
+    request = draft_request(template, blocks=[{**{k: template["blocks"][0][k] for k in ("kind", "block_id", "slot_id")}, "citations": []}], model_selection=revision_selection(model))
+    revision = service.save_draft(case["id"], "FULL_CREDIT", request, actor="analyst")
+    content = revision["content"]
+    assert content["mapping_version"] == "caos.module-presentation.v1"
+    assert not any(b["kind"] == "NARRATIVE" for b in content["blocks"])
+    sections = content["document_sections"]
+    revenue = next(s for s in sections if s["section_id"] == "cp1.revenue.v1")
+    projected = next(s.model_dump() for s in project_artifact(value).sections if s.section_id == "cp1.revenue.v1")
+    assert revenue["recipe"] == projected["recipe"]
+    assert [p["y"] for p in revenue["recipe"]["points"]] == ["100", "110", "120", "130"]
+    assert revenue["origin"]["authority_id"] == value["id"]
+    assert content["citation_union"] == [{"source_id": source["id"], "block_ids": ["b00001"], "claim": "Accepted module evidence"}]
+    assert "Governed output pinned" not in str(sections)
+    assert content["publication_blockers"], "Missing accepted modules remain visible, never fabricated"
+    assert any(s["origin"]["kind"] == "SYSTEM" and "Unavailable" in s["title"] for s in sections)
+
+
+def test_v1_identity_survives_save_workspace_restore_and_freeze(service, store):
+    from caos.contracts import digest
+
+    case, source, _ = seed_ready_case(service, store)
+    template = service._template_for("RELATIVE_VALUE", "caos.deliverable-template.v1")
+    first = service.save_draft(case["id"], "RELATIVE_VALUE", draft_request(template, source), actor="analyst")
+    assert "included_optional_section_ids" not in first["content"]
+    assert "mapping_version" not in first["content"]
+    frozen = freeze_now(service, case["id"], first)
+    before = digest(frozen["payload"]), frozen["exports"]
+    assert service.workspace(case["id"], "RELATIVE_VALUE")["template"] == template
+    restored = service.save_draft(case["id"], "RELATIVE_VALUE", draft_request(template, blocks=first["content"]["blocks"], expected_version=1), actor="analyst")
+    assert restored["content"] == first["content"]
+    assert not service.opinion_state(case["id"], "RELATIVE_VALUE")["current"]
+    freeze_now(service, case["id"], restored)
+    retained = service.frozen_record(case["id"], frozen["deliverable_id"])
+    assert (digest(retained["payload"]), retained["exports"]) == before
+
+
+def test_v1_upgrade_is_a_new_v2_revision_requiring_renewed_opinion(service, store, monkeypatch):
+    from caos.contracts import digest
+    case, source, _ = seed_ready_case(service, store)
+    v1 = service._template_for("RELATIVE_VALUE", "caos.deliverable-template.v1")
+    old = service.save_draft(case["id"], "RELATIVE_VALUE", draft_request(v1, source), actor="analyst")
+    frozen = freeze_now(service, case["id"], old)
+    original = digest(frozen["payload"]), frozen["exports"]
+    monkeypatch.setattr(service, "_accepted_artifacts", lambda _: report_artifacts(source["id"]))
+    v2 = service.templates()["RELATIVE_VALUE"]
+    new = service.save_draft(case["id"], "RELATIVE_VALUE", draft_request(v2, source, expected_version=1), actor="analyst")
+    assert new["version"] == 2 and new["content"]["template_version"] == "caos.deliverable-template.v2"
+    assert service.revision_by_id(case["id"], old["revision_id"])["content"] == old["content"]
+    assert not service.opinion_state(case["id"], "RELATIVE_VALUE")["current"]
+    with pytest.raises(ValueError, match="OPINION_SIGNOFF_STALE"):
+        service.freeze(case["id"], freeze_request(new), actor="analyst")
+    retained = service.frozen_record(case["id"], frozen["deliverable_id"])
+    assert (digest(retained["payload"]), retained["exports"]) == original
+
+
+def report_artifacts(source_id):
+    """Disposable canonical presentation fixtures, not accepted/live analysis."""
+    import sys
+    sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "qa"))
+    from browser_fixture_provider import MODEL_FIXTURES, FIXTURES, report_fixture_markdown
+    from test_module_presentation_spec import artifact
+    from caos.contracts import digest
+
+    modules = {}
+    for module in ("CP-1", "CP-1A", "CP-1B", "CP-2", "CP-3", "CP-4", "CP-4C", "CP-5", "CP-DR"):
+        markdown = (FIXTURES / MODEL_FIXTURES[module]).read_text() if module in MODEL_FIXTURES else "\n\n".join(
+            f"## {heading}\n\nSource-bound fixture: contract renewal exposure." for heading in ("Audit Summary", "Analysis", "Evidence Trace", "Source Registry", "Gaps & Conflicts", "QA Validation"))
+        value = artifact(module, report_fixture_markdown(module, markdown, source_id))
+        value["id"] = "artifact-" + module
+        value["payload"]["evidence_refs"] = [{"source_id": source_id, "block_id": "b00001"}]
+        if module == "CP-DR":
+            value["payload"]["handoff_metadata"] = {"scope_type": "issuer", "scope_key": "Acme", "subject_name": "Acme", "research_question": "How durable are contract renewals?", "source_mode": "supplied_only"}
+        value["digest"] = digest(value["payload"])
+        modules[module] = value
+    return modules
+
+
+@pytest.mark.parametrize("pathway,fact,page_count", [
+    ("FULL_CREDIT", "Recurring service contracts", 9),
+    ("EARNINGS_UPDATE", "FY2024 Q4 versus FY2023 Q4", 6),
+    ("COVENANT_REFINANCING", "Agreement section 7.1", 6),
+    ("RELATIVE_VALUE", "Unsecured spread compensates for subordination", 5),
+    ("DISTRESSED_RESTRUCTURING", "Unverified consent threshold", 6),
+    ("DEEP_RESEARCH", "Monitor retention before extending", 5),
+])
+def test_v2_six_layout_document_fixtures_without_cp6(service, pathway, fact, page_count):
+    from caos.deliverables.document import compose_document, document_blockers
+    artifacts = report_artifacts("SRC-1")
+    model = {"kind": "APPLICATION_BUILD", "build_id": "fixture-build", "outputs": {
+        case: {f"{case}::FY2026": {"fcf": 12, "cash_and_equivalents": 30, "net_leverage": 4, "interest_coverage": 3}}
+        for case in ("BASE", "DOWNSIDE")}, "pathway_effects": [{"calculations": [{"calculator_id": "fixture_effect", "canonical_output": {"funding_gap": 0}}]}]}
+    sections = compose_document(pathway=pathway, template=service.templates()[pathway], blocks=[], artifacts=artifacts, model=model)
+    assert not document_blockers(sections), document_blockers(sections)
+    assert fact in str(sections)
+    assert len({s["page"] for s in sections} - {"Limitations", "Evidence"}) == page_count
+    assert "Governed output pinned" not in str(sections)
+    assert not any(s["editable"] for s in sections)
+    assert all(s["origin"]["authority_id"].startswith("artifact-") for s in sections if s["origin"]["kind"] == "ARTIFACT" and s["section_id"] != "evidence_register")
+    if pathway == "DEEP_RESEARCH":
+        assert sum("Monitor retention before extending" in s.get("body", "") for s in sections) == 1
+        findings = next(s["body"] for s in sections if s["page"] == "Findings")
+        assert "Contract renewals support recurring cash flow" in findings
+        assert "### Findings" not in findings and "Findings" in findings
+
+
+@pytest.mark.parametrize("component,token", [("USD", "unknown"), ("MILLIONS", "unknown"), ("MILLIONS", "N/A"), ("USD", "null")])
+def test_v2_model_money_units_validate_each_component_before_join(service, component, token):
+    from caos.deliverables.document import compose_document
+    artifacts = report_artifacts("SRC-1")
+    assert component in artifacts["CP-1"]["markdown"]
+    artifacts["CP-1"]["markdown"] = artifacts["CP-1"]["markdown"].replace(component, token)
+    model = {"kind": "APPLICATION_BUILD", "build_id": "fixture-build", "outputs": {
+        case: {f"{case}::FY2026": {"fcf": 12, "cash_and_equivalents": 30, "net_leverage": 4, "interest_coverage": 3}}
+        for case in ("BASE", "DOWNSIDE")}}
+    sections = compose_document(pathway="FULL_CREDIT", template=service.templates()["FULL_CREDIT"], blocks=[], artifacts=artifacts, model=model)
+    chart_ids = {s["section_id"] for s in sections if s["kind"] == "chart"}
+    assert "model.cash_and_equivalents.v1" not in chart_ids and "model.fcf.v1" not in chart_ids
+    assert {"model.net_leverage.v1", "model.interest_coverage.v1"} <= chart_ids
+    assert any(s["kind"] == "table" and s["title"] == "Selected model outputs" for s in sections)
+    assert any("UNIT_MISMATCH" in s.get("body", "") for s in sections)
+
+
+def test_v2_preview_retains_module_content_when_model_resolution_fails(service, store, monkeypatch):
+    case, source, _ = seed_ready_case(service, store)
+    monkeypatch.setattr(service, "_accepted_artifacts", lambda _: report_artifacts(source["id"]))
+    monkeypatch.setattr(service, "model_eligibility", lambda _: {"default_model_selection": {"kind": "ANALYST_REVISION"}})
+    def unavailable(*args):
+        raise ValueError("MODEL_REVISION_STALE: fixture")
+    monkeypatch.setattr(service, "_resolve_stored_selection", unavailable)
+    workspace = service.workspace(case["id"], "FULL_CREDIT")
+    assert workspace["draft"] is None
+    assert "Recurring service contracts" in str(workspace["preview"]["document_sections"])
+    assert "MODEL_REVISION_STALE" in {b["code"] for b in workspace["preview"]["publication_blockers"]}
+    monkeypatch.setattr(service, "_validate_accepted_pathway", unavailable)
+    assert not service.workspace(case["id"], "FULL_CREDIT")["preview"]["document_sections"]
+
+
+def test_v2_optional_ids_mapping_and_generated_evidence_freeze(service, store, monkeypatch, tmp_path):
+    from caos.contracts import DeliverableDraftRequest
+    from caos.audit.package import build_case_package
+    from test_audit_package_spec import _run_verifier
+    case, source, _ = seed_ready_case(service, store)
+    monkeypatch.setattr(service, "_accepted_artifacts", lambda _: report_artifacts(source["id"]))
+    template = service.templates()["RELATIVE_VALUE"]
+    blocks = required_blocks(template, source)
+    blocks[0]["citations"] = []
+    request = draft_request(template, blocks=blocks).model_dump()
+    request["included_optional_section_ids"] = []
+    first = service.save_draft(case["id"], "RELATIVE_VALUE", DeliverableDraftRequest.model_validate(request), actor="analyst")
+    monkeypatch.setattr("caos.deliverables.service.CURRENT_MAPPING_VERSION", "future-unavailable")
+    restored = service.save_draft(case["id"], "RELATIVE_VALUE", DeliverableDraftRequest.model_validate({**request, "expected_version": 1}), actor="analyst")
+    assert restored["content"] == first["content"]
+    assert first["content"]["included_optional_section_ids"] == []
+    frozen = freeze_now(service, case["id"], restored)
+    assert frozen["payload"]["evidence"] == [{"source_id": source["id"], "sha256": source["sha256"], "block_ids": ["b00001"], "withdrawn": False}]
+    assert frozen["payload"]["content"]["included_optional_section_ids"] == []
+    assert "Cited" in str(frozen["payload"]["publication"])
+    package = build_case_package(store=store, vault_dir=service.vault_dir, case_id=case["id"], methodology_build_id=frozen["payload"]["methodology"]["build_id"], generated_by="analyst", generated_at="2026-09-07T00:00:00Z")
+    code, report = _run_verifier(tmp_path, package)
+    assert code == 0, report
+    store.withdraw(case["id"], source["id"], "analyst")
+    with pytest.raises(ValueError, match="EVIDENCE_SOURCE_WITHDRAWN"):
+        service.sign_opinion(case["id"], "RELATIVE_VALUE", sign_request(restored), actor="analyst")
+    with pytest.raises(ValueError, match="EVIDENCE_SOURCE_WITHDRAWN"):
+        service.freeze(case["id"], freeze_request(restored), actor="analyst")
+
+
+def test_v2_citation_union_never_cross_pairs_repeated_block_ids():
+    from caos.deliverables.document import citation_union
+    refs = [{"source_id": "source-A", "block_id": "b1"}, {"source_id": "source-B", "block_id": "b2"}]
+    artifact = {"id": "artifact", "payload": {"evidence_refs": refs}}
+    chart = {"kind": "chart", "origin": {"kind": "ARTIFACT", "authority_id": "artifact", "block_ids": ["b1", "b2"]}, "recipe": {"points": [{"source_ids": ["source-B"]}]}}
+    assert citation_union([], [chart], {"CP-1": artifact}) == [{"source_id": "source-B", "block_ids": ["b2"], "claim": "Accepted module evidence"}]
+    artifact["payload"]["evidence_refs"].append({"source_id": "source-A", "block_id": "b2"})
+    assert citation_union([], [chart], {"CP-1": artifact}) == [{"source_id": "source-B", "block_ids": ["b2"], "claim": "Accepted module evidence"}]
+
+
+def test_v2_missing_recorded_mapping_refuses_save_without_reinterpreting(service, store, monkeypatch):
+    case, source, _ = seed_ready_case(service, store)
+    monkeypatch.setattr(service, "_accepted_artifacts", lambda _: report_artifacts(source["id"]))
+    template = service.templates()["RELATIVE_VALUE"]
+    request = draft_request(template, blocks=required_blocks(template, source))
+    first = service.save_draft(case["id"], "RELATIVE_VALUE", request, actor="analyst")
+    del first["content"]["mapping_version"]
+    monkeypatch.setattr(service.records, "head_revision", lambda *args: first)
+    with pytest.raises(ValueError, match="MAPPING_VERSION_UNSUPPORTED"):
+        service.save_draft(case["id"], "RELATIVE_VALUE", request, actor="analyst")
+
+
+def test_v2_optional_inclusion_survives_unspecified_save_and_explicit_omission(service, store, monkeypatch):
+    from caos.contracts import DeliverableDraftRequest
+    case, source, _ = seed_ready_case(service, store)
+    monkeypatch.setattr(service, "_accepted_artifacts", lambda _: report_artifacts(source["id"]))
+    template = service.templates()["RELATIVE_VALUE"]
+    request = draft_request(template, source).model_dump()
+    included = service.save_draft(case["id"], "RELATIVE_VALUE", DeliverableDraftRequest.model_validate({**request, "included_optional_section_ids": ["ic_context"]}), actor="analyst")
+    assert included["content"]["included_optional_section_ids"] == ["ic_context"]
+    assert any(b["section_id"] == "report.ic_context.0.unavailable" for b in included["content"]["publication_blockers"])
+    with pytest.raises(ValueError, match="REPORT_INPUT_UNAVAILABLE"):
+        service.sign_opinion(case["id"], "RELATIVE_VALUE", sign_request(included), actor="analyst")
+    retained = service.save_draft(case["id"], "RELATIVE_VALUE", DeliverableDraftRequest.model_validate({**request, "expected_version": 1}), actor="analyst")
+    assert retained["content"]["included_optional_section_ids"] == ["ic_context"]
+    omitted = service.save_draft(case["id"], "RELATIVE_VALUE", DeliverableDraftRequest.model_validate({**request, "expected_version": 2, "included_optional_section_ids": []}), actor="analyst")
+    assert omitted["content"]["included_optional_section_ids"] == [] and not omitted["content"]["publication_blockers"]
+
+
+def test_v2_wide_origin_ids_leave_typed_unavailable_sections(service):
+    from caos.deliverables.document import compose_document, document_blockers
+    artifacts = report_artifacts("SRC-1")
+    artifacts["CP-DR"]["payload"]["evidence_refs"][0]["block_id"] = "b" * 130
+    sections = compose_document(pathway="DEEP_RESEARCH", template=service.templates()["DEEP_RESEARCH"], blocks=[], artifacts=artifacts, model=None)
+    assert document_blockers(sections)
+    assert all(s["origin"]["kind"] == "SYSTEM" for s in sections if s["section_id"].startswith(("report.findings", "report.implications")))
+
+
+def test_v2_research_implications_are_an_exact_unambiguous_unfenced_heading():
+    from caos.deliverables.document import _report_narrative
+    artifact = report_artifacts("SRC-1")["CP-DR"]
+    artifact["markdown"] = artifact["markdown"].replace("## Analysis\n", "## Analysis\nFindings.\n```md\n### Implications\nNot a section.\n```\n### Other\n")
+    assert "Monitor retention" in _report_narrative(artifact, "@Analysis/Implications")
+    findings = _report_narrative(artifact, "@Analysis")
+    assert "Monitor retention" not in findings and "Not a section." in findings
+    artifact["markdown"] = artifact["markdown"].replace("## Evidence Trace", "### Implications\nAmbiguous second implication.\n\n## Evidence Trace")
+    assert _report_narrative(artifact, "@Analysis/Implications") == ""
+
+
+@pytest.mark.parametrize("pathway", ["FULL_CREDIT", "RELATIVE_VALUE"])
+async def test_v2_first_open_uses_real_accepted_artifacts_without_acknowledging_fallback(settings, store, tmp_path, pathway):
+    import sys
+    sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "qa"))
+    from browser_fixture_provider import BrowserFixtureProvider
+    from caos.engine.runtime import Engine
+    from caos.deliverables.service import DeliverableService
+    from caos.models.service import ModelService
+    case, source = seed_case_with_source(store)
+    runtime = Engine.create(settings=settings, store=store, checkpoint_path=tmp_path / "report-checkpoints.db", provider=BrowserFixtureProvider(report_fixtures=True))
+    try:
+        models = ModelService(store=store, vault_dir=settings.storage_dir, engine=runtime)
+        service = DeliverableService(store=store, vault_dir=settings.storage_dir, engine=runtime, models=models)
+        run = await runtime.start_run(case_id=case["id"], pathway=pathway, depth="full", actor="analyst")
+        await runtime.wait(run["id"])
+        assert runtime.get_run(run["id"])["status"] == "succeeded", runtime.get_run(run["id"]).get("error")
+        await runtime.accept(run["id"], actor="analyst")
+        if pathway == "FULL_CREDIT":
+            models.run_build_for_tests(models.queue_build(case["id"], "analyst")["id"])
+        workspace = service.workspace(case["id"], pathway)
+        assert workspace["draft"] is None
+        assert workspace["template"]["template_version"] == "caos.deliverable-template.v2"
+        assert workspace["preview"]["document_sections"]
+        assert "Unsecured spread compensates for subordination" in str(workspace["preview"]) if pathway == "RELATIVE_VALUE" else "Recurring service contracts" in str(workspace["preview"])
+        assert service.model_eligibility(case["id"])["default_model_selection"] is None
+        refs = workspace["preview"]["citation_union"]
+        assert {c["source_id"] for c in refs} == {source["id"]}
+        if pathway == "FULL_CREDIT":
+            assert service.model_eligibility(case["id"])["fallback_acknowledgement_required"]
+            assert "MODEL_SELECTION_REQUIRED" in {b["code"] for b in workspace["preview"]["publication_blockers"]}
+        else:
+            assert "CP-6" not in {a["module_id"] for a in runtime.runs.artifacts_for_run(run["id"])}
+            assert not workspace["preview"]["publication_blockers"]
+        wrong_pathway = "DEEP_RESEARCH"
+        assert not service.workspace(case["id"], wrong_pathway)["preview"]["document_sections"]
+    finally:
+        await runtime.aclose()
+
+
+def test_v2_generated_only_withdrawal_refuses_actual_sign_route(client, settings, store, monkeypatch):
+    from caos.deliverables.service import DeliverableService
+    service = make_service(store, settings.storage_dir)
+    case, source, _ = seed_ready_case(service, store)
+    monkeypatch.setattr(DeliverableService, "_accepted_artifacts", lambda self, _: report_artifacts(source["id"]))
+    template = service.templates()["RELATIVE_VALUE"]
+    blocks = required_blocks(template, source)
+    blocks[0]["citations"] = []
+    revision = service.save_draft(case["id"], "RELATIVE_VALUE", draft_request(template, blocks=blocks), actor="analyst")
+    store.withdraw(case["id"], source["id"], "analyst")
+    response = client.post(f"/api/cases/{case['id']}/deliverables/RELATIVE_VALUE/opinion", json=sign_request(revision).model_dump(mode="json"), headers=ANALYST_H)
+    assert response.status_code == 422, response.text
+    assert "EVIDENCE_SOURCE_WITHDRAWN" in response.text
+
+
+@pytest.mark.parametrize("ids", [["untrusted"], ["ic_context", "ic_context"]])
+def test_v2_optional_section_ids_are_declared_and_unique(service, store, ids):
+    from caos.contracts import DeliverableDraftRequest
+    case, source, _ = seed_ready_case(service, store)
+    template = service.templates()["RELATIVE_VALUE"]
+    request = draft_request(template, source).model_dump()
+    request["included_optional_section_ids"] = ids
+    with pytest.raises(ValueError, match="DELIVERABLE_OPTIONAL_SECTION_INVALID"):
+        service.save_draft(case["id"], "RELATIVE_VALUE", DeliverableDraftRequest.model_validate(request), actor="analyst")
+
 
 def make_service(store, vault_dir, **overrides):
     from caos.deliverables.service import DeliverableService
@@ -249,7 +553,7 @@ def bind_default_model_for_tests(service, case, template):
 
 def save_min_draft(service, store, pathway="FULL_CREDIT", **kwargs):
     case, source, _ = seed_ready_case(service, store)
-    template = service.templates()[pathway]
+    template = service.templates(template_version="caos.deliverable-template.v1")[pathway]
     if template["model_requirement"] == "REQUIRED":
         bind_default_model_for_tests(service, case, template)
     revision = service.save_draft(case["id"], pathway, draft_request(template, source, **kwargs), actor="analyst")
@@ -277,7 +581,7 @@ def http_seed(settings, store, pathway="FULL_CREDIT"):
     svc = make_service(store, settings.storage_dir)
     case, source = seed_case_with_source(store)
     svc.seed_accepted_authority_for_tests(case["id"])
-    template = svc.templates()[pathway]
+    template = svc.templates(template_version="caos.deliverable-template.v1")[pathway]
     if template["model_requirement"] == "REQUIRED":
         bind_default_model_for_tests(svc, case, template)
     return svc, case, source, template
@@ -300,9 +604,9 @@ def ingest_second_source(store, case_id, body=b"late-arriving evidence"):
 
 
 def test_template_registry_serves_six_pathways_with_stable_identity_and_evidence_register(service):
-    templates = service.templates()
+    templates = service.templates(template_version="caos.deliverable-template.v1")
     assert set(templates) == set(SIX_PATHWAYS)
-    assert service.templates() == templates, "registry identity is stable across reads"
+    assert service.templates(template_version="caos.deliverable-template.v1") == templates, "registry identity is stable across reads"
     for pathway, template in templates.items():
         assert template["template_id"] and template["template_version"] and template["title"], pathway
         assert template["model_requirement"] in {"REQUIRED", "OPTIONAL"}, pathway
@@ -313,7 +617,7 @@ def test_template_registry_serves_six_pathways_with_stable_identity_and_evidence
 
 
 def test_template_owns_optional_block_kind_stem_cap_order_and_model_dependence(service):
-    template = service.templates()["RELATIVE_VALUE"]
+    template = service.templates(template_version="caos.deliverable-template.v1")["RELATIVE_VALUE"]
     policy = template["optional_blocks"]
     for entry in policy:
         assert {"kind", "slot_stem", "max_items", "order", "model_dependent"} <= set(entry)
@@ -346,7 +650,7 @@ def test_full_credit_draft_composes_one_governed_decision_document(service, stor
         "BASE": {"FY2027": {"total_leverage": 3.8, "accessible_liquidity": 210.0}},
         "DOWNSIDE": {"FY2027": {"total_leverage": 5.1, "accessible_liquidity": 95.0}},
     })
-    template = service.templates()["FULL_CREDIT"]
+    template = service.templates(template_version="caos.deliverable-template.v1")["FULL_CREDIT"]
 
     revision = service.save_draft(
         case["id"],
@@ -413,7 +717,7 @@ def test_document_recipe_matches_approved_structure(service, store, pathway):
         "BASE": {"FY2027": {"total_leverage": 3.8, "accessible_liquidity": 210.0}},
         "DOWNSIDE": {"FY2027": {"total_leverage": 5.1, "accessible_liquidity": 95.0}},
     })
-    template = service.templates()[pathway]
+    template = service.templates(template_version="caos.deliverable-template.v1")[pathway]
     revision = service.save_draft(
         case["id"], pathway,
         draft_request(template, source, model_selection=revision_selection(model)),
@@ -433,7 +737,7 @@ def test_optional_generated_blocks_become_locked_document_appendices(service, st
             {"instrument": "RCF", "amount": 120.0, "maturity": "FY2028", "margin": "S+350"},
         ],
     })
-    template = service.templates()["FULL_CREDIT"]
+    template = service.templates(template_version="caos.deliverable-template.v1")["FULL_CREDIT"]
     extras = [
         optional_block(template, "GENERATED_METRIC"),
         optional_block(template, "GENERATED_TABLE"),
@@ -468,7 +772,7 @@ def test_annual_model_generated_table_uses_only_selected_server_outputs(service,
         "BASE": {"BASE::FY2027": {"revenue": 517.4, "fcf": 53.6, "total_leverage": 1.7}},
         "DOWNSIDE": {"DOWNSIDE::FY2027": {"revenue": 423.9, "fcf": 10.3, "total_leverage": 3.2}},
     })
-    template = service.templates()["FULL_CREDIT"]
+    template = service.templates(template_version="caos.deliverable-template.v1")["FULL_CREDIT"]
 
     revision = service.save_draft(
         case["id"],
@@ -501,7 +805,7 @@ def test_pathway_calculation_rows_paginate_without_hiding_late_outputs(service, 
     from caos.deliverables.document import compose_document
 
     case, source, _ = seed_ready_case(service, store)
-    template = service.templates()["DISTRESSED_RESTRUCTURING"]
+    template = service.templates(template_version="caos.deliverable-template.v1")["DISTRESSED_RESTRUCTURING"]
     sections = compose_document(
         pathway="DISTRESSED_RESTRUCTURING",
         template=template,
@@ -540,7 +844,7 @@ def test_pathway_calculation_rows_paginate_without_hiding_late_outputs(service, 
 
 def test_optional_block_cannot_collide_with_a_canonical_document_section(service, store):
     case, source, _ = seed_ready_case(service, store)
-    template = service.templates()["FULL_CREDIT"]
+    template = service.templates(template_version="caos.deliverable-template.v1")["FULL_CREDIT"]
     bind_default_model_for_tests(service, case, template)
     collision = optional_block(template, "LIMITATIONS", block_id="credit_snapshot")
 
@@ -557,7 +861,7 @@ def test_optional_block_cannot_collide_with_a_canonical_document_section(service
 @pytest.mark.parametrize("pathway", ["RELATIVE_VALUE", "DEEP_RESEARCH"])
 def test_model_optional_pathways_compose_without_model_authority(service, store, pathway):
     case, source, _ = seed_ready_case(service, store)
-    template = service.templates()[pathway]
+    template = service.templates(template_version="caos.deliverable-template.v1")[pathway]
 
     revision = service.save_draft(
         case["id"], pathway, draft_request(template, source), actor="analyst",
@@ -574,7 +878,7 @@ async def test_no_model_relative_value_freeze_pins_accepted_run_methodology(
     case, source = seed_case_with_source(store)
     run = await engine.run_scripted_for_tests(case["id"], pathway="RELATIVE_VALUE")
     await engine.accept(run["id"], actor="analyst")
-    template = service.templates()["RELATIVE_VALUE"]
+    template = service.templates(template_version="caos.deliverable-template.v1")["RELATIVE_VALUE"]
     revision = service.save_draft(
         case["id"], "RELATIVE_VALUE", draft_request(template, source), actor="analyst",
     )
@@ -624,7 +928,7 @@ def test_composition_verifies_accepted_artifact_bytes_before_saving(settings, st
         return run
 
     run = asyncio.run(accepted_run())
-    template = service.templates()["FULL_CREDIT"]
+    template = service.templates(template_version="caos.deliverable-template.v1")["FULL_CREDIT"]
     bind_default_model_for_tests(service, case, template)
     first = service.save_draft(
         case["id"], "FULL_CREDIT", draft_request(template, source), actor="analyst",
@@ -754,7 +1058,7 @@ def test_strict_schema_rejects_client_supplied_generated_values(client, settings
 @pytest.mark.parametrize("violation", ["heading_in_optional_slot", "narrative_in_optional_slot", "invented_slot_id"])
 def test_client_invented_optional_kind_or_slot_is_rejected(service, store, violation):
     case, source, _ = seed_ready_case(service, store)
-    template = service.templates()["FULL_CREDIT"]
+    template = service.templates(template_version="caos.deliverable-template.v1")["FULL_CREDIT"]
     if violation == "heading_in_optional_slot":
         rogue = {"block_id": "blk-rogue", "slot_id": optional_slot(template, "LIMITATIONS"), "kind": "HEADING", "text": "Sneaky heading"}
     elif violation == "narrative_in_optional_slot":
@@ -769,7 +1073,7 @@ def test_client_invented_optional_kind_or_slot_is_rejected(service, store, viola
 
 def test_optional_blocks_out_of_template_declared_order_are_rejected(service, store):
     case, source, _ = seed_ready_case(service, store)
-    template = service.templates()["FULL_CREDIT"]
+    template = service.templates(template_version="caos.deliverable-template.v1")["FULL_CREDIT"]
     model = seed_model(service, case)
     declared = [p["kind"] for p in template["optional_blocks"]]
     assert declared.index("GENERATED_METRIC") < declared.index("GENERATED_TABLE"), "premise: metric declared before table"
@@ -785,7 +1089,7 @@ def test_optional_blocks_out_of_template_declared_order_are_rejected(service, st
 def test_declared_limitations_slot_saves_without_model_identity_on_optional_pathway(service, store):
     case, source, _ = seed_ready_case(service, store)
     pathway = "RELATIVE_VALUE"
-    template = service.templates()[pathway]
+    template = service.templates(template_version="caos.deliverable-template.v1")[pathway]
     revision = service.save_draft(
         case["id"], pathway,
         draft_request(template, source, extra_blocks=[optional_block(template, "LIMITATIONS")]),
@@ -800,7 +1104,7 @@ def test_model_required_templates_reject_required_blocks_without_a_selected_mode
     service, store, pathway,
 ):
     case, source, _ = seed_ready_case(service, store)
-    template = service.templates()[pathway]
+    template = service.templates(template_version="caos.deliverable-template.v1")[pathway]
     assert template["model_requirement"] == "REQUIRED"
 
     with pytest.raises(Exception, match="MODEL_REQUIRED"):
@@ -817,7 +1121,7 @@ def test_model_required_templates_reject_required_blocks_without_a_selected_mode
 def test_citations_resolve_same_case_existing_non_withdrawn_blocks(service, store):
     case, source, _ = seed_ready_case(service, store)
     other_case, other_source = seed_case_with_source(store, body=b"foreign case evidence")
-    template = service.templates()["FULL_CREDIT"]
+    template = service.templates(template_version="caos.deliverable-template.v1")["FULL_CREDIT"]
 
     def with_citation(source_id, block_id):
         blocks = required_blocks(template, source)
@@ -840,7 +1144,7 @@ def test_citations_resolve_same_case_existing_non_withdrawn_blocks(service, stor
 
 def test_model_selection_pins_current_revision_and_fallback_requires_acknowledged_no_revision_state(service, store):
     case, source, _ = seed_ready_case(service, store)
-    template = service.templates()["FULL_CREDIT"]
+    template = service.templates(template_version="caos.deliverable-template.v1")["FULL_CREDIT"]
     first = seed_model(service, case)
     second = service.seed_signed_revision_for_tests(case["id"], outputs={"total_leverage": 3.9})  # head advances
     metric = [optional_block(template, "GENERATED_METRIC")]
@@ -863,7 +1167,7 @@ def test_model_selection_pins_current_revision_and_fallback_requires_acknowledge
 
 def test_selection_must_resolve_to_exact_stored_revision_and_build_records(service, store):
     case, source, _ = seed_ready_case(service, store)
-    template = service.templates()["FULL_CREDIT"]
+    template = service.templates(template_version="caos.deliverable-template.v1")["FULL_CREDIT"]
     model = seed_model(service, case)
     metric = [optional_block(template, "GENERATED_METRIC")]
     ghost_revision = {"kind": "ANALYST_REVISION", "build_id": model["build_id"], "revision_id": "rev-missing"}
@@ -881,7 +1185,7 @@ def test_model_dependent_block_kinds_require_selection_and_are_digest_pinned(ser
     from caos.contracts import digest
 
     case, source, _ = seed_ready_case(service, store)
-    template = service.templates()["FULL_CREDIT"]
+    template = service.templates(template_version="caos.deliverable-template.v1")["FULL_CREDIT"]
     extra = [optional_block(template, kind)]
     with pytest.raises(Exception, match="MODEL_REQUIRED"):
         service.save_draft(case["id"], "FULL_CREDIT", draft_request(template, source, extra_blocks=extra), actor="analyst")
@@ -898,7 +1202,7 @@ def test_model_dependent_block_kinds_require_selection_and_are_digest_pinned(ser
 
 def test_generated_metric_outputs_are_rebuilt_server_side_from_pinned_revision(service, store):
     case, source, _ = seed_ready_case(service, store)
-    template = service.templates()["FULL_CREDIT"]
+    template = service.templates(template_version="caos.deliverable-template.v1")["FULL_CREDIT"]
     model = seed_model(service, case, outputs={"total_leverage": 4.2})
     revision = service.save_draft(
         case["id"], "FULL_CREDIT",
@@ -913,7 +1217,7 @@ def test_forged_scenario_outputs_raise_calculation_mismatch(service, store):
     from caos.contracts import digest
 
     case, source, _ = seed_ready_case(service, store)
-    template = service.templates()["FULL_CREDIT"]
+    template = service.templates(template_version="caos.deliverable-template.v1")["FULL_CREDIT"]
     model = seed_model(service, case)
     selection = revision_selection(model)
     preview = service.preview_scenario_for_tests(case["id"], build_id=model["build_id"], base_revision_id=model["revision_id"], shocks=[SHOCK])
@@ -951,7 +1255,7 @@ def test_forged_scenario_outputs_raise_calculation_mismatch(service, store):
 
 def test_scenario_exhibit_requires_selected_model_before_any_calculation(service, store):
     case, source, _ = seed_ready_case(service, store)
-    template = service.templates()["FULL_CREDIT"]
+    template = service.templates(template_version="caos.deliverable-template.v1")["FULL_CREDIT"]
     model = seed_model(service, case)
     preview = service.preview_scenario_for_tests(case["id"], build_id=model["build_id"], base_revision_id=model["revision_id"], shocks=[SHOCK])
     with pytest.raises(Exception, match="MODEL_REQUIRED"):
@@ -966,7 +1270,7 @@ def test_scenario_base_identity_mismatch_fails_before_calculation_with_zero_resi
     from caos.contracts import digest
 
     case, source, _ = seed_ready_case(service, store)
-    template = service.templates()["FULL_CREDIT"]
+    template = service.templates(template_version="caos.deliverable-template.v1")["FULL_CREDIT"]
     model = seed_model(service, case)
     preview = service.preview_scenario_for_tests(case["id"], build_id=model["build_id"], base_revision_id=model["revision_id"], shocks=[SHOCK])
     mismatched = copy.deepcopy(preview)
@@ -986,7 +1290,7 @@ def test_scenario_base_identity_mismatch_fails_before_calculation_with_zero_resi
 
 def test_application_build_fallback_scenario_accepts_null_base_revision(service, store):
     case, source, _ = seed_ready_case(service, store)
-    template = service.templates()["FULL_CREDIT"]
+    template = service.templates(template_version="caos.deliverable-template.v1")["FULL_CREDIT"]
     build = service.seed_application_build_for_tests(case["id"], outputs={"total_leverage": 4.2})
     preview = service.preview_scenario_for_tests(case["id"], build_id=build["build_id"], base_revision_id=None, shocks=[SHOCK])
     assert preview["scenario"]["base_revision_id"] is None
@@ -1002,7 +1306,7 @@ def test_application_build_fallback_scenario_accepts_null_base_revision(service,
 
 def test_ungoverned_metric_ids_and_chart_recipe_fields_are_rejected(service, store):
     case, source, _ = seed_ready_case(service, store)
-    template = service.templates()["FULL_CREDIT"]
+    template = service.templates(template_version="caos.deliverable-template.v1")["FULL_CREDIT"]
     model = seed_model(service, case)
     selection = revision_selection(model)
     rogue_metric = [optional_block(template, "GENERATED_METRIC", metric_ids=["made_up_metric"])]
@@ -1022,7 +1326,7 @@ def test_ungoverned_metric_ids_and_chart_recipe_fields_are_rejected(service, sto
 
 def test_scenario_digest_must_equal_server_computed_digest(service, store):
     case, source, _ = seed_ready_case(service, store)
-    template = service.templates()["FULL_CREDIT"]
+    template = service.templates(template_version="caos.deliverable-template.v1")["FULL_CREDIT"]
     model = seed_model(service, case)
     preview = service.preview_scenario_for_tests(case["id"], build_id=model["build_id"], base_revision_id=model["revision_id"], shocks=[SHOCK])
     with pytest.raises(Exception, match="SCENARIO_EXHIBIT_DIGEST_INVALID"):
@@ -1080,7 +1384,7 @@ def test_live_model_builder_authority_feeds_eligibility_selection_scenario_and_f
         "build_id": build["id"], "base_revision_id": signed["id"], "registry_version": registry["version"],
         "registry_digest": registry["digest"], "shocks": shocks, "draft_generation": 1,
     }))
-    template = service.templates()["FULL_CREDIT"]
+    template = service.templates(template_version="caos.deliverable-template.v1")["FULL_CREDIT"]
     scenario_slot = optional_slot(template, "SCENARIO_EXHIBIT")
     revision = service.save_draft(case["id"], "FULL_CREDIT", draft_request(
         template, source, model_selection=selection,
@@ -1138,7 +1442,7 @@ def test_filing_rejects_a_frozen_fallback_after_an_analyst_revision_becomes_acti
         "build_id": build["id"],
         "fallback_acknowledged": True,
     }
-    distressed_template = service.templates()["DISTRESSED_RESTRUCTURING"]
+    distressed_template = service.templates(template_version="caos.deliverable-template.v1")["DISTRESSED_RESTRUCTURING"]
     with pytest.raises(ValueError, match="DELIVERABLE_PATHWAY_AUTHORITY_MISMATCH"):
         service.save_draft(
             case["id"],
@@ -1146,7 +1450,7 @@ def test_filing_rejects_a_frozen_fallback_after_an_analyst_revision_becomes_acti
             draft_request(distressed_template, source, model_selection=fallback),
             actor="analyst",
         )
-    template = service.templates()["FULL_CREDIT"]
+    template = service.templates(template_version="caos.deliverable-template.v1")["FULL_CREDIT"]
     draft = service.save_draft(
         case["id"],
         "FULL_CREDIT",
@@ -1276,7 +1580,7 @@ async def test_live_incremental_pathway_publishes_against_a_validated_prior_full
         assert eligibility["default_model_selection"] is None
         assert eligibility["fallback_acknowledgement_required"] is True
 
-    template = service.templates()[pathway]
+    template = service.templates(template_version="caos.deliverable-template.v1")[pathway]
     if signed is not None:
         with pytest.raises(ValueError, match="MODEL_FALLBACK_INELIGIBLE"):
             service.save_draft(
@@ -1392,7 +1696,7 @@ def test_canonical_document_is_the_only_cross_format_export_source(service, stor
         "BASE": {"FY2027": {"total_leverage": 3.8}},
         "DOWNSIDE": {"FY2027": {"total_leverage": 5.1}},
     })
-    template = service.templates()["FULL_CREDIT"]
+    template = service.templates(template_version="caos.deliverable-template.v1")["FULL_CREDIT"]
     blocks = required_blocks(template, source, narrative_text=long_narrative)
     for block in blocks:
         if block["kind"] == "NARRATIVE":  # the narrative states a figure: cite it (Task 10 judgment rule)
@@ -1472,7 +1776,7 @@ def test_canonical_document_is_the_only_cross_format_export_source(service, stor
 def test_each_pathway_frozen_payload_renders_substantive_md_pdf_xlsx(service, store, pathway):
     case, source, revision, frozen = freeze_min(service, store, pathway)
 
-    first_section = service.templates()[pathway]["blocks"][0]["title"]
+    first_section = service.templates(template_version="caos.deliverable-template.v1")[pathway]["blocks"][0]["title"]
     md, md_sha = service.export(frozen["deliverable_id"], "md")
     assert hashlib.sha256(md).hexdigest() == md_sha
     text = md.decode("utf-8")
@@ -1491,7 +1795,7 @@ def test_each_pathway_frozen_payload_renders_substantive_md_pdf_xlsx(service, st
 
 def test_freeze_embeds_selected_revision_outputs_assumptions_and_build_payload_verbatim(service, store):
     case, source, _ = seed_ready_case(service, store)
-    template = service.templates()["FULL_CREDIT"]
+    template = service.templates(template_version="caos.deliverable-template.v1")["FULL_CREDIT"]
     model = seed_model(service, case, outputs={"total_leverage": 4.2})
     revision = service.save_draft(
         case["id"], "FULL_CREDIT",
@@ -1575,7 +1879,7 @@ def test_filing_thread_id_is_a_deterministic_digest_including_build_id():
 
 def test_draft_fails_closed_without_upstream_accepted_authority(service, store):
     case, source = seed_case_with_source(store)  # deliberately: no accepted authority seeded
-    template = service.templates()["FULL_CREDIT"]
+    template = service.templates(template_version="caos.deliverable-template.v1")["FULL_CREDIT"]
     bind_default_model_for_tests(service, case, template)
     with pytest.raises(Exception, match="AUTHORITY|SNAPSHOT|UPSTREAM"):
         service.save_draft(case["id"], "FULL_CREDIT", draft_request(template, source), actor="analyst")
@@ -1685,7 +1989,7 @@ async def test_gate_revalidates_accepted_artifact_graph_after_freeze(settings, s
     case, source = seed_case_with_source(store)
     run = await engine.run_scripted_for_tests(case["id"], pathway="RELATIVE_VALUE")
     await engine.accept(run["id"], actor="analyst")
-    template = service.templates()["RELATIVE_VALUE"]
+    template = service.templates(template_version="caos.deliverable-template.v1")["RELATIVE_VALUE"]
     revision = service.save_draft(
         case["id"], "RELATIVE_VALUE", draft_request(template, source), actor="analyst",
     )
@@ -1826,7 +2130,7 @@ def test_stale_or_duplicate_resume_returns_resume_not_applied_never_success(clie
 def test_later_filing_supersedes_prior_with_pointer_and_terminalizes_its_thread(service, store):
     case, source, r1, frozen_a = freeze_min(service, store)  # frozen A parks its gate, never filed
     add_approver(store, case)
-    template = service.templates()["FULL_CREDIT"]
+    template = service.templates(template_version="caos.deliverable-template.v1")["FULL_CREDIT"]
     template[_TEST_MODEL_SELECTION] = r1["content"]["model_selection"]
 
     r2 = service.save_draft(
@@ -1914,7 +2218,7 @@ def test_change_request_revision_conflict_rolls_back_frozen_and_thread_transitio
     worker = threading.Thread(target=request_changes, name="change-request")
     worker.start()
     assert head_read.wait(5), "change request did not reach its revision CAS"
-    template = service.templates()["FULL_CREDIT"]
+    template = service.templates(template_version="caos.deliverable-template.v1")["FULL_CREDIT"]
     try:
         analyst_revision = service.save_draft(
             case["id"],
@@ -2043,7 +2347,7 @@ def test_filing_refuses_export_metadata_substituted_from_another_reviewed_draft(
     # Filing rechecks the approver's case standing inside the commit (Task 12a,
     # SIM-020), so the filer here holds it like every other service-level filer.
     add_approver(store, case)
-    template = service.templates()["FULL_CREDIT"]
+    template = service.templates(template_version="caos.deliverable-template.v1")["FULL_CREDIT"]
     bind_default_model_for_tests(service, case, template)
     first_revision = service.save_draft(
         case["id"], "FULL_CREDIT", draft_request(template, source), actor="analyst"
@@ -2100,7 +2404,7 @@ def test_filing_refuses_export_metadata_substituted_from_another_reviewed_draft(
 
 def test_xlsx_export_neutralizes_formula_text_and_preserves_typed_model_values(service, store):
     case, source, _ = seed_ready_case(service, store)
-    template = service.templates()["FULL_CREDIT"]
+    template = service.templates(template_version="caos.deliverable-template.v1")["FULL_CREDIT"]
     model = seed_model(service, case, outputs={"total_leverage": 4.2})
     blocks = required_blocks(template, source, narrative_text='=HYPERLINK("http://evil.example","click me") injected narrative')
     revision = service.save_draft(

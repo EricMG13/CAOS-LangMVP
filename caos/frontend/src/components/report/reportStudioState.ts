@@ -1,5 +1,16 @@
 import { canApproveCase } from "../../lib/workbench.ts";
 
+export function reportEvidenceRefs(citations: { source_id?: string; block_ids?: string[] }[]) {
+  const sources = new Map<string, Set<string>>();
+  for (const citation of citations) {
+    if (!citation.source_id) continue;
+    const blocks = sources.get(citation.source_id) ?? new Set<string>();
+    for (const id of citation.block_ids ?? []) blocks.add(id);
+    sources.set(citation.source_id, blocks);
+  }
+  return [...sources].map(([sourceId, blocks]) => ({ sourceId, blockIds: [...blocks] }));
+}
+
 export type FreezeChecklistInput = {
   canWrite: boolean;
   exactSavedRevision: boolean;

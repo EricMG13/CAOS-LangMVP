@@ -50,7 +50,9 @@ from ..storage.deliverables import (  # noqa: F401 — conflicts re-raised to ca
 )
 from ..storage.runs import RunStore
 from ..storage.store import DomainStore, new_id
-from .document import DOCUMENT_SCHEMA_VERSION, compose_document, model_metric_values
+from .document import DOCUMENT_SCHEMA_VERSION, citation_union, compose_document, document_blockers, model_metric_values
+from ..artifacts.presentation import CURRENT_MAPPING_VERSION
+from .layouts import LAYOUTS_V2, OPTIONAL_SECTIONS_V2, TEMPLATE_V2
 from .graph import (
     canonical_approval_hash,
     filing_thread_id,
@@ -181,18 +183,34 @@ class DeliverableService:
 
     # -- templates -----------------------------------------------------------
 
-    def templates(self) -> dict[str, dict[str, Any]]:
-        return {pathway: _template(pathway) for pathway in PATHWAY_TEMPLATES}
+    def templates(self, *, template_version: str = TEMPLATE_V2) -> dict[str, dict[str, Any]]:
+        return {pathway: self._template_for(pathway, template_version) for pathway in PATHWAY_TEMPLATES}
 
-    def _template_for(self, pathway: str) -> dict[str, Any]:
+    def _template_for(self, pathway: str, template_version: str = TEMPLATE_V2) -> dict[str, Any]:
         if pathway not in PATHWAY_TEMPLATES:
             raise ValueError(f"DELIVERABLE_PATHWAY_INVALID: no template for {pathway!r}")
-        return _template(pathway)
+        template = _template(pathway)
+        if template_version == "caos.deliverable-template.v1":
+            return template
+        if template_version != TEMPLATE_V2:
+            raise ValueError("DELIVERABLE_TEMPLATE_STALE: unsupported recorded template version")
+        template.update(template_id=template["template_id"].removesuffix("v1") + "v2", template_version=TEMPLATE_V2)
+        if pathway == "FULL_CREDIT":
+            template["title"] = "Credit Report"
+        template["blocks"] = [{**template["blocks"][-1], "order": 1}]
+        template["optional_blocks"] = [
+            {"kind": "NARRATIVE", "slot_stem": "appendix.commentary", "max_items": 20, "order": 0, "model_dependent": False},
+            *template["optional_blocks"],
+        ]
+        template["allowed_appendices"] = [p["kind"] for p in template["optional_blocks"]]
+        template["sections"] = [{"section_id": slot, "title": title, "required": True} for slot, title, _ in LAYOUTS_V2[pathway]]
+        template["optional_sections"] = copy.deepcopy(OPTIONAL_SECTIONS_V2)
+        return template
 
     # -- draft save ----------------------------------------------------------
 
     def save_draft(self, case_id: str, pathway: str, request: DeliverableDraftRequest, *, actor: str) -> dict[str, Any]:
-        template = self._template_for(pathway)
+        template = self._template_for(pathway, request.template_version)
         if request.template_id != template["template_id"] or request.template_version != template["template_version"]:
             raise ValueError("DELIVERABLE_TEMPLATE_STALE: the draft binds a different template identity")
         blocks = [block.model_dump(mode="json") for block in request.blocks]
@@ -210,12 +228,36 @@ class DeliverableService:
                 "need a selected model"
             )
         stored = [self._enrich_block(case_id, block, model, identity, selection) for block in blocks]
+        artifacts = self._accepted_artifacts(case_id)
+        head = self.records.head_revision(case_id, pathway)
+        previous = (head or {}).get("content") or {}
+        v2 = template["template_version"] == TEMPLATE_V2
+        optional_ids = request.included_optional_section_ids
+        if optional_ids is not None and (
+            not v2
+            or len(optional_ids) != len(set(optional_ids))
+            or set(optional_ids) - {s["section_id"] for s in OPTIONAL_SECTIONS_V2}
+        ):
+            raise ValueError("DELIVERABLE_OPTIONAL_SECTION_INVALID: only declared v2 section IDs are accepted")
+        if v2 and optional_ids is None:
+            optional_ids = previous.get("included_optional_section_ids", [])
+        mapping_version = None
+        if v2:
+            if previous.get("template_version") == TEMPLATE_V2 and not previous.get("mapping_version"):
+                raise ValueError("MAPPING_VERSION_UNSUPPORTED: the recorded v2 mapping identity is missing")
+            mapping_version = (
+                previous["mapping_version"]
+                if previous.get("template_version") == TEMPLATE_V2
+                else CURRENT_MAPPING_VERSION
+            )
         document_sections = compose_document(
             pathway=pathway,
             template=template,
             blocks=stored,
-            artifacts=self._accepted_artifacts(case_id),
+            artifacts=artifacts,
             model=model,
+            mapping_version=mapping_version,
+            included_optional_section_ids=optional_ids,
         )
         content = {
             "template_id": template["template_id"],
@@ -227,6 +269,15 @@ class DeliverableService:
             "blocks": stored,
             "generated_blocks": self._generated_blocks(stored, model),
         }
+        if v2:
+            citations = citation_union(stored, document_sections, artifacts)
+            self._validate_citations(case_id, [{"citations": citations}])
+            content.update(
+                mapping_version=mapping_version,
+                included_optional_section_ids=optional_ids,
+                citation_union=citations,
+                publication_blockers=document_blockers(document_sections),
+            )
         return self.records.append_revision(
             case_id, pathway, request.expected_version, content, digest(content), actor, self.store._audit,
         )
@@ -325,7 +376,8 @@ class DeliverableService:
         ):
             raise ValueError("OPINION_REVISION_STALE: the sign-off must bind the current saved revision")
         # Invariant 1 at the sign-off boundary: withdrawn evidence cannot be signed over.
-        self._validate_citations(case_id, head["content"]["blocks"])
+        self._validate_citations(case_id, self._citation_blocks(head["content"]))
+        self._require_report_inputs(head["content"])
         record = {
             "case_id": case_id,
             "pathway": pathway,
@@ -693,9 +745,43 @@ class DeliverableService:
     # -- workspace reads -----------------------------------------------------
 
     def workspace(self, case_id: str, pathway: str) -> dict[str, Any]:
+        draft = self.records.head_revision(case_id, pathway)
+        template = self._template_for(pathway, draft["content"]["template_version"] if draft else TEMPLATE_V2)
+        preview = None
+        if draft is None:
+            # Accepted route/source checks are never relaxed for a preview.
+            # Only model checks may become visible first-open blockers.
+            try:
+                self._validate_accepted_pathway(case_id, pathway)
+                artifacts = self._accepted_artifacts(case_id)
+                model = None
+                model_blockers = []
+                try:
+                    selection = self.model_eligibility(case_id)["default_model_selection"]
+                    model = self._resolve_stored_selection(case_id, selection)[0] if selection else None
+                    if model is not None:
+                        self._validate_pathway_authority(case_id, pathway, model)
+                except ValueError as exc:
+                    model = None
+                    model_blockers.append({"code": str(exc).split(":", 1)[0], "section_id": "model", "detail": "The selected model is unavailable for this pathway. Module content remains reviewable."})
+                sections = compose_document(pathway=pathway, template=template, blocks=[], artifacts=artifacts, model=model)
+                citations = citation_union([], sections, artifacts)
+                self._validate_citations(case_id, [{"citations": citations}])
+                blockers = document_blockers(sections) + model_blockers
+                if template["model_requirement"] == "REQUIRED" and model is None:
+                    blockers.append({"code": "MODEL_SELECTION_REQUIRED", "section_id": "model", "detail": "Select a current model; Application Model Build fallback requires explicit acknowledgement."})
+                preview = {"document_sections": sections, "mapping_version": CURRENT_MAPPING_VERSION, "publication_blockers": blockers,
+                           "included_optional_section_ids": [], "citation_union": citations}
+            except ValueError as exc:
+                # No partial document is exposed when accepted authority fails.
+                preview = {"document_sections": [], "mapping_version": CURRENT_MAPPING_VERSION, "publication_blockers": [
+                    {"code": str(exc).split(":", 1)[0], "section_id": "authority", "detail": "Accepted report authority is unavailable."}],
+                    "included_optional_section_ids": [], "citation_union": []}
         return {
-            "template": self._template_for(pathway),
-            "draft": self.records.head_revision(case_id, pathway),
+            "template": template,
+            "draft": draft,
+            "preview": preview,
+            "latest_template": self._template_for(pathway),
             "frozen": self.records.frozen_for_pathway(case_id, pathway),
             "opinion": self.opinion_state(case_id, pathway),
             "pending_freezes": [self._job_view(job) for job in self.records.pending_freeze_jobs(case_id, pathway)],
@@ -709,7 +795,7 @@ class DeliverableService:
 
     # -- freeze --------------------------------------------------------------
 
-    def _authority_for(self, case_id: str) -> dict[str, Any] | None:
+    def _authority_for(self, case_id: str, *, model_readiness: bool = True) -> dict[str, Any] | None:
         """Resolve application and methodology authority without conflating them."""
         seeded = self.records.authority(case_id)
         if seeded is not None:
@@ -755,7 +841,7 @@ class DeliverableService:
             ) is None
         ):
             raise ValueError("DELIVERABLE_COMPOSITION_REQUIRED_VALUE_MISSING:accepted_source_set")
-        build = (self.models.readiness(case_id) or {}).get("build") if self.models is not None else None
+        build = (self.models.readiness(case_id) or {}).get("build") if self.models is not None and model_readiness else None
         return {
             "case_id": case_id,
             "snapshot_id": snapshot_id,
@@ -771,22 +857,9 @@ class DeliverableService:
         pathway: str,
         model: dict[str, Any] | None,
     ) -> None:
-        # Seeded records are an isolated test seam. Ordinary publication always
-        # resolves the accepted snapshot and run below.
-        if self.records.authority(case_id) is not None:
+        snapshot = self._validate_accepted_pathway(case_id, pathway)
+        if snapshot is None:
             return
-        authority = self._authority_for(case_id)
-        if authority is None:
-            raise ValueError(
-                "DELIVERABLE_PATHWAY_AUTHORITY_MISMATCH: no accepted pathway authority"
-            )
-        runs = self.engine.runs if self.engine is not None else RunStore(self.store.engine)
-        snapshot = runs.get_snapshot(authority["snapshot_id"])
-        run = runs.get_run(snapshot["run_id"]) if snapshot is not None else None
-        if run is None or run.get("pathway") != pathway:
-            raise ValueError(
-                "DELIVERABLE_PATHWAY_AUTHORITY_MISMATCH: accepted analysis does not match the deliverable pathway"
-            )
         effects = (model or {}).get("pathway_effects") or []
         if pathway == "FULL_CREDIT" and effects:
             raise ValueError(
@@ -816,8 +889,27 @@ class DeliverableService:
                 "DELIVERABLE_PATHWAY_AUTHORITY_MISMATCH: Distressed publication requires the current CP-4C overlay"
             )
 
+    def _validate_accepted_pathway(self, case_id: str, pathway: str) -> dict[str, Any] | None:
+        # Seeded records are an isolated test seam. Ordinary publication always
+        # resolves the accepted snapshot and run below.
+        if self.records.authority(case_id) is not None:
+            return
+        authority = self._authority_for(case_id, model_readiness=False)
+        if authority is None:
+            raise ValueError(
+                "DELIVERABLE_PATHWAY_AUTHORITY_MISMATCH: no accepted pathway authority"
+            )
+        runs = self.engine.runs if self.engine is not None else RunStore(self.store.engine)
+        snapshot = runs.get_snapshot(authority["snapshot_id"])
+        run = runs.get_run(snapshot["run_id"]) if snapshot is not None else None
+        if run is None or run.get("pathway") != pathway:
+            raise ValueError(
+                "DELIVERABLE_PATHWAY_AUTHORITY_MISMATCH: accepted analysis does not match the deliverable pathway"
+            )
+        return snapshot
+
     def _accepted_artifacts(self, case_id: str) -> dict[str, dict[str, Any]]:
-        authority = self._authority_for(case_id)
+        authority = self._authority_for(case_id, model_readiness=False)
         if authority is None:
             return {}
         artifacts: dict[str, dict[str, Any]] = {"__authority__": {"id": authority["snapshot_id"]}}
@@ -863,12 +955,24 @@ class DeliverableService:
                 row["block_ids"].extend(b for b in citation["block_ids"] if b not in row["block_ids"])
         return [rows[key] for key in sorted(rows)]
 
+    @staticmethod
+    def _citation_blocks(content):
+        return [{"citations": content["citation_union"]}] if content.get("template_version") == TEMPLATE_V2 else content["blocks"]
+
+    @staticmethod
+    def _require_report_inputs(content):
+        if content.get("template_version") == TEMPLATE_V2 and not content.get("mapping_version"):
+            raise ValueError("MAPPING_VERSION_UNSUPPORTED: missing recorded report mapping")
+        if content.get("publication_blockers"):
+            raise ValueError("REPORT_INPUT_UNAVAILABLE: required report inputs are unavailable")
+
     def freeze(self, case_id: str, request: FreezeDeliverableRequest, *, actor: str) -> dict[str, Any]:
         revision = self._revision_for_freeze(case_id, request)
         pathway = revision["pathway"]
         # Invariant 1 holds at the freeze boundary, not only at draft save: a
         # source withdrawn since the revision was written refuses the freeze.
-        self._validate_citations(case_id, revision["content"]["blocks"])
+        self._validate_citations(case_id, self._citation_blocks(revision["content"]))
+        self._require_report_inputs(revision["content"])
         authority = self._authority_for(case_id)
         if authority is None:
             raise ValueError("DELIVERABLE_UPSTREAM_AUTHORITY_REQUIRED: no accepted upstream SNAPSHOT identity is pinned")
@@ -905,10 +1009,12 @@ class DeliverableService:
         self._validate_pathway_authority(case_id, pathway, document_model)
         expected_sections = compose_document(
             pathway=pathway,
-            template=_template(pathway),
+            template=self._template_for(pathway, revision["content"]["template_version"]),
             blocks=revision["content"]["blocks"],
             artifacts=self._accepted_artifacts(case_id),
             model=document_model,
+            mapping_version=revision["content"].get("mapping_version"),
+            included_optional_section_ids=revision["content"].get("included_optional_section_ids"),
         )
         if (
             revision["content"].get("document_schema_version") != DOCUMENT_SCHEMA_VERSION
@@ -929,7 +1035,7 @@ class DeliverableService:
             "methodology_build_id": methodology_build_id,
         }
         input_fingerprint = digest(frozen_authority)
-        template = _template(pathway)
+        template = self._template_for(pathway, revision["content"]["template_version"])
         draft_digest = digest(revision["content"])
         if draft_digest != revision["digest"]:
             raise ValueError(
@@ -955,7 +1061,7 @@ class DeliverableService:
                 "source_set_version": frozen_authority["source_set_version"],
                 "build_id": build_id,
             },
-            "evidence": self._frozen_evidence(case_id, revision["content"]["blocks"]),
+            "evidence": self._frozen_evidence(case_id, self._citation_blocks(revision["content"])),
             "methodology": {"build_id": methodology_build_id},
             "renderer": {"version": RENDERER_VERSION},
             "input_fingerprint": input_fingerprint,

@@ -1,4 +1,7 @@
 import type { ReactNode } from "react";
+import Link from "next/link";
+import { withQuery } from "../../lib/workbench";
+import type { NormalizedEvidenceRef } from "../../lib/artifactReader";
 import ChartExhibit from "../charts/ChartExhibit";
 
 import {
@@ -83,7 +86,7 @@ const MASTHEAD_FACTS: [string, keyof PublicationMasthead][] = [
 
 function SectionHeading({ section }: { section: DocumentSection }) {
   const authority = section.origin.kind === "ANALYST"
-    ? "Analyst judgment"
+    ? "Analyst authored"
     : `Locked · ${section.origin.kind.toLowerCase()}`;
   return <h3 className="rd-h">
     <span>{section.title}</span>
@@ -111,13 +114,15 @@ function DocumentTable({ section }: { section: DocumentTableSection }) {
   </section>;
 }
 
-function DocumentChart({ section }: { section: DocumentChartSection }) {
-  return <ChartExhibit section={section} theme="paper" />;
+type SourceContext = { caseId?: string; evidenceRefs?: NormalizedEvidenceRef[] };
+
+function DocumentChart({ section, ...context }: { section: DocumentChartSection } & SourceContext) {
+  return <ChartExhibit section={section} theme="paper" {...context} />;
 }
 
-function DocumentLeaf({ section }: { section: DocumentLeafSection }): ReactNode {
+function DocumentLeaf({ section, ...context }: { section: DocumentLeafSection } & SourceContext): ReactNode {
   if (section.kind === "table") return <DocumentTable section={section} />;
-  if (section.kind === "chart") return <DocumentChart section={section} />;
+  if (section.kind === "chart") return <DocumentChart section={section} {...context} />;
 
   let body: ReactNode;
   if (section.kind === "profile") {
@@ -134,11 +139,11 @@ function DocumentLeaf({ section }: { section: DocumentLeafSection }): ReactNode 
   </section>;
 }
 
-function DocumentSectionView({ section }: { section: DocumentSection }) {
-  if (section.kind !== "columns") return <DocumentLeaf section={section} />;
+function DocumentSectionView({ section, ...context }: { section: DocumentSection } & SourceContext) {
+  if (section.kind !== "columns") return <DocumentLeaf section={section} {...context} />;
   return <section className="rd-sec" data-section-id={section.section_id}>
     <SectionHeading section={section} />
-    <div className={`rd-cols rd-cols-${section.items.length}`}>{section.items.map((column, index) => <div className="rd-col" key={index}>{column.map((item) => <DocumentLeaf section={item} key={item.section_id} />)}</div>)}</div>
+    <div className={`rd-cols rd-cols-${section.items.length}`}>{section.items.map((column, index) => <div className="rd-col" key={index}>{column.map((item) => <DocumentLeaf section={item} key={item.section_id} {...context} />)}</div>)}</div>
   </section>;
 }
 
@@ -151,6 +156,9 @@ export default function DeliverableDocument({
   digest,
   sections,
   publication,
+  caseId,
+  evidenceRefs,
+  onAddCommentary,
 }: {
   title: string;
   issuer: string;
@@ -160,6 +168,9 @@ export default function DeliverableDocument({
   digest?: string;
   sections: DocumentSection[];
   publication?: Publication | null;
+  caseId?: string;
+  evidenceRefs?: NormalizedEvidenceRef[];
+  onAddCommentary?: () => void;
 }) {
   // A frozen or filed record draws the server-frozen publication; a draft
   // draws its canonical sections grouped by page. Never both.
@@ -169,7 +180,7 @@ export default function DeliverableDocument({
   const subtitle = masthead ? `${masthead.report_type} · Draft v${masthead.draft_version} · ${masthead.deliverable_id}` : `${title}${version ? ` · Draft v${version}` : ""}`;
   const watermark = masthead?.watermark ?? null;
   return <article className="paper report-paper deliverable-document rd-paper" aria-label={`${status} Deliverable preview`}>
-    {pages.length ? pages.map((page, pageIndex) => <section className="rd-page-container" aria-labelledby={`document-page-${pageIndex}`} key={page.name}>
+    {pages.length ? pages.map((page, pageIndex) => <section className="rd-page-container" data-document-page={page.name} aria-labelledby={`document-page-${pageIndex}`} key={page.name}>
       {watermark ? <div className="rd-wm" aria-hidden="true"><span>{watermark}</span></div> : null}
       <header className="rd-mast">
         <span className="rd-mast-brand"><span className="rd-mark" aria-hidden="true">C</span><span>CAOS · {pathwayLabel} · {page.name}</span></span>
@@ -182,8 +193,11 @@ export default function DeliverableDocument({
         {digest ? <p className="rd-identity mono" title={digest}>Exact identity · {digest}</p> : null}
       </> : <h2 className="visually-hidden" id={`document-page-${pageIndex}`}>{page.name}</h2>}
       {masthead ? <p className="rd-band">{page.name}</p> : null}
-      <div className="rd-secs">{page.sections.map((section) => <DocumentSectionView section={section} key={section.section_id} />)}</div>
+      <h3 className="rd-h">{page.name}</h3>
+      <div className="rd-secs">{page.sections.map((section) => <DocumentSectionView section={section} key={section.section_id} caseId={caseId} evidenceRefs={evidenceRefs} />)}</div>
+      {!publication && onAddCommentary ? <button type="button" className="rd-commentary-action" onClick={onAddCommentary}>Add commentary</button> : null}
+      {caseId && page.name === "Evidence" ? <nav className="rd-source-links" aria-label="Report source inspection">{evidenceRefs?.flatMap((ref) => ref.blockIds.map((block) => <Link key={`${ref.sourceId}:${block}`} href={withQuery("/sources/", { case: caseId, source: ref.sourceId, block })}>{ref.sourceId} · {block}</Link>))}</nav> : null}
       <footer className="rd-foot"><span>Generated by CAOS · governed document{masthead ? ` · ${masthead.approval_state}` : ""}</span><span>{masthead ? "Approver recorded in the detached filing receipt" : "Internal committee use only"}</span></footer>
-    </section>) : <p className="rd-empty">Complete the required analyst sections to compose the governed document.</p>}
+    </section>) : <p className="rd-empty">Report inputs are unavailable. Inspect publication blockers and accepted analysis.</p>}
   </article>;
 }

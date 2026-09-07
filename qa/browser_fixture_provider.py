@@ -21,8 +21,9 @@ MODEL_FIXTURES = {"CP-1": "cp1.md", "CP-1A": "cp1a.md", "CP-1B": "cp1b.md",
 
 
 class BrowserFixtureProvider(HostControlProvider):
-    def __init__(self) -> None:
+    def __init__(self, *, report_fixtures: bool = False) -> None:
         super().__init__()
+        self.report_fixtures = report_fixtures
         self.identity = host_control_identity(adapter_version="caos.browser-model-fixture.v1")
 
     def create_message(self, request: Any) -> ProviderMessage:
@@ -31,13 +32,13 @@ class BrowserFixtureProvider(HostControlProvider):
             return message
         identity = json.loads(str(request.messages[0]["content"]).split("\n", 1)[1])["host_identity"]
         filename = MODEL_FIXTURES.get(identity["module_id"])
-        if filename is None:
+        if filename is None and not self.report_fixtures:
             return message
         delivered = [row for result in _tool_results(request.messages) if isinstance(result, list) for row in result]
         row = delivered[0]
         body = json.loads(message.content[0].text)
         body["markdown"] = (
-            (FIXTURES / filename).read_text(encoding="utf-8")
+            ((FIXTURES / filename).read_text(encoding="utf-8") if filename else body["markdown"])
             .replace('"run-cp-model-fixture"', json.dumps(identity["run_id"]))
             .replace("SRC-1", row["source_id"])
             .replace("block-1", row["block_id"])
@@ -45,4 +46,18 @@ class BrowserFixtureProvider(HostControlProvider):
             .replace("Acme Credit Ltd", identity["issuer_name"])
             .replace("Acme-Credit", identity["issuer_id"])
         )
+        if self.report_fixtures:
+            body["markdown"] = report_fixture_markdown(identity["module_id"], body["markdown"], row["source_id"])
         return replace(message, content=[ProviderBlock(type="text", text=json.dumps(body, sort_keys=True))])
+
+
+def report_fixture_markdown(module: str, markdown: str, source_id: str) -> str:
+    """Declared disposable answer key; never an issuer analysis or qualification."""
+    fixture = json.loads((FIXTURES.parent / "deliverables" / "report_modules.json").read_text())
+    tables = []
+    for table_id, (columns, *rows) in fixture.get(module, {}).items():
+        tables.append(f"### {table_id}\n| " + " | ".join(columns) + " |\n| " + " | ".join("---" for _ in columns) + " |\n" + "\n".join("| " + " | ".join(row) + " |" for row in rows))
+    prose = "Disposable report fixture: recurring contracts support revenue visibility; indicative pricing requires confirmation."
+    if module == "CP-DR":
+        prose = "### Findings\n\nContract renewals support recurring cash flow.\n\n### Implications and scenarios\n\nMonitor retention before extending the debt maturity profile."
+    return markdown.replace("## Analysis\n", "## Analysis\n\n" + prose + "\n\n" + "\n\n".join(tables) + "\n", 1).replace("SRC-1", source_id)

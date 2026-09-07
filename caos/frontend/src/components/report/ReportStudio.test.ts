@@ -147,11 +147,21 @@ test("one lifecycle lock disables every draft-mutating authoring control", () =>
   for (const id of ["scenario-assumption", "scenario-case", "scenario-period", "scenario-value"]) {
     assert.match(studio, new RegExp(`id="${id}"[\\s\\S]{0,500}?disabled=\\{authoringLocked\\}`));
   }
-  assert.match(studio, /disabled=\{authoringLocked\}>Retry over current v\{conflict\.version\}/);
+  assert.match(studio, /disabled=\{authoringLocked \|\| conflict\.template_id !== workspace\.template\.template_id\}>Retry over current v\{conflict\.version\}/);
   assert.match(studio, /disabled=\{authoringLocked\}>Use shared v\{conflict\.version\}/);
   assert.match(studio, /disabled=\{lifecycleBusy\}>\{pending === "file"/);
   assert.match(studio, /disabled=\{!changeComment\.trim\(\) \|\| lifecycleBusy\}/);
   assert.match(studio, /disabled=\{!canWrite \|\| lifecycleBusy \|\| draftIsUnsaved/);
+});
+
+test("module reports retain server template identity and source union across draft replacements", () => {
+  assert.match(studio, /template_id: revision\.template_id, template_version: revision\.template_version/);
+  assert.match(studio, /adoptSharedDraft\(shared\)/);
+  assert.match(studio, /adoptSharedDraft\(next\)/);
+  assert.match(studio, /optionalSectionIdsRef\.current = draft\.content\.included_optional_section_ids \?\? \[\]/);
+  assert.match(studio, /false, optionalSectionIdsRef\.current, next\.template/);
+  assert.match(studio, /workspace\.current\?\.content\.citation_union \?\? workspace\.preview\?\.citation_union/);
+  assert.match(studio, /workspace\.template\.sections \? snapshot\.map\(contractBlock\) : blocksForSave\(snapshot\)/, "v2 sends independently authored citations; copying an optional commentary claim into the register would retain it after omission");
 });
 
 test("Draft and Frozen review render the same canonical governed document", () => {

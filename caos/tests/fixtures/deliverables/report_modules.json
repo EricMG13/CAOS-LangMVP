@@ -1,0 +1,48 @@
+{
+  "CP-2": {
+    "T2.7": [["Credit driver", "Evidence", "Credit implication"], ["Recurring service contracts", "Renewal rate 92%", "Revenue visibility supports debt service"]],
+    "T2.10": [["Risk", "Evidence", "Monitoring"], ["Customer concentration", "Largest customer 18%", "Monitor contract renewal"]],
+    "T2.12": [["Indicator", "Threshold", "Action"], ["Renewal rate", "Below 85%", "Reassess downside retention"]]
+  },
+  "CP-1B": {
+    "T4.3": [["Row Label", "Value/Observation"], ["Current reporting period", "FY2024 Q4 versus FY2023 Q4"]],
+    "T4.4": [["Line Item", "Prior", "Current", "Analyst Note"], ["Revenue", "120", "130", "Contract renewals"]],
+    "T4.6": [["Metric", "Basis", "Prior", "Current", "Credit Implication"], ["Adjusted EBITDA", "USD millions", "25", "27", "Higher coverage"]],
+    "T4.10": [["Signal Type", "Metric", "Evidence", "Severity", "Action"], ["Monitoring", "Cash conversion", "Seasonal working capital", "Moderate", "Review next quarter"]],
+    "T4.11": [["Gap", "Affected Metric", "Action"], ["No monthly cash ledger", "Cash seasonality", "Obtain monthly balances"]]
+  },
+  "CP-3": {
+    "T3.3": [["Category", "Factor", "Weight", "Weighted Score"], ["Business", "Recurring contracts", "0.4", "1.6"], ["Financial", "Coverage", "0.6", "1.8"]],
+    "T3.5": [["Security", "Market Level", "Market Date", "Source", "Seniority / Security", "RV Label"], ["Term loan A", "98.5", "2025-02-14", "SRC-1", "First lien", "Fair"], ["Senior note B", "92", "2025-02-14", "SRC-1", "Unsecured", "Wide"]],
+    "T3.6": [["Security / Issuer", "Fundamental View", "Relative-Value View", "Rationale"], ["Acme", "Stable", "Selective", "Unsecured spread compensates for subordination"]],
+    "T3.7": [["Rank", "Security / Tranche", "Composite Score /100", "Final Recommendation"], ["1", "Senior note B", "68", "Watch valuation"], ["2", "Term loan A", "72", "Hold for income"]],
+    "T3.9": [["Trigger", "Threshold / Signal", "Why It Matters"], ["Quote freshness", "Five business days", "Refresh marks before trading"]],
+    "T3B.2": [["Instrument", "Amount", "Currency", "Maturity", "Seniority / Lien", "Source Trace"], ["Term loan A", "185", "USD", "2028-06-30", "First lien", "SRC-1"], ["Senior note B", "50", "USD", "2029-12-31", "Unsecured", "SRC-1"]],
+    "T3B.3": [["Instrument", "Price", "Market Date", "Source", "Quote Quality"], ["Term loan A", "98.5", "2025-02-14", "SRC-1", "Indicative"], ["Senior note B", "92", "2025-02-14", "SRC-1", "Indicative"]],
+    "T3B.4": [["Instrument", "Structural Rank", "Contractual Seniority", "Key Risk Mechanic"], ["Term loan A", "1", "First lien", "Shared collateral"], ["Senior note B", "2", "Unsecured", "Subordinated collateral access"]],
+    "T3C.6": [["Liquidity / Implementation Factor", "Evidence", "Implementation Consequence", "Constraint / Action"], ["Trade size", "Indicative quotes only", "Execution liquidity unproven", "Obtain executable marks"]],
+    "T3D.2": [["Instrument", "Amount", "Currency", "Maturity Date", "Refinancing Pressure"], ["Term loan A", "185", "USD", "2028-06-30", "Monitor refinancing window"]],
+    "T3D.3": [["Factor", "Current Level / Status", "Credit Implication"], ["Cash runway", "18 months in downside", "Liquidity covers near-term needs"]],
+    "T3D.6": [["Path Type", "Feasibility", "Evidence Supporting", "Evidence Against", "Creditor Impact"], ["Amend and extend", "Conditional", "No immediate maturity", "Lender consent unconfirmed", "Potential maturity extension"]],
+    "T3D.9": [["Trigger", "Threshold / Qualitative Signal", "Why It Matters"], ["Cash balance", "Below 20 USD millions", "Reopen refinancing review"]]
+  },
+  "CP-4": {
+    "T4C.3": [["Definition / Ratio", "Source / Clause", "Formula / Definition Summary", "Required Inputs"], ["Net leverage", "Agreement section 7.1", "Net debt / covenant EBITDA", "Debt, cash, covenant EBITDA"]],
+    "T4C.4": [["Test", "Threshold", "Current Basis", "Headroom", "Status"], ["Net leverage", "5.0x", "4.2x", "0.8x", "Compliant"]],
+    "T4C.11": [["Priority", "Capacity Item", "Monitoring Action"], ["High", "Leverage headroom", "Monitor quarterly compliance certificate"]]
+  },
+  "CP-4C": {
+    "T4E.2": [["class/claim ID", "principal", "currency", "security/guarantee", "priority"], ["Term loan A", "185", "USD", "First lien", "1"], ["Senior note B", "50", "USD", "Unsecured", "2"]],
+    "T4E.3": [["scenario", "valuation date", "EV", "limitation"], ["Base", "2025-02-14", "300", "Fixture scenario"], ["Downside", "2025-02-14", "210", "Fixture scenario"]],
+    "T4E.4": [["path", "process/jurisdiction", "consent/vote", "blockers"], ["Consensual extension", "England", "Majority lenders", "Consent not obtained"]],
+    "T4E.5": [["scenario", "priority claim", "allocation", "residual"], ["Downside", "Term loan A", "185", "25"]],
+    "T4E.6": [["scenario/EV range", "last covered class", "first impaired class", "fulcrum class/range"], ["Downside 210", "Term loan A", "Senior note B", "Senior note B"]],
+    "T4E.7": [["scenario", "class/instrument", "allowed claim", "total recovery", "currency"], ["Downside", "Senior note B", "50", "25", "USD"]],
+    "T4E.9": [["event/milestone", "earliest/latest timing", "consequence"], ["Lender consent", "Before maturity extension", "Extension remains conditional"]],
+    "T4E.10": [["claim/legal/value/process gap", "affected scenario/class", "required evidence"], ["Unverified consent threshold", "Consensual extension", "Executed creditor agreement"]]
+  },
+  "CP-5": {
+    "T5B.3": [["Credit Driver / Conclusion", "Originating Module", "Source Evidence", "Claim Status"], ["Revenue visibility", "CP-2", "SRC-1", "Directly sourced fixture"]],
+    "T5B.6": [["Severity", "Conclusion", "Issue", "Required Remediation"], ["Moderate", "Execution pricing", "Indicative marks", "Confirm executable marks"]]
+  }
+}

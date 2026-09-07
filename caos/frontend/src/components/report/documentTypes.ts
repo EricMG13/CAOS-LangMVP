@@ -68,7 +68,13 @@ export function overlayAnalystText(
     const body = textByBlock.get(section.origin.authority_id);
     return body === undefined ? section : { ...section, body: body || "Not yet drafted." };
   };
-  return sections.map((section) => section.kind === "columns"
+  const represented = new Set(sections.flatMap((section) => section.kind === "columns" ? section.items.flat() : [section]).filter(canEditDocumentSection).map((section) => section.origin.authority_id));
+  const existing = sections.filter((section) => section.kind === "columns" || !canEditDocumentSection(section) || textByBlock.has(section.origin.authority_id)).map((section) => section.kind === "columns"
     ? { ...section, items: section.items.map((column) => column.map(overlay)) }
     : overlay(section));
+  const added: DocumentTextSection[] = [...textByBlock].filter(([id]) => !represented.has(id)).map(([id, text]) => ({
+    kind: "text", section_id: id, title: "Analyst commentary", page: "Commentary", editable: true,
+    origin: { kind: "ANALYST", authority_id: id, block_ids: [] }, body: text || "Not yet drafted.",
+  }));
+  return [...existing, ...added];
 }

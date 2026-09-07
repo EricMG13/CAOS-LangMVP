@@ -482,3 +482,94 @@ Stored v1 drafts, recovery copies, revisions, Frozen Deliverables and Filed
 Deliverables dispatch through their recorded v1 template/renderer identities.
 They are never reinterpreted by this ledger. Moving to v2 requires an explicit
 new revision and renewed Sign-Off.
+
+## Implemented Report v2 section bindings (Task 7)
+
+The matrix below is the exact implementation of `caos.deliverable-template.v2`
+with `caos.module-presentation.v1`; the module tables above remain the full
+Analysis inventory, and their Report column describes thematic applicability,
+not additional implicit required inputs. `|` is ordered alias fallback, not
+concatenation. Every listed binding is required once its section is included.
+Missing inputs render `REPORT_INPUT_UNAVAILABLE` and block sign/freeze while
+leaving an editable draft and raw accepted Analysis available. No new module
+execution or provider synthesis occurs.
+
+| Pathway | Fixed section ID / page | Exact source module / selector |
+| --- | --- | --- |
+| `FULL_CREDIT` | `credit_summary` · Credit summary | `CP-2` / `T2.7`; `CP-2` / `@Analysis` |
+| `FULL_CREDIT` | `business` · Business / transaction | `CP-1A` / `transaction_summary or T2D.2 or cp1a.cp_model_snapshot_fields`; `CP-1A` / `@Analysis` |
+| `FULL_CREDIT` | `financials` · Financial performance and earnings quality | `CP-1` / `cp1.model_account_register or T4.15`; `CP-1` / `cp1.adjusted_ebitda_bridge or T4.17` |
+| `FULL_CREDIT` | `capital` · Capital structure | `CP-1` / `cp1.debt_facility_register or T4.18` |
+| `FULL_CREDIT` | `model` · Base / Downside model | `MODEL` / `outputs` |
+| `FULL_CREDIT` | `liquidity` · Liquidity / covenants | `CP-4` / `T4C.3`; `CP-4` / `T4C.4` |
+| `FULL_CREDIT` | `relative_value` · Relative value | `CP-3` / `T3.5`; `CP-3` / `T3.7` |
+| `FULL_CREDIT` | `risks` · Risks / catalysts / monitoring | `CP-2` / `T2.10`; `CP-2` / `T2.12` |
+| `FULL_CREDIT` | `qa` · Evidence / QA | `CP-5` / `T5B.3`; `CP-5` / `T5B.6` |
+| `EARNINGS_UPDATE` | `context` · Period / comparator context | `CP-1B` / `T4.3`; `CP-1B` / `@Audit Summary` |
+| `EARNINGS_UPDATE` | `changes` · Reported-versus-prior changes | `CP-1B` / `T4.4`; `CP-1B` / `T4.12 or cp1b.model_comparator_register` |
+| `EARNINGS_UPDATE` | `quality` · Earnings quality | `CP-1B` / `T4.6`; `CP-1B` / `T4.14 or cp1b.addback_validation_register` |
+| `EARNINGS_UPDATE` | `model` · Accepted pathway model effects | `MODEL` / `outputs` |
+| `EARNINGS_UPDATE` | `liquidity` · Leverage / liquidity | `CP-1B` / `cp1b.cp_model_snapshot_fields` |
+| `EARNINGS_UPDATE` | `monitoring` · Implications and monitoring | `CP-1B` / `T4.10`; `CP-1B` / `T4.11` |
+| `COVENANT_REFINANCING` | `debt` · Debt / maturity profile | `CP-3` / `T3D.2` |
+| `COVENANT_REFINANCING` | `covenants` · Covenant definitions and headroom | `CP-4` / `T4C.3`; `CP-4` / `T4C.4` |
+| `COVENANT_REFINANCING` | `liquidity` · Liquidity | `CP-3` / `T3D.3`; `CP-3` / `T3C.6` |
+| `COVENANT_REFINANCING` | `refinancing` · Refinancing / restructuring findings | `CP-3` / `T3D.6`; `CP-3` / `@Analysis` |
+| `COVENANT_REFINANCING` | `model` · Model effects | `MODEL` / `outputs` |
+| `COVENANT_REFINANCING` | `actions` · Actions and evidence | `CP-4` / `T4C.11`; `CP-3` / `T3D.9` |
+| `RELATIVE_VALUE` | `universe` · Pinned instrument universe | `CP-3` / `T3B.2`; `CP-3` / `@Audit Summary` |
+| `RELATIVE_VALUE` | `comparison` · Peer / issuer comparison | `CP-3` / `T3.3`; `CP-3` / `T3.6` |
+| `RELATIVE_VALUE` | `structure` · Structure / seniority | `CP-3` / `T3B.4` |
+| `RELATIVE_VALUE` | `compensation` · Compensation / ranking | `CP-3` / `T3.5`; `CP-3` / `T3.7` |
+| `RELATIVE_VALUE` | `gates` · Catalysts, freshness and trade gates | `CP-3` / `T3B.3`; `CP-3` / `T3.9`; `CP-3` / `T3C.6` |
+| `DISTRESSED_RESTRUCTURING` | `priority` · Priority stack | `CP-4C` / `T4E.2` |
+| `DISTRESSED_RESTRUCTURING` | `liquidity` · Liquidity runway | `CP-3` / `T3D.3` |
+| `DISTRESSED_RESTRUCTURING` | `scenarios` · Scenario / breakpoint outputs | `CP-4C` / `T4E.3`; `MODEL` / `outputs` |
+| `DISTRESSED_RESTRUCTURING` | `recovery` · Recovery / fulcrum | `CP-4C` / `T4E.5`; `CP-4C` / `T4E.6`; `CP-4C` / `T4E.7` |
+| `DISTRESSED_RESTRUCTURING` | `milestones` · Legal / process milestones | `CP-4C` / `T4E.4`; `CP-4C` / `T4E.9` |
+| `DISTRESSED_RESTRUCTURING` | `recommendations` · Recommendations and limitations | `CP-3` / `T3D.6`; `CP-4C` / `T4E.10` |
+| `DEEP_RESEARCH` | `scope` · Research question / scope | `CP-DR` / `scope` |
+| `DEEP_RESEARCH` | `findings` · Findings | `CP-DR` / `@Analysis` |
+| `DEEP_RESEARCH` | `evidence` · Evidence and counterevidence | `CP-DR` / `@Evidence Trace`; `CP-DR` / `@Source Registry` |
+| `DEEP_RESEARCH` | `implications` · Implications | `CP-DR` / `@Analysis/Implications` |
+| `DEEP_RESEARCH` | `questions` · Unresolved questions | `CP-DR` / `@Gaps & Conflicts` |
+
+`@` binds a canonical module Markdown H2, with tables retained separately in
+Analysis and the selected structured exhibits. CP-DR Findings is its Analysis
+body excluding exactly one visible H3 named `Implications` or `Implications and
+scenarios` (case-insensitive). Implications binds that distinct H3 body; absent
+or ambiguous headings are unavailable, never duplicated as a new conclusion.
+The existing canonical scanner excludes fenced code/comments/raw content when
+recognizing headings. CP-DR `scope` is the Task 5 scope projection. Narrative
+origins reuse validated projection origins; unrepresentable long block IDs leave
+unavailable sections, never widened historical document contracts.
+
+Shared financial chart IDs: `cp1.revenue.v1`, `cp1.ebitda.v1`,
+`cp1.cfo_ncfo.v1`, `cp1.adjustments.v1` on `financials`, and
+`cp1.debt_maturity.v1` on `capital`; their tables/columns/unit rules remain the
+Task 5 ledger bindings above. Other selected table exhibits reuse an existing
+`<module>.<table-id>.v1` chart when declared and available. Shared model charts
+consume only the validated selected model and its exact outputs, with the one
+explicit currency/unit from the CP-1 period register where available. Missing
+units and incompatible chart values remain visible typed chart warnings with
+exact tables, not fabricated points. Task 9 owns actual PDF/XLSX chart drawing.
+
+`MODEL / outputs` includes exact model outputs and accepted `pathway_effects`
+calculation outputs. For Earnings and Covenant reports, an absent incremental
+effect produces a publication blocker explicitly identifying the current prior
+Full Credit base resolver limitation (Task 8). This report task does not claim
+that reused base forecasts are recalculated incremental effects.
+
+Declared optional section `ic_context` binds `CP-6 / @Analysis`, defaults omitted,
+and records the reason: “IC module context is optional; this report is composed
+directly from pathway modules.” Explicit inclusion with no accepted CP-6 is
+unavailable; omission does not change any execution route. Analyst Narrative and
+Limitations are separately labelled optional overlays, never generated facts.
+The only required client block is the Evidence Register. Its exact citation
+union with included module refs reaches both the visible register and frozen
+`payload.evidence`, publication inventory, sign/freeze authority and offline audit.
+
+V1 templates and frozen outputs retain their recorded interpretation. V2 content
+records mapping version and declared inclusion IDs; omitted request IDs retain
+the previous choice, while `[]` deliberately omits all declared optional sections.
+Adopting v2 is an explicit new revision requiring renewed opinion sign-off.

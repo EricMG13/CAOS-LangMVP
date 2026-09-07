@@ -706,6 +706,7 @@ class DeliverableDraftRequest(StrictModel):
     template_version: str = Field(min_length=1, max_length=160)
     model_selection: DeliverableModelSelection | None = None
     blocks: list[CanonicalDeliverableBlock] = Field(min_length=1, max_length=120)
+    included_optional_section_ids: list[IdentifierItem] | None = Field(default=None, max_length=20)
 
 
 class FreezeDeliverableRequest(StrictModel):

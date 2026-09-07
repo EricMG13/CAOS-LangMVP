@@ -19,6 +19,12 @@ import pytest
 
 # --- the pinned public key sets (the wire contract, family by family) --------------
 
+def test_report_workspace_v2_fields_are_named_and_strict():
+    from caos.responses import DeliverableWorkspaceResponse, ReportPreviewResponse, ReportInputBlockerResponse
+    assert set(DeliverableWorkspaceResponse.model_fields) == {"template", "current", "history", "frozen_history", "model_eligibility", "opinion", "pending_freezes", "preview", "latest_template"}
+    assert set(ReportPreviewResponse.model_fields) == {"document_sections", "mapping_version", "publication_blockers", "included_optional_section_ids", "citation_union"}
+    assert set(ReportInputBlockerResponse.model_fields) == {"code", "section_id", "detail"}
+
 FAMILIES = (
     "case",
     "source",

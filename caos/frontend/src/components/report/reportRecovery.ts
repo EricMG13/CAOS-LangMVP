@@ -2,7 +2,7 @@ import type { DeliverableBlock, EvidenceCitation } from "./DeliverableDocument";
 
 export type RecoveryModelSelection = { kind: "ANALYST_REVISION"; build_id: string; revision_id: string } | { kind: "APPLICATION_BUILD"; build_id: string; fallback_acknowledged: true };
 export type OpinionForm = { opinion: string; limitations: string; material_overrides: string; rationale: string };
-export type ReportRecovery = { subject: string; caseId: string; pathway: string; savedAt: number; expectedVersion: number; templateId: string; templateVersion: string; modelSelection: RecoveryModelSelection | null; blocks: DeliverableBlock[]; opinionForm?: OpinionForm };
+export type ReportRecovery = { subject: string; caseId: string; pathway: string; savedAt: number; expectedVersion: number; templateId: string; templateVersion: string; modelSelection: RecoveryModelSelection | null; blocks: DeliverableBlock[]; opinionForm?: OpinionForm; includedOptionalSectionIds?: string[] };
 
 const MAX_RECOVERY_LENGTH = 5_000_000;
 const MAX_JSON_DEPTH = 32;
@@ -126,6 +126,7 @@ export function parseReportRecovery(raw: string | null, caseId: string, pathway:
       !validTimestamp(value.savedAt) || !safeInteger(value.expectedVersion) ||
       !boundedString(value.templateId, 160) || !boundedString(value.templateVersion, 160) ||
       !recoverySelection(value.modelSelection) ||
+      (value.includedOptionalSectionIds !== undefined && (!boundedStrings(value.includedOptionalSectionIds, 0, 20) || new Set(value.includedOptionalSectionIds).size !== value.includedOptionalSectionIds.length)) ||
       (value.opinionForm !== undefined && (!record(value.opinionForm) ||
         !boundedString(value.opinionForm.opinion, 4000, true) || !boundedString(value.opinionForm.limitations, 4000, true) ||
         !boundedString(value.opinionForm.material_overrides, 4000, true) || !boundedString(value.opinionForm.rationale, 8000, true))) ||

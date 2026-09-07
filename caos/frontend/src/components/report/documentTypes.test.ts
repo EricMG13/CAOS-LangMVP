@@ -1,6 +1,14 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+test("new analyst overlays appear before autosave and omitted overlays disappear", () => {
+  const blocks = [{ kind: "NARRATIVE", block_id: "appendix.commentary.01", text: "Monitor renewals." }];
+  const projected = overlayAnalystText([], blocks);
+  assert.equal(projected.length, 1);
+  assert.equal(projected[0].origin.kind, "ANALYST");
+  assert.equal(overlayAnalystText(projected, []).length, 0);
+});
+
 import {
   canEditDocumentSection,
   draftTextSections,

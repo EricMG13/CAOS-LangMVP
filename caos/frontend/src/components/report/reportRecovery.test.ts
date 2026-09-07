@@ -1,5 +1,16 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+
+test("recovery preserves explicit optional-section choices and legacy absence", () => {
+  const copy = { subject: "analyst", caseId: "case", pathway: "FULL_CREDIT", savedAt: Date.now(), expectedVersion: 0, templateId: "v2", templateVersion: "v2", modelSelection: null,
+    blocks: [{ kind: "EVIDENCE_REGISTER", block_id: "evidence", slot_id: "evidence", citations: [] }] };
+  const parse = (value: unknown) => parseReportRecovery(JSON.stringify(value), "case", "FULL_CREDIT", "analyst");
+  assert.equal(parse(copy)?.includedOptionalSectionIds, undefined);
+  assert.deepEqual(parse({ ...copy, includedOptionalSectionIds: [] })?.includedOptionalSectionIds, []);
+  assert.deepEqual(parse({ ...copy, includedOptionalSectionIds: ["ic_context"] })?.includedOptionalSectionIds, ["ic_context"]);
+  assert.equal(parse({ ...copy, includedOptionalSectionIds: ["ic_context", "ic_context"] }), null);
+  assert.equal(parse({ ...copy, includedOptionalSectionIds: Array(21).fill("section") }), null);
+});
 import { parseReportRecovery, reportRecoveryKey } from "./reportRecovery.ts";
 
 const valid = { subject: "analyst a", caseId: "case/1", pathway: "FULL_CREDIT", savedAt: 1, expectedVersion: 2, templateId: "full-credit", templateVersion: "1", modelSelection: null, blocks: [{ kind: "NARRATIVE", block_id: "summary", slot_id: "summary", text: "Draft", content_mode: "ANALYST_JUDGMENT", citations: [] }] };

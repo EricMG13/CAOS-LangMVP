@@ -1326,6 +1326,8 @@ def create_app(*, settings: Settings, store: DomainStore, engine: Any) -> FastAP
             "model_eligibility": service.model_eligibility(case_id),
             "opinion": workspace["opinion"],
             "pending_freezes": workspace["pending_freezes"],
+            "preview": workspace["preview"],
+            "latest_template": workspace["latest_template"],
         }
 
     def require_case_approver(case_id: str, request: Request) -> Any:

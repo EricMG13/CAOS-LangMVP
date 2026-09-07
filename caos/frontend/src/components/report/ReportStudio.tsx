@@ -15,7 +15,7 @@ import DeliverableDocument, {
 } from "./DeliverableDocument";
 import { draftTextSections, overlayAnalystText, type DocumentSection } from "./documentTypes";
 import { browserTabId, claimBrowserTabId, parseReportRecovery, reportRecoveryKey, type OpinionForm, type RecoveryModelSelection, type ReportRecovery } from "./reportRecovery";
-import { canFileFrozen, freezeChecklist, freezeJobIsPending } from "./reportStudioState";
+import { canFileFrozen, freezeChecklist, freezeJobIsPending, reportEvidenceRefs } from "./reportStudioState";
 
 const apiBase = process.env.NEXT_PUBLIC_API_URL || "";
 const AUTOSAVE_DELAY_MS = 850;
@@ -32,7 +32,8 @@ const pathwayOptions = [
 
 type Pathway = typeof pathwayOptions[number][0];
 type OptionalPolicy = { kind: DeliverableBlock["kind"]; slot_stem: string; max_items: number; order: number; model_dependent: boolean };
-type DeliverableTemplate = { template_id: string; template_version: string; pathway: Pathway; title: string; model_requirement: "REQUIRED" | "OPTIONAL"; allowed_appendices: string[]; optional_blocks: OptionalPolicy[]; blocks: TemplateBlock[] };
+type DeliverableTemplate = { template_id: string; template_version: string; pathway: Pathway; title: string; model_requirement: "REQUIRED" | "OPTIONAL"; allowed_appendices: string[]; optional_blocks: OptionalPolicy[]; blocks: TemplateBlock[]; sections?: { section_id: string; title: string; required: boolean }[]; optional_sections?: { section_id: string; title: string; default_included: boolean; omission_reason: string }[] };
+type ReportPreview = { document_sections: DocumentSection[]; mapping_version: string; included_optional_section_ids: string[]; publication_blockers: { code: string; section_id: string; detail: string }[]; citation_union: EvidenceCitation[] };
 type ModelSelection = RecoveryModelSelection;
 type ModelEligibility = {
   active_revision: { revision_id: string; build_id: string; revision_number: number; signed_by: string; signed_at: string } | null;
@@ -40,7 +41,7 @@ type ModelEligibility = {
   fallback_acknowledgement_required: boolean;
   default_model_selection: ModelSelection | null;
 };
-type DraftRevision = { id: string; draft_id: string; case_id: string; pathway: Pathway; version: number; author: string; created_at: string; template_id: string; template_version: string; digest: string; content: { template_id: string; template_version: string; document_schema_version?: string | null; document_sections?: DocumentSection[] | null; model_selection: ModelSelection | null; model_identity?: Record<string, unknown> | null; blocks: DeliverableBlock[]; generated_blocks: Record<string, unknown> } };
+type DraftRevision = { id: string; draft_id: string; case_id: string; pathway: Pathway; version: number; author: string; created_at: string; template_id: string; template_version: string; digest: string; content: { template_id: string; template_version: string; document_schema_version?: string | null; document_sections?: DocumentSection[] | null; model_selection: ModelSelection | null; model_identity?: Record<string, unknown> | null; blocks: DeliverableBlock[]; generated_blocks: Record<string, unknown>; included_optional_section_ids?: string[]; publication_blockers?: ReportPreview["publication_blockers"]; citation_union?: EvidenceCitation[] } };
 type ExportMetadata = { format: "md" | "pdf" | "xlsx"; sha256: string; size: number };
 type FrozenDeliverable = { id: string; case_id: string; pathway: Pathway; draft_version: number; status: "FROZEN" | "FILED" | "SUPERSEDED" | "CHANGES_REQUESTED"; frozen_by: string; frozen_at: string; approved_by: string | null; approved_at: string | null; superseded_by_id: string | null; change_request: { comment?: string; requested_by?: string; requested_at?: string } | null; digest: string; preview_digest: string; input_fingerprint: string; payload: FrozenPayload; exports: Partial<Record<"md" | "pdf" | "xlsx", ExportMetadata>>; opinion_id?: string | null; signed_by?: string | null };
 // Task 10: the analyst opinion is an append-only, digest-bound record on the exact revision.
@@ -49,7 +50,7 @@ type OpinionState = { head: OpinionRecord | null; current: boolean; reasons: str
 // A freeze is a worker job; the frozen record appears in frozen_history once the job is PUBLISHED.
 type FreezeJob = { job_id: string; case_id: string; pathway: Pathway; status: "QUEUED" | "RENDERING" | "PUBLISHED" | "FAILED"; draft_version: number; draft_digest: string; deliverable_id: string | null; error: { code: string } | null; requested_by: string; requested_at: string; completed_at: string | null };
 type FilingReceipt = { schema_version: string; receipt_id: string; deliverable_id: string; case_id: string; pathway: Pathway; draft_version: number; draft_digest: string; preview_digest: string; input_fingerprint: string; approval_hash: string; content_digest: string | null; exports: Record<string, string>; opinion_id: string | null; signed_by: string | null; frozen_by: string; frozen_at: string; approved_by: string; approved_at: string; receipt_digest: string };
-type WorkspaceResponse = { template: DeliverableTemplate; current: DraftRevision | null; history: DraftRevision[]; frozen_history: FrozenDeliverable[]; model_eligibility: ModelEligibility; opinion: OpinionState; pending_freezes: FreezeJob[] };
+type WorkspaceResponse = { template: DeliverableTemplate; current: DraftRevision | null; history: DraftRevision[]; frozen_history: FrozenDeliverable[]; model_eligibility: ModelEligibility; opinion: OpinionState; pending_freezes: FreezeJob[]; preview?: ReportPreview | null; latest_template?: DeliverableTemplate };
 type SaveState = { kind: "IDLE" | "INCOMPLETE" | "DIRTY" | "SAVING" | "SAVED" | "CONFLICT" | "ERROR"; detail?: string; version?: number };
 type RegistryResponse = {
   version: string;
@@ -133,6 +134,7 @@ function modelSelectionIsCurrent(selection: ModelSelection | null, eligibility: 
 
 function optionalBlock(policy: OptionalPolicy, index: number): DeliverableBlock {
   const identity = { block_id: `${policy.slot_stem}.${index.toString().padStart(2, "0")}`, slot_id: `${policy.slot_stem}.${index.toString().padStart(2, "0")}` };
+  if (policy.kind === "NARRATIVE") return { ...identity, kind: "NARRATIVE", text: "", content_mode: "ANALYST_JUDGMENT", citations: [] };
   if (policy.kind === "GENERATED_METRIC") return { ...identity, kind: "GENERATED_METRIC", metric_ids: ["total_leverage", "accessible_liquidity"] };
   if (policy.kind === "GENERATED_TABLE") return { ...identity, kind: "GENERATED_TABLE", table_id: "annual_model", field_ids: ["revenue", "adjusted_ebitda_calc", "fcf", "total_leverage"] };
   if (policy.kind === "GENERATED_CHART") return { ...identity, kind: "GENERATED_CHART", recipe: { kind: "scenario_path", schema_version: "1.0", fields: ["total_leverage"], units: "x", metric_ids: ["total_leverage"], polarity: "higher_is_worse", accessible_table: true } };
@@ -198,6 +200,9 @@ function ReportEditor({ caseId, role, subject = "", selectedCase, onDraftStateCh
   const [workspace, setWorkspace] = useState<WorkspaceResponse | null>(null);
   const [blocks, setBlocks] = useState<DeliverableBlock[]>([]);
   const [modelSelection, setModelSelection] = useState<ModelSelection | null>(null);
+  const [includedOptionalSectionIds, setIncludedOptionalSectionIds] = useState<string[]>([]);
+  const optionalSectionIdsRef = useRef<string[]>([]);
+  const [showControls, setShowControls] = useState(false);
   const [selectedBlockId, setSelectedBlockId] = useState("");
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
@@ -281,6 +286,8 @@ function ReportEditor({ caseId, role, subject = "", selectedCase, onDraftStateCh
       opinionFormRef.current = EMPTY_OPINION;
       setOpinionForm(EMPTY_OPINION);
       setPersistedVersion(savedVersion.current);
+      optionalSectionIdsRef.current = next.current?.content.included_optional_section_ids ?? next.preview?.included_optional_section_ids ?? [];
+      setIncludedOptionalSectionIds(optionalSectionIdsRef.current);
       const nextModelSelection = next.current?.content.model_selection || next.model_eligibility.default_model_selection;
       setWorkspace(next); setBlocks(nextBlocks); setModelSelection(nextModelSelection); setSelectedBlockId(nextBlocks[0]?.block_id || ""); setSaveState(next.current ? { kind: "SAVED", version: next.current.version } : { kind: "IDLE" });
       const recoveryRead = readBrowserRecovery(caseId, pathway, subject);
@@ -327,15 +334,15 @@ function ReportEditor({ caseId, role, subject = "", selectedCase, onDraftStateCh
     return () => { controller.abort(); window.clearTimeout(timer); loadGeneration.current += 1; lifecycleGeneration.current += 1; lifecycleInFlight.current = false; if (saveTimer.current !== null) window.clearTimeout(saveTimer.current); if (freezePollTimer.current !== null) window.clearTimeout(freezePollTimer.current); };
   }, [caseId, load, pathway]);
 
-  const retainRecovery = useCallback((nextBlocks: DeliverableBlock[], selection: ModelSelection | null, opinion: OpinionForm, unsaved: boolean) => {
+  const retainRecovery = useCallback((nextBlocks: DeliverableBlock[], selection: ModelSelection | null, opinion: OpinionForm, unsaved: boolean, optionalIds = optionalSectionIdsRef.current, template = workspace?.template) => {
     const dirty = unsaved || Object.values(opinion).some((value) => value.length > 0);
     onDraftStateChange(dirty);
     if (!dirty) {
       const cleared = clearBrowserRecovery(caseId, pathway, subject);
       setRecovery(null);
       setRecoveryError(cleared ? "" : "The saved work's browser recovery copy could not be cleared.");
-    } else if (workspace) {
-      const copy: ReportRecovery = { subject, caseId, pathway, savedAt: Date.now(), expectedVersion: savedVersion.current, templateId: workspace.template.template_id, templateVersion: workspace.template.template_version, modelSelection: selection, blocks: nextBlocks, opinionForm: opinion };
+    } else if (template) {
+      const copy: ReportRecovery = { subject, caseId, pathway, savedAt: Date.now(), expectedVersion: savedVersion.current, templateId: template.template_id, templateVersion: template.template_version, modelSelection: selection, blocks: nextBlocks, opinionForm: opinion, includedOptionalSectionIds: optionalIds };
       if (storeBrowserRecovery(copy)) { setRecovery((current) => current ? copy : null); setRecoveryError(""); }
       else setRecoveryError("Browser recovery could not be updated. Keep this tab open until your work is saved and signed.");
     }
@@ -348,15 +355,15 @@ function ReportEditor({ caseId, role, subject = "", selectedCase, onDraftStateCh
     retainRecovery(blocks, modelSelection, next, unsavedDraft.current);
   };
 
-  const enqueueSave = useCallback((snapshot: DeliverableBlock[], selection: ModelSelection | null, generation: number, scope: string) => {
+  const enqueueSave = useCallback((snapshot: DeliverableBlock[], selection: ModelSelection | null, generation: number, scope: string, optionalIds = optionalSectionIdsRef.current) => {
     if (!workspace || !canWrite || scope !== currentScope.current) return;
-    const prepared = blocksForSave(snapshot);
+    const prepared = workspace.template.sections ? snapshot.map(contractBlock) : blocksForSave(snapshot);
     if (!draftIsValid(prepared, workspace.template)) { setSaveState({ kind: "INCOMPLETE" }); return; }
     setSaveState({ kind: "SAVING" });
     saveChain.current = saveChain.current.then(async () => {
       if (scope !== currentScope.current || generation > saveGeneration.current) return;
       try {
-        const next = await reportRequest<WorkspaceResponse>(`/api/cases/${caseId}/deliverables/${pathway}/draft`, { method: "PUT", body: JSON.stringify({ expected_version: savedVersion.current, template_id: workspace.template.template_id, template_version: workspace.template.template_version, model_selection: selection, blocks: prepared }) });
+        const next = await reportRequest<WorkspaceResponse>(`/api/cases/${caseId}/deliverables/${pathway}/draft`, { method: "PUT", body: JSON.stringify({ expected_version: savedVersion.current, template_id: workspace.template.template_id, template_version: workspace.template.template_version, model_selection: selection, blocks: prepared, ...(workspace.template.sections ? { included_optional_section_ids: optionalIds } : {}) }) });
         if (scope !== currentScope.current) return;
         savedVersion.current = next.current?.version || savedVersion.current;
         setPersistedVersion(savedVersion.current);
@@ -374,17 +381,19 @@ function ReportEditor({ caseId, role, subject = "", selectedCase, onDraftStateCh
     });
   }, [canWrite, caseId, pathway, retainRecovery, subject, workspace]);
 
-  const markChanged = useCallback((nextBlocks: DeliverableBlock[], nextSelection = modelSelection) => {
+  const markChanged = useCallback((nextBlocks: DeliverableBlock[], nextSelection = modelSelection, optionalIds = optionalSectionIdsRef.current) => {
+    optionalSectionIdsRef.current = optionalIds;
+    setIncludedOptionalSectionIds(optionalIds);
     setBlocks(nextBlocks); setModelSelection(nextSelection); setSelectedFrozen(null); setMessage(""); setError(""); setConflict(null);
     const generation = ++draftGeneration.current;
     saveGeneration.current = generation;
     unsavedDraft.current = true;
     setDraftIsUnsaved(true);
     setSaveState({ kind: "DIRTY" });
-    retainRecovery(nextBlocks, nextSelection, opinionFormRef.current, true);
+    retainRecovery(nextBlocks, nextSelection, opinionFormRef.current, true, optionalIds);
     if (saveTimer.current !== null) window.clearTimeout(saveTimer.current);
     const scope = currentScope.current;
-    saveTimer.current = window.setTimeout(() => enqueueSave(nextBlocks, nextSelection, generation, scope), AUTOSAVE_DELAY_MS);
+    saveTimer.current = window.setTimeout(() => enqueueSave(nextBlocks, nextSelection, generation, scope, optionalIds), AUTOSAVE_DELAY_MS);
   }, [enqueueSave, modelSelection, retainRecovery]);
 
   useEffect(() => {
@@ -398,7 +407,7 @@ function ReportEditor({ caseId, role, subject = "", selectedCase, onDraftStateCh
     savedVersion.current = recovery.expectedVersion;
     opinionFormRef.current = recovery.opinionForm || EMPTY_OPINION;
     setOpinionForm(opinionFormRef.current);
-    markChanged(recovery.blocks, recovery.modelSelection);
+    markChanged(recovery.blocks, recovery.modelSelection, recovery.includedOptionalSectionIds ?? []);
     setSelectedBlockId(recovery.blocks[0]?.block_id || "");
     if (retryNow) { if (saveTimer.current !== null) window.clearTimeout(saveTimer.current); enqueueSave(recovery.blocks, recovery.modelSelection, draftGeneration.current, currentScope.current); }
   };
@@ -439,7 +448,10 @@ function ReportEditor({ caseId, role, subject = "", selectedCase, onDraftStateCh
   const addOptional = (policy: OptionalPolicy) => {
     const count = blocks.filter((block) => block.kind === policy.kind).length + 1;
     if (count > policy.max_items || policy.kind === "SCENARIO_EXHIBIT") return;
-    markChanged(inTemplateOrder([...blocks, optionalBlock(policy, count)]));
+    const added = optionalBlock(policy, count);
+    markChanged(inTemplateOrder([...blocks, added]));
+    setSelectedBlockId(added.block_id);
+    setShowControls(true);
   };
 
   const removeOptional = (blockId: string) => {
@@ -487,12 +499,33 @@ function ReportEditor({ caseId, role, subject = "", selectedCase, onDraftStateCh
     const token = beginLifecycle("restore");
     if (!token) return;
     try {
-      const next = await reportRequest<WorkspaceResponse>(`/api/cases/${caseId}/deliverables/${pathway}/draft`, { method: "PUT", body: JSON.stringify({ expected_version: workspace.current?.version || 0, template_id: workspace.template.template_id, template_version: workspace.template.template_version, model_selection: revision.content.model_selection, blocks: revision.content.blocks.map(contractBlock) }) });
+      const next = await reportRequest<WorkspaceResponse>(`/api/cases/${caseId}/deliverables/${pathway}/draft`, { method: "PUT", body: JSON.stringify({ expected_version: workspace.current?.version || 0, template_id: revision.template_id, template_version: revision.template_version, model_selection: revision.content.model_selection, blocks: revision.content.blocks.map(contractBlock), ...(revision.content.included_optional_section_ids !== undefined ? { included_optional_section_ids: revision.content.included_optional_section_ids } : {}) }) });
       if (!lifecycleIsCurrent(token)) return;
       savedVersion.current = next.current?.version || savedVersion.current; unsavedDraft.current = false; setDraftIsUnsaved(false); setPersistedVersion(savedVersion.current); setWorkspace(next); setBlocks(next.current?.content.blocks || revision.content.blocks); setModelSelection(next.current?.content.model_selection || null); setSelectedFrozen(null); setSaveState({ kind: "SAVED", version: savedVersion.current });
-      retainRecovery(next.current?.content.blocks || revision.content.blocks, next.current?.content.model_selection || null, opinionFormRef.current, false);
+      optionalSectionIdsRef.current = next.current?.content.included_optional_section_ids ?? [];
+      setIncludedOptionalSectionIds(optionalSectionIdsRef.current);
+      retainRecovery(next.current?.content.blocks || revision.content.blocks, next.current?.content.model_selection || null, opinionFormRef.current, false, optionalSectionIdsRef.current, next.template);
       setMessage(`Restored v${revision.version} as new revision v${savedVersion.current}.`); editorFocus.current?.focus();
     } catch (caught) { if (lifecycleIsCurrent(token)) setError(firstErrorMessage(caught, "Unable to restore revision")); }
+    finally { finishLifecycle(token); }
+  };
+
+  const upgradeTemplate = async () => {
+    const latest = workspace?.latest_template;
+    if (!workspace?.current || !latest || latest.template_id === workspace.template.template_id || !canWrite || unsavedDraft.current || Object.values(opinionFormRef.current).some(Boolean)) return;
+    const token = beginLifecycle("upgrade");
+    if (!token) return;
+    const commentary = workspace.current.content.blocks.filter((block) => block.kind === "NARRATIVE").map((block, index) => ({ ...block, block_id: `appendix.commentary.${String(index + 1).padStart(2, "0")}`, slot_id: `appendix.commentary.${String(index + 1).padStart(2, "0")}` }));
+    const other = workspace.current.content.blocks.filter((block) => block.kind !== "NARRATIVE" && block.kind !== "EVIDENCE_REGISTER");
+    const evidence = initializeBlocks(latest).map((block) => block.kind === "EVIDENCE_REGISTER" ? { ...block, citations: aggregateCitations(workspace.current!.content.blocks) } : block);
+    try {
+      const next = await reportRequest<WorkspaceResponse>(`/api/cases/${caseId}/deliverables/${pathway}/draft`, { method: "PUT", body: JSON.stringify({ expected_version: savedVersion.current, template_id: latest.template_id, template_version: latest.template_version, model_selection: modelSelection, blocks: [...evidence, ...commentary, ...other].map(contractBlock), included_optional_section_ids: [] }) });
+      if (!lifecycleIsCurrent(token)) return;
+      setWorkspace(next); setBlocks(next.current!.content.blocks); setSelectedFrozen(null);
+      savedVersion.current = next.current!.version; setPersistedVersion(savedVersion.current); setSaveState({ kind: "SAVED", version: savedVersion.current });
+      optionalSectionIdsRef.current = []; setIncludedOptionalSectionIds([]);
+      setMessage("Created a module-populated revision. Prior versions are retained; renewed opinion sign-off is required.");
+    } catch (caught) { if (lifecycleIsCurrent(token)) setError(firstErrorMessage(caught, "Unable to create the new template revision")); }
     finally { finishLifecycle(token); }
   };
 
@@ -604,10 +637,33 @@ function ReportEditor({ caseId, role, subject = "", selectedCase, onDraftStateCh
     try {
       const next = await reportRequest<{ frozen: FrozenDeliverable; draft: DraftRevision }>(`/api/cases/${caseId}/deliverables/by-id/${selectedFrozen.id}/request-changes`, { method: "POST", body: JSON.stringify({ preview_digest: selectedFrozen.preview_digest, input_fingerprint: selectedFrozen.input_fingerprint, comment: changeComment.trim() }) });
       if (!lifecycleIsCurrent(token)) return;
-      savedVersion.current = next.draft.version; unsavedDraft.current = false; setDraftIsUnsaved(false); setPersistedVersion(next.draft.version); setSelectedFrozen(null); setBlocks(next.draft.content.blocks); setModelSelection(next.draft.content.model_selection); setWorkspace((current) => current ? { ...current, current: next.draft, history: [...current.history, next.draft], frozen_history: current.frozen_history.map((item) => item.id === next.frozen.id ? next.frozen : item), opinion: current.opinion?.head ? { ...current.opinion, current: false, reasons: ["DRAFT_REVISION_CHANGED"] } : current.opinion } : current); setSaveState({ kind: "SAVED", version: next.draft.version }); setChangeComment(""); setMessage(`Changes requested; editable Draft v${next.draft.version} created.`);
-      retainRecovery(next.draft.content.blocks, next.draft.content.model_selection, opinionFormRef.current, false);
+      const shared = await reportRequest<WorkspaceResponse>(`/api/cases/${caseId}/deliverables/${pathway}/draft`);
+      if (!lifecycleIsCurrent(token) || !shared.current) return;
+      adoptSharedDraft(shared);
+      setChangeComment(""); setMessage(`Changes requested; editable Draft v${next.draft.version} created.`);
       window.setTimeout(() => { if (lifecycleIsCurrent(token)) editorFocus.current?.focus(); }, 0);
     } catch (caught) { if (lifecycleIsCurrent(token)) setError(firstErrorMessage(caught, "Unable to request changes")); }
+    finally { finishLifecycle(token); }
+  };
+
+  const adoptSharedDraft = (next: WorkspaceResponse) => {
+    const draft = next.current;
+    if (!draft) return;
+    optionalSectionIdsRef.current = draft.content.included_optional_section_ids ?? [];
+    setIncludedOptionalSectionIds(optionalSectionIdsRef.current);
+    setBlocks(draft.content.blocks); setModelSelection(draft.content.model_selection); setWorkspace(next);
+    savedVersion.current = draft.version; unsavedDraft.current = false; setDraftIsUnsaved(false);
+    setPersistedVersion(draft.version); setSelectedFrozen(null); setConflict(null); setSaveState({ kind: "SAVED", version: draft.version });
+    retainRecovery(draft.content.blocks, draft.content.model_selection, opinionFormRef.current, false, optionalSectionIdsRef.current, next.template);
+  };
+
+  const acceptSharedDraft = async () => {
+    const token = beginLifecycle("shared");
+    if (!token) return;
+    try {
+      const next = await reportRequest<WorkspaceResponse>(`/api/cases/${caseId}/deliverables/${pathway}/draft`);
+      if (lifecycleIsCurrent(token)) adoptSharedDraft(next);
+    } catch (caught) { if (lifecycleIsCurrent(token)) setError(firstErrorMessage(caught, "Unable to load the shared revision")); }
     finally { finishLifecycle(token); }
   };
 
@@ -624,7 +680,7 @@ function ReportEditor({ caseId, role, subject = "", selectedCase, onDraftStateCh
 
   if (loading || loadError || !workspace) return <div className="panel"><div className="panel-body"><LoadState loading={loading} error={loadError} title="Unable to load Report." onRetry={() => void load()} /></div></div>;
 
-  const savedSections = workspace.current?.content.document_sections || draftTextSections(blocks, workspace.template.blocks);
+  const savedSections = workspace.current?.content.document_sections || workspace.preview?.document_sections || draftTextSections(blocks, workspace.template.blocks);
   const previewSections = selectedFrozen
     ? selectedFrozen.payload.content.document_sections || draftTextSections(selectedFrozen.payload.content.blocks, workspace.template.blocks)
     : overlayAnalystText(savedSections, blocks);
@@ -641,7 +697,8 @@ function ReportEditor({ caseId, role, subject = "", selectedCase, onDraftStateCh
     requiredModelAvailable: !requiredModelMissing,
     currentOpinion: opinionCurrent,
   });
-  const freezeReady = [writeCheck, revisionCheck, selectionCheck, availabilityCheck, opinionCheck].every((check) => check.ready);
+  const reportBlockers = workspace.current?.content.publication_blockers ?? workspace.preview?.publication_blockers ?? [];
+  const freezeReady = !reportBlockers.length && [writeCheck, revisionCheck, selectionCheck, availabilityCheck, opinionCheck].every((check) => check.ready);
   const opinionFormComplete = Object.values(opinionForm).every((value) => value.trim());
   const pendingFreeze = pendingJobs.find((job) => freezeJobIsPending(job.status)) || null;
   const failedFreeze = pendingJobs.find((job) => job.status === "FAILED") || null;
@@ -649,13 +706,22 @@ function ReportEditor({ caseId, role, subject = "", selectedCase, onDraftStateCh
   const lifecycleBusy = pending !== "";
   const authoringLocked = lifecycleBusy;
   const selectedNarrative = selectedBlock?.kind === "NARRATIVE" ? selectedBlock : null;
+  const controlsVisible = showControls || Boolean(recovery || recoveryError || conflict || error || pendingFreeze || failedFreeze || selectedFrozen) || ["ERROR", "INCOMPLETE"].includes(saveState.kind);
 
-  return <div className="report-studio report-studio-structured">
+  return <div className={`report-studio report-studio-structured${workspace.template.sections ? " report-generated" : ""}${controlsVisible ? " report-controls-open" : ""}`}>
     <aside className="panel report-outline" aria-label="Deliverable composition">
       <div className="panel-header"><h2>Structure</h2><span className="panel-meta">{workspace.template.template_version}</span></div>
       <div className="panel-body report-rail-scroll">
         <div className="field"><label htmlFor="report-pathway">Pathway template</label><select id="report-pathway" value={pathway} onChange={(event) => switchPathway(event.target.value as Pathway, event.currentTarget)}>{pathwayOptions.map(([id, label]) => <option key={id} value={id}>{label}</option>)}</select></div>
-        <nav className="report-section-nav" aria-label="Deliverable sections">{blocks.map((block, index) => <button key={block.block_id} type="button" className={selectedBlockId === block.block_id ? "is-active" : ""} aria-current={selectedBlockId === block.block_id ? "true" : undefined} onClick={() => setSelectedBlockId(block.block_id)}><span>{(index + 1).toString().padStart(2, "0")}</span>{workspace.template.blocks.find((item) => item.block_id === block.block_id)?.title || (block.kind === "SCENARIO_EXHIBIT" ? block.title : humanizeCode(block.kind))}<small>{workspace.template.blocks.some((item) => item.block_id === block.block_id) ? "Required" : "Optional"}</small></button>)}</nav>
+        {workspace.template.sections ? <>
+          <nav className="report-section-nav" aria-label="Generated document sections">{[...new Set(previewSections.map((section) => section.page))].map((page) => <button key={page} type="button" onClick={() => Array.from(document.querySelectorAll<HTMLElement>("[data-document-page]")).find((element) => element.dataset.documentPage === page)?.scrollIntoView({ block: "start" })}>{page}</button>)}</nav>
+          <p className="report-save-state" role="status">{saveLabel(saveState)}</p>
+          <button type="button" className="button small" aria-expanded={controlsVisible} onClick={() => setShowControls((value) => !value)}>Commentary, model and publication</button>
+          {!workspace.current ? <button type="button" className="button small" onClick={() => markChanged(blocks)} disabled={!canWrite || authoringLocked || requiredModelMissing}>Save module-populated draft</button> : null}
+          {workspace.template.optional_sections?.map((section) => <label className="report-section-choice" key={section.section_id}><input type="checkbox" checked={includedOptionalSectionIds.includes(section.section_id)} disabled={!canWrite || authoringLocked} onChange={(event) => markChanged(blocks, modelSelection, event.target.checked ? [...includedOptionalSectionIds, section.section_id] : includedOptionalSectionIds.filter((id) => id !== section.section_id))} />Include {section.title}<small>{section.omission_reason}</small></label>)}
+          {reportBlockers.length ? <details className="report-input-blockers"><summary>{reportBlockers.length} publication blocker{reportBlockers.length === 1 ? "" : "s"}</summary><ul>{reportBlockers.map((blocker) => <li key={`${blocker.section_id}:${blocker.code}`}><strong>{blocker.code}</strong> · {blocker.detail}</li>)}</ul></details> : null}
+        </> : workspace.latest_template && workspace.latest_template.template_id !== workspace.template.template_id ? <button type="button" className="button small" onClick={() => void upgradeTemplate()} disabled={!canWrite || lifecycleBusy || draftIsUnsaved || saveState.kind !== "SAVED" || Object.values(opinionForm).some(Boolean)}>Create module-populated revision</button> : null}
+        <nav className="report-section-nav" aria-label="Deliverable sections">{blocks.map((block, index) => <button key={block.block_id} type="button" className={selectedBlockId === block.block_id ? "is-active" : ""} aria-current={selectedBlockId === block.block_id ? "true" : undefined} onClick={() => { setSelectedBlockId(block.block_id); setShowControls(true); }}><span>{(index + 1).toString().padStart(2, "0")}</span>{workspace.template.blocks.find((item) => item.block_id === block.block_id)?.title || (block.kind === "SCENARIO_EXHIBIT" ? block.title : humanizeCode(block.kind))}<small>{workspace.template.blocks.some((item) => item.block_id === block.block_id) ? "Required" : "Optional"}</small></button>)}</nav>
         <details className="report-optional"><summary>Optional composition</summary><div className="report-optional-actions">{workspace.template.optional_blocks.map((policy) => <button className="button small" type="button" key={policy.kind} onClick={() => addOptional(policy)} disabled={!canWrite || authoringLocked || policy.kind === "SCENARIO_EXHIBIT" || policy.model_dependent && !modelSelection || blocks.filter((block) => block.kind === policy.kind).length >= policy.max_items}>Add {humanizeCode(policy.kind).toLowerCase()}</button>)}</div></details>
         <div className="report-history"><h3>Draft revisions</h3>{[...workspace.history].reverse().map((revision) => <div className="history-entry" key={revision.id}><strong>v{revision.version}</strong><span>{revision.author} · {formatDate(revision.created_at)}</span><button className="button small" type="button" onClick={() => void restoreRevision(revision)} disabled={!canWrite || lifecycleBusy || draftIsUnsaved || saveState.kind !== "SAVED"}>Restore as new revision</button></div>)}<h3>Frozen / Filed</h3>{[...workspace.frozen_history].reverse().map((item) => <button className="history-entry history-button" type="button" key={item.id} onClick={() => selectFrozen(item)} disabled={lifecycleBusy}><strong>{humanizeCode(item.status)} · Draft v{item.draft_version}</strong><span>{item.frozen_by} · {formatDate(item.frozen_at)}{item.signed_by ? ` · signed by ${item.signed_by}` : ""}</span></button>)}</div>
       </div>
@@ -667,12 +733,12 @@ function ReportEditor({ caseId, role, subject = "", selectedCase, onDraftStateCh
         {selectedFrozen ? <div className="flow"><p className="status warning">Immutable {humanizeCode(selectedFrozen.status)} review · Draft v{selectedFrozen.draft_version}</p><dl className="state-facts"><dt>Opinion signed by</dt><dd>{selectedFrozen.signed_by || "Unavailable"}</dd><dt>Frozen by</dt><dd>{selectedFrozen.frozen_by}</dd><dt>Approval state</dt><dd>{selectedFrozen.approved_by ? `Filed by ${selectedFrozen.approved_by} · ${formatDate(selectedFrozen.approved_at || "")}` : "Pending approval · the frozen bytes never name an approver"}</dd>{receipt ? <><dt>Filing receipt</dt><dd className="mono" data-filing-receipt>{receipt.receipt_id} · {receipt.receipt_digest}</dd></> : null}</dl><button className="button small" type="button" onClick={() => selectFrozen(null)} disabled={lifecycleBusy}>Return to shared Draft</button>{selectedFrozen.status === "FROZEN" && canApprove && !canFileSelected ? <p className="status idle" data-separation-of-duties>Separation of duties · the opinion signer and the freeze actor cannot file this output</p> : null}{selectedFrozen.status === "FROZEN" && canFileSelected ? <div className="approval-panel"><button className="button primary" type="button" onClick={() => void fileFrozen()} disabled={lifecycleBusy}>{pending === "file" ? "Filing…" : "File exact Frozen version"}</button><div className="field"><label htmlFor="change-request-comment">Required comment to request changes</label><textarea id="change-request-comment" value={changeComment} maxLength={2000} onChange={(event) => setChangeComment(event.target.value)} disabled={lifecycleBusy} /></div><button className="button" type="button" onClick={() => void requestChanges()} disabled={!changeComment.trim() || lifecycleBusy}>{pending === "changes" ? "Creating new Draft…" : "Request changes"}</button></div> : null}{["FILED", "SUPERSEDED"].includes(selectedFrozen.status) ? <div className="proof-actions">{(["md", "pdf", "xlsx"] as const).map((format) => <a className="button small" key={format} download href={`${apiBase}/api/cases/${caseId}/deliverables/by-id/${selectedFrozen.id}/export/${format}`}>{format.toUpperCase()}</a>)}</div> : <p className="muted">Downloads unlock after filing.</p>}</div> : <>
           {recovery ? <section className="report-recovery" aria-labelledby="report-recovery-title"><div><span className="flag">RECOVERY COPY</span><h3 id="report-recovery-title">Unsaved browser copy from {formatDate(new Date(recovery.savedAt).toISOString())}</h3><p>Not shared authority · based on server v{recovery.expectedVersion}. Restore explicitly or retry the server save.</p></div><div className="row-actions"><button className="button small" type="button" onClick={() => applyRecovery(false)} disabled={!canWrite || authoringLocked}>Restore copy</button><button className="button small primary" type="button" onClick={() => applyRecovery(true)} disabled={!canWrite || authoringLocked}>Retry save now</button><button className="button small" type="button" onClick={downloadRecovery}>Download JSON</button><button className="button small" type="button" onClick={discardRecovery} disabled={authoringLocked}>Discard copy</button></div></section> : null}
           {recoveryError ? <StateNote tone="warning" live="status">{recoveryError}</StateNote> : null}
-          {selectedNarrative ? <div className="flow"><div className="field"><label htmlFor={`narrative-${selectedNarrative.block_id}`}>{workspace.template.blocks.find((item) => item.block_id === selectedNarrative.block_id)?.title || "Narrative"}</label><textarea ref={editorFocus} id={`narrative-${selectedNarrative.block_id}`} value={selectedNarrative.text} maxLength={20000} rows={8} onChange={(event) => updateNarrative(selectedNarrative.block_id, { text: event.target.value })} disabled={!canWrite || authoringLocked} /><span className="field-meta">{selectedNarrative.text.length.toLocaleString()} / 20,000</span></div><fieldset><legend>Claim authority</legend><label><input type="radio" name={`mode-${selectedNarrative.block_id}`} checked={selectedNarrative.content_mode === "EVIDENCE"} onChange={() => updateNarrative(selectedNarrative.block_id, { content_mode: "EVIDENCE" })} disabled={!canWrite || authoringLocked} />Evidence-bound</label><label><input type="radio" name={`mode-${selectedNarrative.block_id}`} checked={selectedNarrative.content_mode === "ANALYST_JUDGMENT"} onChange={() => updateNarrative(selectedNarrative.block_id, { content_mode: "ANALYST_JUDGMENT" })} disabled={!canWrite || authoringLocked} />Analyst judgment</label></fieldset>{selectedNarrative.content_mode === "EVIDENCE" && !selectedNarrative.citations.length ? <StateNote tone="critical" live="alert">Evidence-bound narrative requires at least one citation.</StateNote> : null}</div> : selectedBlock ? <div className="generated-block-card"><span className="meta-label">{humanizeCode(selectedBlock.kind)}</span><h3>Read-only structured block</h3><p>Calculated values and Scenario outputs are accepted only from the server response.</p>{!workspace.template.blocks.some((item) => item.block_id === selectedBlock.block_id) ? <button className="button small" type="button" onClick={() => removeOptional(selectedBlock.block_id)} disabled={!canWrite || authoringLocked}>Omit block</button> : null}</div> : null}
+          {selectedNarrative ? <div className="flow"><div className="field"><label htmlFor={`narrative-${selectedNarrative.block_id}`}>{workspace.template.blocks.find((item) => item.block_id === selectedNarrative.block_id)?.title || "Analyst commentary"}</label><textarea ref={editorFocus} id={`narrative-${selectedNarrative.block_id}`} value={selectedNarrative.text} maxLength={20000} rows={8} onChange={(event) => updateNarrative(selectedNarrative.block_id, { text: event.target.value })} disabled={!canWrite || authoringLocked} /><span className="field-meta">{selectedNarrative.text.length.toLocaleString()} / 20,000</span></div><fieldset><legend>Claim authority</legend><label><input type="radio" name={`mode-${selectedNarrative.block_id}`} checked={selectedNarrative.content_mode === "EVIDENCE"} onChange={() => updateNarrative(selectedNarrative.block_id, { content_mode: "EVIDENCE" })} disabled={!canWrite || authoringLocked} />Evidence-bound</label><label><input type="radio" name={`mode-${selectedNarrative.block_id}`} checked={selectedNarrative.content_mode === "ANALYST_JUDGMENT"} onChange={() => updateNarrative(selectedNarrative.block_id, { content_mode: "ANALYST_JUDGMENT" })} disabled={!canWrite || authoringLocked} />Analyst judgment</label></fieldset>{selectedNarrative.content_mode === "EVIDENCE" && !selectedNarrative.citations.length ? <StateNote tone="critical" live="alert">Evidence-bound narrative requires at least one citation.</StateNote> : null}{!workspace.template.blocks.some((item) => item.block_id === selectedNarrative.block_id) ? <button type="button" className="button small" onClick={() => removeOptional(selectedNarrative.block_id)} disabled={!canWrite || authoringLocked}>Omit commentary</button> : null}</div> : selectedBlock?.kind === "LIMITATIONS" ? <div className="field"><label htmlFor="report-limitations-overlay">Analyst limitations</label><textarea id="report-limitations-overlay" value={selectedBlock.text} maxLength={10000} disabled={!canWrite || authoringLocked} onChange={(event) => markChanged(blocks.map((block) => block.block_id === selectedBlock.block_id ? { ...selectedBlock, text: event.target.value } : block))} /><button type="button" className="button small" onClick={() => removeOptional(selectedBlock.block_id)} disabled={!canWrite || authoringLocked}>Omit limitations</button></div> : selectedBlock ? <div className="generated-block-card"><span className="meta-label">{humanizeCode(selectedBlock.kind)}</span><h3>Read-only structured block</h3><p>Calculated values and Scenario outputs are accepted only from the server response.</p>{!workspace.template.blocks.some((item) => item.block_id === selectedBlock.block_id) ? <button className="button small" type="button" onClick={() => removeOptional(selectedBlock.block_id)} disabled={!canWrite || authoringLocked}>Omit block</button> : null}</div> : null}
           <div className="report-authority-strip"><div><span className="meta-label">Model authority</span><strong>{modelSelection?.kind === "ANALYST_REVISION" ? `Active Revision ${workspace.model_eligibility.active_revision?.revision_number || ""}` : modelSelection?.kind === "APPLICATION_BUILD" ? "Application Model Build · acknowledged fallback" : "No model selected"}</strong></div>{modelStale ? <span className="status critical">Stale model identity</span> : null}</div>
           <fieldset className="report-model-picker"><legend>Deliverable model</legend>{workspace.model_eligibility.active_revision ? <label><input type="radio" name="report-model" checked={modelSelection?.kind === "ANALYST_REVISION"} onChange={() => chooseModel("ACTIVE")} disabled={!canWrite || authoringLocked} />Active Analyst Model <code>{workspace.model_eligibility.active_revision.revision_id}</code></label> : null}{!workspace.model_eligibility.active_revision && workspace.model_eligibility.application_build ? <label><input type="checkbox" checked={modelSelection?.kind === "APPLICATION_BUILD"} onChange={(event) => chooseModel(event.target.checked ? "FALLBACK" : "NONE")} disabled={!canWrite || authoringLocked} />I acknowledge fallback to the Application Model Build <code>{workspace.model_eligibility.application_build.build_id}</code></label> : null}{workspace.template.model_requirement === "OPTIONAL" ? <button className="button small" type="button" onClick={() => chooseModel("NONE")} disabled={!canWrite || authoringLocked || modelSelection === null}>Omit model</button> : null}</fieldset>
           <EvidencePicker key={caseId} caseId={caseId} canCite={canWrite && !authoringLocked && Boolean(selectedBlock && "citations" in selectedBlock)} isCited={(sourceId, blockId) => Boolean(selectedBlock && "citations" in selectedBlock && selectedBlock.citations.some((citation) => citation.source_id === sourceId && citation.block_ids.includes(blockId)))} onCite={cite} onRemove={removeCitation} />
           {modelSelection && registry ? <details className="scenario-insert"><summary>Scenario insertion <span>Temporary server calculation</span></summary><div className="scenario-fields"><div className="field"><label htmlFor="scenario-assumption">Assumption</label><select id="scenario-assumption" value={scenarioForm.assumptionId} onChange={(event) => { const assumptionId = event.target.value; const available = registry.defaults.find((row) => row.assumption_id === assumptionId && row.case === scenarioForm.case && row.status === "READY") || registry.defaults.find((row) => row.assumption_id === assumptionId && row.status === "READY"); setScenarioForm((current) => ({ ...current, assumptionId, case: available?.case || current.case, periodId: available?.period_id || "" })); }} disabled={authoringLocked}>{registry.definitions.map((definition) => <option key={definition.assumption_id} value={definition.assumption_id}>{definition.label || definition.assumption_id}</option>)}</select></div><div className="field"><label htmlFor="scenario-case">Case</label><select id="scenario-case" value={scenarioForm.case} onChange={(event) => { const caseName = event.target.value as "BASE" | "DOWNSIDE"; const available = registry.defaults.find((row) => row.assumption_id === scenarioForm.assumptionId && row.case === caseName && row.status === "READY"); setScenarioForm((current) => ({ ...current, case: caseName, periodId: available?.period_id || "" })); }} disabled={authoringLocked}><option value="BASE">Base</option><option value="DOWNSIDE">Downside</option></select></div><div className="field"><label htmlFor="scenario-period">Period</label><select id="scenario-period" value={scenarioForm.periodId} onChange={(event) => setScenarioForm((current) => ({ ...current, periodId: event.target.value }))} disabled={authoringLocked}>{scenarioPeriods.map((periodId) => <option key={periodId} value={periodId}>{periodId}</option>)}</select></div><div className="field"><label htmlFor="scenario-value">Shock value</label><input id="scenario-value" inputMode="decimal" value={scenarioForm.value} onChange={(event) => setScenarioForm((current) => ({ ...current, value: event.target.value }))} disabled={authoringLocked} /></div></div><button className="button small" type="button" onClick={() => void insertScenario()} disabled={!canWrite || authoringLocked || !scenarioForm.periodId || !scenarioForm.value}>{pending === "scenario" ? "Calculating…" : "Calculate and insert exact exhibit"}</button></details> : null}
-          {conflict ? <StateBlock shape="action" tone="warning" live="alert" title="Shared Draft conflict" body={<>{conflict.author} saved v{conflict.version} at {formatDate(conflict.created_at)}. Your local content remains unchanged.</>}><button className="button small" type="button" onClick={() => { savedVersion.current = conflict.version; setPersistedVersion(conflict.version); setWorkspace((current) => current ? { ...current, current: conflict, history: [...current.history.filter((item) => item.id !== conflict.id), conflict] } : current); setSaveState({ kind: "DIRTY" }); markChanged(blocks); }} disabled={authoringLocked}>Retry over current v{conflict.version}</button><button className="button small" type="button" onClick={() => { setBlocks(conflict.content.blocks); setModelSelection(conflict.content.model_selection); savedVersion.current = conflict.version; unsavedDraft.current = false; setDraftIsUnsaved(false); setPersistedVersion(conflict.version); setConflict(null); setSaveState({ kind: "SAVED", version: conflict.version }); retainRecovery(conflict.content.blocks, conflict.content.model_selection, opinionFormRef.current, false); }} disabled={authoringLocked}>Use shared v{conflict.version}</button></StateBlock> : null}
+          {conflict ? <StateBlock shape="action" tone="warning" live="alert" title="Shared Draft conflict" body={<>{conflict.author} saved v{conflict.version} at {formatDate(conflict.created_at)}. Your local content remains unchanged.{conflict.template_id !== workspace.template.template_id ? " The shared template changed. Use the shared revision before editing; your recovery copy remains available." : ""}</>}><button className="button small" type="button" onClick={() => { savedVersion.current = conflict.version; setPersistedVersion(conflict.version); setWorkspace((current) => current ? { ...current, current: conflict, history: [...current.history.filter((item) => item.id !== conflict.id), conflict] } : current); setSaveState({ kind: "DIRTY" }); markChanged(blocks); }} disabled={authoringLocked || conflict.template_id !== workspace.template.template_id}>Retry over current v{conflict.version}</button><button className="button small" type="button" onClick={() => void acceptSharedDraft()} disabled={authoringLocked}>Use shared v{conflict.version}</button></StateBlock> : null}
           <section className="approval-panel" data-freeze-approval aria-labelledby="freeze-approval-title">
             <div><span className="meta-label">What will bind</span><h3 id="freeze-approval-title">Exact saved Draft revision as an immutable Deliverable</h3></div>
             <dl className="state-facts">
@@ -699,6 +765,6 @@ function ReportEditor({ caseId, role, subject = "", selectedCase, onDraftStateCh
       </div>
     </section>
 
-    <section className="report-proof-stage" aria-label="Deliverable paper preview" tabIndex={0}><DeliverableDocument title={selectedFrozen?.payload.template.title || workspace.template.title} issuer={selectedCase ? `${selectedCase.issuer} — ${selectedCase.name}` : workspace.template.title} pathwayLabel={pathwayLabel} status={selectedFrozen?.status || (draftIsUnsaved ? "UNSAVED" : "DRAFT")} version={selectedFrozen?.draft_version || workspace.current?.version} digest={selectedFrozen?.digest || (draftIsUnsaved ? undefined : workspace.current?.digest)} sections={previewSections} publication={selectedFrozen?.payload.publication ?? null} /></section>
+    <section className="report-proof-stage" aria-label="Deliverable paper preview" tabIndex={0}><DeliverableDocument title={selectedFrozen?.payload.template.title || workspace.template.title} issuer={selectedCase ? `${selectedCase.issuer} — ${selectedCase.name}` : workspace.template.title} pathwayLabel={pathwayLabel} status={selectedFrozen?.status || (draftIsUnsaved ? "UNSAVED" : "DRAFT")} version={selectedFrozen?.draft_version || workspace.current?.version} digest={selectedFrozen?.digest || (draftIsUnsaved ? undefined : workspace.current?.digest)} sections={previewSections} caseId={caseId} evidenceRefs={reportEvidenceRefs(selectedFrozen ? selectedFrozen.payload.evidence : workspace.current?.content.citation_union ?? workspace.preview?.citation_union ?? [])} onAddCommentary={!selectedFrozen && workspace.template.sections && canWrite && !authoringLocked ? () => { const policy = workspace.template.optional_blocks.find((item) => item.kind === "NARRATIVE"); if (policy) addOptional(policy); } : undefined} publication={selectedFrozen?.payload.publication ?? null} /></section>
   </div>;
 }

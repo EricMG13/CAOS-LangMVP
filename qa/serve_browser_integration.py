@@ -25,6 +25,7 @@ def main() -> None:
     parser.add_argument("--port", type=int, default=19181)
     parser.add_argument("--data-dir", type=Path, required=True)
     parser.add_argument("--scanner-fixture", action="store_true")
+    parser.add_argument("--report-fixtures", action="store_true", help="Use disposable canonical report answer keys; not analytical qualification")
     parser.add_argument("--clamav-host", default="")
     parser.add_argument("--clamav-port", type=int, default=3310)
     args = parser.parse_args()
@@ -51,7 +52,7 @@ def main() -> None:
     settings = Settings(environment="development", storage_dir=args.data_dir / "vault",
                         agent_execution_enabled=True, provider_binding="host_control")
     store = DomainStore.from_url(f"sqlite:///{args.data_dir / 'caos.db'}")
-    provider = BrowserFixtureProvider()
+    provider = BrowserFixtureProvider(report_fixtures=args.report_fixtures)
     engine = Engine.create(settings=settings, store=store,
                            checkpoint_path=args.data_dir / "checkpoints.db", provider=provider)
     engine.enable_auto_continue()

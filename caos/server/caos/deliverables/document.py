@@ -10,6 +10,9 @@ from typing import Any
 from pydantic import TypeAdapter
 
 from ..contracts import CanonicalDocumentSection
+from ..artifacts.presentation import CURRENT_MAPPING_VERSION, PresentationError, _unit, project_artifact, project_model_outputs
+from ..methodology.canonical import _scanned_lines, _sections, strip_provider_frontmatter
+from .layouts import CHARTS_V2, LAYOUTS_V2, OPTIONAL_SECTIONS_V2, TEMPLATE_V2
 
 DOCUMENT_SCHEMA_VERSION = "caos.deliverable.document.v1"
 _DOCUMENT_ADAPTER = TypeAdapter(list[CanonicalDocumentSection])
@@ -438,7 +441,9 @@ def _appendix_sections(
             "editable": False,
             "origin": origin,
         }
-        if block["kind"] == "GENERATED_METRIC":
+        if block["kind"] == "NARRATIVE":
+            sections.append(_analyst_text(block["block_id"], f"Analyst commentary · {suffix}", "Commentary", block))
+        elif block["kind"] == "GENERATED_METRIC":
             sections.append({
                 **common,
                 "kind": "table",
@@ -512,6 +517,165 @@ def _appendix_sections(
     return sections
 
 
+def citation_union(blocks, sections, artifacts):
+    """One union, retaining exact source/block pairs from validated envelopes.
+
+    Bare origin block IDs are never paired across sources. A chart may narrow
+    the artifact refs only by its declared sources and the origin block IDs.
+    """
+    citations = [citation for block in blocks for citation in block.get("citations", [])]
+    by_id = {artifact.get("id"): artifact for artifact in artifacts.values()}
+    for section in sections:
+        origin = section["origin"]
+        artifact = by_id.get(origin["authority_id"])
+        if origin["kind"] != "ARTIFACT" or artifact is None:
+            continue
+        chart_sources = None
+        if section["kind"] == "chart":
+            chart_sources = {
+                source
+                for point in section["recipe"].get("points", [])
+                for source in point["source_ids"]
+            }
+        for ref in (artifact.get("payload") or {}).get("evidence_refs", []):
+            if ref["block_id"] not in origin["block_ids"]:
+                continue
+            if chart_sources is not None and ref["source_id"] not in chart_sources:
+                continue
+            citations.append({
+                "source_id": ref["source_id"],
+                "block_ids": [ref["block_id"]],
+                "claim": "Accepted module evidence",
+            })
+    grouped = {}
+    for citation in citations:
+        key = citation["source_id"], citation["claim"]
+        grouped.setdefault(key, set()).update(citation["block_ids"])
+    return [
+        {"source_id": source, "block_ids": sorted(ids), "claim": claim}
+        for (source, claim), ids in sorted(grouped.items())
+    ]
+
+
+def document_blockers(sections):
+    return [{"code": "REPORT_INPUT_UNAVAILABLE", "section_id": s["section_id"], "detail": s["body"]}
+            for s in sections if s["origin"]["kind"] == "SYSTEM" and s["section_id"].endswith(".unavailable")]
+
+
+def _report_narrative(artifact, selector):
+    heading, _, subsection = selector[1:].partition("/")
+    body = _sections(strip_provider_frontmatter(artifact.get("markdown") or "")).get(heading, "")
+    if artifact["module_id"] == "CP-DR" and heading == "Analysis":
+        # Exact module-owned subsection, never a second synthesis or a duplicate
+        # Findings paragraph relabelled as Implications.
+        headings = []
+        offset = 0
+        for raw_line, line, visible in _scanned_lines(body):
+            if visible and (match := re.fullmatch(r" {0,3}### +(.+?)(?: +#+)? *", line)):
+                headings.append((match[1].strip(), offset, offset + len(raw_line)))
+            offset += len(raw_line)
+        implications = [(start, content, headings[index + 1][1] if index + 1 < len(headings) else len(body))
+                        for index, (title, start, content) in enumerate(headings) if title.casefold() in {"implications", "implications and scenarios"}]
+        if len(implications) != 1:
+            body = "" if subsection else body
+        else:
+            start, content, end = implications[0]
+            body = body[content:end] if subsection else body[:start] + body[end:]
+        # Generated module prose keeps heading words, not literal Markdown
+        # decoration. Analyst plain-text overlays never pass through here.
+        return "".join(re.sub(r"^ {0,3}#{1,6} +(.+?)(?: +#+)?[ \t]*(\r?\n|$)", r"\1\2", raw) if visible else raw
+                       for raw, _, visible in _scanned_lines(body)).strip()
+    if artifact["module_id"] != "CP-DR":
+        body = "\n".join(line for line in body.splitlines() if not line.lstrip().startswith(("|", "<!-- table-id:", "#"))).strip()
+    return body
+
+
+def _module_document(pathway, blocks, artifacts, model, mapping_version, included_optional_section_ids):
+    presentations = {module: project_artifact(artifact, mapping_version=mapping_version).model_dump()
+                   for module, artifact in artifacts.items() if not module.startswith("__")}
+    projections = {module: p["sections"] for module, p in presentations.items()}
+    period_tables = [s for s in projections.get("CP-1", []) if s["kind"] == "table" and s["title"] in {"cp1.model_period_register", "T4.14"}]
+    try:
+        model_unit = _unit([dict(zip(s["columns"], row, strict=True)) for s in period_tables for row in s["rows"]])
+    except PresentationError:
+        model_unit = ""  # Shared projector emits UNIT_MISMATCH beside the exact model table.
+    result = []
+    used = set()
+    layout = list(LAYOUTS_V2[pathway])
+    for optional in OPTIONAL_SECTIONS_V2:
+        if optional["section_id"] in included_optional_section_ids:
+            layout.append((optional["section_id"], optional["title"], [(optional["module_id"], optional["selector"])]))
+    for slot_id, title, bindings in layout:
+        for index, (module, selector) in enumerate(bindings):
+            section_id = f"report.{slot_id}.{index}"
+            artifact = artifacts.get(module)
+            selected = []
+            if module == "MODEL" and model:
+                authority = _model_authority(model)
+                rows = _model_rows(model.get("outputs") or {})
+                for offset in range(0, len(rows), 500):
+                    selected.append({"kind": "table", "section_id": f"{section_id}.{offset // 500}", "title": "Selected model outputs", "page": title,
+                                     "editable": False, "origin": _origin("MODEL", authority), "columns": ["Case / Period / Metric", "Value"],
+                                     "rows": rows[offset:offset + 500], "note": "Locked to the selected model authority."})
+                selection = {"kind": model["kind"], "build_id": model["build_id"]}
+                selection.update({"revision_id": model["revision_id"]} if model["kind"] == "ANALYST_REVISION" else {"fallback_acknowledged": True})
+                model_presentation = project_model_outputs(selection=selection, outputs=model.get("outputs") or {}, unit=model_unit, mapping_version=mapping_version).model_dump()
+                selected.extend(model_presentation["sections"])
+                for unavailable in model_presentation["unavailable"]:
+                    selected.append({"kind": "text", "section_id": unavailable["view_id"] + ".warning", "title": "Chart unavailable · exact model table retained", "page": title,
+                                     "editable": False, "origin": _origin("SYSTEM", authority), "body": f"{unavailable['view_id']}: {unavailable['code']}. No unit or missing value has been inferred."})
+                effects = model.get("pathway_effects") or []
+                for effect_index, effect in enumerate(effects):
+                    for calc_index, calculation in enumerate(effect.get("calculations") or []):
+                        rows = _model_rows(calculation.get("canonical_output") or {})
+                        for offset in range(0, len(rows), 500):
+                            selected.append({"kind": "table", "section_id": f"{section_id}.effect.{effect_index}.{calc_index}.{offset // 500}",
+                                             "title": f"Accepted pathway effect · {calculation['calculator_id']}", "page": title, "editable": False,
+                                             "origin": _origin("MODEL", authority), "columns": ["Field", "Value"], "rows": rows[offset:offset + 500], "note": None})
+                if pathway in {"EARNINGS_UPDATE", "COVENANT_REFINANCING"} and not effects:
+                    selected.append({"kind": "text", "section_id": f"{section_id}.effect.unavailable", "title": "Unavailable · accepted pathway model effects",
+                                     "page": title, "editable": False, "origin": _origin("SYSTEM", authority),
+                                     "body": "Accepted incremental effects are unavailable: the current resolver supplies the prior Full Credit base model."})
+            elif artifact and selector.startswith("@") and projections.get(module):
+                body = _report_narrative(artifact, selector)
+                for offset in range(0, len(body), 20_000):
+                    selected.append({"kind": "text", "section_id": f"{section_id}.{offset // 20_000}", "title": f"{module} · {selector[1:]}", "page": title,
+                                     "editable": False, "origin": projections[module][0]["origin"],
+                                     "body": body[offset:offset + 20_000]})
+            else:
+                for alias in selector.split("|"):
+                    selected = [s for s in projections.get(module, []) if (s["kind"] == "table" and s["title"] == alias) or s["section_id"] == f"{module}.{alias}"]
+                    if selected:
+                        selected.extend(s for s in projections.get(module, []) if s["kind"] == "chart" and s["section_id"] == f"{module}.{alias}.v1")
+                        break
+            if not selected:
+                selected = [{"kind": "text", "section_id": f"{section_id}.unavailable", "title": f"Unavailable · {title}", "page": title,
+                             "editable": False, "origin": _origin("SYSTEM", _artifact_authority(artifacts)),
+                             "body": f"Required input unavailable: {module} / {selector}. Inspect accepted analysis and its source coverage."}]
+            for section in selected:
+                if section["section_id"] not in used:
+                    result.append({**section, "page": title})
+                    used.add(section["section_id"])
+        for module_sections in projections.values():
+            for section in module_sections:
+                if section["kind"] == "chart" and any(section["section_id"] == prefix or section["section_id"].startswith(prefix + ".") for prefix in CHARTS_V2.get(slot_id, ())):
+                    if section["section_id"] not in used:
+                        result.append({**section, "page": title})
+                        used.add(section["section_id"])
+        for presentation in presentations.values():
+            for unavailable in presentation["unavailable"]:
+                if any(unavailable["view_id"] == prefix or unavailable["view_id"].startswith(prefix + ".") for prefix in CHARTS_V2.get(slot_id, ())):
+                    result.append({"kind": "text", "section_id": unavailable["view_id"] + ".warning", "title": "Chart unavailable · source table retained", "page": title,
+                                   "editable": False, "origin": _origin("SYSTEM", presentation["artifact_id"]), "body": f"{unavailable['view_id']}: {unavailable['code']}. Inspect the exact module table for available values."})
+    for optional in OPTIONAL_SECTIONS_V2:
+        if optional["section_id"] not in included_optional_section_ids:
+            result.append({"kind": "text", "section_id": f"report.{optional['section_id']}.omitted", "title": f"Omitted · {optional['title']}", "page": "Limitations",
+                           "editable": False, "origin": _origin("SYSTEM", _artifact_authority(artifacts)), "body": optional["omission_reason"]})
+    result.extend(_appendix_sections(blocks[1:], model))
+    result.append(_evidence_section([{"citations": citation_union(blocks, result, artifacts)}], _artifact_authority(artifacts)))
+    return result
+
+
 def compose_document(
     *,
     pathway: str,
@@ -519,6 +683,8 @@ def compose_document(
     blocks: list[dict[str, Any]],
     artifacts: dict[str, dict[str, Any]],
     model: dict[str, Any] | None,
+    mapping_version: str | None = None,
+    included_optional_section_ids: list[str] | None = None,
 ) -> list[dict[str, Any]]:
     """Return the one validated, JSON-ready document used by every consumer."""
     composers = {
@@ -529,10 +695,13 @@ def compose_document(
         "DISTRESSED_RESTRUCTURING": compose_distressed_restructuring,
         "DEEP_RESEARCH": compose_deep_research,
     }
-    raw = composers[pathway](template, blocks, artifacts, model)
-    evidence = raw.pop()
-    raw.extend(_appendix_sections(blocks[len(template["blocks"]):], model))
-    raw.append(evidence)
+    if template["template_version"] == TEMPLATE_V2:
+        raw = _module_document(pathway, blocks, artifacts, model, mapping_version or CURRENT_MAPPING_VERSION, included_optional_section_ids or [])
+    else:
+        raw = composers[pathway](template, blocks, artifacts, model)
+        evidence = raw.pop()
+        raw.extend(_appendix_sections(blocks[len(template["blocks"]):], model))
+        raw.append(evidence)
     pending = list(raw)
     section_ids: list[str] = []
     while pending:

@@ -1,7 +1,15 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { canFileFrozen, freezeChecklist, freezeJobIsPending } from "./reportStudioState.ts";
+import { canFileFrozen, freezeChecklist, freezeJobIsPending, reportEvidenceRefs } from "./reportStudioState.ts";
+
+test("report source links merge claims without inventing cross-source block pairs", () => {
+  assert.deepEqual(reportEvidenceRefs([
+    { source_id: "source-a", block_ids: ["b1"] },
+    { source_id: "source-a", block_ids: ["b1", "b2"] },
+    { source_id: "source-b", block_ids: ["b3"] },
+  ]), [{ sourceId: "source-a", blockIds: ["b1", "b2"] }, { sourceId: "source-b", blockIds: ["b3"] }]);
+});
 
 const ready = {
   canWrite: true,
