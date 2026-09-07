@@ -18,6 +18,10 @@ from ..responses import ModelPresentationResponse, ModulePresentationResponse
 from .presentation_bindings import BINDINGS_V1
 
 CURRENT_MAPPING_VERSION = "caos.module-presentation.v1"
+# Host presentation guards, matching the pinned model-input vocabulary. The
+# artifact handoff does not assert model-build readiness; do not import its parser.
+_PERIOD_TYPES = {"QUARTER", "YTD", "FY", "LTM", "PERIOD_END"}
+_NULL_TEXT = {"", "null", "n/a", "not available", "not calculable", "-"}
 _MARKER = re.compile(r"^\s*<!--\s*table-id:\s*([a-zA-Z0-9_.-]+)\s*-->\s*$")
 _TABLE_HEADING = re.compile(r"^#{1,6}\s+(T(?:L)?\d+[A-Z]?(?:\.[0-9A-Z]+)?|P\d+)(?=\s|[:.—-]|$)")
 _NAMED_TABLES = {name for _, names, _, _ in BINDINGS_V1 for name in names}
@@ -82,7 +86,7 @@ def read_tables(markdown: str) -> tuple[dict[str, tuple[list[str], list[list[str
         pending = None
         current = next(records, None)
         separator = _table_cells(current[1][1]) if current is not None else None
-        if (separator is None or len(separator) != len(columns)
+        if (not columns or not separator or len(separator) != len(columns)
                 or any(re.fullmatch(r":?-+:?", cell) is None for cell in separator)
                 or not current[1][2] or not _top_level(current[1][1])):
             failures.setdefault(table_id, "TABLE_MALFORMED")
@@ -181,16 +185,24 @@ def _periods(tables):
     ))
     result = {}
     for row in rows:
-        if row["period_id"] in result:
+        period_id = row["period_id"]
+        if period_id in result:
             raise PresentationError("DUPLICATE_ID")
+        if row["period_type"] not in _PERIOD_TYPES or any(
+            row[field].strip().casefold() in _NULL_TEXT for field in ("accounting_basis", "entity_perimeter")
+        ):
+            raise PresentationError("PERIOD_BASIS_MISMATCH")
         try:
             end = date.fromisoformat(row["end_date"])
-            start = None if row["start_date"].casefold() in {"", "-", "null", "n/a"} else date.fromisoformat(row["start_date"])
+            start = None if row["start_date"].strip().casefold() in _NULL_TEXT else date.fromisoformat(row["start_date"])
         except ValueError as exc:
             raise PresentationError("PERIOD_BASIS_MISMATCH") from exc
         if start is not None and start > end:
             raise PresentationError("PERIOD_BASIS_MISMATCH")
-        result[row["period_id"]] = row
+        row["end_date"] = end.isoformat()
+        if start is not None:
+            row["start_date"] = start.isoformat()
+        result[period_id] = row
     return result
 
 
@@ -205,7 +217,7 @@ def _compatible_periods(rows, periods):
         raise PresentationError("PERIOD_BASIS_MISMATCH")
     ordered = sorted(selected, key=lambda p: (p["end_date"], p["period_id"]))
     if selected[0]["period_type"] != "PERIOD_END" and (
-        any(p["start_date"].casefold() in {"", "-", "null", "n/a"} for p in selected)
+        any(p["start_date"].strip().casefold() in _NULL_TEXT for p in selected)
         or any(a["end_date"] >= b["start_date"] for a, b in zip(ordered, ordered[1:]))
     ):
         raise PresentationError("PERIOD_BASIS_MISMATCH")
@@ -222,24 +234,25 @@ def _cp1_chart(tables, metric, evidence, origin):
             raise PresentationError("PERIOD_BASIS_MISMATCH")
         if not rows:
             raise PresentationError("INSUFFICIENT_POINTS")
-        latest_row = max(rows, key=lambda r: periods[r["period_id"]]["end_date"])
+        latest_row = max(rows, key=lambda row: periods[row["period_id"]]["end_date"])
         selected = periods[latest_row["period_id"]]
-        if any(r["period_id"] != selected["period_id"] and periods[r["period_id"]]["end_date"] == selected["end_date"] for r in rows):
+        selected_id, selected_end = selected["period_id"], selected["end_date"]
+        if any(row["period_id"] != selected_id and periods[row["period_id"]]["end_date"] == selected_end for row in rows):
             raise PresentationError("PERIOD_BASIS_MISMATCH")
-        rows = [r for r in rows if r["period_id"] == selected["period_id"]]
+        rows = [row for row in rows if row["period_id"] == selected_id]
         unit = _unit([selected])
-        if any(r["currency"] != selected["currency"] for r in rows):
+        if any(row["currency"] != selected["currency"] for row in rows):
             raise PresentationError("UNIT_MISMATCH")
-        if len({r["facility_id"] for r in rows}) != len(rows):
+        if len({row["facility_id"] for row in rows}) != len(rows):
             raise PresentationError("DUPLICATE_ID")
         for row in rows:
             try:
-                date.fromisoformat(row["maturity_date"])
+                row["maturity_date"] = date.fromisoformat(row["maturity_date"]).isoformat()
             except ValueError as exc:
                 raise PresentationError("PERIOD_BASIS_MISMATCH") from exc
-        rows.sort(key=lambda r: (r["maturity_date"], r["facility_id"]))
-        points = [_point(r, r["maturity_date"], r["carrying_value"], r["facility_id"], evidence) for r in rows]
-        return _chart("cp1.debt_maturity.v1", f"Debt maturities — carrying value, {selected['period_id']}",
+        rows.sort(key=lambda row: (row["maturity_date"], row["facility_id"]))
+        points = [_point(row, row["maturity_date"], row["carrying_value"], row["facility_id"], evidence) for row in rows]
+        return _chart("cp1.debt_maturity.v1", f"Debt maturities — carrying value, {selected_id}",
                       "Capital structure", origin, "stacked_bar", unit, points)
     if metric == "segments":
         rows = _rows(tables, "cp1.segment_revenue_schedule", ("period_id", "segment_id", "revenue", "status", "source_id"))
@@ -257,7 +270,7 @@ def _cp1_chart(tables, metric, evidence, origin):
         value_key, series_key, status_key = "value", "metric_id", "calculation_status"
     if not rows:
         raise PresentationError("INSUFFICIENT_POINTS")
-    if any(r[status_key] not in {"Verified", "Calculated"} or r.get("conflict_refs", "-") != "-" for r in rows):
+    if any(row[status_key] not in {"Verified", "Calculated"} or row.get("conflict_refs", "-") != "-" for row in rows):
         raise PresentationError("VALUE_UNAVAILABLE")
     if metric == "adjustments":
         definitions = {}
@@ -268,12 +281,24 @@ def _cp1_chart(tables, metric, evidence, origin):
     identities = [(row["period_id"], row[series_key]) for row in rows]
     if len(set(identities)) != len(identities):
         raise PresentationError("DUPLICATE_ID")
-    if metric not in {"adjustments", "segments"} and {r["period_id"] for r in rows} != set(periods):
+    if metric not in {"adjustments", "segments"} and {row["period_id"] for row in rows} != set(periods):
         raise PresentationError("VALUE_UNAVAILABLE")
-    rows.sort(key=lambda r: (periods[r["period_id"]]["end_date"], r[series_key]))
-    points = [_point(r, r["period_id"], r[value_key], r[series_key] + (
-        f" ({r['realization_status']})" if metric == "adjustments" else ""), evidence)
-        for r in rows]
+    if metric == "segments":
+        # Each series may start or end inside history, but cannot have interior gaps.
+        ordered_periods = sorted(periods, key=lambda period_id: (periods[period_id]["end_date"], period_id))
+        positions = {period_id: index for index, period_id in enumerate(ordered_periods)}
+        series_positions = {}
+        for row in rows:
+            series_positions.setdefault(row[series_key], set()).add(positions[row["period_id"]])
+        if any(max(indices) - min(indices) + 1 != len(indices) for indices in series_positions.values()):
+            raise PresentationError("VALUE_UNAVAILABLE")
+    rows.sort(key=lambda row: (periods[row["period_id"]]["end_date"], row[series_key]))
+    points = []
+    for row in rows:
+        series = row[series_key]
+        if metric == "adjustments":
+            series += f" ({row['realization_status']})"
+        points.append(_point(row, row["period_id"], row[value_key], series, evidence))
     return _chart(f"cp1.{metric}.v1", metric.replace("_", " ").title(), "Financial performance", origin,
                   "bar" if metric == "adjustments" else "line", unit, points)
 

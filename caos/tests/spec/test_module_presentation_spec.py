@@ -187,11 +187,12 @@ def test_raw_id_bounds_and_heading_marker_aliases_remain_safe():
     assert any(row["code"] == "TABLE_MALFORMED" for row in result["unavailable"])
 
 
-def test_period_end_without_start_does_not_poison_quarterly_trends():
+@pytest.mark.parametrize("missing_start", ["", "null", "N/A", "Not Available", "Not Calculable", "-"])
+def test_period_end_without_start_does_not_poison_quarterly_trends(missing_start):
     from caos.artifacts.presentation import read_tables
     tables, _ = read_tables(artifact()["markdown"])
     columns, rows = tables["cp1.model_period_register"]
-    rows.append(["FY2024_END", "2024", "-", "PERIOD_END", "-", "2024-12-31", "-", "AUDITED",
+    rows.append(["FY2024_END", "2024", "-", "PERIOD_END", missing_start, "2024-12-31", "-", "AUDITED",
                  "USD", "MILLIONS", "IFRS", "Consolidated", "SRC-1", "annual", "-"])
     markdown = table("cp1.model_period_register", columns, rows) + table("cp1.model_account_register", *tables["cp1.model_account_register"])
     result = project(artifact(markdown=markdown))
@@ -366,6 +367,106 @@ def test_many_malformed_tables_stay_bounded_without_breaking_artifact_fallback()
     result = project(value)
     assert len(result["unavailable"]) <= 500
     assert {"view_id": "CP-1", "code": "SECTION_LIMIT"} in result["unavailable"]
+
+
+@pytest.fixture(scope="module")
+def presentation_bundle():
+    from caos.methodology.bundle import DeployVBundle
+    import caos.methodology.bundle as bundle_module
+    return DeployVBundle(Path(bundle_module.__file__).parent / "vendor/deploy_v")
+
+
+def validated_fixture_projection(markdown, bundle):
+    """These malformed chart inputs remain valid artifacts at the existing seam."""
+    from caos.methodology.canonical import validate_model_sources
+    from caos.artifacts.presentation import read_tables
+    bundle.validate_handoff(markdown, module_id="CP-1", run_id="run-cp-model-fixture", reporting_period="FY2024")
+    validate_model_sources(markdown, returned_source_ids={"SRC-1"})
+    value = artifact(markdown=markdown)
+    before = deepcopy(value)
+    result = project(value)
+    assert value == before
+    assert "".join(s["body"] for s in result["sections"] if s["kind"] == "text").endswith(markdown.split("---", 2)[-1].lstrip())
+    assert any(s["kind"] == "table" and s["title"] == "cp1.model_account_register" for s in result["sections"])
+    assert {s["title"]: (s["columns"], s["rows"]) for s in result["sections"] if s["kind"] == "table"} == read_tables(markdown)[0]
+    return result
+
+
+def test_full_fixture_bare_pipe_table_is_unavailable_without_losing_valid_sections(presentation_bundle):
+    from caos.artifacts.presentation import read_tables
+    tables, failures = read_tables("|\n|\n")
+    assert not tables
+    assert failures and all(item["code"] == "TABLE_MALFORMED" for item in failures)
+    markdown = artifact()["markdown"].replace("## Analysis\n", "## Analysis\n\n|\n|\n", 1)
+    result = validated_fixture_projection(markdown, presentation_bundle)
+    assert len(charts(result)) == 7
+    assert any(r["code"] == "TABLE_MALFORMED" for r in result["unavailable"])
+
+
+@pytest.mark.parametrize("omitted", ["FY2024_Q2", "FY2024_Q3"])
+def test_full_fixture_segment_interior_gap_is_not_joined(omitted, presentation_bundle):
+    original = artifact()["markdown"]
+    # A second complete series must not conceal Services' missing observation.
+    markdown = "\n".join(line + "\n" + line.replace("services | Services", "products | Products")
+                         if line.startswith("| services |") else line for line in original.splitlines())
+    markdown = "\n".join(line for line in markdown.splitlines()
+                         if not (line.startswith("| services |") and omitted in line))
+    result = validated_fixture_projection(markdown, presentation_bundle)
+    assert "cp1.segments.v1" not in charts(result)
+    assert {"view_id": "cp1.segments.v1", "code": "VALUE_UNAVAILABLE"} in result["unavailable"]
+    assert "cp1.revenue.v1" in charts(result)
+
+
+@pytest.mark.parametrize("omitted", ["FY2024_Q1", "FY2024_Q4"])
+def test_full_fixture_segment_edge_activity_needs_no_fabricated_zeros(omitted, presentation_bundle):
+    markdown = "\n".join(line for line in artifact()["markdown"].splitlines()
+                         if not (line.startswith("| services |") and omitted in line))
+    markdown = markdown.replace("FY2024_Q2 | 110 | Verified", "FY2024_Q2 | 0 | Verified")
+    markdown = markdown.replace("FY2024_Q3 | 120 | Verified", "FY2024_Q3 | -5 | Verified")
+    result = validated_fixture_projection(markdown, presentation_bundle)
+    points = charts(result)["cp1.segments.v1"]["recipe"]["points"]
+    assert omitted not in {point["x"] for point in points}
+    assert {"0", "-5"} <= {point["y"] for point in points}
+    assert len(points) == 3
+
+
+@pytest.mark.parametrize("field,original", [("accounting_basis", "IFRS"), ("entity_perimeter", "Consolidated")])
+@pytest.mark.parametrize("missing", ["", "null", "N/A", "Not Available", "Not Calculable", "-"])
+def test_full_fixture_equal_missing_period_basis_is_not_compatibility(field, original, missing, presentation_bundle):
+    markdown = artifact()["markdown"].replace(f"| {original} |", f"| {missing} |")
+    result = validated_fixture_projection(markdown, presentation_bundle)
+    assert not charts(result), field
+    assert {"view_id": "cp1.revenue.v1", "code": "PERIOD_BASIS_MISMATCH"} in result["unavailable"]
+
+
+@pytest.mark.parametrize("kind", ["X" * 121, "MONTH", "quarter", "-", ""])
+def test_full_fixture_unsupported_period_kind_cannot_escape_into_public_ids(kind, presentation_bundle):
+    markdown = artifact()["markdown"].replace("| QUARTER |", f"| {kind} |", 1)
+    result = validated_fixture_projection(markdown, presentation_bundle)
+    assert not charts(result)
+    assert {"view_id": "cp1.revenue.v1", "code": "PERIOD_BASIS_MISMATCH"} in result["unavailable"]
+    assert all(len(row["view_id"]) <= 120 for row in result["unavailable"])
+
+
+def test_full_fixture_compact_iso_dates_keep_chronological_period_and_latest_debt_order(presentation_bundle):
+    markdown = artifact()["markdown"].replace("2024-01-01", "20240101").replace("2024-03-31", "20240331")
+    result = validated_fixture_projection(markdown, presentation_bundle)
+    assert [p["x"] for p in charts(result)["cp1.revenue.v1"]["recipe"]["points"]] == [f"FY2024_Q{q}" for q in range(1, 5)]
+    debt = charts(result)["cp1.debt_maturity.v1"]
+    assert "FY2024_Q4" in debt["title"]
+    assert sorted(p["y"] for p in debt["recipe"]["points"]) == ["0", "185", "50"]
+
+
+def test_full_fixture_compact_iso_dates_cannot_hide_overlap(presentation_bundle):
+    markdown = artifact()["markdown"].replace("2024-04-01", "20240301")
+    result = validated_fixture_projection(markdown, presentation_bundle)
+    assert {"view_id": "cp1.revenue.v1", "code": "PERIOD_BASIS_MISMATCH"} in result["unavailable"]
+
+
+def test_full_fixture_compact_iso_maturity_dates_use_chronological_order(presentation_bundle):
+    markdown = artifact()["markdown"].replace("2027-06-30", "20280101")
+    result = validated_fixture_projection(markdown, presentation_bundle)
+    assert [p["x"] for p in charts(result)["cp1.debt_maturity.v1"]["recipe"]["points"]] == ["2028-01-01", "2028-06-30", "2029-06-30"]
 
 
 def test_model_projection_preserves_selection_and_never_fills_missing_values():
