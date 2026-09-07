@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  type CSSProperties,
   KeyboardEvent as ReactKeyboardEvent,
   PointerEvent as ReactPointerEvent,
   useCallback,
@@ -201,7 +202,11 @@ function WorksheetGrid({
       <thead><tr><th scope="col"><span className="sr-only">Row number</span></th>{columns.map((column) => <th scope="col" key={column.column}>{column.letter}</th>)}</tr></thead>
       <tbody>{visibleRows.map((row) => {
         const section = sections.find((item) => item.startRow === row);
-        return <tr key={row} data-sheet-row={row} data-period-header={periodHeaderRows.includes(row) ? "true" : undefined} data-worksheet-section={section?.id}><th scope="row">{row}</th>{columns.map(({ column, letter }) => {
+        const periodHeaderIndex = periodHeaderRows.indexOf(row);
+        const periodHeaderStyle = periodHeaderIndex >= 0
+          ? { "--worksheet-period-header-top": `${23 * (periodHeaderIndex + 1)}px` } as CSSProperties
+          : undefined;
+        return <tr key={row} style={periodHeaderStyle} data-sheet-row={row} data-period-header={periodHeaderIndex >= 0 ? "true" : undefined} data-period-header-index={periodHeaderIndex >= 0 ? periodHeaderIndex : undefined} data-worksheet-section={section?.id}><th scope="row">{row}</th>{columns.map(({ column, letter }) => {
           const cell = cells.get(`${row}:${column}`);
           const fillClass = cell?.style?.fill ? worksheetFillClasses[cell.style.fill.toLowerCase()] || "" : "";
           const authority = worksheetCellAuthority(cell?.write_class ?? null);

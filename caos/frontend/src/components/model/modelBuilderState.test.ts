@@ -48,6 +48,16 @@ const realModelTab: WorksheetTab = {
     worksheetCell("C3", 3, 3, "QUARTER"),
     worksheetCell("D3", 3, 4, "BASE"),
     worksheetCell("E3", 3, 5, "DOWNSIDE"),
+    worksheetCell("A4", 4, 1, "Metric"),
+    worksheetCell("B4", 4, 2, "Q1 FY24"),
+    worksheetCell("C4", 4, 3, "Q2 FY24"),
+    worksheetCell("D4", 4, 4, "Base FY25"),
+    worksheetCell("E4", 4, 5, "Downside FY25"),
+    worksheetCell("A5", 5, 1, "Period end"),
+    worksheetCell("B5", 5, 2, "2024-03-31T00:00:00"),
+    worksheetCell("C5", 5, 3, "2024-06-30T00:00:00"),
+    worksheetCell("D5", 5, 4, "2025-12-31T00:00:00"),
+    worksheetCell("E5", 5, 5, "2025-12-31T00:00:00"),
     worksheetCell("A7", 7, 1, "Income Statement"),
     worksheetCell("A8", 8, 1, "Services"),
     worksheetCell("B8", 8, 2, 100, { semantic_id: "segment::services", period_id: "FY2024_Q1", write_class: "SOURCE" }),
@@ -96,7 +106,7 @@ test("period families, sections, and business/debt groups derive from served wor
     { id: "BASE", label: "Base", columns: [4] },
     { id: "DOWNSIDE", label: "Downside", columns: [5] },
   ]);
-  assert.deepEqual(worksheetPeriodHeaderRows(realModelTab), [3]);
+  assert.deepEqual(worksheetPeriodHeaderRows(realModelTab), [3, 4, 5]);
   assert.deepEqual(worksheetSections(realModelTab), [
     { id: "MODEL:7", label: "Income Statement", startRow: 7, endRow: 31 },
     { id: "MODEL:32", label: "Cash Flow", startRow: 32, endRow: 53 },

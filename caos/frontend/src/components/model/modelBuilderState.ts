@@ -86,13 +86,21 @@ export function worksheetPeriodHeaderRows(
 ) {
   const familyColumns = new Set(families.flatMap((family) => family.columns));
   const familyIds = new Set(families.map((family) => family.id));
-  return [...new Set(tab.cells
-    .filter((cell) => familyColumns.has(cell.column)
-      && cell.semantic_id === null
-      && cell.period_id === null
-      && typeof cell.value === "string"
-      && familyIds.has(cell.value))
-    .map((cell) => cell.row))].sort((left, right) => left - right);
+  const headerRows = new Set<number>();
+  let firstFamilyRow: number | undefined;
+  let firstDataRow: number | undefined;
+  for (const cell of tab.cells) {
+    if (!familyColumns.has(cell.column)) continue;
+    if (cell.period_id && (firstDataRow === undefined || cell.row < firstDataRow)) firstDataRow = cell.row;
+    if (cell.semantic_id !== null || cell.period_id !== null || cell.value === null || cell.value === "") continue;
+    headerRows.add(cell.row);
+    if (typeof cell.value === "string" && familyIds.has(cell.value)
+      && (firstFamilyRow === undefined || cell.row < firstFamilyRow)) firstFamilyRow = cell.row;
+  }
+  if (firstFamilyRow === undefined || firstDataRow === undefined) return [];
+  return [...headerRows]
+    .filter((row) => row >= firstFamilyRow && row < firstDataRow)
+    .sort((left, right) => left - right);
 }
 
 type WorksheetGroup = { id: string; label: string; startRow: number; endRow: number };

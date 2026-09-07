@@ -195,7 +195,7 @@
 
 .model :global(.worksheet-grid tbody > tr[data-period-header="true"] > *) {
   position: sticky;
-  top: 23px;
+  top: var(--worksheet-period-header-top);
   z-index: 2;
   background: var(--caos-elevated);
   color: var(--caos-muted);
