@@ -30,6 +30,7 @@ import {
   assumptionKey,
   assumptionScope,
   mergeRebasedAssumptions,
+  modelDisplayStatus,
   normalizeAssumptions,
   previewMatchesDraft,
   primaryModelAction,
@@ -470,7 +471,7 @@ export default function ModelBuilder({
     return () => { controller.abort(); window.clearTimeout(previewTimer.current); requestGeneration.current += 1; previewGeneration.current += 1; tornadoGeneration.current += 1; actionGeneration.current += 1; };
   }, [refresh]);
 
-  const status = inventory?.readiness.status;
+  const status = modelDisplayStatus(inventory?.readiness);
   const build = inventory?.readiness.build || inventory?.builds[0] || null;
   const activeRevision = revisions.find((item) => item.state === "ACTIVE" && item.build_id === build?.id) || null;
   const currentHeadRevisionId = revisions.at(-1)?.id || null;
