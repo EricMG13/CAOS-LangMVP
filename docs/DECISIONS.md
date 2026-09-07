@@ -1054,3 +1054,32 @@ Consolidation note: where §6 conflicts with §10/§11/§12 (output Σ vs Σ+max
     save, restore, recovery, freeze, filing or export path silently recomposes
     them as v2. Adopting v2 requires an explicit new revision and renewed
     Sign-Off. Frozen bytes remain immutable.
+
+27. **Accepted incremental publication authority (2026-09-07, Analyst
+    Workbench Task 8).** Earnings Update and Covenant & Refinancing now select
+    the accepted pathway's READY overlay Model Build, or a Signed-Off Revision
+    compatible with that exact build. This supersedes the prior-base-only
+    publication limitation in §14.19. The shared publication resolver replays
+    current accepted authority, calculations, worksheet schema/source links and
+    source lineage through the existing model service. Its publication identity
+    includes the selected overlay fingerprint/payload digest and the exact
+    recomputed `base_model` ancestry carried by its effect. A missing overlay
+    refuses; a stale prior Full Credit revision cannot substitute for it.
+
+    Application overlays inherit the prior Full Credit worksheet unchanged.
+    V2 reports distinguish those inherited values, outputs reflecting a
+    selected analyst revision's assumptions, and accepted pathway effects.
+    Those effects do not automatically recalculate the complete forecast.
+    Relative Value may include supplied marks and calculations when its model
+    is selected; Deep Research currently declares `numeric_effect: NONE` and
+    revalidates its inherited model. Both remain model-optional. Distressed
+    remains supported. Existing CURRENT_ACCEPTED_MODEL identities for those
+    already-supported paths, stored v1 composition, frozen payloads and export
+    bytes are preserved. Earnings/Covenant drafts or unfiled freezes selecting
+    the old prior-base authority need a new selection and opinion before filing;
+    historical frozen/filed reads and downloads never re-resolve live models.
+
+    These checks use disposable answer-keyed provider orchestration, not live
+    analytical qualification. V2 module completeness and actual PDF/XLSX chart
+    drawing are separate gates; this change does not relax publication blockers,
+    methodology, execution routes, queued jobs, revision CAS or audit pairing.

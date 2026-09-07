@@ -491,23 +491,18 @@ engine, the bundle, or the routes.
   `RV_CELL_TEXT_INVALID` (the workbook is REJECTED). This is the one seam every
   path shares — the CP-3 artifact, the Relative Value model effect and every
   renderer read the stored rows.
-- Deliverables for Earnings Update and Covenant & Refinancing still bind the
-  prior Full Credit base build (`PRIOR_FULL_CREDIT_BASE`), not the overlay
-  build that carries their pathway effect; Relative Value and Deep Research
-  deliverables bind no overlay either. The effects ride the overlay builds'
-  payloads and exports today; rendering them in published outputs is Task 10.
+- Incremental Deliverables select their accepted overlay Model Build or its
+  compatible Signed-Off Revision, binding the nearest validated Full Credit
+  ancestry. The overlay inherits the prior worksheet unchanged; accepted
+  pathway effects do not recalculate the complete forecast. V2 reports label
+  inherited application values separately from analyst revision outputs and
+  pathway effects. Relative Value and Deep Research remain model-optional;
+  Deep Research currently revalidates the model with no numeric effect.
 - Cross-intake restatement is not recorded by intake: a restated annual dropped
   into a case whose original came from an earlier intake is admitted as `used`
   without marking the original `superseded` (`intake/service.py::
   _apply_dispositions` groups the current pack only). The model's lineage then
   binds both by citation. Supersession across intakes is a follow-up.
-- Earnings Update and Covenant & Refinancing deliverables bind the prior Full
-  Credit base build (DECISIONS §14.18), so their pathway effects reach the
-  overlay build and the model export but not the published deliverable; the
-  Distressed overlay does render. Binding those two pathways' deliverables to
-  their overlay builds is a model-authority change that existing tests pin
-  (`test_live_incremental_pathway_publishes_against_a_validated_prior_full_credit_model`)
-  and stays open after Task 10.
 - The deliverable export route still serves md/pdf/xlsx as
   `application/octet-stream` (a wire-visible decision, unchanged in Task 10);
   the audit package is `application/zip`, which the gzip middleware already

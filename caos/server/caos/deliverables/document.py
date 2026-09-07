@@ -626,6 +626,8 @@ def _module_document(pathway, blocks, artifacts, model, mapping_version, include
     result = []
     used = set()
     layout = list(LAYOUTS_V2[pathway])
+    if model and pathway in {"RELATIVE_VALUE", "DEEP_RESEARCH"}:
+        layout.append(("model_effects", "Selected model and pathway effects", [("MODEL", "outputs")]))
     for optional in OPTIONAL_SECTIONS_V2:
         if optional["section_id"] in included_optional_section_ids:
             layout.append((optional["section_id"], optional["title"], [(optional["module_id"], optional["selector"])]))
@@ -636,11 +638,24 @@ def _module_document(pathway, blocks, artifacts, model, mapping_version, include
             selected = []
             if module == "MODEL" and model:
                 authority = _model_authority(model)
+                effects = model.get("pathway_effects") or []
+                model_title = "Selected model outputs"
+                model_note = "Locked to the selected model authority."
+                if effects:
+                    model_title = ("Signed-Off Revision outputs" if model["kind"] == "ANALYST_REVISION"
+                                   else "Unchanged prior-model base values")
+                    model_note = (
+                        "Outputs reflect the selected analyst assumptions on the inherited Full Credit model. "
+                        if model["kind"] == "ANALYST_REVISION" else
+                        "The application overlay inherits the prior Full Credit worksheet unchanged. "
+                    ) + "Accepted pathway effects are shown separately; they do not recalculate the complete forecast."
+                    selected.append({"kind": "text", "section_id": f"{section_id}.scope", "title": model_title,
+                                     "page": title, "editable": False, "origin": _origin("MODEL", authority), "body": model_note})
                 rows = _model_rows(model.get("outputs") or {})
                 for offset in range(0, len(rows), 500):
-                    selected.append({"kind": "table", "section_id": f"{section_id}.{offset // 500}", "title": "Selected model outputs", "page": title,
+                    selected.append({"kind": "table", "section_id": f"{section_id}.{offset // 500}", "title": model_title, "page": title,
                                      "editable": False, "origin": _origin("MODEL", authority), "columns": ["Case / Period / Metric", "Value"],
-                                     "rows": rows[offset:offset + 500], "note": "Locked to the selected model authority."})
+                                     "rows": rows[offset:offset + 500], "note": model_note})
                 selection = {"kind": model["kind"], "build_id": model["build_id"]}
                 selection.update({"revision_id": model["revision_id"]} if model["kind"] == "ANALYST_REVISION" else {"fallback_acknowledged": True})
                 model_presentation = project_model_outputs(selection=selection, outputs=model.get("outputs") or {}, unit=model_unit, mapping_version=mapping_version).model_dump()
@@ -648,8 +663,18 @@ def _module_document(pathway, blocks, artifacts, model, mapping_version, include
                 for unavailable in model_presentation["unavailable"]:
                     selected.append({"kind": "text", "section_id": unavailable["view_id"] + ".warning", "title": "Chart unavailable · exact model table retained", "page": title,
                                      "editable": False, "origin": _origin("SYSTEM", authority), "body": f"{unavailable['view_id']}: {unavailable['code']}. No unit or missing value has been inferred."})
-                effects = model.get("pathway_effects") or []
                 for effect_index, effect in enumerate(effects):
+                    selected.append({"kind": "text", "section_id": f"{section_id}.effect.{effect_index}.scope",
+                                     "title": "Accepted pathway effect scope", "page": title, "editable": False,
+                                     "origin": _origin("MODEL", authority), "body": effect.get("scope") or model_note})
+                    for field in ("period_updates", "forecast_variance", "covenant_updates", "refinancing_updates", "assumption_updates", "market_marks", "time_alignment", "numeric_effect", "limitations"):
+                        if field not in effect:
+                            continue
+                        rows = _model_rows(effect[field])
+                        for offset in range(0, len(rows), 500):
+                            selected.append({"kind": "table", "section_id": f"{section_id}.effect.{effect_index}.{field}.{offset // 500}",
+                                             "title": f"Accepted pathway effect · {field}", "page": title, "editable": False,
+                                             "origin": _origin("MODEL", authority), "columns": ["Field", "Value"], "rows": rows[offset:offset + 500], "note": None})
                     for calc_index, calculation in enumerate(effect.get("calculations") or []):
                         rows = _model_rows(calculation.get("canonical_output") or {})
                         for offset in range(0, len(rows), 500):
@@ -659,7 +684,7 @@ def _module_document(pathway, blocks, artifacts, model, mapping_version, include
                 if pathway in {"EARNINGS_UPDATE", "COVENANT_REFINANCING"} and not effects:
                     selected.append({"kind": "text", "section_id": f"{section_id}.effect.unavailable", "title": "Unavailable · accepted pathway model effects",
                                      "page": title, "editable": False, "origin": _origin("SYSTEM", authority),
-                                     "body": "Accepted incremental effects are unavailable: the current resolver supplies the prior Full Credit base model."})
+                                     "body": "Accepted incremental effects are unavailable. A validated accepted pathway overlay is required."})
             elif artifact and selector.startswith("@") and projections.get(module):
                 body = _report_narrative(artifact, selector)
                 for offset in range(0, len(body), 20_000):

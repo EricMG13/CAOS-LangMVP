@@ -82,10 +82,7 @@ def _resolution_scope():
 CANONICAL_MODULES = CP_MODEL_INPUT_MODULES
 DISTRESSED_PATHWAY = "DISTRESSED_RESTRUCTURING"
 DISTRESSED_CALCULATORS = frozenset({"funding_gap", "recovery_waterfall"})
-PRIOR_FULL_CREDIT_PUBLICATION_PATHWAYS = frozenset({
-    "EARNINGS_UPDATE",
-    "COVENANT_REFINANCING",
-})
+PRIOR_FULL_CREDIT_PUBLICATION_PATHWAYS = frozenset({"EARNINGS_UPDATE", "COVENANT_REFINANCING"})
 # Task 9 (DECISIONS §14.18): every pathway declares one model effect. Full
 # Credit builds the complete model; every other pathway overlays the nearest
 # validated Full Credit model with one effect and its own input fingerprint.
@@ -1058,17 +1055,25 @@ class ModelService:
         accepted_run: dict[str, Any],
     ) -> tuple[dict[str, Any], dict[str, Any]]:
         if accepted_run.get("pathway") not in PRIOR_FULL_CREDIT_PUBLICATION_PATHWAYS:
-            raise ModelInputError("accepted pathway cannot reuse a prior Full Credit model")
-        base_snapshot, base_run = self._prior_full_credit_snapshot(accepted_snapshot)
-        resolved = self._resolve_full_credit_snapshot(base_snapshot, base_run)
-        build = self._validated_base_build(base_snapshot, resolved)
-        if build_id is not None and build["id"] != build_id:
-            raise ModelBuildStale(build)
-        return build, self._publication_model_authority(
-            base_snapshot,
-            build,
-            relationship="PRIOR_FULL_CREDIT_BASE",
+            raise ModelInputError("accepted pathway cannot overlay a prior Full Credit model")
+        candidate = (
+            self.builds.get_build(build_id)
+            if build_id is not None
+            else self.builds.current_build(accepted_snapshot["case_id"])
         )
+        if candidate is None or candidate.get("snapshot_id") != accepted_snapshot["id"]:
+            raise ModelBuildStale(None)
+        # Current-build replay resolves the nearest Full Credit ancestor and
+        # recomputes its payload, the overlay calculations and source lineage.
+        build = self.validated_build(accepted_snapshot["case_id"], candidate["id"])
+        (effect,) = build["payload"]["pathway_effects"]
+        authority = self._publication_model_authority(
+            accepted_snapshot,
+            build,
+            relationship="CURRENT_ACCEPTED_OVERLAY",
+        )
+        authority["base_model"] = copy.deepcopy(effect["base_model"])
+        return build, authority
 
     def _validated_snapshot_artifacts(
         self,
@@ -2328,23 +2333,19 @@ class ModelService:
     ) -> dict[str, Any]:
         """Resolve the model a deliverable may publish under current authority.
 
-        Model Builder remains current-snapshot-only. Earnings and covenant
-        deliverables are the narrow exception: they may reuse the nearest
-        validated Full Credit ancestor while their own accepted analysis stays
-        the publication authority.
+        Overlay identity includes its recomputed nearest Full Credit ancestry;
+        the inherited worksheets and accepted pathway effects stay distinct.
         """
         try:
             accepted_snapshot = self._accepted_snapshot(case_id)
-            if accepted_snapshot is None:
+            if accepted_snapshot is None or accepted_snapshot.get("case_id") != case_id:
                 raise ModelInputError("accepted model authority is unavailable")
             accepted_run = self._validated_snapshot_run(accepted_snapshot)
             if accepted_run["pathway"] in PRIOR_FULL_CREDIT_PUBLICATION_PATHWAYS:
-                build, model_authority = (
-                    self._validated_prior_full_credit_publication_build(
-                        build_id,
-                        accepted_snapshot,
-                        accepted_run,
-                    )
+                build, authority = self._validated_prior_full_credit_publication_build(
+                    build_id,
+                    accepted_snapshot,
+                    accepted_run,
                 )
             else:
                 candidate = (
@@ -2356,16 +2357,22 @@ class ModelService:
                     raise ModelBuildStale(None)
                 build = self._require_current(case_id, candidate["id"])
                 self._validate_build_identity(case_id, build, self._new_deadline())
-                model_authority = self._publication_model_authority(
+                authority = self._publication_model_authority(
                     accepted_snapshot,
                     build,
                     relationship="CURRENT_ACCEPTED_MODEL",
                 )
+            if (
+                build.get("accepted_run_id") != accepted_snapshot["run_id"]
+                or build.get("source_set_id") != accepted_snapshot["source_set_id"]
+                or build.get("registry_version") != self.bundle.assumption_registry["version"]
+            ):
+                raise ModelInputError("selected model identity differs from accepted authority")
             _defaults_rows, outputs = self._defaults(build, self._new_deadline())
             return {
                 "build": build,
                 "outputs": outputs,
-                "model_authority": model_authority,
+                "model_authority": authority,
             }
         except ModelBuildStale:
             raise

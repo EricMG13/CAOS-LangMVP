@@ -458,7 +458,8 @@ def _publish_overlay(
 
     pathway = "DISTRESSED_RESTRUCTURING"
     workspace = service.workspace(case_id, pathway)
-    template = workspace["template"]
+    # This legacy narrative fixture does not supply v2's required report tables.
+    template = service.templates(template_version="caos.deliverable-template.v1")[pathway]
     assert template["model_requirement"] == "REQUIRED"
     previous = workspace["draft"]
     selection = {

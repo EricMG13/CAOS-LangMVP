@@ -742,12 +742,29 @@ async def test_redropping_a_source_route_document_cannot_wave_it_out_of_the_line
 # --- every other pathway's declared model effect -------------------------------------------------
 
 
-async def test_every_pathway_overlays_its_declared_effect_on_the_full_credit_model(harness):
+async def test_every_pathway_overlays_its_declared_effect_on_the_full_credit_model(harness, tmp_path):
     """One case, the golden journey for each pathway in turn: every overlay
     reuses the base tabs byte for byte, carries its effect under its own
     fingerprint, and binds every supplied document."""
     case_id, base_body, base_snapshot, base_build = await harness.ready_full_credit()
     effects: dict[str, dict[str, Any]] = {}
+    from caos.deliverables.service import DeliverableService
+    from test_deliverables_spec import draft_request
+
+    service = DeliverableService(store=harness.store, vault_dir=tmp_path / "reports", engine=harness.engine, models=harness.models)
+
+    def optional_report(pathway, build):
+        template = service.templates()[pathway]
+        blocks = [{**{k: template["blocks"][0][k] for k in ("kind", "block_id", "slot_id")}, "citations": []}]
+        without_model = service.save_draft(case_id, pathway, draft_request(template, blocks=blocks, model_selection=None), actor="analyst")
+        assert without_model["content"]["model_identity"] is None
+        report = service.save_draft(case_id, pathway, draft_request(template, blocks=blocks, expected_version=1,
+            model_selection={"kind": "APPLICATION_BUILD", "build_id": build["id"], "fallback_acknowledged": True}), actor="analyst")
+        context = harness.models.validated_publication_build(case_id)
+        assert report["content"]["model_identity"]["model_authority"] == context["model_authority"]
+        assert context["model_authority"]["relationship"] == "CURRENT_ACCEPTED_MODEL", "existing optional model identities are stable"
+        assert service._resolve_stored_selection(case_id, report["content"]["model_selection"])[0]["pathway_effects"] == build["payload"]["pathway_effects"]
+        return report["content"]["document_sections"]
 
     # Earnings Update: periods and forecast variance.
     body, run = await harness.run_pack([QUARTERLY_Q2, EARNINGS], case_id=case_id)
@@ -852,6 +869,10 @@ async def test_every_pathway_overlays_its_declared_effect_on_the_full_credit_mod
         ("CP-3", "recovery_waterfall"), ("CP-1C", "peer_statistics"),
     }
     assert harness.lineage(build, body)[marks[0]]["binding"] == "MARKET_MARKS"
+    sections = optional_report("RELATIVE_VALUE", build)
+    marks_table = next(s for s in sections if s["title"] == "Accepted pathway effect · market_marks")
+    assert ["rows / 1 / bid_points", "88"] in marks_table["rows"]
+    assert any(s["title"] == "Accepted pathway effect · recovery_waterfall" for s in sections)
 
     # Deep Research: revalidates the base and declares no numeric effect.
     body = harness.intake([BRIEF], case_id=case_id).json()
@@ -874,6 +895,10 @@ async def test_every_pathway_overlays_its_declared_effect_on_the_full_credit_mod
     assert effect["research"]["approved_plan_hash"] == run["research"]["approved_plan_hash"]
     assert effect["research"]["brief_digest"] == run["research"]["brief_digest"]
     assert harness.lineage(build, body)[BRIEF[0]]["binding"] == "RESEARCH_BRIEF"
+    sections = optional_report("DEEP_RESEARCH", build)
+    numeric_table = next(s for s in sections if s["title"] == "Accepted pathway effect · numeric_effect")
+    assert numeric_table["rows"] == [["Value", "NONE"]]
+    assert any("Deep Research changes no model period" in s.get("body", "") for s in sections)
 
     # Every overlay: base tabs byte-identical, distinct fingerprints, base identity bound.
     fingerprints = set()
@@ -908,6 +933,145 @@ async def test_market_marks_dated_before_the_latest_reported_period_are_a_named_
     assert effect["limitations"] == [{"module_id": "CP-3", "limitation": {"code": "MARKET_MARKS_PRECEDES_LATEST_REPORTED_PERIOD"}}]
 
 
+@pytest.mark.parametrize("pathway,pack,calculator", [
+    ("EARNINGS_UPDATE", [QUARTERLY_Q2, EARNINGS], "credit_metrics"),
+    ("COVENANT_REFINANCING", [AMENDMENT], "covenant_headroom"),
+])
+async def test_accepted_incremental_publication_moves_effect_and_identity_without_changing_prior_model(
+    harness, monkeypatch, tmp_path, pathway, pack, calculator,
+):
+    """Real acceptance/build/report services; calculator inputs are answer-key
+    fixtures, not a live analytical or complete v2 publication qualification."""
+    from caos.deliverables.service import DeliverableService
+    from test_deliverables_spec import draft_request
+    from test_model_builder_spec import _preview_request, _sign_off_request
+
+    case_id, _body, base_snapshot, base = await harness.ready_full_credit()
+    service = DeliverableService(store=harness.store, vault_dir=tmp_path / "reports",
+                                 engine=harness.engine, models=harness.models)
+    _body, run = await harness.run_pack(pack, case_id=case_id)
+    reports, effects = [], []
+    signed_selection = None
+    for version in (1, 2):
+        if version == 2:
+            inputs = copy.deepcopy(VALID_CALCULATION_INPUTS[calculator])
+            if calculator == "credit_metrics":
+                inputs["periods"]["FY2025"]["revenue"] = 1200
+            else:
+                inputs["tests"][0]["threshold"] = 6
+            monkeypatch.setitem(VALID_CALCULATION_INPUTS, calculator, inputs)
+            started = await harness.engine.start_run(case_id=case_id, pathway=pathway, depth="full", actor="analyst")
+            run = await harness.engine.wait(started["id"])
+        assert run["status"] == "succeeded", run.get("error")
+        snapshot = await harness.accept(run["id"])
+        build = harness.build_for(case_id, snapshot["id"])
+        context = harness.models.validated_publication_build(case_id)
+        assert context["build"]["id"] == build["id"]
+        assert context["model_authority"]["base_model"]["snapshot_id"] == base_snapshot["id"]
+        assert build["payload"]["tabs"] == base["payload"]["tabs"]
+        assert harness.models.builds.get_build(base["id"]) == base
+        if version == 2:
+            assert harness.models.head_revision(case_id)["state"] == "STALE"
+            assert service.model_eligibility(case_id)["default_model_selection"] is None
+            with pytest.raises(ValueError, match="MODEL_BUILD_STALE"):
+                service._resolve_stored_selection(case_id, signed_selection)
+        selection = {"kind": "APPLICATION_BUILD", "build_id": build["id"], "fallback_acknowledged": True}
+        template = service.templates()[pathway]
+        report = service.save_draft(case_id, pathway, draft_request(
+            template, blocks=[{**{k: template["blocks"][0][k] for k in ("kind", "block_id", "slot_id")}, "citations": []}],
+            expected_version=version - 1, model_selection=selection,
+        ), actor="analyst")
+        reports.append(report)
+        sections = report["content"]["document_sections"]
+        effect_tables = [s for s in sections if s["title"] == f"Accepted pathway effect · {calculator}"]
+        assert effect_tables
+        expected = ("1,000" if version == 1 else "1,200") if calculator == "credit_metrics" else ("5" if version == 1 else "6")
+        metric = "revenue" if calculator == "credit_metrics" else "threshold"
+        assert any(row[0].endswith(metric) and row[1] == expected for table in effect_tables for row in table["rows"])
+        assert any(s["title"] == "Unchanged prior-model base values" for s in sections)
+        effects.append(effect_tables)
+        if version == 1:
+            registry = harness.models.assumption_registry(case_id, build["id"])
+            preview = harness.models.preview(case_id, _preview_request(registry, build["id"]))
+            signed = harness.models.sign_off(case_id, _sign_off_request(registry, build["id"], preview), actor="analyst")
+            signed_selection = {"kind": "ANALYST_REVISION", "build_id": build["id"], "revision_id": signed["id"]}
+    assert effects[0] != effects[1]
+    assert reports[0]["content"]["model_identity"] != reports[1]["content"]["model_identity"]
+    assert reports[0]["digest"] != reports[1]["digest"]
+
+
+async def test_incremental_publication_refuses_tampered_authority_and_sources(harness, tmp_path, monkeypatch):
+    from caos.deliverables.service import DeliverableService
+    from caos.storage.runs import run_snapshots
+    from test_model_builder_spec import _preview_request, _sign_off_request
+
+    case_id, _body, base_snapshot, base = await harness.ready_full_credit()
+    _body, run = await harness.run_pack([AMENDMENT], case_id=case_id)
+    snapshot = await harness.accept(run["id"])
+    models = harness.models
+    service = DeliverableService(store=harness.store, vault_dir=tmp_path / "reports", engine=harness.engine, models=models)
+    # Required overlay is still queued. Explicit prior-base selection also fails.
+    with pytest.raises(ValueError, match="MODEL_REVISION_INVALID|MODEL_BUILD_NOT_READY|MODEL_BUILD_STALE"):
+        models.validated_publication_build(case_id, base["id"])
+    assert service.model_eligibility(case_id)["application_build"] is None
+    build = harness.build_for(case_id, snapshot["id"])
+    registry = models.assumption_registry(case_id, build["id"])
+    preview = models.preview(case_id, _preview_request(registry, build["id"]))
+    signed = models.sign_off(case_id, _sign_off_request(registry, build["id"], preview), actor="analyst")
+    selection = {"kind": "ANALYST_REVISION", "build_id": build["id"], "revision_id": signed["id"]}
+    assert service._resolve_stored_selection(case_id, selection)[0]["revision_id"] == signed["id"]
+    other = harness.store.create_case("Other", "Other Issuer", "Other", "analyst")
+    harness.store.update_case(other["id"], accepted_snapshot_id=snapshot["id"])
+    with pytest.raises(ValueError, match="MODEL_REVISION_INVALID"):
+        models.validated_publication_build(other["id"])
+    audit = harness.store.audit_trail()
+    for field, value in {
+        "accepted_run_id": base_snapshot["run_id"], "registry_version": "stale", "registry_digest": "0" * 64,
+        "worksheet_schema_version": "unknown", "case_id": "wrong-case",
+    }.items():
+        models.builds.update_build(build["id"], **{field: value})
+        with pytest.raises(ValueError, match="MODEL_REVISION_INVALID|MODEL_BUILD_NOT_READY|MODEL_BUILD_STALE"):
+            models.validated_publication_build(case_id, build["id"])
+        models.builds.update_build(build["id"], **{field: build[field]})
+    # Even self-consistent stored payload hashes cannot replace replayed effects or ancestry.
+    for target in ("effect", "base", "source_links"):
+        payload = copy.deepcopy(build["payload"])
+        if target == "effect":
+            payload["pathway_effects"][0]["covenant_updates"][0]["threshold"] = "99"
+        elif target == "base":
+            payload["pathway_effects"][0]["base_model"]["snapshot_id"] = "wrong-ancestor"
+        else:
+            payload["tabs"][0]["cells"][0]["source_links"] = [{"source_id": "forged", "block_id": None}]
+        models.builds.update_build(build["id"], payload=payload, payload_digest=_digest(payload))
+        with pytest.raises(ValueError, match="MODEL_REVISION_INVALID"):
+            service._resolve_stored_selection(case_id, selection)
+        models.builds.update_build(build["id"], payload=build["payload"], payload_digest=build["payload_digest"])
+    # Rehashing a changed accepted ancestry cannot authorize the old overlay.
+    changed = {**snapshot, "previous_snapshot_id": None}
+    with harness.store.engine.begin() as connection:
+        connection.execute(run_snapshots.update().where(run_snapshots.c.id == snapshot["id"]).values(
+            previous_snapshot_id=None, digest=_digest({k: v for k, v in changed.items() if k not in {"id", "digest"}}),
+        ))
+    with pytest.raises(ValueError, match="MODEL_REVISION_INVALID"):
+        models.validated_publication_build(case_id)
+    with harness.store.engine.begin() as connection:
+        connection.execute(run_snapshots.update().where(run_snapshots.c.id == snapshot["id"]).values(
+            previous_snapshot_id=base_snapshot["id"], digest=snapshot["digest"],
+        ))
+    # Head-return corruption seam isolates the signed revision relationship checks.
+    for field in ("build_input_fingerprint", "build_payload_digest", "registry_digest", "registry_version", "state"):
+        with monkeypatch.context() as scoped:
+            scoped.setattr(models, "head_revision", lambda _, field=field: {**signed, field: "STALE"})
+            with pytest.raises(ValueError, match="MODEL_REVISION_STALE"):
+                service._resolve_stored_selection(case_id, selection)
+    assert harness.store.audit_trail() == audit
+    assert models.validated_publication_build(case_id)["build"]["id"] == build["id"], "retry after restoring authority succeeds"
+    harness.store.withdraw(case_id, _body["documents"][0]["source_id"], "analyst")
+    with pytest.raises(ValueError, match="MODEL_REVISION_INVALID"):
+        models.validated_publication_build(case_id)
+    assert service.model_eligibility(case_id)["application_build"] is None
+
+
 async def test_relative_value_without_a_pinned_workbook_names_the_missing_marks(harness):
     case_id, _body, _snapshot, _base = await harness.ready_full_credit()
     started = await harness.engine.start_run(case_id=case_id, pathway="RELATIVE_VALUE", depth="full", actor="analyst")
@@ -920,6 +1084,40 @@ async def test_relative_value_without_a_pinned_workbook_names_the_missing_marks(
     assert [blocker["code"] for blocker in readiness["blockers"]] == ["RELATIVE_VALUE_MARKET_MARKS_REQUIRED"]
     with pytest.raises(ValueError, match="MODEL_NOT_READY: RELATIVE_VALUE_MARKET_MARKS_REQUIRED"):
         harness.models.queue_build(case_id, "analyst")
+
+
+async def test_distressed_publication_retains_existing_identity_and_frozen_exports(harness, tmp_path):
+    from caos.deliverables.service import DeliverableService
+    from test_deliverables_spec import draft_request, file_request, freeze_now
+
+    case_id, body, _base_snapshot, base = await harness.ready_full_credit()
+    started = await harness.engine.start_run(case_id=case_id, pathway="DISTRESSED_RESTRUCTURING", depth="full", actor="analyst")
+    run = await harness.engine.wait(started["id"])
+    assert run["status"] == "succeeded", run.get("error")
+    snapshot = await harness.accept(run["id"])
+    build = harness.build_for(case_id, snapshot["id"])
+    service = DeliverableService(store=harness.store, vault_dir=tmp_path / "reports", engine=harness.engine, models=harness.models)
+    authority = harness.models.validated_publication_build(case_id)["model_authority"]
+    assert authority == {
+        "relationship": "CURRENT_ACCEPTED_MODEL", "snapshot_id": snapshot["id"], "snapshot_digest": snapshot["digest"],
+        "run_id": snapshot["run_id"], "source_set_id": snapshot["source_set_id"], "source_set_version": snapshot["source_set_version"],
+        "input_fingerprint": build["input_fingerprint"], "payload_digest": build["payload_digest"],
+    }
+    template = service.templates(template_version="caos.deliverable-template.v1")["DISTRESSED_RESTRUCTURING"]
+    source = harness.store.get_source(body["documents"][0]["source_id"])
+    revision = service.save_draft(case_id, "DISTRESSED_RESTRUCTURING", draft_request(template, source,
+        model_selection={"kind": "APPLICATION_BUILD", "build_id": build["id"], "fallback_acknowledged": True}), actor="analyst")
+    frozen = freeze_now(service, case_id, revision)
+    effect, = frozen["payload"]["model"]["pathway_effects"]
+    assert effect["base_model"]["payload_digest"] == base["payload_digest"]
+    assert {c["calculator_id"] for c in effect["calculations"]} == {"funding_gap", "recovery_waterfall"}
+    harness.store.add_member(case_id, "analyst", "approver-user", "APPROVER", actor_role="ADMIN")
+    filed = service.approve_filing(case_id, frozen["deliverable_id"], file_request(frozen), actor="approver-user")
+    before = service.export(filed["deliverable_id"], "md")
+    # Historical reads stay available when live authority is subsequently revoked.
+    harness.store.withdraw(case_id, source["id"], "analyst")
+    assert service.export(filed["deliverable_id"], "md") == before
+    assert service.frozen_record(case_id, filed["deliverable_id"])["payload"] == frozen["payload"]
 
 
 async def test_deep_research_without_a_full_credit_model_declares_no_numeric_effect(harness):

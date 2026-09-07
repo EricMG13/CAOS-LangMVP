@@ -50,6 +50,7 @@ from pathlib import Path
 import pytest
 
 from spec_helpers import seed_case_with_source
+from test_source_complete_modelling_spec import harness as source_complete_harness  # noqa: F401
 
 SIX_PATHWAYS = (
     "FULL_CREDIT",
@@ -1586,25 +1587,26 @@ def test_filing_rejects_a_frozen_fallback_after_an_analyst_revision_becomes_acti
 @pytest.mark.parametrize("pathway", ["EARNINGS_UPDATE", "COVENANT_REFINANCING"])
 @pytest.mark.parametrize("selection_kind", ["APPLICATION_BUILD", "ANALYST_REVISION"])
 async def test_live_incremental_pathway_publishes_against_a_validated_prior_full_credit_model(
-    settings,
-    store,
-    engine,
+    source_complete_harness,  # noqa: F811 — imported pytest fixture
     tmp_path,
     pathway,
     selection_kind,
 ):
     from caos.contracts import ModelPreviewRequest, ModelSignOffRequest, digest
     from caos.deliverables.service import DeliverableService
-    from caos.models.service import ModelService
+    from test_source_complete_modelling_spec import AMENDMENT, EARNINGS, QUARTERLY_Q2
 
-    models = ModelService(store=store, vault_dir=settings.storage_dir, engine=engine)
+    harness = source_complete_harness
+    models, store, engine = harness.models, harness.store, harness.engine
     service = DeliverableService(
         store=store,
         vault_dir=tmp_path / "incremental-deliverable-vault",
         engine=engine,
         models=models,
     )
-    case, source = seed_case_with_source(store)
+    case_id, body, base_snapshot, base_build = await harness.ready_full_credit()
+    case = store.get_case(case_id)
+    source = store.get_source(body["documents"][0]["source_id"])
     store.add_member(
         case["id"],
         "analyst",
@@ -1613,26 +1615,29 @@ async def test_live_incremental_pathway_publishes_against_a_validated_prior_full
         actor_role="ADMIN",
     )
 
-    full_credit = await engine.run_scripted_for_tests(case["id"])
-    base_snapshot = await engine.accept(full_credit["id"], actor="analyst")
-    queued = next(
-        build
-        for build in models.list_builds(case["id"])
-        if build["snapshot_id"] == base_snapshot["id"]
-    )
-    base_build = models.run_build_for_tests(queued["id"])
-    assert base_build["status"] == "READY"
+    _, incremental = await harness.run_pack([QUARTERLY_Q2, EARNINGS] if pathway == "EARNINGS_UPDATE" else [AMENDMENT], case_id=case_id)
+    incremental_snapshot = await engine.accept(incremental["id"], actor="analyst")
+    assert incremental_snapshot["previous_snapshot_id"] == base_snapshot["id"]
+    # A queued overlay must not silently publish the prior Full Credit build.
+    assert service.model_eligibility(case["id"])["application_build"] is None
+    queued = next(b for b in models.list_builds(case["id"]) if b["snapshot_id"] == incremental_snapshot["id"])
+    overlay_build = models.run_build_for_tests(queued["id"])
+    assert overlay_build["status"] == "READY", overlay_build.get("error")
+    assert overlay_build["payload"]["tabs"] == base_build["payload"]["tabs"]
 
     signed = None
     if selection_kind == "ANALYST_REVISION":
-        registry = models.assumption_registry(case["id"], base_build["id"])
+        registry = models.assumption_registry(case["id"], overlay_build["id"])
+        assumptions = copy.deepcopy(registry["defaults"])
+        growth = next(row for row in assumptions if row["assumption_id"] == "operating.revenue_growth.division_1" and row["case"] == "BASE" and row["period_id"] == "FY2025")
+        growth["value"] = 0.07
         preview_request = ModelPreviewRequest.model_validate(
             {
-                "build_id": base_build["id"],
+                "build_id": overlay_build["id"],
                 "parent_revision_id": None,
                 "registry_version": registry["version"],
                 "registry_digest": registry["digest"],
-                "assumptions": registry["defaults"],
+                "assumptions": assumptions,
                 "draft_generation": 1,
             }
         )
@@ -1644,37 +1649,41 @@ async def test_live_incremental_pathway_publishes_against_a_validated_prior_full
                     **preview_request.model_dump(mode="json"),
                     "preview_digest": preview["preview_digest"],
                     "expected_head_revision_id": None,
-                    "note": "Prior Full Credit authority for incremental publication.",
+                    "note": "Accepted overlay authority for incremental publication.",
                 }
             ),
             actor="analyst",
         )
+        assert signed["outputs_digest"] != overlay_build["outputs_digest"]
         selection = {
             "kind": "ANALYST_REVISION",
-            "build_id": base_build["id"],
+            "build_id": overlay_build["id"],
             "revision_id": signed["id"],
         }
     else:
         selection = {
             "kind": "APPLICATION_BUILD",
-            "build_id": base_build["id"],
+            "build_id": overlay_build["id"],
             "fallback_acknowledged": True,
         }
 
-    incremental = await engine.run_scripted_for_tests(
-        case["id"],
-        pathway=pathway,
-    )
-    incremental_snapshot = await engine.accept(incremental["id"], actor="analyst")
-    assert incremental_snapshot["previous_snapshot_id"] == base_snapshot["id"]
-
     eligibility = service.model_eligibility(case["id"])
-    assert eligibility["application_build"]["build_id"] == base_build["id"]
+    assert eligibility["application_build"]["build_id"] == overlay_build["id"]
     if signed is not None:
         assert eligibility["default_model_selection"] == selection
     else:
         assert eligibility["default_model_selection"] is None
         assert eligibility["fallback_acknowledgement_required"] is True
+
+    from caos.deliverables.document import compose_document
+
+    selected_model, _ = service._resolve_stored_selection(case_id, selection)
+    sections = compose_document(pathway=pathway, template=service.templates()[pathway], blocks=[],
+                                artifacts=service._accepted_artifacts(case_id), model=selected_model)
+    label = "Signed-Off Revision outputs" if signed else "Unchanged prior-model base values"
+    assert any(section["title"] == label for section in sections)
+    assert any("do not recalculate the complete forecast" in section.get("body", "") for section in sections)
+    assert selected_model["outputs"] == (signed["outputs"] if signed else models.validated_publication_build(case_id)["outputs"])
 
     template = service.templates(template_version="caos.deliverable-template.v1")[pathway]
     if signed is not None:
@@ -1687,7 +1696,7 @@ async def test_live_incremental_pathway_publishes_against_a_validated_prior_full
                     source,
                     model_selection={
                         "kind": "APPLICATION_BUILD",
-                        "build_id": base_build["id"],
+                        "build_id": overlay_build["id"],
                         "fallback_acknowledged": True,
                     },
                 ),
@@ -1700,24 +1709,28 @@ async def test_live_incremental_pathway_publishes_against_a_validated_prior_full
         actor="analyst",
     )
     expected_model_authority = {
-        "relationship": "PRIOR_FULL_CREDIT_BASE",
-        "snapshot_id": base_snapshot["id"],
-        "snapshot_digest": base_snapshot["digest"],
-        "run_id": base_snapshot["run_id"],
-        "source_set_id": base_snapshot["source_set_id"],
-        "source_set_version": base_snapshot["source_set_version"],
-        "input_fingerprint": base_build["input_fingerprint"],
-        "payload_digest": base_build["payload_digest"],
+        "relationship": "CURRENT_ACCEPTED_OVERLAY",
+        "snapshot_id": incremental_snapshot["id"],
+        "snapshot_digest": incremental_snapshot["digest"],
+        "run_id": incremental_snapshot["run_id"],
+        "source_set_id": incremental_snapshot["source_set_id"],
+        "source_set_version": incremental_snapshot["source_set_version"],
+        "input_fingerprint": overlay_build["input_fingerprint"],
+        "payload_digest": overlay_build["payload_digest"],
+        "base_model": overlay_build["payload"]["pathway_effects"][0]["base_model"],
     }
     assert revision["content"]["model_identity"]["model_authority"] == (
         expected_model_authority
     )
 
     frozen = freeze_now(service, case["id"], revision)
+    retried = freeze_now(service, case["id"], revision, sign=False)
+    assert retried == frozen, "publication retry retains the same frozen identity and bytes"
     assert frozen["payload"]["authority"]["accepted_snapshot_id"] == (
         incremental_snapshot["id"]
     )
-    assert frozen["payload"]["model"]["build_id"] == base_build["id"]
+    assert frozen["payload"]["model"]["build_id"] == overlay_build["id"]
+    assert frozen["payload"]["model"]["pathway_effects"] == overlay_build["payload"]["pathway_effects"]
     assert frozen["payload"]["model"]["model_authority"] == (
         expected_model_authority
     )
@@ -1729,7 +1742,7 @@ async def test_live_incremental_pathway_publishes_against_a_validated_prior_full
             "snapshot_id": incremental_snapshot["id"],
             "source_set_id": incremental_snapshot["source_set_id"],
             "source_set_version": incremental_snapshot["source_set_version"],
-            "build_id": base_build["id"],
+            "build_id": overlay_build["id"],
             "methodology_build_id": base_build["methodology_build_id"],
         }
     )

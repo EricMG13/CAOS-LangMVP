@@ -501,9 +501,6 @@ class DeliverableService:
     ) -> bool:
         if head is None or build is None:
             return False
-        prior_full_credit = (
-            model_authority.get("relationship") == "PRIOR_FULL_CREDIT_BASE"
-        )
         return (
             head.get("build_id") == build.get("id")
             and head.get("snapshot_id") == model_authority.get("snapshot_id")
@@ -518,10 +515,7 @@ class DeliverableService:
             and head.get("assumptions_digest")
             == digest(head.get("effective_assumptions"))
             and head.get("outputs_digest") == digest(head.get("outputs"))
-            and (
-                head.get("state") == "ACTIVE"
-                or (prior_full_credit and head.get("state") == "STALE")
-            )
+            and head.get("state") == "ACTIVE"
         )
 
     def _live_revision(self, case_id: str, selection: Any) -> dict[str, Any]:
@@ -865,11 +859,24 @@ class DeliverableService:
             raise ValueError(
                 "DELIVERABLE_PATHWAY_AUTHORITY_MISMATCH: Full Credit cannot publish a Distressed overlay"
             )
-        if pathway in {"EARNINGS_UPDATE", "COVENANT_REFINANCING"}:
+        if pathway != "FULL_CREDIT" and model is not None:
             model_authority = (model or {}).get("model_authority") or {}
-            if model_authority.get("relationship") != "PRIOR_FULL_CREDIT_BASE":
+            incremental = pathway in {"EARNINGS_UPDATE", "COVENANT_REFINANCING"}
+            effect = effects[0] if len(effects) == 1 and isinstance(effects[0], dict) else {}
+            accepted = effect.get("distressed_authority" if pathway == "DISTRESSED_RESTRUCTURING" else "accepted_authority") or {}
+            if (
+                model_authority.get("relationship") != ("CURRENT_ACCEPTED_OVERLAY" if incremental else "CURRENT_ACCEPTED_MODEL")
+                or model_authority.get("snapshot_id") != snapshot["id"]
+                or effect.get("schema_version") != "caos.model-pathway-effect.v1"
+                or effect.get("pathway") != pathway
+                or accepted.get("snapshot_id") != snapshot["id"]
+                or accepted.get("snapshot_digest") != snapshot["digest"]
+                or accepted.get("run_id") != snapshot["run_id"]
+                or not effect.get("base_model")
+                or (incremental and model_authority.get("base_model") != effect.get("base_model"))
+            ):
                 raise ValueError(
-                    "DELIVERABLE_PATHWAY_AUTHORITY_MISMATCH: incremental publication requires a validated prior Full Credit model"
+                    "DELIVERABLE_PATHWAY_AUTHORITY_MISMATCH: publication requires the accepted overlay and its validated prior Full Credit model"
                 )
         if pathway != "DISTRESSED_RESTRUCTURING":
             return
