@@ -58,6 +58,7 @@ from .engine import (
     WORKSHEET_SCHEMA_VERSION,
     CpModelBundle,
     ModelInputError,
+    finite_operand,
     json_value,
     project_cp2b,
 )
@@ -2389,10 +2390,15 @@ class ModelService:
 
         working = [item.model_dump() for item in request.assumptions]
         _model, baseline_calculations = self._calculate(build, working, deadline)
-        baseline_outputs = _annual_outputs(baseline_calculations)
-        baseline = baseline_outputs.get(request.case, {}).get(request.output_period_id, {}).get(request.output_id)
-        if baseline is None:
-            raise ValueError("MODEL_TORNADO_OUTPUT_INVALID")
+        horizon = _tornado_output_horizon(
+            baseline_calculations, request.case, request.output_period_id,
+        )
+        output_period_ids = (
+            horizon if request.output_id == "minimum_cash" else [request.output_period_id]
+        )
+        baseline = _tornado_output_value(
+            baseline_calculations, request.output_id, output_period_ids,
+        )
 
         definitions = {item["assumption_id"]: item for item in self.bundle.assumption_registry["definitions"]}
         ready_indices: dict[str, list[int]] = {}
@@ -2415,10 +2421,12 @@ class ModelService:
                 high_rows[index]["value"] = float(min(hard_max, value + swing))
             _low_model, low_calculations = self._calculate(build, low_rows, deadline)
             _high_model, high_calculations = self._calculate(build, high_rows, deadline)
-            low = _annual_outputs(low_calculations)[request.case][request.output_period_id][request.output_id]
-            high = _annual_outputs(high_calculations)[request.case][request.output_period_id][request.output_id]
-            if low is None or high is None:
-                continue
+            low = _tornado_output_value(
+                low_calculations, request.output_id, output_period_ids,
+            )
+            high = _tornado_output_value(
+                high_calculations, request.output_id, output_period_ids,
+            )
             bars.append({
                 "assumption_id": assumption_id,
                 "label": label,
@@ -2437,6 +2445,7 @@ class ModelService:
             "draft_generation": request.draft_generation,
             "case": request.case,
             "output_period_id": request.output_period_id,
+            "output_period_ids": output_period_ids,
             "output_id": request.output_id,
             "intensity": request.intensity,
             "baseline": baseline,
@@ -3048,6 +3057,71 @@ def _annual_outputs(calculations: Any) -> dict[str, Any]:
             for breach in calculations.first_breaches[case]
         ]
     return result
+
+
+def minimum_cash_value(calculations: Any, column_ids: list[str]) -> Decimal:
+    for_column = calculations.for_column
+    validate = finite_operand
+    return min([
+        validate(
+            for_column(column_id).values["cash_and_equivalents"],
+            "minimum cash",
+        )
+        for column_id in column_ids
+    ])
+
+
+def _tornado_output_horizon(
+    calculations: Any, case: str, output_period_id: str,
+) -> list[str]:
+    horizon: list[str] = []
+    for column in calculations.columns:
+        if column.column_id == output_period_id:
+            if column.group != case or not column.available:
+                raise ValueError("MODEL_TORNADO_OUTPUT_INVALID")
+            horizon.append(column.column_id)
+            return horizon
+        if column.group == case and column.available:
+            horizon.append(column.column_id)
+    raise ValueError("MODEL_TORNADO_OUTPUT_INVALID")
+
+
+def _tornado_output_value(
+    calculations: Any, output_id: str, output_period_ids: list[str],
+) -> str:
+    try:
+        if len(output_period_ids) == 1:
+            column_id = output_period_ids[0]
+            if not any(
+                column.available and column.column_id == column_id
+                for column in calculations.columns
+            ):
+                raise ValueError("unavailable tornado output column")
+        else:
+            missing = set(output_period_ids)
+            for column in calculations.columns:
+                if column.available:
+                    missing.discard(column.column_id)
+                if not missing:
+                    break
+            if missing:
+                raise ValueError("unavailable tornado output column")
+        if output_id == "minimum_cash":
+            value = minimum_cash_value(calculations, output_period_ids)
+        else:
+            calculation = calculations.for_column(output_period_ids[0])
+            if output_id in _OUTPUT_VALUE_IDS:
+                values = calculation.values
+            elif output_id in _OUTPUT_METRIC_IDS:
+                values = calculation.credit_metrics
+            else:
+                raise KeyError(output_id)
+            value = finite_operand(values[output_id], f"tornado {output_id}")
+        serialized = _json_number(value)
+        assert serialized is not None
+        return serialized
+    except (IndexError, KeyError, TypeError, ValueError) as exc:
+        raise ValueError("MODEL_TORNADO_OUTPUT_INVALID") from exc
 
 
 def _output_deltas(baseline: dict[str, Any], changed: dict[str, Any]) -> dict[str, Any]:

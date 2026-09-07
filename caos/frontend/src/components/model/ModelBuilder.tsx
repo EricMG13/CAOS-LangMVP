@@ -39,6 +39,7 @@ import {
   queueCalculation,
   scrubberCommitDecision,
   selectedWorksheetCell,
+  tornadoOutputLabel,
   worksheetCellAuthority,
   worksheetColumns,
   worksheetNavigationForIdentity,
@@ -68,7 +69,8 @@ const EXPORT_POLL_MS = 1500;
 const TORNADO_METRICS = [
   { id: "net_leverage", label: "Net leverage", unit: "x" },
   { id: "cumulative_fcf", label: "Cumulative FCF", unit: "$M" },
-  { id: "cash_and_equivalents", label: "Cash", unit: "$M" },
+  { id: "cash_and_equivalents", label: "Period-end cash", unit: "$M" },
+  { id: "minimum_cash", label: "Minimum cash", unit: "$M" },
   { id: "interest_coverage", label: "Interest coverage", unit: "x" },
 ] as const;
 
@@ -120,6 +122,7 @@ type TornadoResult = {
   draft_generation: number;
   case: ModelCase;
   output_period_id: string;
+  output_period_ids: string[];
   output_id: string;
   intensity: number;
   baseline: string;
@@ -350,7 +353,9 @@ function TornadoChart({ result, metric }: { result: TornadoResult; metric: (type
   const span = maximum - minimum || 1;
   const scale = (value: number) => (value - minimum) / span * 100;
   const format = (value: number) => metric.unit === "x" ? `${value.toFixed(2)}x` : `$${Math.round(value).toLocaleString()}M`;
+  const outputLabel = tornadoOutputLabel(metric.label, result.output_period_ids);
   return <div className={styles.tornadoChart} role="group" aria-label={`${metric.label} tornado for ${result.case}, ${result.output_period_id}`}>
+    <p className="meta-label">{outputLabel}</p>
     {result.bars.map((bar) => {
       const first = Number(bar.low);
       const second = Number(bar.high);

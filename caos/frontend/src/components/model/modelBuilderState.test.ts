@@ -14,6 +14,7 @@ import {
   scrubberCommitDecision,
   selectedWorksheetCell,
   sensitivityPeriodRows,
+  tornadoOutputLabel,
   worksheetNavigationForIdentity,
   worksheetSourceLinks,
   worksheetCellAuthority,
@@ -100,6 +101,15 @@ test("derives spreadsheet columns from the engine's max-column metadata", () => 
     { column: 27, letter: "AA" },
     { column: 28, letter: "AB" },
   ]);
+});
+
+test("minimum cash labels the exact returned forecast horizon", () => {
+  assert.equal(tornadoOutputLabel("Minimum cash", [
+    "BASE::FY2025", "BASE::FY2026", "BASE::FY2027",
+  ]), "Minimum cash · FY2025–FY2027");
+  assert.equal(tornadoOutputLabel("Period-end cash", [
+    "DOWNSIDE::FY2027",
+  ]), "Period-end cash · FY2027");
 });
 
 test("period families, sections, and business/debt groups derive from served worksheet cells", () => {

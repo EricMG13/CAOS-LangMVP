@@ -100,7 +100,11 @@ test("the legacy tornado replaces sensitivities and scenarios", () => {
   assert.match(modelBuilder, /next\.intensity !== tornadoIntensity/);
   assert.match(modelBuilder, /Net leverage/);
   assert.match(modelBuilder, /Cumulative FCF/);
+  assert.match(modelBuilder, /Minimum cash/);
+  assert.match(modelBuilder, /Period-end cash/);
   assert.match(modelBuilder, /Interest coverage/);
+  assert.match(modelBuilder, /output_period_ids: string\[\]/);
+  assert.match(modelBuilder, /tornadoOutputLabel\(metric\.label, result\.output_period_ids\)/);
   assert.match(modelBuilder, /role="group" aria-label=\{`\$\{metric\.label\} tornado/);
   assert.match(modelBuilder, /left: `\$\{scale\(low\)\}%`/);
   assert.match(modelBuilder, /width: `\$\{Math\.max\(0, scale\(high\) - scale\(low\)\)\}%`/);

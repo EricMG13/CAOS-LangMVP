@@ -43,6 +43,7 @@ import threading
 from concurrent.futures import ThreadPoolExecutor
 from decimal import Decimal
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -298,7 +299,7 @@ def _one_way_request(registry, build_id, available, *, minimum, maximum, step, o
     })
 
 
-def _tornado_request(registry, build_id, assumptions, *, output_period_id, output_id="net_leverage", generation=5):
+def _tornado_request(registry, build_id, assumptions, *, output_period_id, output_id="net_leverage", generation=5, case="BASE"):
     from caos.contracts import ModelTornadoRequest
 
     return ModelTornadoRequest.model_validate({
@@ -308,7 +309,7 @@ def _tornado_request(registry, build_id, assumptions, *, output_period_id, outpu
         "registry_digest": registry["digest"],
         "assumptions": assumptions,
         "draft_generation": generation,
-        "case": "BASE",
+        "case": case,
         "output_period_id": output_period_id,
         "output_id": output_id,
         "intensity": 1,
@@ -378,6 +379,37 @@ def test_finite_operand_guard_names_the_offending_operand(operand):
     with pytest.raises(CpModelV3Error, match=operand):
         finite_operand(Decimal("Infinity"), operand)
     assert finite_operand(Decimal("1.5"), operand) == Decimal("1.5")
+
+
+def test_minimum_cash_value_reads_raw_decimal_calculation_columns():
+    from caos.models.service import minimum_cash_value
+
+    values = {
+        "BASE::FY2025": Decimal("10"),
+        "BASE::FY2026": Decimal("-20"),
+    }
+    calculations = SimpleNamespace(for_column=lambda column_id: SimpleNamespace(
+        values={"cash_and_equivalents": values[column_id]},
+    ))
+
+    assert minimum_cash_value(
+        calculations, ["BASE::FY2025", "BASE::FY2026"],
+    ) == Decimal("-20")
+
+
+def test_tornado_horizon_preserves_the_calculation_column_order():
+    from caos.models.service import _tornado_output_horizon
+
+    calculations = SimpleNamespace(columns=(
+        SimpleNamespace(column_id="BASE::FY2026", group="BASE", available=True),
+        SimpleNamespace(column_id="DOWNSIDE::FY2025", group="DOWNSIDE", available=True),
+        SimpleNamespace(column_id="BASE::FY2025", group="BASE", available=True),
+        SimpleNamespace(column_id="BASE::FY2027", group="BASE", available=True),
+    ))
+
+    assert _tornado_output_horizon(calculations, "BASE", "BASE::FY2027") == [
+        "BASE::FY2026", "BASE::FY2025", "BASE::FY2027",
+    ]
 
 
 # --- methodology bundle and assumption registry -----------------------------------
@@ -1683,6 +1715,7 @@ async def test_tornado_is_ranked_and_centred_on_the_complete_working_forecast(mo
     )
 
     assert tornado["baseline"] == preview["outputs"]["BASE"][output_period_id]["net_leverage"]
+    assert tornado["output_period_ids"] == [output_period_id]
     assert tornado["draft_generation"] == 5
     assert tornado["bars"]
     assert all({"assumption_id", "label", "unit", "swing", "low", "high"} <= set(bar) for bar in tornado["bars"])
@@ -1690,6 +1723,169 @@ async def test_tornado_is_ranked_and_centred_on_the_complete_working_forecast(mo
     assert magnitudes == sorted(magnitudes, reverse=True)
     assert models.revisions(case["id"]) == []
     assert store.audit_trail() == before_audit
+
+
+def _cash_calculations(base, downside=None, *, unavailable=()):
+    values = {
+        **{f"BASE::FY{2025 + index}": value for index, value in enumerate(base)},
+        **{f"DOWNSIDE::FY{2025 + index}": value for index, value in enumerate(downside or base)},
+    }
+    columns = tuple(
+        SimpleNamespace(column_id=column_id, group=column_id.split("::", 1)[0], available=column_id not in unavailable)
+        for column_id in values
+    )
+    return SimpleNamespace(
+        columns=columns,
+        for_column=lambda column_id: SimpleNamespace(
+            values={"cash_and_equivalents": values[column_id]},
+            credit_metrics={"net_leverage": Decimal("4")},
+        ),
+    )
+
+
+async def test_minimum_cash_tornado_uses_one_exact_horizon_for_baseline_and_every_shock(
+    models, engine, store, monkeypatch,
+):
+    from caos.models.service import LEGACY_TORNADO_DRIVERS
+
+    case, build = await _built_case(models, engine, store)
+    registry = models.assumption_registry(case["id"], build["id"])
+    endpoint = "BASE::FY2027"
+    baseline = _cash_calculations([Decimal("15"), Decimal("-20"), Decimal("8")])
+    low = _cash_calculations([Decimal("12"), Decimal("-30"), Decimal("40")])
+    high = _cash_calculations([Decimal("18"), Decimal("-10"), Decimal("4")])
+    books = iter([baseline, *[book for _driver in LEGACY_TORNADO_DRIVERS for book in (low, high)]])
+    monkeypatch.setattr(models, "_calculate", lambda _build, _rows, _deadline: (None, next(books)))
+
+    tornado = models.tornado(case["id"], _tornado_request(
+        registry, build["id"], registry["defaults"],
+        output_period_id=endpoint, output_id="minimum_cash",
+    ))
+
+    assert tornado["output_period_ids"] == ["BASE::FY2025", "BASE::FY2026", endpoint]
+    assert tornado["baseline"] == "-20"
+    assert tornado["bars"]
+    assert all(bar["low"] == "-30" and bar["high"] == "-10" for bar in tornado["bars"])
+
+
+async def test_minimum_cash_tornado_isolates_the_selected_case(models, engine, store, monkeypatch):
+    case, build = await _built_case(models, engine, store)
+    registry = models.assumption_registry(case["id"], build["id"])
+    endpoint = "DOWNSIDE::FY2027"
+    book = _cash_calculations(
+        [Decimal("-900"), Decimal("-800"), Decimal("-700")],
+        [Decimal("9"), Decimal("-11"), Decimal("5")],
+    )
+    monkeypatch.setattr(models, "_calculate", lambda _build, _rows, _deadline: (None, book))
+
+    tornado = models.tornado(case["id"], _tornado_request(
+        registry, build["id"], registry["defaults"], case="DOWNSIDE",
+        output_period_id=endpoint, output_id="minimum_cash",
+    ))
+
+    assert tornado["output_period_ids"] == [
+        "DOWNSIDE::FY2025", "DOWNSIDE::FY2026", endpoint,
+    ]
+    assert tornado["baseline"] == "-11"
+    assert all(bar["low"] == "-11" and bar["high"] == "-11" for bar in tornado["bars"])
+
+
+@pytest.mark.parametrize("bad_call", [0, 1], ids=["baseline", "shock"])
+async def test_minimum_cash_tornado_rejects_nonfinite_horizon_values(
+    models, engine, store, monkeypatch, bad_call,
+):
+    case, build = await _built_case(models, engine, store)
+    registry = models.assumption_registry(case["id"], build["id"])
+    valid = _cash_calculations([Decimal("10"), Decimal("8"), Decimal("6")])
+    invalid = _cash_calculations([Decimal("10"), Decimal("NaN"), Decimal("6")])
+    calls = 0
+
+    def calculate(_build, _rows, _deadline):
+        nonlocal calls
+        result = invalid if calls == bad_call else valid
+        calls += 1
+        return None, result
+
+    monkeypatch.setattr(models, "_calculate", calculate)
+
+    with pytest.raises(ValueError, match="^MODEL_TORNADO_OUTPUT_INVALID$"):
+        models.tornado(case["id"], _tornado_request(
+            registry, build["id"], registry["defaults"],
+            output_period_id="BASE::FY2027", output_id="minimum_cash",
+        ))
+
+
+async def test_minimum_cash_tornado_rejects_a_missing_intermediate_shock_value(
+    models, engine, store, monkeypatch,
+):
+    case, build = await _built_case(models, engine, store)
+    registry = models.assumption_registry(case["id"], build["id"])
+    valid = _cash_calculations([Decimal("10"), Decimal("8"), Decimal("6")])
+    missing = _cash_calculations([Decimal("10"), Decimal("8"), Decimal("6")])
+    missing.for_column = lambda column_id: SimpleNamespace(values=(
+        {} if column_id == "BASE::FY2026" else {"cash_and_equivalents": Decimal("6")}
+    ))
+    books = iter([valid, missing, valid])
+    monkeypatch.setattr(models, "_calculate", lambda _build, _rows, _deadline: (None, next(books)))
+
+    with pytest.raises(ValueError, match="^MODEL_TORNADO_OUTPUT_INVALID$"):
+        models.tornado(case["id"], _tornado_request(
+            registry, build["id"], registry["defaults"],
+            output_period_id="BASE::FY2027", output_id="minimum_cash",
+        ))
+
+
+async def test_tornado_rejects_instead_of_dropping_an_ordinary_metric_shock(
+    models, engine, store, monkeypatch,
+):
+    case, build = await _built_case(models, engine, store)
+    registry = models.assumption_registry(case["id"], build["id"])
+    valid = _cash_calculations([Decimal("10"), Decimal("8"), Decimal("6")])
+    missing = _cash_calculations([Decimal("10"), Decimal("8"), Decimal("6")])
+    missing.for_column = lambda column_id: SimpleNamespace(
+        values={"cash_and_equivalents": Decimal("6")}, credit_metrics={},
+    )
+    books = iter([valid, missing, valid])
+    monkeypatch.setattr(models, "_calculate", lambda _build, _rows, _deadline: (None, next(books)))
+
+    with pytest.raises(ValueError, match="^MODEL_TORNADO_OUTPUT_INVALID$"):
+        models.tornado(case["id"], _tornado_request(
+            registry, build["id"], registry["defaults"],
+            output_period_id="BASE::FY2027",
+        ))
+
+
+async def test_tornado_does_not_expose_unregistered_internal_metrics(models, engine, store):
+    case, build = await _built_case(models, engine, store)
+    registry = models.assumption_registry(case["id"], build["id"])
+    output_period_id = sorted(models.default_outputs(case["id"], build["id"])["BASE"])[-1]
+
+    with pytest.raises(ValueError, match="^MODEL_TORNADO_OUTPUT_INVALID$"):
+        models.tornado(case["id"], _tornado_request(
+            registry, build["id"], registry["defaults"],
+            output_period_id=output_period_id, output_id="senior_leverage",
+        ))
+
+
+@pytest.mark.parametrize("endpoint", [
+    "BASE::FY2028", "BASE::FY2027", "DOWNSIDE::FY2027",
+])
+async def test_minimum_cash_tornado_rejects_unknown_unavailable_or_wrong_case_endpoint(
+    models, engine, store, monkeypatch, endpoint,
+):
+    case, build = await _built_case(models, engine, store)
+    registry = models.assumption_registry(case["id"], build["id"])
+    book = _cash_calculations(
+        [Decimal("10"), Decimal("8"), Decimal("6")],
+        unavailable=("BASE::FY2027",),
+    )
+    monkeypatch.setattr(models, "_calculate", lambda _build, _rows, _deadline: (None, book))
+
+    with pytest.raises(ValueError, match="^MODEL_TORNADO_OUTPUT_INVALID$"):
+        models.tornado(case["id"], _tornado_request(
+            registry, build["id"], registry["defaults"],
+            output_period_id=endpoint, output_id="minimum_cash",
+        ))
 
 
 async def test_calculations_share_one_aggregate_deadline_without_persistence(models, engine, store):
@@ -1855,6 +2051,7 @@ async def test_http_tornado_route_uses_the_complete_working_forecast(client, mod
 
     assert response.status_code == 200
     assert response.json()["baseline"] == preview["outputs"]["BASE"][output_period_id]["net_leverage"]
+    assert response.json()["output_period_ids"] == [output_period_id]
     assert response.json()["bars"]
 
 

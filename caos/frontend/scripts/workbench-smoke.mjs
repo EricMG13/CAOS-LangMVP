@@ -1480,7 +1480,7 @@ try {
     tornadoPosts += 1;
     const requestBody = route.request().postDataJSON();
     assert.equal(requestBody.assumptions.length, assumptionDefaults.length, "tornado did not receive the complete working forecast");
-    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ build_id: modelBuildId, draft_generation: requestBody.draft_generation, case: requestBody.case, output_period_id: requestBody.output_period_id, output_id: requestBody.output_id, intensity: requestBody.intensity, baseline: "4.2", bars: [
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ build_id: modelBuildId, draft_generation: requestBody.draft_generation, case: requestBody.case, output_period_id: requestBody.output_period_id, output_period_ids: [requestBody.output_period_id], output_id: requestBody.output_id, intensity: requestBody.intensity, baseline: "4.2", bars: [
       { assumption_id: "operating.adjusted_ebitda_margin", label: "EBITDA margin", unit: "PERCENT_DECIMAL", swing: "0.015", low: "3.8", high: "4.8" },
       { assumption_id: "operating.consolidated_revenue_growth", label: "Revenue growth", unit: "PERCENT_DECIMAL", swing: "0.025", low: "3.9", high: "4.6" },
       { assumption_id: "rates.base_rate", label: "Interest rate", unit: "PERCENT_DECIMAL", swing: "0.01", low: "4.0", high: "4.4" },

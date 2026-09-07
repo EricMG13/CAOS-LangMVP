@@ -528,6 +528,12 @@ export function primaryModelAction({
   return "PREVIEW";
 }
 
+export function tornadoOutputLabel(label: string, outputPeriodIds: readonly string[]): string {
+  const periods = outputPeriodIds.map((periodId) => periodId.split("::").at(-1) || periodId);
+  if (!periods.length) return label;
+  return `${label} · ${periods.length === 1 ? periods[0] : `${periods[0]}–${periods.at(-1)}`}`;
+}
+
 
 // Model outputs and assumption defaults reach the client as Decimal-serialized
 // strings, so this lives beside the other pure state helpers where it can be
