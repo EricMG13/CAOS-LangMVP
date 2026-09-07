@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
-import { FormEvent, MouseEvent as ReactMouseEvent, ReactNode, useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
+import { FormEvent, MouseEvent as ReactMouseEvent, ReactNode, useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from "react";
 import EvidenceChip from "./EvidenceChip";
 import ArtifactMarkdown from "./ArtifactMarkdown";
 import OperatorControls from "./OperatorControls";
@@ -139,6 +139,10 @@ export default function Workspace({ destination, children }: { destination?: Des
   const intakeRequest = useRef(0);
   const routeAuthorityRef = useRef("");
   const modelEvidenceGeneration = useRef(0);
+  const replaceDrawer = useCallback((next: DrawerState | null) => {
+    modelEvidenceGeneration.current += 1;
+    setDrawer(next);
+  }, []);
   const modelDraftDirtyRef = useRef(false);
   const reportDraftDirtyRef = useRef(false);
   const discardPromptRef = useRef<DraftDiscardRequest | null>(null);
@@ -345,7 +349,7 @@ export default function Workspace({ destination, children }: { destination?: Des
     if (nextRunId) dispatchAuthority({ type: "selectRun", caseId: nextCaseId, runId: nextRunId });
     setRunLoading(false);
     setPendingAction("");
-    setDrawer(null);
+    replaceDrawer(null);
     setAcceptPrompt(false);
     setLocalAccepted(null);
     setAuthority(null);
@@ -357,7 +361,7 @@ export default function Workspace({ destination, children }: { destination?: Des
     // refetches only when the new case names one (FE-A0 F6).
     setIntake(null);
     setUnresolvedCaseId("");
-  }, [cases, dispatchAuthority]);
+  }, [cases, dispatchAuthority, replaceDrawer]);
 
   const selectCase = useCallback((nextCaseId: string, availableCases = cases, trigger?: HTMLElement | null) => {
     const currentCaseId = authorityRef.current.caseId || "";
@@ -635,14 +639,18 @@ export default function Workspace({ destination, children }: { destination?: Des
   useEffect(() => {
     // Visible case authority and its drawer must clear at every reducer authority generation.
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    modelEvidenceGeneration.current += 1; setAuthority(null); setDrawer(null);
+    setAuthority(null); replaceDrawer(null);
     if (!caseId || !caseIsAuthorized) return;
     const controller = new AbortController();
     void refreshCase(caseId, controller.signal);
     return () => controller.abort();
     // `refreshCase` deliberately resolves the current external authority.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [authorityState.generation, caseId, caseIsAuthorized]);
+  }, [authorityState.generation, caseId, caseIsAuthorized, replaceDrawer]);
+
+  useLayoutEffect(() => {
+    if (active !== "Model") modelEvidenceGeneration.current += 1;
+  }, [active]);
 
   useEffect(() => {
     // One vocabulary: the tab reads the destination word on a document load (route
@@ -1114,10 +1122,13 @@ export default function Workspace({ destination, children }: { destination?: Des
     const context = requestContext(authorityRef.current);
     if (!context.caseId) return;
     const generation = ++modelEvidenceGeneration.current;
+    const isCurrent = () => generation === modelEvidenceGeneration.current
+      && opener.isConnected
+      && matchesAuthority(authorityRef.current, context);
     setError("");
     try {
       const source = await request<SourceRecord>(`/api/cases/${context.caseId}/sources/${encodeURIComponent(sourceId)}`);
-      if (generation !== modelEvidenceGeneration.current || !matchesAuthority(authorityRef.current, context)) return;
+      if (!isCurrent()) return;
       if (source.withdrawn || blockId && !source.blocks.some((block) => block.block_id === blockId)) {
         setError(source.withdrawn ? "Evidence source is no longer live." : `Evidence block ${blockId} is no longer available.`);
         return;
@@ -1131,9 +1142,7 @@ export default function Workspace({ destination, children }: { destination?: Des
         blockIds: blockId ? [blockId] : [],
       });
     } catch (caught) {
-      if (generation === modelEvidenceGeneration.current && matchesAuthority(authorityRef.current, context)) {
-        setError(firstErrorMessage(caught, "Evidence source unavailable."));
-      }
+      if (isCurrent()) setError(firstErrorMessage(caught, "Evidence source unavailable."));
     }
   }, []);
 
@@ -1149,7 +1158,7 @@ export default function Workspace({ destination, children }: { destination?: Des
     if (!selectedCase && active !== "Portfolio" && active !== "Admin") return unresolvedCaseId ? null : <EmptyPanel text="Create or select a case before entering an analytical workspace." action={{ label: "Open Portfolio", href: "/portfolio/" }} />;
     switch (active) {
       case "Portfolio": return <CasesView writeAccess={writeAccess} cases={cases} casesLoading={casesLoading} selectedCase={selectedCase} caseId={caseId} createCase={createCase} pendingAction={pendingAction} intake={intake} intakeRefusal={intakeRefusal} run={run} submitIntake={submitIntake} />;
-      case "Sources": return <SourcesView key={caseId} writeAccess={writeAccess} selectedCase={selectedCase} artifactId={routeArtifactId} sourceId={routeSourceId} blockId={routeBlockId} upload={upload} pendingAction={pendingAction} onOpenEvidence={(evidenceId, source, opener, blockId, blockIds) => setDrawer({ kind: "evidence", evidenceId, source, opener, blockId, blockIds })} />;
+      case "Sources": return <SourcesView key={caseId} writeAccess={writeAccess} selectedCase={selectedCase} artifactId={routeArtifactId} sourceId={routeSourceId} blockId={routeBlockId} upload={upload} pendingAction={pendingAction} onOpenEvidence={(evidenceId, source, opener, blockId, blockIds) => replaceDrawer({ kind: "evidence", evidenceId, source, opener, blockId, blockIds })} />;
       case "Run": return <RunConsole fromIntake={Boolean(run && intake?.case_id === caseId && intake.run?.id === run.id)} writeAccess={writeAccess} caseId={caseId} selectedCase={selectedCase} run={run} runLoading={runLoading} runError={runError} startRun={startRun} acceptRun={acceptRun} acceptedSnapshotId={acceptedRunSnapshotId} supersededSnapshotId={supersededRunSnapshotId} visibleSnapshotId={authority?.accepted?.id || ""} switchRequired={authority?.switch_required === true} approveResearchPlan={approveResearchPlan} approvalUnavailable={approvalUnavailable === runId} pendingAction={pendingAction} resumeSlot={resumeSlot} />;
       case "Analysis": return <DeepDive writeAccess={writeAccess} selectedCase={selectedCase} question={routeQuestion} caseId={caseId} run={run} authority={authority} authorityStatus={authorityStatus} onSwitchSnapshot={switchSnapshot} />;
       case "Market": return <RVView key={caseId} writeAccess={writeAccess} caseId={caseId} />;
@@ -1171,7 +1180,7 @@ export default function Workspace({ destination, children }: { destination?: Des
       drawer={drawer}
       error={error}
       onCaseChange={(nextCaseId, trigger) => selectCase(nextCaseId, cases, trigger)}
-      onDrawerChange={setDrawer}
+      onDrawerChange={replaceDrawer}
       role={role}
       runId={runId}
       runIsLive={runIsLive}

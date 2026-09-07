@@ -887,7 +887,10 @@ def test_worksheet_serialization_requires_no_external_binaries(monkeypatch):
 
 
 def test_model_service_authorizes_only_exact_pinned_worksheet_references():
-    from caos.models.service import _authorize_worksheet_source_links
+    from caos.models.service import (
+        _authorize_worksheet_source_links,
+        _worksheet_source_navigation,
+    )
 
     raw_references = [
         "src-pinned | b00001 | 2026-08-24",
@@ -900,6 +903,7 @@ def test_model_service_authorizes_only_exact_pinned_worksheet_references():
     ]
     payload = {
         "tabs": [{
+            "id": "MODEL",
             "cells": [
                 {"address": f"A{index}", "source_refs": source_refs}
                 for index, source_refs in enumerate(raw_references, 1)
@@ -914,6 +918,11 @@ def test_model_service_authorizes_only_exact_pinned_worksheet_references():
         {"id": "src-ambiguous", "blocks": [{"block_id": "b00003"}]},
     ]
 
+    navigation = _worksheet_source_navigation(
+        payload,
+        live_sources,
+        {"kind": "BUILD", "build_id": "mdl-legacy", "payload_digest": "a" * 64},
+    )
     _authorize_worksheet_source_links(payload, live_sources)
 
     cells = payload["tabs"][0]["cells"]
@@ -932,6 +941,17 @@ def test_model_service_authorizes_only_exact_pinned_worksheet_references():
     assert cells[6]["source_links"] == [{"source_id": "src-duplicate-block", "block_id": None}], (
         "a duplicate block identity never authorizes exact block navigation"
     )
+    assert navigation == {
+        "kind": "BUILD",
+        "build_id": "mdl-legacy",
+        "payload_digest": "a" * 64,
+        "cells": [
+            {"tab_id": "MODEL", "address": "A1", "source_links": cells[0]["source_links"]},
+            {"tab_id": "MODEL", "address": "A2", "source_links": cells[1]["source_links"]},
+            {"tab_id": "MODEL", "address": "A3", "source_links": cells[2]["source_links"]},
+            {"tab_id": "MODEL", "address": "A7", "source_links": cells[6]["source_links"]},
+        ],
+    }
 
 
 # --- CP-2B derived projection -----------------------------------------------------
@@ -1762,6 +1782,30 @@ async def test_http_worksheet_route_serves_the_ready_build_payload(client, model
     sourced = next(cell for cell in cells if cell.get("source_refs"))
     assert sourced["source_links"] and sourced["source_links"][0]["block_id"] is None
 
+    legacy_payload = copy.deepcopy(build["payload"])
+    for tab in legacy_payload["tabs"]:
+        for cell in tab["cells"]:
+            cell.pop("source_links", None)
+    legacy_digest = _digest(legacy_payload)
+    assert models.builds.update_build(
+        build["id"],
+        worksheet_schema_version=None,
+        payload=legacy_payload,
+        payload_digest=legacy_digest,
+    )
+    legacy_response = client.get(
+        f"/api/cases/{case['id']}/models/{build['id']}/worksheet",
+        headers=_ANALYST,
+    )
+    assert legacy_response.status_code == 200
+    legacy_worksheet = legacy_response.json()
+    assert legacy_worksheet["payload"] == legacy_payload
+    assert legacy_worksheet["payload_digest"] == legacy_digest
+    assert legacy_worksheet["worksheet_navigation"]["kind"] == "BUILD"
+    assert legacy_worksheet["worksheet_navigation"]["build_id"] == build["id"]
+    assert legacy_worksheet["worksheet_navigation"]["payload_digest"] == legacy_digest
+    assert legacy_worksheet["worksheet_navigation"]["cells"]
+
 
 async def test_http_one_way_route_calculates_without_persisting(client, models, engine, store):
     case, build = await _built_case(models, engine, store)
@@ -2171,7 +2215,7 @@ async def test_sign_off_validates_exact_current_build_identity(models, engine, s
 
 
 async def test_pre_source_link_build_and_revision_replay_without_rewriting_identity(
-    models, engine, store, tmp_path,
+    models, engine, store, tmp_path, monkeypatch,
 ):
     """A NULL worksheet version is the exact pre-upgrade contract.
 
@@ -2194,10 +2238,36 @@ async def test_pre_source_link_build_and_revision_replay_without_rewriting_ident
         payload_digest=legacy_digest,
     )
 
+    forged_legacy_payload = copy.deepcopy(legacy_payload)
+    forged_source_cell = next(
+        cell
+        for tab in forged_legacy_payload["tabs"]
+        for cell in tab["cells"]
+        if cell.get("source_refs")
+    )
+    source_id, locator, _as_of = forged_source_cell["source_refs"].split(" | ")
+    forged_source_cell["source_refs"] = f"{source_id} | {locator} | 2099-01-01"
+    assert models.builds.update_build(
+        build["id"],
+        payload=forged_legacy_payload,
+        payload_digest=_digest(forged_legacy_payload),
+    )
+    assert models.worksheet_navigation(build["id"])["cells"] == [], (
+        "a recomputed outer digest cannot authorize links on an altered legacy worksheet"
+    )
+    assert models.builds.update_build(
+        build["id"], payload=legacy_payload, payload_digest=legacy_digest,
+    )
+    stored_build_before = copy.deepcopy(models.builds.get_build(build["id"]))
+
     registry = models.assumption_registry(case["id"], build["id"])
     preview = models.preview(case["id"], _preview_request(registry, build["id"]))
     preview_cells = [cell for tab in preview["worksheet"]["tabs"] for cell in tab["cells"]]
     assert all("source_links" not in cell for cell in preview_cells)
+    assert preview["worksheet_navigation"]["kind"] == "PREVIEW"
+    assert preview["worksheet_navigation"]["build_id"] == build["id"]
+    assert preview["worksheet_navigation"]["preview_digest"] == preview["preview_digest"]
+    assert preview["worksheet_navigation"]["cells"], "legacy preview gains its own navigation"
     signed = models.sign_off(
         case["id"], _sign_off_request(registry, build["id"], preview)
     )
@@ -2208,6 +2278,52 @@ async def test_pre_source_link_build_and_revision_replay_without_rewriting_ident
     assert exported["export"]["status"] == "READY"
     content, sha256 = models.download(case["id"], signed["id"])
     assert hashlib.sha256(content).hexdigest() == sha256 == exported["export"]["sha256"]
+    stored_revision_before = copy.deepcopy(models.builds.get_revision(signed["id"]))
+    second_preview = models.preview(
+        case["id"],
+        _preview_request(registry, build["id"], parent=signed["id"], generation=2),
+    )
+    second_signed = models.sign_off(
+        case["id"],
+        _sign_off_request(
+            registry,
+            build["id"],
+            second_preview,
+            parent=signed["id"],
+            expected_head=signed["id"],
+            generation=2,
+            note="Second legacy version",
+        ),
+    )
+    build_navigation = models.worksheet_navigation(build["id"])
+    assert build_navigation["kind"] == "BUILD"
+    assert build_navigation["build_id"] == build["id"]
+    assert build_navigation["payload_digest"] == legacy_digest
+    assert build_navigation["cells"], "legacy application worksheet gains response-only navigation"
+    validated_build_calls = []
+    validated_build = models.validated_build
+
+    def track_validated_build(case_id, build_id):
+        validated_build_calls.append((case_id, build_id))
+        return validated_build(case_id, build_id)
+
+    monkeypatch.setattr(models, "validated_build", track_validated_build)
+    served_revisions = models.revisions(case["id"])
+    assert validated_build_calls == [(case["id"], build["id"])], (
+        "legacy history performs exact replay only for the displayed ACTIVE revision"
+    )
+    served_revision = next(item for item in served_revisions if item["state"] == "ACTIVE")
+    assert served_revision["worksheet_navigation"]["kind"] == "REVISION"
+    assert served_revision["worksheet_navigation"]["revision_id"] == second_signed["id"]
+    assert served_revision["worksheet_navigation"]["preview_digest"] == second_signed["preview_digest"]
+    assert served_revision["worksheet_navigation"]["cells"], "legacy revision gains its own navigation"
+    superseded = next(item for item in served_revisions if item["id"] == signed["id"])
+    assert superseded["worksheet_navigation"]["cells"] == []
+    assert models.builds.get_build(build["id"]) == stored_build_before
+    assert models.builds.get_revision(signed["id"]) == stored_revision_before
+    replayed_content, replayed_sha256 = models.download(case["id"], signed["id"])
+    assert replayed_content == content
+    assert replayed_sha256 == sha256
     exported_path = tmp_path / "legacy-signed-revision.xlsx"
     exported_path.write_bytes(content)
     from caos.models.service import _assert_workbook_semantics
@@ -2225,6 +2341,61 @@ async def test_pre_source_link_build_and_revision_replay_without_rewriting_ident
     assert models.builds.update_build(build["id"], payload=changed_payload)
     with pytest.raises(ValueError, match=r"MODEL_REVISION_INVALID:.*payload_digest"):
         models.validated_build(case["id"], build["id"])
+
+
+async def test_legacy_revision_navigation_refuses_a_rewritten_worksheet_even_with_recomputed_record_digest(
+    models, engine, store,
+):
+    import sqlalchemy as sa
+
+    from caos.storage.models import ModelStore, model_revision_record_digest, model_revisions
+
+    case, build = await _built_case(models, engine, store)
+    legacy_payload = copy.deepcopy(build["payload"])
+    for tab in legacy_payload["tabs"]:
+        for cell in tab["cells"]:
+            cell.pop("source_links", None)
+    assert models.builds.update_build(
+        build["id"],
+        worksheet_schema_version=None,
+        payload=legacy_payload,
+        payload_digest=_digest(legacy_payload),
+    )
+    registry = models.assumption_registry(case["id"], build["id"])
+    preview = models.preview(case["id"], _preview_request(registry, build["id"]))
+    signed = models.sign_off(
+        case["id"], _sign_off_request(registry, build["id"], preview)
+    )
+
+    with models.builds.engine.begin() as connection:
+        connection.exec_driver_sql("DROP TRIGGER model_revisions_append_only")
+        connection.exec_driver_sql("DROP TRIGGER model_revisions_no_delete")
+        row = dict(connection.execute(
+            sa.select(model_revisions).where(model_revisions.c.id == signed["id"])
+        ).mappings().one())
+        forged_record = copy.deepcopy(row["record"])
+        forged_cell = next(
+            cell
+            for tab in forged_record["worksheet"]["tabs"]
+            for cell in tab["cells"]
+            if cell.get("source_refs")
+        )
+        source_id, locator, _as_of = forged_cell["source_refs"].split(" | ")
+        forged_cell["source_refs"] = f"{source_id} | {locator} | 2099-01-01"
+        forged_row = {**row, "record": forged_record}
+        forged_row["record_digest"] = model_revision_record_digest(forged_row)
+        connection.execute(
+            sa.update(model_revisions)
+            .where(model_revisions.c.id == signed["id"])
+            .values(record=forged_record, record_digest=forged_row["record_digest"])
+        )
+    ModelStore(models.builds.engine)
+
+    served = models.revisions(case["id"])[0]
+    assert served["worksheet_navigation"]["cells"] == []
+    assert served["worksheet"] == forged_record["worksheet"], (
+        "invalid navigation does not hide or rewrite stale signed history"
+    )
 
 
 async def test_current_worksheet_version_pins_authorized_preview_and_revision_links(

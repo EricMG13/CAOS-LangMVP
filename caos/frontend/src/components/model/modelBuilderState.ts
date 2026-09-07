@@ -1,4 +1,4 @@
-import type { ModelReadiness, WorksheetResponse, WorksheetTab } from "../../lib/api";
+import type { ModelReadiness, WorksheetCell, WorksheetNavigation, WorksheetNavigationIdentity, WorksheetResponse, WorksheetTab } from "../../lib/api";
 
 export function modelDisplayStatus(readiness?: Pick<ModelReadiness, "status" | "build">) {
   return readiness?.status === "READY_TO_BUILD" ? readiness.build?.status || readiness.status : readiness?.status;
@@ -46,6 +46,36 @@ export type WorksheetSelection = { tabId: string; address: string };
 export function selectedWorksheetCell(payload: WorksheetPayload, selection: WorksheetSelection | null) {
   if (!selection) return null;
   return payload.tabs.find((tab) => tab.id === selection.tabId)?.cells.find((cell) => cell.address === selection.address) || null;
+}
+
+export function worksheetNavigationForIdentity(
+  navigation: WorksheetNavigation | undefined,
+  identity: WorksheetNavigationIdentity,
+) {
+  if (!navigation || navigation.kind !== identity.kind || navigation.build_id !== identity.build_id) return null;
+  if (navigation.kind === "BUILD" && identity.kind === "BUILD") {
+    return navigation.payload_digest === identity.payload_digest ? navigation : null;
+  }
+  if (navigation.kind === "PREVIEW" && identity.kind === "PREVIEW") {
+    return navigation.preview_digest === identity.preview_digest ? navigation : null;
+  }
+  if (navigation.kind === "REVISION" && identity.kind === "REVISION") {
+    return navigation.revision_id === identity.revision_id
+      && navigation.preview_digest === identity.preview_digest ? navigation : null;
+  }
+  return null;
+}
+
+export function worksheetSourceLinks(
+  cell: WorksheetCell,
+  tabId: string,
+  navigation: WorksheetNavigation | null,
+) {
+  if (cell.source_links !== undefined) return cell.source_links;
+  const matches = navigation?.cells.filter(
+    (entry) => entry.tab_id === tabId && entry.address === cell.address,
+  ) || [];
+  return matches.length === 1 ? matches[0].source_links : [];
 }
 
 const periodFamilyLabels: Record<string, string> = {
@@ -302,6 +332,7 @@ export type ModelPreview = {
   outputs: Record<string, unknown>;
   outputs_digest: string;
   worksheet: WorksheetPayload;
+  worksheet_navigation?: WorksheetNavigation;
   deltas: Record<string, unknown>;
   preview_digest: string;
 };

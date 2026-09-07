@@ -21,6 +21,7 @@ import {
   type ModelInventory,
   type ModelReadiness,
   type WorksheetCell,
+  type WorksheetNavigation,
   type WorksheetResponse,
   type WorksheetTab,
 } from "../../lib/api";
@@ -40,10 +41,12 @@ import {
   selectedWorksheetCell,
   worksheetCellAuthority,
   worksheetColumns,
+  worksheetNavigationForIdentity,
   worksheetPeriodHeaderRows,
   worksheetPeriodFamilies,
   worksheetRowGroups,
   worksheetSections,
+  worksheetSourceLinks,
   formatModelValue,
   type AssumptionDefinition,
   type AssumptionRegistry,
@@ -226,13 +229,14 @@ function WorksheetGrid({
   </div>;
 }
 
-function WorksheetSurface({ payload, onOpenEvidence }: { payload: WorksheetPayload; onOpenEvidence: (sourceId: string, blockId: string | null, opener: HTMLElement) => void }) {
+function WorksheetSurface({ payload, navigation, onOpenEvidence }: { payload: WorksheetPayload; navigation: WorksheetNavigation | null; onOpenEvidence: (sourceId: string, blockId: string | null, opener: HTMLElement) => void }) {
   const [activeTab, setActiveTab] = useState(payload.tabs[0]?.id || "");
   const [selection, setSelection] = useState<WorksheetSelection | null>(null);
   const [periodFamily, setPeriodFamily] = useState("ALL");
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(() => new Set());
   const tab = payload.tabs.find((item) => item.id === activeTab) || payload.tabs[0] || null;
   const selectedCell = selectedWorksheetCell(payload, selection);
+  const sourceLinks = selectedCell && tab ? worksheetSourceLinks(selectedCell, tab.id, navigation) : [];
   const selectTab = (next: WorksheetTab) => { setActiveTab(next.id); setSelection(null); setPeriodFamily("ALL"); };
   const onTabKeyDown = (event: ReactKeyboardEvent<HTMLButtonElement>, index: number) => {
     if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
@@ -279,7 +283,7 @@ function WorksheetSurface({ payload, onOpenEvidence }: { payload: WorksheetPaylo
     <div id="model-worksheet-panel" role="tabpanel" aria-labelledby={`model-tab-${tab.id}`}><WorksheetGrid key={`${tab.id}:${periodFamily}:${[...collapsedGroups].sort().join(",")}`} tab={tab} selected={selectedCell} sections={sections} periodHeaderRows={periodHeaderRows} visibleColumns={visibleColumns} visibleRows={visibleRows} onSelect={(cell) => setSelection({ tabId: tab.id, address: cell.address })} /></div>
     <section className={styles.lineage} id="model-cell-lineage" aria-labelledby="model-cell-lineage-heading">
       <h3 id="model-cell-lineage-heading">Cell lineage</h3>
-      {selectedCell ? <><dl className="state-facts"><dt>Cell</dt><dd className="mono">{tab.title}!{selectedCell.address}</dd><dt>Owner</dt><dd>{selectedCell.owner || "CP-MODEL"}</dd><dt>Period</dt><dd className="mono">{selectedCell.period_id || "—"}</dd></dl>{selectedCell.formula ? <code className="lineage-code">{selectedCell.formula}</code> : null}<p className="mono lineage-source">{selectedCell.source_refs || "Calculated on the server from mapped inputs."}</p>{selectedCell.source_refs && !("source_links" in selectedCell) ? <p className="status warning">Source navigation is unavailable for this pre-upgrade model version. The raw reference remains readable; use Sources to inspect governed evidence.</p> : null}{selectedCell.source_links?.length ? <div className={styles.lineageActions}>{selectedCell.source_links.map((link, index) => <button className="button small" type="button" key={`${link.source_id}:${link.block_id || "source"}:${index}`} onClick={(event) => onOpenEvidence(link.source_id, link.block_id, event.currentTarget)}>Open evidence {link.source_id}{link.block_id ? ` · ${link.block_id}` : ""}</button>)}</div> : null}</> : <p className="muted">Select a sourced or calculated worksheet value to inspect its lineage.</p>}
+      {selectedCell ? <><dl className="state-facts"><dt>Cell</dt><dd className="mono">{tab.title}!{selectedCell.address}</dd><dt>Owner</dt><dd>{selectedCell.owner || "CP-MODEL"}</dd><dt>Period</dt><dd className="mono">{selectedCell.period_id || "—"}</dd></dl>{selectedCell.formula ? <code className="lineage-code">{selectedCell.formula}</code> : null}<p className="mono lineage-source">{selectedCell.source_refs || "Calculated on the server from mapped inputs."}</p>{selectedCell.source_refs && !("source_links" in selectedCell) && !sourceLinks.length ? <p className="status warning">Source navigation is unavailable for this pre-upgrade model version. The raw reference remains readable; use Sources to inspect governed evidence.</p> : null}{sourceLinks.length ? <div className={styles.lineageActions}>{sourceLinks.map((link, index) => <button className="button small" type="button" key={`${link.source_id}:${link.block_id || "source"}:${index}`} onClick={(event) => onOpenEvidence(link.source_id, link.block_id, event.currentTarget)}>Open evidence {link.source_id}{link.block_id ? ` · ${link.block_id}` : ""}</button>)}</div> : null}</> : <p className="muted">Select a sourced or calculated worksheet value to inspect its lineage.</p>}
     </section>
   </>;
 }
@@ -552,6 +556,13 @@ export default function ModelBuilder({
   }));
   const primaryAction = authorityMismatch ? null : primaryModelAction({ status, canWrite, dirty, previewCurrent });
   const displayWorksheet = (previewCurrent ? preview?.worksheet : null) || activeRevision?.worksheet || applicationWorksheet?.payload || null;
+  const displayNavigation = previewCurrent && preview?.worksheet
+    ? worksheetNavigationForIdentity(preview.worksheet_navigation, { kind: "PREVIEW", build_id: preview.build_id, preview_digest: preview.preview_digest })
+    : activeRevision?.worksheet
+      ? worksheetNavigationForIdentity(activeRevision.worksheet_navigation, { kind: "REVISION", build_id: activeRevision.build_id, revision_id: activeRevision.id, preview_digest: activeRevision.preview_digest })
+      : applicationWorksheet
+        ? worksheetNavigationForIdentity(applicationWorksheet.worksheet_navigation, { kind: "BUILD", build_id: applicationWorksheet.build_id, payload_digest: applicationWorksheet.payload_digest })
+        : null;
   const worksheetKey = previewCurrent ? preview?.preview_digest : activeRevision?.id || build?.id;
   const selectedMetric = TORNADO_METRICS.find((item) => item.id === tornadoOutputId) || TORNADO_METRICS[0];
   const conflictSourceRevision = draftAuthority?.parentRevisionId ? revisions.find((item) => item.id === draftAuthority.parentRevisionId) || null : null;
@@ -824,7 +835,7 @@ export default function ModelBuilder({
 
       <section className={styles.model} aria-labelledby="application-model-heading">
         <div className={styles.sectionHeader}><h3 id="application-model-heading">{displayWorksheet?.identity.issuer_name || "Application model"}</h3>{pending === "preview" ? <span className="status warning">RECALCULATING</span> : previewCurrent ? <span className="status success">CURRENT</span> : null}</div>
-        {displayWorksheet ? <WorksheetSurface key={worksheetKey} payload={displayWorksheet} onOpenEvidence={onOpenEvidence} /> : unavailable.worksheet ? <Unavailable title="Application model worksheet" /> : <LoadState loading error="" />}
+        {displayWorksheet ? <WorksheetSurface key={worksheetKey} payload={displayWorksheet} navigation={displayNavigation} onOpenEvidence={onOpenEvidence} /> : unavailable.worksheet ? <Unavailable title="Application model worksheet" /> : <LoadState loading error="" />}
       </section>
 
       {visiblePanels.sensitivity ? <aside className={styles.tornado} aria-labelledby="tornado-heading">

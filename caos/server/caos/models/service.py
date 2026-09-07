@@ -369,11 +369,9 @@ def _with_audit_tabs(worksheet: dict[str, Any], payload: dict[str, Any] | None) 
     return result
 
 
-def _authorize_worksheet_source_links(
-    worksheet: dict[str, Any],
+def _worksheet_source_authority(
     live_sources: list[dict[str, Any]],
-) -> None:
-    """Resolve vendor worksheet references against this snapshot's live pins."""
+) -> dict[str, set[str] | None]:
     source_blocks: dict[str, set[str] | None] = {}
     for source in live_sources:
         source_id = source.get("id")
@@ -391,29 +389,72 @@ def _authorize_worksheet_source_links(
         source_blocks[source_id] = {
             block_id for block_id, count in block_counts.items() if count == 1
         }
+    return source_blocks
+
+
+def _resolved_worksheet_source_links(
+    serialized: Any,
+    source_blocks: dict[str, set[str] | None],
+) -> list[dict[str, str | None]]:
+    links: list[dict[str, str | None]] = []
+    references = (
+        serialized.split("; ")
+        if isinstance(serialized, str) and serialized
+        else ()
+    )
+    for reference in references:
+        fields = reference.split(" | ")
+        if len(fields) != 3 or any(not field for field in fields):
+            continue
+        source_id, locator, _as_of = fields
+        block_ids = source_blocks.get(source_id)
+        if block_ids is None:
+            continue
+        links.append({
+            "source_id": source_id,
+            "block_id": locator if locator in block_ids else None,
+        })
+    return links
+
+
+def _authorize_worksheet_source_links(
+    worksheet: dict[str, Any],
+    live_sources: list[dict[str, Any]],
+) -> None:
+    """Resolve vendor worksheet references against this snapshot's live pins."""
+    source_blocks = _worksheet_source_authority(live_sources)
 
     for tab in worksheet.get("tabs") or []:
         for cell in tab.get("cells") or []:
-            links: list[dict[str, str | None]] = []
-            serialized = cell.get("source_refs")
-            references = (
-                serialized.split("; ")
-                if isinstance(serialized, str) and serialized
-                else ()
+            cell["source_links"] = _resolved_worksheet_source_links(
+                cell.get("source_refs"), source_blocks
             )
-            for reference in references:
-                fields = reference.split(" | ")
-                if len(fields) != 3 or any(not field for field in fields):
-                    continue
-                source_id, locator, _as_of = fields
-                block_ids = source_blocks.get(source_id)
-                if block_ids is None:
-                    continue
-                links.append({
-                    "source_id": source_id,
-                    "block_id": locator if locator in block_ids else None,
+
+
+def _worksheet_source_navigation(
+    worksheet: dict[str, Any],
+    live_sources: list[dict[str, Any]],
+    identity: dict[str, str],
+) -> dict[str, Any]:
+    """Response-only links bound to exact worksheet tab/address identities."""
+    source_blocks = _worksheet_source_authority(live_sources)
+    cells = []
+    for tab in worksheet.get("tabs") or []:
+        tab_id = tab.get("id")
+        if not isinstance(tab_id, str) or not tab_id:
+            continue
+        for cell in tab.get("cells") or []:
+            address = cell.get("address")
+            links = _resolved_worksheet_source_links(
+                cell.get("source_refs"), source_blocks
+            )
+            if isinstance(address, str) and address and links:
+                cells.append({
+                    "tab_id": tab_id,
+                    "address": address,
+                    "source_links": links,
                 })
-            cell["source_links"] = links
+    return {**identity, "cells": cells}
 
 
 def _worksheet_supports_source_links(build: dict[str, Any]) -> bool:
@@ -1666,6 +1707,34 @@ class ModelService:
         build = self.builds.get_build(build_id)
         return build.get("payload") if build else None
 
+    def worksheet_navigation(self, build_id: str) -> dict[str, Any] | None:
+        """Legacy navigation is a response projection, never stored payload."""
+        build = self.builds.get_build(build_id)
+        if build is None or _worksheet_supports_source_links(build):
+            return None
+        identity = {
+            "kind": "BUILD",
+            "build_id": build_id,
+            "payload_digest": build.get("payload_digest") or "",
+        }
+        payload = build.get("payload")
+        if (
+            build.get("status") != "READY"
+            or not _worksheet_schema_version_is_known(build)
+            or not isinstance(payload, dict)
+            or build.get("payload_digest") != digest(payload)
+        ):
+            return {**identity, "cells": []}
+        try:
+            self._validate_build_identity(
+                build["case_id"], build, self._new_deadline()
+            )
+            resolved = self._resolved_inputs(build)
+            live_sources = self._live_snapshot_sources(resolved["snapshot"])
+        except (ModelInputError, ValueError):
+            return {**identity, "cells": []}
+        return _worksheet_source_navigation(payload, live_sources, identity)
+
     # -- build execution -----------------------------------------------------
 
     def _resolved_inputs(
@@ -2033,6 +2102,16 @@ class ModelService:
             "deltas": _output_deltas(baseline, outputs),
         }
         envelope["preview_digest"] = digest(envelope)
+        if not _worksheet_supports_source_links(build):
+            envelope["worksheet_navigation"] = _worksheet_source_navigation(
+                worksheet,
+                self._live_snapshot_sources(resolved["snapshot"]),
+                {
+                    "kind": "PREVIEW",
+                    "build_id": request.build_id,
+                    "preview_digest": envelope["preview_digest"],
+                },
+            )
         return envelope
 
     def _validate_build_identity(self, case_id: str, build: dict[str, Any], deadline: float) -> None:
@@ -2105,7 +2184,9 @@ class ModelService:
             signed = self.builds.sign_off_revision(
                 case_id, record, actor, request.expected_head_revision_id, self.store._audit,
             )
-        return {**signed, "state": self._revision_state(case_id, signed)}
+        return self._revision_with_navigation(
+            {**signed, "state": self._revision_state(case_id, signed)}
+        )
 
     def _revision_state(self, case_id: str, revision: dict[str, Any]) -> str:
         current = self.builds.current_build(case_id)
@@ -2124,9 +2205,77 @@ class ModelService:
 
     def revisions(self, case_id: str) -> list[dict[str, Any]]:
         return [
-            {**revision, "state": self._revision_state(case_id, revision)}
+            self._revision_with_navigation(
+                {**revision, "state": self._revision_state(case_id, revision)}
+            )
             for revision in self.builds.list_revisions(case_id)
         ]
+
+    def _revision_with_navigation(
+        self, revision: dict[str, Any]
+    ) -> dict[str, Any]:
+        worksheet = revision.get("worksheet")
+        if not isinstance(worksheet, dict) or not any(
+            cell.get("source_refs") and "source_links" not in cell
+            for tab in worksheet.get("tabs") or []
+            for cell in tab.get("cells") or []
+        ):
+            return revision
+        identity = {
+            "kind": "REVISION",
+            "build_id": revision.get("build_id") or "",
+            "revision_id": revision.get("id") or "",
+            "preview_digest": revision.get("preview_digest") or "",
+        }
+        unavailable = {**revision, "worksheet_navigation": {**identity, "cells": []}}
+        # The worksheet surface displays only the ACTIVE revision. Keep every
+        # other legacy record readable, but do not replay an unbounded history
+        # merely to attach links to worksheets the client does not present.
+        if revision.get("state") != "ACTIVE":
+            return unavailable
+        snapshot = self.engine.runs.get_snapshot(revision.get("snapshot_id"))
+        if snapshot is None or snapshot.get("case_id") != revision.get("case_id"):
+            return unavailable
+        try:
+            build = self.validated_build(revision["case_id"], revision["build_id"])
+            exact_fields = {
+                "snapshot_id": "snapshot_id",
+                "build_input_fingerprint": "input_fingerprint",
+                "build_payload_digest": "payload_digest",
+                "registry_version": "registry_version",
+                "registry_digest": "registry_digest",
+            }
+            if any(
+                revision.get(revision_key) != build.get(build_key)
+                for revision_key, build_key in exact_fields.items()
+            ):
+                raise ValueError("MODEL_REVISION_INVALID")
+            runtime = build.get("calculation_runtime") or {}
+            if revision.get("calculation_contract_version") != runtime.get(
+                "calculation_contract_version"
+            ):
+                raise ValueError("MODEL_REVISION_INVALID")
+            model, calculations = self._calculate(
+                build,
+                copy.deepcopy(revision["effective_assumptions"]),
+                self._new_deadline(),
+            )
+            expected_worksheet = _with_audit_tabs(
+                self.bundle.serialize_workbook(model, calculations)["payload"],
+                build.get("payload") or {},
+            )
+            live_sources = self._live_snapshot_sources(snapshot)
+            if _worksheet_supports_source_links(build):
+                _authorize_worksheet_source_links(expected_worksheet, live_sources)
+            if (
+                expected_worksheet != worksheet
+                or _annual_outputs(calculations) != revision.get("outputs")
+            ):
+                raise ValueError("MODEL_REVISION_INVALID")
+        except (ModelCalculationTimeout, ModelInputError, ValueError):
+            return unavailable
+        navigation = _worksheet_source_navigation(worksheet, live_sources, identity)
+        return {**revision, "worksheet_navigation": navigation}
 
     def revision_export_statuses(self, case_id: str) -> list[dict[str, Any]]:
         safe_fields = ("status", "error", "filename", "sha256", "size")

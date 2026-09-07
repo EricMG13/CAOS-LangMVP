@@ -1117,13 +1117,17 @@ def create_app(*, settings: Settings, store: DomainStore, engine: Any) -> FastAP
         worksheet = models().worksheet(build_id)
         if worksheet is None:
             raise HTTPException(status_code=409, detail={"code": "MODEL_WORKSHEET_NOT_READY"})
-        return {
+        response = {
             "build_id": build_id,
             "input_fingerprint": build["input_fingerprint"],
             "payload_digest": build["payload_digest"],
             "qa": build["qa"],
             "payload": worksheet,
         }
+        navigation = models().worksheet_navigation(build_id)
+        if navigation is not None:
+            response["worksheet_navigation"] = navigation
+        return response
 
     @app.get("/api/cases/{case_id}/models/{build_id}", response_model=wire.ModelBuildResponse,
              response_model_exclude_unset=True)

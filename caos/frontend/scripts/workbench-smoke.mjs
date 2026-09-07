@@ -119,6 +119,20 @@ assert.equal(runState?.status, "succeeded");
 const acceptedResponse = await api.post(`/api/runs/${run.id}/accept`);
 assert.equal(acceptedResponse.status(), 200);
 const accepted = await acceptedResponse.json();
+// This second live source is uploaded after acceptance so the established v1
+// snapshot assertions stay unchanged. The intercepted legacy revision below
+// uses it only to prove that response navigation is revision-owned.
+const alternateUpload = await api.post(`/api/cases/${caseRecord.id}/sources`, {
+  multipart: {
+    file: {
+      name: "legacy-revision.txt",
+      mimeType: "text/plain",
+      buffer: Buffer.from("Legacy revision evidence 1,170"),
+    },
+  },
+});
+assert.equal(alternateUpload.status(), 201);
+const alternateSource = await alternateUpload.json();
 const artifact = accepted.artifacts.find((item) => item.module_id === "CP-0");
 assert.ok(artifact);
 const researchPlanHash = `sha256:${"a".repeat(64)}`;
@@ -1271,6 +1285,7 @@ try {
           { address: "A1", row: 1, column: 1, value: name, value_type: "text", formula: null, semantic_id: null, owner: null, write_class: null, period_id: null, source_refs: null, source_links: [], number_format: "General", style: { bold: true, italic: false, fill: "0A2E63", align: "left", wrap: false } },
           { address: "A2", row: 2, column: 1, value: 1160, value_type: "number", formula: null, semantic_id: "account::revenue::FY2024", owner: "CP-1", write_class: "SOURCE", period_id: "FY2024", source_refs: sourceRef, source_links: [{ source_id: source.id, block_id: source.blocks[0].block_id }], number_format: "#,##0.0", style: { bold: false, italic: false, fill: "FFF4CC", align: "right", wrap: false } },
           { address: "B2", row: 2, column: 2, value: 4.2, value_type: "formula", formula: "=A2/276", semantic_id: "metric::leverage::FY2024", owner: "CP-MODEL", write_class: "FORMULA", period_id: "FY2024", source_refs: null, source_links: [], number_format: "0.0x", style: { bold: false, italic: false, fill: null, align: "right", wrap: false } },
+          { address: "A3", row: 3, column: 1, value: 1170, value_type: "number", formula: null, semantic_id: "account::legacy_revenue::FY2024", owner: "CP-1", write_class: "SOURCE", period_id: "FY2024", source_refs: `${alternateSource.id} | ${alternateSource.blocks[0].block_id} | 2026-08-24`, source_links: [{ source_id: alternateSource.id, block_id: alternateSource.blocks[0].block_id }] },
         ];
         const modelCells = name === "Model" ? [
           { address: "B3", row: 3, column: 2, value: "QUARTER", value_type: "text", formula: null, semantic_id: null, owner: null, write_class: null, period_id: null, source_refs: null, source_links: [] },
@@ -1286,7 +1301,7 @@ try {
         ] : [];
         return {
           id: name.toUpperCase().replaceAll(" ", "_"), title: name,
-          max_row: name === "Model" ? 10 : 2, max_column: name === "Model" ? 3 : 2,
+          max_row: name === "Model" ? 10 : 3, max_column: name === "Model" ? 3 : 2,
           freeze_panes: "B2", merged_cells: [],
           columns: [{ column: 1, letter: "A", width: 22, hidden: false }, { column: 2, letter: "B", width: 14, hidden: false }, ...(name === "Model" ? [{ column: 3, letter: "C", width: 14, hidden: false }] : [])],
           cells: [...baseCells, ...modelCells],
@@ -1294,6 +1309,15 @@ try {
       }),
     },
   };
+  const legacyWorksheetPayload = (authoritySource) => {
+    const payload = structuredClone(modelWorksheet.payload);
+    for (const tab of payload.tabs) for (const cell of tab.cells) {
+      if (cell.source_refs) cell.source_refs = `${authoritySource.id} | ${authoritySource.blocks[0].block_id} | 2026-08-24`;
+      delete cell.source_links;
+    }
+    return payload;
+  };
+  let serveLegacyNavigation = false;
   const registryVersion = "cp-model-assumptions.v1";
   const registryDigest = "f".repeat(64);
   const assumptionDefinitionSpecs = [
@@ -1392,7 +1416,15 @@ try {
   });
   await page.route(worksheetPath, (route) => {
     worksheetGets += 1;
-    return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(modelWorksheet) });
+    const response = serveLegacyNavigation ? {
+      ...modelWorksheet,
+      payload: legacyWorksheetPayload(source),
+      worksheet_navigation: {
+        kind: "BUILD", build_id: modelBuildId, payload_digest: modelWorksheet.payload_digest,
+        cells: [{ tab_id: "CREDIT_SNAPSHOT", address: "A2", source_links: [{ source_id: source.id, block_id: source.blocks[0].block_id }] }],
+      },
+    } : modelWorksheet;
+    return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(response) });
   });
   await page.route(exportPath, async (route) => {
     exportPosts += 1; modelExportState = "QUEUED";
@@ -1400,7 +1432,17 @@ try {
   });
   await page.route(registryPath, (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(assumptionRegistry()) }));
   // The store's list contract is ascending, even though this fixture prepends new revisions.
-  await page.route(revisionsPath, (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ revisions: modelRevisions.toSorted((a, b) => a.revision_number - b.revision_number) }) }));
+  await page.route(revisionsPath, (route) => {
+    const revisions = modelRevisions.toSorted((a, b) => a.revision_number - b.revision_number).map((revision) => serveLegacyNavigation ? {
+      ...revision,
+      worksheet: legacyWorksheetPayload(alternateSource),
+      worksheet_navigation: {
+        kind: "REVISION", build_id: revision.build_id, revision_id: revision.id, preview_digest: revision.preview_digest,
+        cells: [{ tab_id: "CREDIT_SNAPSHOT", address: "A2", source_links: [{ source_id: alternateSource.id, block_id: alternateSource.blocks[0].block_id }] }],
+      },
+    } : revision);
+    return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ revisions }) });
+  });
   await page.route(revisionExportStatusesPath, (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ exports: modelRevisions.map((revision) => ({ revision_id: revision.id, export: revision.export })) }) }));
   await page.route(previewPath, async (route) => {
     previewPosts += 1;
@@ -1532,7 +1574,112 @@ try {
   await page.keyboard.press("Escape");
   await modelSourceAction.waitFor({ state: "visible" });
   assert.equal(await modelSourceAction.evaluate((element) => element === document.activeElement), true, "closing worksheet evidence did not restore focus to its actual opener");
-  await page.getByRole("button", { name: "Show assumptions", exact: true }).click();
+
+  // A legacy signed revision carries navigation beside its immutable worksheet.
+  // The application response deliberately points the same tab/address at another
+  // source: the click must use the exact REVISION identity, never an address-only
+  // build map or browser parsing of the raw reference.
+  serveLegacyNavigation = true;
+  await page.goto(`${baseURL}/model/?case=${caseRecord.id}&legacy-navigation=1`, { waitUntil: "networkidle" });
+  await page.getByRole("tab", { name: "Credit Snapshot" }).waitFor();
+  await page.getByRole("button", { name: /Show lineage for account::revenue/ }).click();
+  const legacyRevisionAction = page.locator("#model-cell-lineage").getByRole("button", { name: /^Open evidence / }).first();
+  assert.match(await legacyRevisionAction.innerText(), new RegExp(alternateSource.id), "legacy revision used application-build navigation for the same address");
+  await legacyRevisionAction.click();
+  const legacyRevisionDrawer = page.getByRole("dialog", { name: alternateSource.filename });
+  await legacyRevisionDrawer.waitFor();
+  await page.screenshot({ path: path.join(resultsDir, "model-legacy-revision-evidence.png"), fullPage: false });
+  await page.keyboard.press("Escape");
+  await legacyRevisionDrawer.waitFor({ state: "hidden" });
+  await awaitFocus(legacyRevisionAction, "legacy revision drawer did not restore focus to its enriched-view opener");
+  serveLegacyNavigation = false;
+  await page.goto(`${baseURL}/model/?case=${caseRecord.id}`, { waitUntil: "networkidle" });
+  await page.getByRole("tab", { name: "Credit Snapshot" }).waitFor();
+
+  // A newer evidence request owns the drawer even if an older response arrives
+  // later. This covers explicit drawer replacement and the opener attached to the
+  // winning request rather than whichever element happens to be focused at settle.
+  const delayedSourcePath = (url) => url.pathname === `/api/cases/${caseRecord.id}/sources/${source.id}`;
+  let releaseDelayedSource;
+  let markDelayedSourceSeen;
+  const delayedSourceBarrier = new Promise((resolve) => { releaseDelayedSource = resolve; });
+  const delayedSourceSeen = new Promise((resolve) => { markDelayedSourceSeen = resolve; });
+  const holdDelayedSource = async (route) => {
+    markDelayedSourceSeen();
+    await delayedSourceBarrier;
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(source) });
+  };
+  await page.route(delayedSourcePath, holdDelayedSource);
+  await page.getByRole("button", { name: /Show lineage for account::revenue/ }).click();
+  await page.locator("#model-cell-lineage").getByRole("button", { name: new RegExp(source.id) }).click();
+  await bounded(delayedSourceSeen, "the delayed Model evidence request never started");
+  await page.getByRole("button", { name: /Show lineage for account::legacy_revenue/ }).click();
+  const winningSourceAction = page.locator("#model-cell-lineage").getByRole("button", { name: new RegExp(alternateSource.id) });
+  await winningSourceAction.click();
+  const winningDrawer = page.getByRole("dialog", { name: alternateSource.filename });
+  await winningDrawer.waitFor();
+  releaseDelayedSource();
+  await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  assert.equal(await winningDrawer.isVisible(), true, "an older Model evidence response replaced the newer drawer");
+  await page.screenshot({ path: path.join(resultsDir, "model-evidence-race-winner.png"), fullPage: false });
+  await page.keyboard.press("Escape");
+  await winningDrawer.waitFor({ state: "hidden" });
+  await awaitFocus(winningSourceAction, "the winning evidence drawer restored focus to the stale opener");
+  await page.unroute(delayedSourcePath, holdDelayedSource);
+
+  // Remaining within Model can still replace the worksheet that owned the opener.
+  // A successful late response must not retain that now-detached focus target.
+  let releaseDetachedSuccess;
+  let markDetachedSuccessSeen;
+  const detachedSuccessBarrier = new Promise((resolve) => { releaseDetachedSuccess = resolve; });
+  const detachedSuccessSeen = new Promise((resolve) => { markDetachedSuccessSeen = resolve; });
+  const holdDetachedSuccess = async (route) => {
+    markDetachedSuccessSeen();
+    await detachedSuccessBarrier;
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(source) });
+  };
+  await page.route(delayedSourcePath, holdDetachedSuccess);
+  await page.getByRole("tab", { name: "Credit Snapshot" }).click();
+  await page.getByRole("button", { name: /Show lineage for account::revenue/ }).click();
+  const detachedSuccessAction = page.locator("#model-cell-lineage").getByRole("button", { name: new RegExp(source.id) });
+  await detachedSuccessAction.click();
+  await bounded(detachedSuccessSeen, "the detached success Model evidence request never started");
+  await page.getByRole("tab", { name: "Model", exact: true }).click();
+  assert.equal(await detachedSuccessAction.count(), 0, "the replaced worksheet retained the old evidence opener");
+  releaseDetachedSuccess();
+  await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  assert.equal(await page.getByRole("dialog").count(), 0, "a successful detached Model request opened a drawer");
+  await page.unroute(delayedSourcePath, holdDetachedSuccess);
+
+  // The failure half settles only after same-case Model departure. Workspace owns
+  // invalidation, so neither a drawer nor a global error may publish afterward.
+  let releaseDetachedFailure;
+  let markDetachedFailureSeen;
+  const detachedFailureBarrier = new Promise((resolve) => { releaseDetachedFailure = resolve; });
+  const detachedFailureSeen = new Promise((resolve) => { markDetachedFailureSeen = resolve; });
+  const holdDetachedFailure = async (route) => {
+    markDetachedFailureSeen();
+    await detachedFailureBarrier;
+    await route.fulfill({ status: 200, contentType: "application/json", body: "not-json" });
+  };
+  await page.route(delayedSourcePath, holdDetachedFailure);
+  await page.getByRole("tab", { name: "Credit Snapshot" }).click();
+  await page.getByRole("button", { name: /Show lineage for account::revenue/ }).click();
+  const detachedSourceAction = page.locator("#model-cell-lineage").getByRole("button", { name: new RegExp(source.id) });
+  await detachedSourceAction.click();
+  await bounded(detachedFailureSeen, "the detached Model evidence request never started");
+  await page.getByRole("link", { name: "Credit", exact: true }).first().click();
+  await page.waitForURL((url) => url.pathname.replace(/\/$/, "") === "/credit");
+  assert.equal(await detachedSourceAction.count(), 0, "the Model evidence opener remained attached after route departure");
+  releaseDetachedFailure();
+  await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  assert.equal(await page.getByRole("dialog").count(), 0, "a failed detached Model request opened a drawer");
+  assert.equal(await page.getByText("Evidence source unavailable.", { exact: true }).count(), 0, "a failed detached Model request published a stale error");
+  await page.unroute(delayedSourcePath, holdDetachedFailure);
+  await page.goto(`${baseURL}/model/?case=${caseRecord.id}`, { waitUntil: "networkidle" });
+  await page.getByRole("tab", { name: "Credit Snapshot" }).waitFor();
+  const showAssumptions = page.getByRole("button", { name: "Show assumptions", exact: true });
+  if (await showAssumptions.count()) await showAssumptions.click();
   await page.getByText("Model versions", { exact: true }).click();
   assert.equal(await page.getByRole("region", { name: "Model versions" }).locator("tbody tr").count(), 2, "application and signed versions were not rendered as one model history");
   assert.equal(await page.locator("fieldset").count(), 23, "Model Builder did not render the full methodology-owned registry");

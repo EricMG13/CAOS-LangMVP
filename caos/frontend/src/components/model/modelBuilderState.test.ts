@@ -14,6 +14,8 @@ import {
   scrubberCommitDecision,
   selectedWorksheetCell,
   sensitivityPeriodRows,
+  worksheetNavigationForIdentity,
+  worksheetSourceLinks,
   worksheetCellAuthority,
   worksheetColumns,
   worksheetPeriodHeaderRows,
@@ -139,6 +141,60 @@ test("worksheet selection is stable by tab id and address across filtering", () 
   assert.equal(selectedWorksheetCell(payload, selection)?.semantic_id, "cash_and_equivalents");
   assert.equal(selectedWorksheetCell(payload, { ...selection, tabId: "KPIS" }), null);
   assert.equal(selectedWorksheetCell(payload, { ...selection, address: "D999" }), null);
+});
+
+test("legacy worksheet navigation requires the exact displayed identity and cell", () => {
+  const navigation = {
+    kind: "REVISION" as const,
+    build_id: "mdl-1",
+    revision_id: "rev-1",
+    preview_digest: "digest-1",
+    cells: [{
+      tab_id: "MODEL",
+      address: "A2",
+      source_links: [{ source_id: "src-pinned", block_id: "b00001" }],
+    }],
+  };
+  const exact = worksheetNavigationForIdentity(navigation, {
+    kind: "REVISION",
+    build_id: "mdl-1",
+    revision_id: "rev-1",
+    preview_digest: "digest-1",
+  });
+
+  assert.deepEqual(worksheetSourceLinks(
+    worksheetCell("A2", 2, 1, 1, { source_refs: "opaque legacy reference", source_links: undefined }),
+    "MODEL",
+    exact,
+  ), [{ source_id: "src-pinned", block_id: "b00001" }]);
+  assert.deepEqual(worksheetSourceLinks(
+    worksheetCell("A3", 3, 1, 1, { source_refs: "opaque legacy reference", source_links: undefined }),
+    "MODEL",
+    exact,
+  ), []);
+  assert.equal(worksheetNavigationForIdentity(navigation, {
+    kind: "REVISION",
+    build_id: "mdl-other",
+    revision_id: "rev-1",
+    preview_digest: "digest-1",
+  }), null);
+  assert.equal(worksheetNavigationForIdentity(navigation, {
+    kind: "REVISION",
+    build_id: "mdl-1",
+    revision_id: "rev-other",
+    preview_digest: "digest-1",
+  }), null);
+  assert.equal(worksheetNavigationForIdentity(navigation, {
+    kind: "REVISION",
+    build_id: "mdl-1",
+    revision_id: "rev-1",
+    preview_digest: "digest-other",
+  }), null);
+  assert.equal(worksheetNavigationForIdentity(navigation, {
+    kind: "PREVIEW",
+    build_id: "mdl-1",
+    preview_digest: "digest-1",
+  }), null);
 });
 
 test("worksheet authority keeps history and calculations locked", () => {
