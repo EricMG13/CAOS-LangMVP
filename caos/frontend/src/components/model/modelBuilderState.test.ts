@@ -7,6 +7,7 @@ import {
   applyServerAssumptions,
   assumptionScope,
   mergeRebasedAssumptions,
+  modelDisplayStatus,
   normalizeAssumptions,
   previewMatchesDraft,
   primaryModelAction,
@@ -240,4 +241,17 @@ test("a forecast scrubber commits only a changed value", () => {
   assert.equal(scrubberCommitDecision("", "0.03"), "revert");
   assert.equal(scrubberCommitDecision("   ", "0.03"), "revert");
   assert.equal(scrubberCommitDecision("abc", "0.03"), "commit", "a non-numeric entry reaches the bounds check and is refused there");
+});
+
+
+test("input readiness yields to the current build's worker status", () => {
+  for (const status of ["QUEUED", "BUILDING", "FAILED", "READY"] as const) {
+    const build = { status } as import("../../lib/api.ts").ModelBuild;
+    const display = modelDisplayStatus({ status: "READY_TO_BUILD", build });
+    assert.equal(display, status);
+    assert.equal(primaryModelAction({ status: display, canWrite: true, dirty: false, previewCurrent: false }), status === "FAILED" ? "BUILD" : null);
+    assert.equal(modelDisplayStatus({ status: "NOT_READY", build }), "NOT_READY", "a historical build cannot override invalid current inputs");
+  }
+  assert.equal(modelDisplayStatus({ status: "READY_TO_BUILD", build: null }), "READY_TO_BUILD");
+  assert.equal(modelDisplayStatus(undefined), undefined);
 });

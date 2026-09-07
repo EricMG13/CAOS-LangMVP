@@ -960,14 +960,13 @@ class DeliverableService:
             "renderer": {"version": RENDERER_VERSION},
             "input_fingerprint": input_fingerprint,
         }
+        # Each signed opinion gets its own freeze, even on an unchanged draft.
+        opinion = self._require_current_opinion(case_id, pathway, revision)
         thread_id = filing_thread_id(
             case_id=case_id, pathway=pathway, draft_version=revision["version"],
-            draft_digest=draft_digest, build_id=build_id,
+            draft_digest=draft_digest, build_id=build_id, opinion_id=opinion["opinion_id"],
         )
-        deliverable_id = f"dlv-{thread_id[4:]}"
-        # The opinion is the analyst's; it must be current against this exact
-        # revision and every authority it was signed over (Phase 4 items 1–3).
-        opinion = self._require_current_opinion(case_id, pathway, revision)
+        deliverable_id = f"dlv-{thread_id[-64:]}"
         payload["opinion"] = {
             key: opinion[key]
             for key in (
@@ -1145,6 +1144,7 @@ class DeliverableService:
                 draft_version=record["draft_version"],
                 draft_digest=record["draft_digest"],
                 build_id=record["build_id"],
+                opinion_id=payload["opinion"]["opinion_id"] if isinstance(record["thread_id"], str) and record["thread_id"].startswith("dth-v2-") else None,
             )
             valid = (
                 isinstance(draft, dict)
@@ -1162,7 +1162,7 @@ class DeliverableService:
                 and authority["build_id"] == record["build_id"]
                 and record["authority"]["build_id"] == record["build_id"]
                 and record["thread_id"] == thread_id
-                and record["deliverable_id"] == f"dlv-{thread_id[4:]}"
+                and record["deliverable_id"] == f"dlv-{thread_id[-64:]}"
                 and payload_digest == digest(payload)
                 and frozen_approval_digest(record) == record["preview_digest"]
             )

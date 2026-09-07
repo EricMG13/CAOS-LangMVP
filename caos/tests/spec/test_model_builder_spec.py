@@ -2405,3 +2405,45 @@ async def test_build_does_not_complete_ready_after_a_withdrawal_between_resoluti
     with pytest.raises(ValueError, match="MODEL_"):
         models.queue_export(build["id"], "analyst")
     assert (models.builds.get_build(build["id"]).get("export") or {}).get("status") != "QUEUED"
+
+
+async def test_failed_build_retry_is_picked_up_by_the_worker(models, engine, store):
+    from worker import run_pending
+    from caos.engine.budget import MAX_ACTIVE_JOBS
+
+    case, _run, _snapshot = await _accepted_case(engine, store)
+    build = models.list_builds(case["id"])[0]
+    models.fail_build_for_tests(build["id"], code="MODEL_CALCULATION_FAILED", detail="Transient failure")
+    engine.fill_admission_slots_for_tests(MAX_ACTIVE_JOBS)
+    with pytest.raises(ValueError, match="ADMISSION_BUSY"):
+        models.queue_build(case["id"], "analyst")
+    engine.fill_admission_slots_for_tests(0)
+    retried = models.queue_build(case["id"], "analyst")
+    assert retried["id"] == build["id"] and retried["status"] == "QUEUED"
+    assert retried["error"] is None and retried["completed_at"] is None
+    assert run_pending(models) == 1
+    assert models.validated_build(case["id"], build["id"])["status"] == "READY"
+
+
+async def test_worker_caches_follow_repointed_build_identity(models, engine, store, settings, tmp_path):
+    from caos.engine.runtime import Engine
+    from caos.models.service import ModelService
+
+    worker_engine = Engine.create(settings=settings, store=store, checkpoint_path=tmp_path / "worker.db")
+    worker = ModelService(store=store, vault_dir=settings.storage_dir, engine=worker_engine)
+    try:
+        case, _run, _snapshot = await _accepted_case(engine, store)
+        build = worker.list_builds(case["id"])[0]
+        worker.builds.update_build(build["id"], status="BUILDING")
+        old_result, _ = worker._compute_build_result(build)
+        new_run = await engine.run_scripted_for_tests(case["id"])
+        snapshot = await engine.accept(new_run["id"], actor="analyst")
+        repointed = worker.build(build["id"])
+        assert repointed["snapshot_id"] == snapshot["id"]
+        assert repointed["input_fingerprint"] != build["input_fingerprint"]
+        result = worker.run_build(build["id"])
+        assert result["status"] == "READY"
+        assert result["payload"] != old_result["payload"]
+        assert models.validated_build(case["id"], build["id"])["payload"] == result["payload"]
+    finally:
+        await worker_engine.aclose()

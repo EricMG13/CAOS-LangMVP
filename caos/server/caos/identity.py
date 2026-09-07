@@ -110,15 +110,19 @@ def identity_from_request(request: Request, settings: Settings) -> Identity:
 def require_case(
     store: DomainStore, case_id: str, identity: Identity, write: bool = False
 ) -> dict:
+    case = require_case_member(store, case_id, identity.subject, write=write)
+    if write and identity.role not in {"ANALYST", "APPROVER", "ADMIN"}:
+        raise HTTPException(status_code=403, detail="analyst authority required")
+    return case
+
+
+def require_case_member(store: DomainStore, case_id: str, subject: str, write: bool = False) -> dict:
     case = store.get_case(case_id)
-    member = store.is_member(case_id, identity.subject)
+    member = store.is_member(case_id, subject)
     if not case or not member:
         raise HTTPException(status_code=404, detail="case not found")
     writer_roles = {"ANALYST", "APPROVER", "ADMIN"}
-    if write and (
-        identity.role not in writer_roles
-        or not store.is_member(case_id, identity.subject, roles=writer_roles)
-    ):
+    if write and not store.is_member(case_id, subject, roles=writer_roles):
         raise HTTPException(status_code=403, detail="analyst authority required")
     return case
 

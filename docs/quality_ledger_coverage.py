@@ -70,6 +70,7 @@ FILE_MAP = {
     r"^caos/frontend/src/": "F-UI-01..12",
     r"^caos/frontend/scripts/a11y-axe": "F-UI-14, F-UI-15",
     r"^caos/frontend/scripts/workbench-smoke": "F-UI-02, F-UI-04",
+    r"^caos/frontend/scripts/workspace-intake\.test\.mjs": "F-UI-02 (same-case intake authority lifecycle regression)",
     r"^caos/frontend/scripts/focus-restoration-smoke": "F-UI-09, F-UI-11, F-UI-14 (focus restoration through the dirty-draft discard prompts; issue #38)",
     r"^caos/frontend/scripts/run-browsers": "F-UI-02, F-UI-04 (the three-engine runner for the workbench journey)",
     r"^caos/frontend/scripts/webkit-teardown": "F-UI-02, F-UI-04 (WebKit's navigation-time fetch rejections, filtered only with server evidence; D-016)",

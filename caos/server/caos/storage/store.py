@@ -800,14 +800,21 @@ class DomainStore:
         conn.execute(source_sets.insert().values(**source_set))
         return source_set
 
+    def source_digest_referenced(self, sha256: str) -> bool:
+        with self.engine.connect() as conn:
+            return conn.execute(sa.select(sources.c.id).where(sources.c.sha256 == sha256).limit(1)).first() is not None
+
     def ingest(self, source: dict[str, Any], actor: str) -> dict[str, Any]:
         saved = dict(source)
+        require_standing = bool(saved.pop("_require_standing", False))
         saved.setdefault("id", new_id("src"))
         saved.setdefault("created_by", actor)
         saved.setdefault("created_at", now_iso())
         saved.setdefault("withdrawn", False)
         try:
             with _AUTHORITY_MUTATION_LOCK, self.engine.begin() as conn:
+                if require_standing:
+                    self.require_standing(conn, saved["case_id"], actor, {"ANALYST", "APPROVER", "ADMIN"})
                 duplicate = conn.execute(
                     sa.select(sources.c.id).where(
                         sources.c.case_id == saved["case_id"],
@@ -840,6 +847,7 @@ class DomainStore:
         status: str,
         record: dict[str, Any],
         refusal: dict[str, Any] | None = None,
+        require_standing: bool = False,
     ) -> dict[str, Any]:
         """Admit a whole pack in ONE transaction: the case when it is new (with
         its creator's membership and `case.created`), every source row, one
@@ -860,6 +868,8 @@ class DomainStore:
                     ))
                     conn.execute(case_members.insert().values(case_id=case_id, subject=actor, role="ANALYST"))
                     self._audit(conn, "case.created", actor, case_id=case_id)
+                if require_standing:
+                    self.require_standing(conn, case_id, actor, {"ANALYST", "APPROVER", "ADMIN"})
                 admitted_ids: list[str] = []
                 for source in prepared:
                     saved = {

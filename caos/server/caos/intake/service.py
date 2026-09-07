@@ -13,6 +13,7 @@ and served as a labelled machine suggestion.
 
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -21,6 +22,7 @@ from fastapi import HTTPException, UploadFile
 
 from ..contracts import digest
 from ..engine.runtime import EngineError
+from ..identity import require_case_member
 from ..observability import log_event
 from ..sources.classify import (
     classify_document,
@@ -79,39 +81,29 @@ class IntakeService:
 
     async def submit(self, *, actor: str, uploads: list[UploadFile], case_id: str | None) -> tuple[dict[str, Any], bool]:
         """Returns (intake row, created). Raises IntakeRefused for a pack that
-        admits nothing; HTTP authorization is the route's job and happens first."""
-        explicit_case = self.store.get_case(case_id) if case_id else None
-        if case_id and explicit_case is None:
-            raise HTTPException(status_code=404, detail="case not found")
-        # Everything this submission puts at a content address, so a refusal —
-        # at admission, at classification, or in the store's own commit — leaves
-        # no vault file the store does not reference (W2, 2026-09-06 review).
-        # `_prepare` fills it; bytes another case already owns are never in it.
-        published: list[str] = []
+        admits nothing; global authorization happens at the route."""
+        explicit_case = require_case_member(self.store, case_id, actor, write=True) if case_id else None
         try:
             return await self._submit(
-                actor=actor, uploads=uploads, explicit_case=explicit_case, published=published,
+                actor=actor, uploads=uploads, explicit_case=explicit_case,
             )
-        except BaseException as exc:
-            vault = Vault(self.settings)
-            for sha256 in published:
-                vault.discard(sha256)
-            if isinstance(exc, IntakeRefused):
-                self.store.refuse_intake(actor, exc.code, case_id=case_id)
-                log_event("intake.refused", case_id=case_id, code=exc.code, files=len(uploads))
+        except IntakeRefused as exc:
+            self.store.refuse_intake(actor, exc.code, case_id=case_id)
+            log_event("intake.refused", case_id=case_id, code=exc.code, files=len(uploads))
             raise
 
-    async def _submit(self, *, actor: str, uploads: list[UploadFile], explicit_case: dict[str, Any] | None,
-                      published: list[str]) -> tuple[dict[str, Any], bool]:
+    async def _submit(self, *, actor: str, uploads: list[UploadFile], explicit_case: dict[str, Any] | None) -> tuple[dict[str, Any], bool]:
         if not uploads:
             raise IntakeRefused("INTAKE_NO_FILES", "No documents were supplied.")
         if len(uploads) > MAX_INTAKE_FILES:
             raise IntakeRefused("INTAKE_TOO_MANY_FILES", f"{len(uploads)} documents exceed the {MAX_INTAKE_FILES}-file intake ceiling.")
 
-        prepared = await self._prepare(uploads, published)
+        prepared = await self._prepare(uploads)
         documents = self._classify(prepared)
         issuer, issuer_confidence = self._resolve_issuer(documents, explicit_case)
         case, new_case = self._resolve_case(actor, explicit_case, issuer, documents)
+        if case is not None:
+            require_case_member(self.store, case["id"], actor, write=True)
         self._apply_existing_sources(case, documents)
         self._apply_dispositions(documents)
 
@@ -122,6 +114,7 @@ class IntakeService:
         intake_key = digest({"actor": actor, "issuer": normalize_issuer(issuer), "digests": digests})
         existing = self.store.find_intake_by_key(actor, intake_key)
         if existing is not None and (case is None or existing["case_id"] == case["id"]):
+            require_case_member(self.store, existing["case_id"], actor, write=True)
             return existing, False
 
         route = select_route(documents)
@@ -140,8 +133,9 @@ class IntakeService:
             "coverage": coverage(documents),
             "documents": [self._manifest_row(document) for document in documents],
         }
-        admitted = [document["_prepared"] for document in documents if document["disposition"] != "duplicate" or document["_first"]]
-        admitted = [item for item in admitted if item.get("id")]
+        admitted = [document["_prepared"] for document in documents
+                    if (document["disposition"] != "duplicate" or document["_first"])
+                    and document["_prepared"].get("id")]
         usable = any(document["disposition"] == "used" for document in documents)
         status = "clarification" if not usable else "execution_unavailable"
         refusal = None if usable else {
@@ -153,15 +147,30 @@ class IntakeService:
                 if document["disposition"] != "used"
             ],
         }
+        def commit() -> tuple[dict[str, Any], bool]:
+            with Vault(self.settings).admission(self.store, admitted):
+                # Another submission may have committed while this one waited
+                # for the vault lock. Replays neither create a case nor start a run.
+                existing = self.store.find_intake_by_key(actor, intake_key)
+                if existing is not None and (case is None or existing["case_id"] == case["id"]):
+                    require_case_member(self.store, existing["case_id"], actor, write=True)
+                    return existing, False
+                return self.store.admit_intake(
+                    actor=actor, case_id=case["id"] if case else None, new_case=new_case,
+                    prepared=admitted, intake_key=intake_key, status=status, record=record, refusal=refusal,
+                    require_standing=True,
+                ), True
+
         try:
-            intake = self.store.admit_intake(
-                actor=actor, case_id=case["id"] if case else None, new_case=new_case,
-                prepared=admitted, intake_key=intake_key, status=status, record=record, refusal=refusal,
-            )
+            intake, created = await asyncio.to_thread(commit)
         except ValueError as exc:
+            if str(exc).startswith("CASE_STANDING_REVOKED:"):
+                raise HTTPException(status_code=403, detail="analyst authority required") from exc
             if str(exc) == "source content already active":
                 raise IntakeRefused("INTAKE_SOURCE_CONFLICT", "A document in the pack is already active in this case under different metadata.") from exc
             raise
+        if not created:
+            return intake, False
         case_id = intake["case_id"]
         log_event("intake.admitted", case_id=case_id, intake_id=intake["id"], sources=len(admitted),
                   pathway=route["pathway"], status=status)
@@ -172,7 +181,7 @@ class IntakeService:
 
     # -- steps ---------------------------------------------------------------------
 
-    async def _prepare(self, uploads: list[UploadFile], published: list[str]) -> list[dict[str, Any]]:
+    async def _prepare(self, uploads: list[UploadFile]) -> list[dict[str, Any]]:
         vault = Vault(self.settings)
         prepared: list[dict[str, Any]] = []
         findings: list[dict[str, Any]] = []
@@ -183,9 +192,6 @@ class IntakeService:
             except HTTPException as exc:
                 findings.append(_finding(filename, str(exc.detail), status=exc.status_code))
                 continue
-            if source.pop("published_now"):
-                published.append(source["sha256"])
-            source["content"] = Path(source["vault_path"]).read_bytes()
             prepared.append(source)
         if findings:
             raise IntakeRefused(
@@ -210,7 +216,7 @@ class IntakeService:
         documents: list[dict[str, Any]] = []
         first_by_sha: dict[str, dict[str, Any]] = {}
         for source in prepared:
-            content = source.pop("content")
+            content = source["content"]
             classification = classify_document(source["filename"], content, source["sha256"], source["blocks"])
             first = first_by_sha.get(source["sha256"])
             document = {

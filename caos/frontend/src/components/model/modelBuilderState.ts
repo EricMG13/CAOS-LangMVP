@@ -1,4 +1,8 @@
-import type { WorksheetResponse } from "../../lib/api";
+import type { ModelReadiness, WorksheetResponse } from "../../lib/api";
+
+export function modelDisplayStatus(readiness?: Pick<ModelReadiness, "status" | "build">) {
+  return readiness?.status === "READY_TO_BUILD" ? readiness.build?.status || readiness.status : readiness?.status;
+}
 
 export type ModelCase = "BASE" | "DOWNSIDE";
 export type AssumptionStatus = "READY" | "UNAVAILABLE" | "NOT_APPLICABLE";

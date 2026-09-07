@@ -2215,3 +2215,35 @@ def test_frozen_pdf_is_structurally_complete_under_optimized_python():
     assert completed.returncode == 0, completed.stderr
     result = json.loads(completed.stdout)
     assert result["pages"] >= 1 and "Pinned narrative body." in result["text"]
+
+
+def test_resigned_opinion_gets_a_new_freeze_for_the_same_draft(service, store):
+    case, _source, _template, revision = save_min_draft(service, store, "DEEP_RESEARCH")
+    first_opinion = sign_min(service, case["id"], revision, opinion="Hold: original signed opinion.")
+    first = service.freeze(case["id"], freeze_request(revision), actor="analyst")
+    second_opinion = sign_min(service, case["id"], revision, opinion="Reduce: revised signed opinion.")
+    second = service.freeze(case["id"], freeze_request(revision), actor="analyst")
+    assert second["job_id"] != first["job_id"]
+    assert service.freeze(case["id"], freeze_request(revision), actor="analyst")["job_id"] == second["job_id"]
+    for job, opinion in [(first, first_opinion), (second, second_opinion)]:
+        record = service.records.freeze_job(job["job_id"])["frozen_record"]
+        assert record["payload"]["opinion"]["opinion_id"] == opinion["opinion_id"]
+    service.run_pending_freezes()
+    record = service.frozen_record_for_job(case["id"], second["job_id"])
+    assert record is not None
+    service._validate_frozen_integrity(record)
+
+
+def test_legacy_freeze_identity_remains_verifiable(service, store):
+    from caos.contracts import digest
+    from caos.deliverables.graph import filing_thread_id, frozen_approval_digest
+
+    case, _source, _template, revision = save_min_draft(service, store, "DEEP_RESEARCH")
+    record = copy.deepcopy(freeze_now(service, case["id"], revision))
+    legacy_identity = {key: record[key] for key in ("case_id", "pathway", "draft_version", "draft_digest", "build_id")}
+    thread_id = filing_thread_id(**legacy_identity)
+    assert thread_id == "dth-" + digest(legacy_identity)
+    record["thread_id"] = thread_id
+    record["deliverable_id"] = "dlv-" + thread_id[4:]
+    record["preview_digest"] = frozen_approval_digest(record)
+    service._validate_frozen_integrity(record)
