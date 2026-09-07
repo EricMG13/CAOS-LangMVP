@@ -4,6 +4,16 @@ export type { CaseRecord, RunError, Snapshot, Snapshot as SnapshotRecord, Snapsh
 // this is the first import here that has to resolve at runtime.
 import { humanizeCode } from "./workbench.ts";
 import type { CaseRecord, RunError } from "./workbench";
+import type { DocumentSection } from "../components/report/documentTypes";
+
+export type ModulePresentationResponse = {
+  schema_version: "caos.module-presentation.v1";
+  artifact_id: string;
+  artifact_digest: string;
+  mapping_version: string;
+  sections: DocumentSection[];
+  unavailable: { view_id: string; code: "TABLE_MISSING" | "COLUMN_MISSING" | "PERIOD_BASIS_MISMATCH" | "UNIT_MISMATCH" | "INSUFFICIENT_POINTS" | "TABLE_MALFORMED" | "TABLE_HIDDEN" | "DUPLICATE_ID" | "POINT_LIMIT" | "SECTION_LIMIT" | "VALUE_UNAVAILABLE" | "EVIDENCE_UNAVAILABLE" | "MAPPING_UNAVAILABLE" }[];
+};
 
 export type ResearchWorkstream = { id: string; kind: string; question: string; assigned_questions?: string[]; perspective: string; hypothesis: string; evidence_needs: string[]; source_classes: string[]; disconfirming_test: string; completion_test: string; effort_cap: string };
 export type ResearchPlan = { methodology_build_id: string; brief_digest: string; source_set: { id: string; version: number }; upstream_artifacts: { module_id: string; artifact_id: string; digest: string }[]; scope: { type?: string | null; key?: string | null; source_mode?: string | null }; workstreams: ResearchWorkstream[] };
@@ -49,6 +59,7 @@ export function isIntakeRefusal(detail: unknown): detail is IntakeRefusal {
 // (caos.system_analysis.v1) and holds the canonical six-section document for agent
 // payloads (caos.canonical.artifact.v1), whose evidence_refs are objects.
 export type ArtifactRecord = {
+  presentation?: ModulePresentationResponse;
   id: string;
   case_id?: string;
   run_id?: string;

@@ -10,9 +10,9 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from .contracts import CanonicalDocumentSection
+from .contracts import CanonicalDocumentSection, DeliverableModelSelection, IdentifierItem
 
 
 class WireModel(BaseModel):
@@ -401,6 +401,50 @@ class SnapshotViewResponse(WireModel):
     diff: SnapshotDiffResponse | None
 
 
+class PresentationUnavailableResponse(WireModel):
+    view_id: IdentifierItem
+    code: Literal[
+        "TABLE_MISSING", "COLUMN_MISSING", "PERIOD_BASIS_MISMATCH", "UNIT_MISMATCH",
+        "INSUFFICIENT_POINTS", "TABLE_MALFORMED", "TABLE_HIDDEN", "DUPLICATE_ID",
+        "POINT_LIMIT", "SECTION_LIMIT", "VALUE_UNAVAILABLE", "EVIDENCE_UNAVAILABLE",
+        "MAPPING_UNAVAILABLE",
+    ]
+
+
+class ModulePresentationResponse(WireModel):
+    schema_version: Literal["caos.module-presentation.v1"]
+    artifact_id: IdentifierItem
+    artifact_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    mapping_version: IdentifierItem
+    sections: list[CanonicalDocumentSection] = Field(max_length=500)
+    unavailable: list[PresentationUnavailableResponse] = Field(max_length=500)
+
+    @model_validator(mode="after")
+    def artifact_owns_sections(self) -> ModulePresentationResponse:
+        for section in self.sections:
+            leaves = [section]
+            if section.kind == "columns":
+                leaves.extend(child for column in section.items for child in column)
+            if any(s.origin.kind != "ARTIFACT" or s.origin.authority_id != self.artifact_id or s.editable for s in leaves):
+                raise ValueError("presentation sections must belong to this artifact")
+        return self
+
+
+class ModelPresentationResponse(WireModel):
+    schema_version: Literal["caos.model-presentation.v1"]
+    selection: DeliverableModelSelection
+    mapping_version: IdentifierItem
+    sections: list[CanonicalDocumentSection] = Field(max_length=4)
+    unavailable: list[PresentationUnavailableResponse] = Field(max_length=4)
+
+    @model_validator(mode="after")
+    def selected_model_owns_sections(self) -> ModelPresentationResponse:
+        selected_id = self.selection.revision_id if self.selection.kind == "ANALYST_REVISION" else self.selection.build_id
+        if any(s.origin.kind != "MODEL" or s.origin.authority_id != selected_id or s.editable for s in self.sections):
+            raise ValueError("model presentation must preserve selected identity")
+        return self
+
+
 class ArtifactResponse(WireModel):
     id: str
     case_id: str
@@ -413,6 +457,7 @@ class ArtifactResponse(WireModel):
     created_by: str
     created_at: str
     provider_identity: ProviderIdentityResponse | None
+    presentation: ModulePresentationResponse
 
 
 class CalculationRuntimeResponse(WireModel):

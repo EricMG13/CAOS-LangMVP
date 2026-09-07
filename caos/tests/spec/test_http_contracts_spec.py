@@ -171,6 +171,11 @@ KEY_SETS = {
         "created_by": None,
         "created_at": None,
         "provider_identity": _PROVIDER_IDENTITY_KEYS,
+        "presentation": {
+            "schema_version": None, "artifact_id": None, "artifact_digest": None,
+            "mapping_version": None, "sections": None,
+            "unavailable": [{"view_id": None, "code": None}],
+        },
     },
     "model_readiness": {
         "status": None,

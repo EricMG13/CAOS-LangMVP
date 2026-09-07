@@ -971,6 +971,8 @@ def create_app(*, settings: Settings, store: DomainStore, engine: Any) -> FastAP
 
     @app.get("/api/cases/{case_id}/artifacts/{artifact_id}", response_model=wire.ArtifactResponse)
     def get_artifact(case_id: str, artifact_id: str, request: Request) -> dict[str, Any]:
+        from ..artifacts.presentation import project_artifact
+
         require_case(store, case_id, identity(request))
         artifact = engine.runs.get_artifact(artifact_id)
         run = engine.runs.get_run(artifact["run_id"]) if artifact is not None else None
@@ -987,11 +989,13 @@ def create_app(*, settings: Settings, store: DomainStore, engine: Any) -> FastAP
                 code=getattr(exc, "code", None) or "ARTIFACT_AUTHORITY_MISMATCH",
             )
             raise HTTPException(status_code=404, detail="artifact not found") from exc
-        return {
+        response = {
             key: artifact.get(key)
             for key in ("id", "case_id", "run_id", "module_id", "payload", "markdown",
                         "digest", "input_fingerprint", "created_by", "created_at", "provider_identity")
         }
+        response["presentation"] = project_artifact(artifact).model_dump()
+        return response
 
     # -- Model Builder ------------------------------------------------------
 

@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import re
 from datetime import date
 from enum import StrEnum
 from typing import Annotated, Any, Literal
@@ -473,9 +474,80 @@ class GeneratedTableBlock(DeliverableBlock):
     field_ids: list[IdentifierItem] = Field(min_length=1, max_length=80)
 
 
+ChartNumber = Annotated[
+    str,
+    Field(strict=True, max_length=128, pattern=r"^-?(?:0|[1-9][0-9]*)(?:\.[0-9]*[1-9])?$"),
+]
+
+
+class ChartPoint(StrictModel):
+    x: NonBlankBoundaryText = Field(max_length=240)
+    y: ChartNumber
+    display: NonBlankBoundaryText = Field(max_length=240)
+    series: NonBlankBoundaryText = Field(max_length=240)
+    source_ids: list[IdentifierItem] = Field(max_length=200)
+    x_value: ChartNumber | None = None
+
+    @field_validator("y", "x_value")
+    @classmethod
+    def finite_canonical_number(cls, value: str | None) -> str | None:
+        if value is not None:
+            finite_or_none(float(value))
+            if value == "-0":
+                raise ValueError("negative zero is not canonical")
+        return value
+
+
+class ChartRecipe(StrictModel):
+    """Closed host chart data; legacy unversioned recipes remain table exhibits."""
+
+    schema_version: Literal["caos.chart.v1"]
+    recipe_id: IdentifierItem
+    kind: Literal["line", "bar", "stacked_bar", "scatter"]
+    unit: NonBlankBoundaryText = Field(max_length=120)
+    points: list[ChartPoint] = Field(min_length=1, max_length=500)
+
+    @model_validator(mode="after")
+    def coordinates_match_kind(self) -> ChartRecipe:
+        if re.search(r"<[a-z!/]|https?://|javascript:", repr(self.model_dump()), re.IGNORECASE):
+            raise ValueError("chart data cannot contain HTML or remote/executable references")
+        for point in self.points:
+            if self.kind == "scatter":
+                if point.x_value is None:
+                    raise ValueError("scatter requires a numeric x coordinate")
+            elif "x_value" in point.model_fields_set:
+                raise ValueError("only scatter accepts x_value")
+        return self
+
+    def accessible_table(self) -> tuple[list[str], list[list[str]]]:
+        columns = ["Category / period", "Series", "Value", "Unit", "Sources"]
+        rows = [[p.x, p.series, p.display, self.unit, ", ".join(p.source_ids)] for p in self.points]
+        if self.kind == "scatter":
+            columns.append("X value")
+            for row, point in zip(rows, self.points, strict=True):
+                row.append(point.x_value)
+        return columns, rows
+
+
+def is_point_recipe(value: dict[str, Any]) -> bool:
+    # Historical field recipes accepted arbitrary schema_version labels. Keep
+    # those exact bytes/table semantics, even if the label matches today's name.
+    return bool({"points", "recipe_id"} & value.keys()) or (
+        "fields" not in value and str(value.get("schema_version", "")).startswith("caos.chart.")
+    )
+
+
+def validate_chart_recipe(value: dict[str, Any]) -> dict[str, Any]:
+    if is_point_recipe(value):
+        ChartRecipe.model_validate(value)
+    return value
+
+
 class GeneratedChartBlock(DeliverableBlock):
     kind: Literal["GENERATED_CHART"]
     recipe: dict[str, Any]
+
+    _closed_versioned_recipe = field_validator("recipe")(validate_chart_recipe)
 
 
 class ScenarioEnvelope(StrictModel):
@@ -588,10 +660,16 @@ class DocumentChartSection(DocumentSection):
     accessible_columns: list[BoundaryText] = Field(min_length=1, max_length=40)
     accessible_rows: list[list[BoundaryText]] = Field(max_length=500)
 
+    _closed_versioned_recipe = field_validator("recipe")(validate_chart_recipe)
+
     @model_validator(mode="after")
     def accessible_rows_match_columns(self) -> DocumentChartSection:
         if any(len(row) != len(self.accessible_columns) for row in self.accessible_rows):
             raise ValueError("document chart rows must match the accessible column count")
+        if is_point_recipe(self.recipe):
+            columns, rows = ChartRecipe.model_validate(self.recipe).accessible_table()
+            if columns != self.accessible_columns or rows != self.accessible_rows:
+                raise ValueError("accessible table must contain exactly the chart points")
         return self
 
 
