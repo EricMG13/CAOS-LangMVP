@@ -9,8 +9,8 @@ import { webkitTeardownRejection } from "./webkit-teardown.mjs";
 // WEB-002: one Playwright script drives every supported engine. CAOS_BROWSER
 // selects it; every context is traced and, on failure, the trace and a
 // screenshot of every open page land under test-results/<browser>/ beside a
-// structured report. On success the traces are discarded (they are large) and
-// only the report remains.
+// structured report. On success the traces are discarded (they are large),
+// while focused acceptance screenshots and the report remain.
 const engines = { chromium, firefox, webkit };
 const browserName = process.env.CAOS_BROWSER || "chromium";
 if (!engines[browserName]) throw new Error(`CAOS_BROWSER must be one of ${Object.keys(engines).join(", ")}, got ${browserName}`);
@@ -1265,15 +1265,33 @@ try {
     payload: {
       schema_version: "caos.model.worksheet.v1",
       identity: { issuer_id: "northstar", issuer_name: primaryIssuer, analysis_date: "2026-08-24" },
-      tabs: ["Credit Snapshot", "Model", "KPIs"].map((name) => ({
-        id: name.toUpperCase().replaceAll(" ", "_"), title: name, max_row: 2, max_column: 2, freeze_panes: "B2", merged_cells: [],
-        columns: [{ column: 1, letter: "A", width: 22, hidden: false }, { column: 2, letter: "B", width: 14, hidden: false }],
-        cells: [
-          { address: "A1", row: 1, column: 1, value: name, value_type: "text", formula: null, semantic_id: null, owner: null, write_class: null, period_id: null, source_refs: null, number_format: "General", style: { bold: true, italic: false, fill: "0A2E63", align: "left", wrap: false } },
-          { address: "A2", row: 2, column: 1, value: 1160, value_type: "number", formula: null, semantic_id: "account::revenue::FY2024", owner: "CP-1", write_class: "SOURCE", period_id: "FY2024", source_refs: "SRC-1 | page 42 | 2026-08-24", number_format: "#,##0.0", style: { bold: false, italic: false, fill: "FFF4CC", align: "right", wrap: false } },
-          { address: "B2", row: 2, column: 2, value: 4.2, value_type: "formula", formula: "=A2/276", semantic_id: "metric::leverage::FY2024", owner: "CP-MODEL", write_class: "FORMULA", period_id: "FY2024", source_refs: null, number_format: "0.0x", style: { bold: false, italic: false, fill: null, align: "right", wrap: false } },
-        ],
-      })),
+      tabs: ["Credit Snapshot", "Model", "KPIs"].map((name) => {
+        const sourceRef = `${source.id} | ${source.blocks[0].block_id} | 2026-08-24`;
+        const baseCells = [
+          { address: "A1", row: 1, column: 1, value: name, value_type: "text", formula: null, semantic_id: null, owner: null, write_class: null, period_id: null, source_refs: null, source_links: [], number_format: "General", style: { bold: true, italic: false, fill: "0A2E63", align: "left", wrap: false } },
+          { address: "A2", row: 2, column: 1, value: 1160, value_type: "number", formula: null, semantic_id: "account::revenue::FY2024", owner: "CP-1", write_class: "SOURCE", period_id: "FY2024", source_refs: sourceRef, source_links: [{ source_id: source.id, block_id: source.blocks[0].block_id }], number_format: "#,##0.0", style: { bold: false, italic: false, fill: "FFF4CC", align: "right", wrap: false } },
+          { address: "B2", row: 2, column: 2, value: 4.2, value_type: "formula", formula: "=A2/276", semantic_id: "metric::leverage::FY2024", owner: "CP-MODEL", write_class: "FORMULA", period_id: "FY2024", source_refs: null, source_links: [], number_format: "0.0x", style: { bold: false, italic: false, fill: null, align: "right", wrap: false } },
+        ];
+        const modelCells = name === "Model" ? [
+          { address: "B3", row: 3, column: 2, value: "QUARTER", value_type: "text", formula: null, semantic_id: null, owner: null, write_class: null, period_id: null, source_refs: null, source_links: [] },
+          { address: "C3", row: 3, column: 3, value: "BASE", value_type: "text", formula: null, semantic_id: null, owner: null, write_class: null, period_id: null, source_refs: null, source_links: [] },
+          { address: "A4", row: 4, column: 1, value: "Cash Flow", value_type: "text", formula: null, semantic_id: null, owner: null, write_class: null, period_id: null, source_refs: null, source_links: [] },
+          { address: "B5", row: 5, column: 2, value: 21, value_type: "formula", formula: "=B2*5", semantic_id: "cash_flow_adjusted_ebitda", owner: "CP-MODEL", write_class: "FORMULA", period_id: "FY2024", source_refs: null, source_links: [] },
+          { address: "C5", row: 5, column: 3, value: 17, value_type: "formula", formula: "=B5-4", semantic_id: "ffo", owner: "CP-MODEL", write_class: "FORMULA", period_id: "FY2025", source_refs: null, source_links: [] },
+          { address: "C6", row: 6, column: 3, value: 15, value_type: "formula", formula: "=C5-2", semantic_id: "cfo_calc", owner: "CP-MODEL", write_class: "FORMULA", period_id: "FY2025", source_refs: null, source_links: [] },
+          { address: "C7", row: 7, column: 3, value: 10, value_type: "formula", formula: "=C6-5", semantic_id: "fcf", owner: "CP-MODEL", write_class: "FORMULA", period_id: "FY2025", source_refs: null, source_links: [] },
+          { address: "C8", row: 8, column: 3, value: 9, value_type: "formula", formula: "=C7-1", semantic_id: "ncf", owner: "CP-MODEL", write_class: "FORMULA", period_id: "FY2025", source_refs: null, source_links: [] },
+          { address: "A9", row: 9, column: 1, value: "Balance Sheet and Debt", value_type: "text", formula: null, semantic_id: null, owner: null, write_class: null, period_id: null, source_refs: null, source_links: [] },
+          { address: "C10", row: 10, column: 3, value: 29, value_type: "number", formula: null, semantic_id: "cash_and_equivalents", owner: "CP-2", write_class: "SOURCE", period_id: "FY2025", source_refs: sourceRef, source_links: [{ source_id: source.id, block_id: source.blocks[0].block_id }] },
+        ] : [];
+        return {
+          id: name.toUpperCase().replaceAll(" ", "_"), title: name,
+          max_row: name === "Model" ? 10 : 2, max_column: name === "Model" ? 3 : 2,
+          freeze_panes: "B2", merged_cells: [],
+          columns: [{ column: 1, letter: "A", width: 22, hidden: false }, { column: 2, letter: "B", width: 14, hidden: false }, ...(name === "Model" ? [{ column: 3, letter: "C", width: 14, hidden: false }] : [])],
+          cells: [...baseCells, ...modelCells],
+        };
+      }),
     },
   };
   const registryVersion = "cp-model-assumptions.v1";
@@ -1462,7 +1480,7 @@ try {
   await page.locator("#model-cell-lineage").getByText("=A2/276", { exact: true }).waitFor();
   const sourceCell = page.getByRole("button", { name: /Show lineage for account::revenue/ });
   await sourceCell.click();
-  await page.locator("#model-cell-lineage").getByText(/SRC-1 \| page 42/).waitFor();
+  await page.locator("#model-cell-lineage").getByText(new RegExp(`${source.id} \\| ${source.blocks[0].block_id}`)).waitFor();
   await page.locator("#model-cell-lineage").getByText("FY2024", { exact: true }).waitFor();
   const firstTab = page.getByRole("tab", { name: "Credit Snapshot" });
   await firstTab.focus();
@@ -1472,6 +1490,49 @@ try {
   await formulaCell.focus();
   await page.keyboard.press("Enter");
   await page.locator("#model-cell-lineage").getByText("=A2/276", { exact: true }).waitFor();
+  const periodControls = page.getByRole("group", { name: "Period family" });
+  await periodControls.getByRole("button", { name: "Base", exact: true }).click();
+  assert.equal(await periodControls.getByRole("button", { name: "Base", exact: true }).evaluate((element) => element === document.activeElement), true, "period filtering did not leave focus on a visible control");
+  await periodControls.getByRole("button", { name: "All", exact: true }).click();
+  const rowGroupControls = page.getByRole("group", { name: "Worksheet row groups" });
+  await rowGroupControls.getByRole("button", { name: "Collapse Cash Flow", exact: true }).click();
+  const expandCashFlow = rowGroupControls.getByRole("button", { name: "Expand Cash Flow", exact: true });
+  assert.equal(await expandCashFlow.evaluate((element) => element === document.activeElement), true, "row collapse did not leave focus on a visible control");
+  await expandCashFlow.click();
+  assert.equal(await rowGroupControls.getByRole("button", { name: "Collapse Cash Flow", exact: true }).evaluate((element) => element === document.activeElement), true, "row expansion did not preserve visible keyboard focus");
+  await page.getByRole("button", { name: "Hide assumptions", exact: true }).click();
+  for (const semanticId of ["ffo", "cfo_calc", "fcf", "ncf", "cash_and_equivalents"]) {
+    assert.equal(await page.locator(`[data-semantic-id="${semanticId}"]`).first().isVisible(), true, `${semanticId} was not visible in the expanded cash-flow/debt worksheet`);
+  }
+  await page.screenshot({ path: path.join(resultsDir, "model-expanded-worksheet.png"), fullPage: false });
+  const desktopViewport = page.viewportSize();
+  assert.ok(desktopViewport, "the workbench context has no controlled viewport");
+  await page.setViewportSize({ width: 720, height: 900 });
+  const responsiveWorksheet = await page.evaluate(() => {
+    const scroller = document.querySelector(".worksheet-scroll");
+    const periodLabel = document.querySelector('[role="group"][aria-label="Period family"] span');
+    const periodButton = document.querySelector('[role="group"][aria-label="Period family"] button');
+    if (!(scroller instanceof HTMLElement) || !(periodLabel instanceof HTMLElement) || !(periodButton instanceof HTMLElement)) return null;
+    const scrollerStyle = getComputedStyle(scroller);
+    return {
+      pageFits: document.documentElement.scrollWidth <= document.documentElement.clientWidth,
+      worksheetControlled: scrollerStyle.overflowX === "auto" && scrollerStyle.maxHeight === "540px",
+      controlsStack: periodLabel.getBoundingClientRect().bottom <= periodButton.getBoundingClientRect().top,
+    };
+  });
+  assert.deepEqual(responsiveWorksheet, { pageFits: true, worksheetControlled: true, controlsStack: true }, "720px worksheet did not keep overflow local with stacked controls");
+  await page.screenshot({ path: path.join(resultsDir, "model-worksheet-720.png"), fullPage: false });
+  await page.setViewportSize(desktopViewport);
+  await page.getByRole("button", { name: "Show lineage for cash_and_equivalents", exact: true }).first().click();
+  const modelSourceAction = page.locator("#model-cell-lineage").getByRole("button", { name: /^Open evidence / }).first();
+  assert.match(await modelSourceAction.innerText(), new RegExp(source.id), "worksheet evidence action did not name the served fixture source");
+  await modelSourceAction.click();
+  await page.getByRole("dialog").waitFor();
+  await page.screenshot({ path: path.join(resultsDir, "model-source-evidence.png"), fullPage: false });
+  await page.keyboard.press("Escape");
+  await modelSourceAction.waitFor({ state: "visible" });
+  assert.equal(await modelSourceAction.evaluate((element) => element === document.activeElement), true, "closing worksheet evidence did not restore focus to its actual opener");
+  await page.getByRole("button", { name: "Show assumptions", exact: true }).click();
   await page.getByText("Model versions", { exact: true }).click();
   assert.equal(await page.getByRole("region", { name: "Model versions" }).locator("tbody tr").count(), 2, "application and signed versions were not rendered as one model history");
   assert.equal(await page.locator("fieldset").count(), 23, "Model Builder did not render the full methodology-owned registry");

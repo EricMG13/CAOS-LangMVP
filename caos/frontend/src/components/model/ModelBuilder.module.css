@@ -5,6 +5,19 @@
   overflow: hidden;
 }
 
+.workspace.noAssumptions { grid-template-columns: minmax(480px, 2fr) minmax(280px, .85fr); }
+.workspace.noSensitivity { grid-template-columns: minmax(250px, .75fr) minmax(480px, 2fr); }
+.workspace.noAssumptions.noSensitivity { grid-template-columns: minmax(0, 1fr); }
+
+.panelControls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-xs);
+  border-top: 1px solid var(--caos-border);
+  padding: var(--space-sm) var(--space-lg);
+  background: var(--caos-elevated);
+}
+
 .assumptions,
 .model,
 .tornado {
@@ -145,6 +158,57 @@
 
 .lineage h3 { margin: 0 0 var(--space-sm); font-size: 12px; }
 
+.lineageActions { display: flex; flex-wrap: wrap; gap: var(--space-xs); margin-top: var(--space-sm); }
+
+.worksheetTools {
+  display: grid;
+  gap: var(--space-xs);
+  border-bottom: 1px solid var(--caos-border);
+  padding: var(--space-sm) var(--space-lg);
+  background: var(--caos-elevated);
+}
+
+.worksheetToolGroup {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-xs);
+}
+
+.worksheetToolGroup > span {
+  min-width: 58px;
+  color: var(--caos-muted);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.model :global(.worksheet-grid tbody > tr > td:nth-child(2)) {
+  position: sticky;
+  left: 42px;
+  z-index: 1;
+  min-width: 210px;
+  max-width: 280px;
+  background: var(--caos-panel);
+}
+
+.model :global(.worksheet-grid tbody > tr[data-period-header="true"] > *) {
+  position: sticky;
+  top: 23px;
+  z-index: 2;
+  background: var(--caos-elevated);
+  color: var(--caos-muted);
+  font-weight: 700;
+}
+
+.model :global(.worksheet-grid tbody > tr[data-period-header="true"] > th) { z-index: 4; }
+.model :global(.worksheet-grid tbody > tr[data-period-header="true"] > td:nth-child(2)) { z-index: 3; }
+.model :global(.worksheet-grid tbody > tr[data-worksheet-section] > td) {
+  background: color-mix(in srgb, var(--caos-accent) 18%, var(--caos-panel));
+  font-weight: 750;
+}
+
 .tornadoChart { display: grid; gap: var(--space-md); margin-top: var(--space-lg); }
 
 .tornadoRow {
@@ -196,7 +260,13 @@
 
 @media (max-width: 780px) {
   .workspace { grid-template-columns: 1fr; }
+  .workspace.noAssumptions,
+  .workspace.noSensitivity { grid-template-columns: 1fr; }
   .assumptions, .model, .tornado { max-height: none; border: 0; border-bottom: 1px solid var(--caos-border); }
+  .worksheetTools { padding-inline: var(--space-sm); }
+  .worksheetToolGroup { align-items: stretch; }
+  .worksheetToolGroup > span { flex-basis: 100%; }
+  .model :global(.worksheet-scroll) { max-height: 60dvh; }
   .rebase { grid-template-columns: 1fr; }
 }
 

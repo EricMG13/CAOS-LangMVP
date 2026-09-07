@@ -12,13 +12,69 @@ import {
   primaryModelAction,
   queueCalculation,
   scrubberCommitDecision,
+  selectedWorksheetCell,
   sensitivityPeriodRows,
   worksheetCellAuthority,
   worksheetColumns,
+  worksheetPeriodHeaderRows,
+  worksheetPeriodFamilies,
+  worksheetRowGroups,
+  worksheetSections,
   type AssumptionDefinition,
   type ModelAssumptionValue,
   type ModelPreview,
 } from "./modelBuilderState.ts";
+import type { WorksheetTab } from "../../lib/api.ts";
+
+const worksheetCell = (
+  address: string,
+  row: number,
+  column: number,
+  value: string | number,
+  overrides: Partial<WorksheetTab["cells"][number]> = {},
+): WorksheetTab["cells"][number] => ({
+  address, row, column, value, value_type: typeof value === "number" ? "number" : "text",
+  formula: null, semantic_id: null, owner: null, write_class: null, period_id: null,
+  source_refs: null, source_links: [], ...overrides,
+});
+
+const realModelTab: WorksheetTab = {
+  id: "MODEL",
+  title: "Model",
+  max_row: 81,
+  max_column: 5,
+  cells: [
+    worksheetCell("B3", 3, 2, "QUARTER"),
+    worksheetCell("C3", 3, 3, "QUARTER"),
+    worksheetCell("D3", 3, 4, "BASE"),
+    worksheetCell("E3", 3, 5, "DOWNSIDE"),
+    worksheetCell("A7", 7, 1, "Income Statement"),
+    worksheetCell("A8", 8, 1, "Services"),
+    worksheetCell("B8", 8, 2, 100, { semantic_id: "segment::services", period_id: "FY2024_Q1", write_class: "SOURCE" }),
+    worksheetCell("A9", 9, 1, "Products"),
+    worksheetCell("B9", 9, 2, 50, { semantic_id: "segment::products", period_id: "FY2024_Q1", write_class: "SOURCE" }),
+    worksheetCell("B10", 10, 2, 150, { semantic_id: "revenue", period_id: "FY2024_Q1", write_class: "SOURCE" }),
+    worksheetCell("A32", 32, 1, "Cash Flow"),
+    worksheetCell("B33", 33, 2, 21, { semantic_id: "cash_flow_adjusted_ebitda", period_id: "FY2024_Q1", write_class: "FORMULA" }),
+    worksheetCell("B38", 38, 2, 17, { semantic_id: "ffo", period_id: "FY2024_Q1", write_class: "FORMULA" }),
+    worksheetCell("C38", 38, 3, 18, { semantic_id: "ffo", period_id: "FY2024_Q2", write_class: "FORMULA" }),
+    worksheetCell("D38", 38, 4, 19, { semantic_id: "ffo", period_id: "FY2025", write_class: "FORMULA" }),
+    worksheetCell("A54", 54, 1, "Balance Sheet and Debt"),
+    worksheetCell("B55", 55, 2, 29, { semantic_id: "cash_and_equivalents", period_id: "FY2024_Q1", write_class: "SOURCE" }),
+    worksheetCell("D55", 55, 4, 39, { semantic_id: "cash_and_equivalents", period_id: "FY2025", write_class: "FORMULA" }),
+    worksheetCell("E55", 55, 5, 31, { semantic_id: "cash_and_equivalents", period_id: "FY2025", write_class: "FORMULA" }),
+    worksheetCell("A57", 57, 1, "Secured debt"),
+    worksheetCell("B58", 58, 2, 200, { semantic_id: "debt::term-loan::SECURED", period_id: "FY2024_Q1", write_class: "SOURCE" }),
+    worksheetCell("A61", 61, 1, "Unsecured debt"),
+    worksheetCell("B62", 62, 2, 50, { semantic_id: "debt::notes::UNSECURED", period_id: "FY2024_Q1", write_class: "SOURCE" }),
+    worksheetCell("A64", 64, 1, "Other / security not stated"),
+    worksheetCell("D65", 65, 4, -15, { semantic_id: "forecast::unallocated_debt_movement", period_id: "FY2025", write_class: "FORMULA" }),
+    worksheetCell("A71", 71, 1, "Debt reconciliation"),
+    worksheetCell("D71", 71, 4, 0, { semantic_id: "total_debt_variance", period_id: "FY2025", write_class: "FORMULA" }),
+    worksheetCell("A80", 80, 1, "Credit Metrics"),
+    worksheetCell("D81", 81, 4, 0.04, { semantic_id: "growth::revenue", period_id: "FY2025", write_class: "FORMULA" }),
+  ],
+};
 
 test("derives spreadsheet columns from the engine's max-column metadata", () => {
   const columns = worksheetColumns(28);
@@ -32,6 +88,47 @@ test("derives spreadsheet columns from the engine's max-column metadata", () => 
     { column: 27, letter: "AA" },
     { column: 28, letter: "AB" },
   ]);
+});
+
+test("period families, sections, and business/debt groups derive from served worksheet cells", () => {
+  assert.deepEqual(worksheetPeriodFamilies(realModelTab), [
+    { id: "QUARTER", label: "Quarter", columns: [2, 3] },
+    { id: "BASE", label: "Base", columns: [4] },
+    { id: "DOWNSIDE", label: "Downside", columns: [5] },
+  ]);
+  assert.deepEqual(worksheetPeriodHeaderRows(realModelTab), [3]);
+  assert.deepEqual(worksheetSections(realModelTab), [
+    { id: "MODEL:7", label: "Income Statement", startRow: 7, endRow: 31 },
+    { id: "MODEL:32", label: "Cash Flow", startRow: 32, endRow: 53 },
+    { id: "MODEL:54", label: "Balance Sheet and Debt", startRow: 54, endRow: 79 },
+    { id: "MODEL:80", label: "Credit Metrics", startRow: 80, endRow: 81 },
+  ]);
+  assert.deepEqual(worksheetRowGroups(realModelTab), [
+    { id: "MODEL:business-segments", label: "Business segments", startRow: 7, endRow: 9 },
+    { id: "MODEL:32", label: "Cash Flow", startRow: 32, endRow: 53 },
+    { id: "MODEL:54", label: "Balance Sheet and Debt", startRow: 54, endRow: 79 },
+    { id: "MODEL:debt-secured", label: "Secured debt", startRow: 57, endRow: 60 },
+    { id: "MODEL:debt-unsecured", label: "Unsecured debt", startRow: 61, endRow: 63 },
+    { id: "MODEL:debt-other", label: "Other / security not stated", startRow: 64, endRow: 79 },
+  ]);
+});
+
+test("period families ignore row-three prose on tabs without period columns", () => {
+  const proseTab: WorksheetTab = {
+    id: "NOTES", title: "Notes", max_row: 3, max_column: 2,
+    cells: [worksheetCell("B3", 3, 2, "BASE")],
+  };
+  assert.deepEqual(worksheetPeriodFamilies(proseTab), []);
+  assert.deepEqual(worksheetPeriodHeaderRows(proseTab), []);
+});
+
+test("worksheet selection is stable by tab id and address across filtering", () => {
+  const payload = { schema_version: "caos.model.worksheet.v1", identity: { issuer_id: "issuer", issuer_name: "Issuer", analysis_date: "2026-08-24" }, tabs: [realModelTab] };
+  const selection = { tabId: "MODEL", address: "D55" };
+
+  assert.equal(selectedWorksheetCell(payload, selection)?.semantic_id, "cash_and_equivalents");
+  assert.equal(selectedWorksheetCell(payload, { ...selection, tabId: "KPIS" }), null);
+  assert.equal(selectedWorksheetCell(payload, { ...selection, address: "D999" }), null);
 });
 
 test("worksheet authority keeps history and calculations locked", () => {

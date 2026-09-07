@@ -1,4 +1,4 @@
-import type { ModelReadiness, WorksheetResponse } from "../../lib/api";
+import type { ModelReadiness, WorksheetResponse, WorksheetTab } from "../../lib/api";
 
 export function modelDisplayStatus(readiness?: Pick<ModelReadiness, "status" | "build">) {
   return readiness?.status === "READY_TO_BUILD" ? readiness.build?.status || readiness.status : readiness?.status;
@@ -39,6 +39,177 @@ export function worksheetColumns(maxColumn: number): { column: number; letter: s
     }
     return { column: index + 1, letter };
   });
+}
+
+export type WorksheetSelection = { tabId: string; address: string };
+
+export function selectedWorksheetCell(payload: WorksheetPayload, selection: WorksheetSelection | null) {
+  if (!selection) return null;
+  return payload.tabs.find((tab) => tab.id === selection.tabId)?.cells.find((cell) => cell.address === selection.address) || null;
+}
+
+const periodFamilyLabels: Record<string, string> = {
+  QUARTER: "Quarter", YTD: "YTD", LTM: "LTM", PF: "Pro forma", BASE: "Base", DOWNSIDE: "Downside",
+};
+
+export function worksheetPeriodFamilies(tab: WorksheetTab) {
+  const periodColumns = new Set<number>();
+  for (const cell of tab.cells) {
+    if (cell.period_id) periodColumns.add(cell.column);
+  }
+  const columns = new Map<number, string>();
+  for (const cell of tab.cells) {
+    if (periodColumns.has(cell.column)
+      && cell.semantic_id === null
+      && cell.period_id === null
+      && typeof cell.value === "string"
+      && cell.value in periodFamilyLabels) {
+      columns.set(cell.column, cell.value);
+    }
+  }
+  const families = new Map<string, number[]>();
+  for (const [column, family] of columns) {
+    const values = families.get(family) || [];
+    values.push(column);
+    families.set(family, values);
+  }
+  return [...families].map(([id, familyColumns]) => ({
+    id,
+    label: periodFamilyLabels[id] || id.replaceAll("_", " ").toLowerCase().replace(/^./, (letter) => letter.toUpperCase()),
+    columns: familyColumns,
+  }));
+}
+
+export function worksheetPeriodHeaderRows(
+  tab: WorksheetTab,
+  families = worksheetPeriodFamilies(tab),
+) {
+  const familyColumns = new Set(families.flatMap((family) => family.columns));
+  const familyIds = new Set(families.map((family) => family.id));
+  return [...new Set(tab.cells
+    .filter((cell) => familyColumns.has(cell.column)
+      && cell.semantic_id === null
+      && cell.period_id === null
+      && typeof cell.value === "string"
+      && familyIds.has(cell.value))
+    .map((cell) => cell.row))].sort((left, right) => left - right);
+}
+
+type WorksheetGroup = { id: string; label: string; startRow: number; endRow: number };
+type WorksheetRowState = { cell: WorksheetTab["cells"][number]; populated: number };
+
+const worksheetSectionAnchors = ["revenue", "cash_flow_adjusted_ebitda", "cash_and_equivalents", "growth::revenue"];
+
+function worksheetStructure(tab: WorksheetTab) {
+  const rows = new Map<number, WorksheetRowState>();
+  const semantics = new Map<string, WorksheetTab["cells"][number]>();
+  for (const cell of tab.cells) {
+    if (cell.semantic_id && !semantics.has(cell.semantic_id)) semantics.set(cell.semantic_id, cell);
+    if (cell.value === null || cell.value === "") continue;
+    const state = rows.get(cell.row);
+    if (state) state.populated += 1;
+    else rows.set(cell.row, { cell, populated: 1 });
+  }
+  const headers = new Map<number, WorksheetTab["cells"][number]>();
+  for (const [row, state] of rows) {
+    if (state.populated === 1 && state.cell.column === 1 && typeof state.cell.value === "string") {
+      headers.set(row, state.cell);
+    }
+  }
+  const headerBefore = (anchorRow: number) => {
+    let headerRow = anchorRow - 1;
+    while (headerRow >= 1 && !headers.has(headerRow)) headerRow -= 1;
+    if (headerRow < 1) return null;
+    while (headerRow > 1 && headers.has(headerRow - 1)) headerRow -= 1;
+    return { header: headers.get(headerRow)!, headerRow };
+  };
+  return { headerBefore, semantics };
+}
+
+function worksheetSectionEntries(tab: WorksheetTab, structure = worksheetStructure(tab)) {
+  // The serializer's semantic mapping is durable authority metadata; workbook
+  // paint is deliberately not part of the stored payload. Each anchor names the
+  // first calculated/source row in a major Model section. The label is still
+  // read from the served workbook's nearest preceding structural header.
+  const groups = worksheetSectionAnchors.flatMap((semanticId) => {
+    const anchor = structure.semantics.get(semanticId);
+    if (!anchor) return [];
+    const header = structure.headerBefore(anchor.row);
+    return header ? [{
+      anchor: semanticId,
+      id: `${tab.id}:${header.headerRow}`,
+      label: String(header.header.value),
+      startRow: header.headerRow,
+      endRow: tab.max_row,
+    }] : [];
+  }).sort((left, right) => left.startRow - right.startRow);
+  return groups.map((group, index) => ({
+    ...group,
+    endRow: (groups[index + 1]?.startRow || tab.max_row + 1) - 1,
+  }));
+}
+
+export function worksheetSections(tab: WorksheetTab): WorksheetGroup[] {
+  return worksheetSectionEntries(tab).map((section) => ({
+    id: section.id,
+    label: section.label,
+    startRow: section.startRow,
+    endRow: section.endRow,
+  }));
+}
+
+export function worksheetRowGroups(tab: WorksheetTab): WorksheetGroup[] {
+  const structure = worksheetStructure(tab);
+  const sections = worksheetSectionEntries(tab, structure);
+  const groups: WorksheetGroup[] = sections
+    .filter((section) => section.anchor === "cash_flow_adjusted_ebitda" || section.anchor === "cash_and_equivalents")
+    .map((section) => ({
+      id: section.id,
+      label: section.label,
+      startRow: section.startRow,
+      endRow: section.endRow,
+    }));
+
+  let businessStart = Infinity;
+  let businessEnd = -Infinity;
+  for (const cell of tab.cells) {
+    if (cell.semantic_id?.startsWith("segment::")) {
+      businessStart = Math.min(businessStart, cell.row);
+      businessEnd = Math.max(businessEnd, cell.row);
+    }
+  }
+  if (businessStart !== Infinity) {
+    const businessHeader = structure.headerBefore(businessStart);
+    groups.push({
+      id: `${tab.id}:business-segments`,
+      label: "Business segments",
+      startRow: businessHeader?.headerRow ?? Math.max(0, businessStart - 1),
+      endRow: businessEnd,
+    });
+  }
+
+  const debtSection = sections.find((section) => section.anchor === "cash_and_equivalents");
+  if (debtSection) {
+    const debtKinds = [
+      ["secured", (semanticId: string) => semanticId.startsWith("debt::") && semanticId.endsWith("::SECURED")],
+      ["unsecured", (semanticId: string) => semanticId.startsWith("debt::") && semanticId.endsWith("::UNSECURED")],
+      ["other", (semanticId: string) => semanticId === "forecast::unallocated_debt_movement"],
+    ] as const;
+    const debtGroups = debtKinds.flatMap(([id, matches]) => {
+      const anchor = tab.cells.find((cell) => cell.semantic_id && matches(cell.semantic_id));
+      const header = anchor ? structure.headerBefore(anchor.row) : null;
+      return header ? [{
+        id: `${tab.id}:debt-${id}`,
+        label: String(header.header.value),
+        startRow: header.headerRow,
+        endRow: debtSection.endRow,
+      }] : [];
+    }).sort((left, right) => left.startRow - right.startRow);
+    debtGroups.forEach((group, index) => {
+      groups.push({ ...group, endRow: (debtGroups[index + 1]?.startRow || debtSection.endRow + 1) - 1 });
+    });
+  }
+  return groups.sort((left, right) => left.startRow - right.startRow);
 }
 
 export function worksheetCellAuthority(writeClass: string | null) {

@@ -138,6 +138,7 @@ export default function Workspace({ destination, children }: { destination?: Des
   const [unresolvedCaseId, setUnresolvedCaseId] = useState("");
   const intakeRequest = useRef(0);
   const routeAuthorityRef = useRef("");
+  const modelEvidenceGeneration = useRef(0);
   const modelDraftDirtyRef = useRef(false);
   const reportDraftDirtyRef = useRef(false);
   const discardPromptRef = useRef<DraftDiscardRequest | null>(null);
@@ -634,7 +635,7 @@ export default function Workspace({ destination, children }: { destination?: Des
   useEffect(() => {
     // Visible case authority and its drawer must clear at every reducer authority generation.
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    setAuthority(null); setDrawer(null);
+    modelEvidenceGeneration.current += 1; setAuthority(null); setDrawer(null);
     if (!caseId || !caseIsAuthorized) return;
     const controller = new AbortController();
     void refreshCase(caseId, controller.signal);
@@ -1105,6 +1106,37 @@ export default function Workspace({ destination, children }: { destination?: Des
   // Derived once here so the rule has one home rather than one per control.
   const writeAccess: WriteAccess = !roleResolved ? "unknown" : role === "READER" ? "no" : "yes";
 
+  const openModelEvidence = useCallback(async (
+    sourceId: string,
+    blockId: string | null,
+    opener: HTMLElement,
+  ) => {
+    const context = requestContext(authorityRef.current);
+    if (!context.caseId) return;
+    const generation = ++modelEvidenceGeneration.current;
+    setError("");
+    try {
+      const source = await request<SourceRecord>(`/api/cases/${context.caseId}/sources/${encodeURIComponent(sourceId)}`);
+      if (generation !== modelEvidenceGeneration.current || !matchesAuthority(authorityRef.current, context)) return;
+      if (source.withdrawn || blockId && !source.blocks.some((block) => block.block_id === blockId)) {
+        setError(source.withdrawn ? "Evidence source is no longer live." : `Evidence block ${blockId} is no longer available.`);
+        return;
+      }
+      setDrawer({
+        kind: "evidence",
+        evidenceId: sourceId,
+        source,
+        opener,
+        blockId: blockId || undefined,
+        blockIds: blockId ? [blockId] : [],
+      });
+    } catch (caught) {
+      if (generation === modelEvidenceGeneration.current && matchesAuthority(authorityRef.current, context)) {
+        setError(firstErrorMessage(caught, "Evidence source unavailable."));
+      }
+    }
+  }, []);
+
   // The generic paused branch's resume control; READER never sees the shared write,
   // and an observed 404 pins the block for the run it was observed on.
   const resumeSlot = resumeUnavailable === runId
@@ -1122,7 +1154,7 @@ export default function Workspace({ destination, children }: { destination?: Des
       case "Analysis": return <DeepDive writeAccess={writeAccess} selectedCase={selectedCase} question={routeQuestion} caseId={caseId} run={run} authority={authority} authorityStatus={authorityStatus} onSwitchSnapshot={switchSnapshot} />;
       case "Market": return <RVView key={caseId} writeAccess={writeAccess} caseId={caseId} />;
       case "Credit": return <CommandView caseId={caseId} question={routeQuestion} authority={authority} authorityStatus={authorityStatus} />;
-      case "Model": return <ModelBuilder caseId={caseId} role={role} onDraftStateChange={onModelDraftStateChange} />;
+      case "Model": return <ModelBuilder caseId={caseId} role={role} onOpenEvidence={(sourceId, blockId, opener) => void openModelEvidence(sourceId, blockId, opener)} onDraftStateChange={onModelDraftStateChange} />;
       case "Report": return <ReportStudio key={caseId} acceptedRunId={authorityStatus === "ready" ? authority?.latest_accepted?.run_id ?? null : undefined} authorityUnavailable={authorityStatus === "error"} caseId={caseId} role={role} subject={subject} selectedCase={selectedCase} onDraftStateChange={onReportDraftStateChange} requestDraftDiscard={requestDraftDiscard} />;
       case "Admin": return <AdminView capabilities={operatorCapabilities} bootstrapCaseId={requestedCaseId || caseId} caseId={caseId} selectedCase={selectedCase} role={role} subject={subject} writeAccess={writeAccess} pendingAction={pendingAction} provisionMember={provisionMember} />;
     }

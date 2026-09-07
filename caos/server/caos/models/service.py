@@ -16,6 +16,7 @@ from __future__ import annotations
 import copy
 import json
 import re
+from collections import Counter
 from contextlib import contextmanager
 from contextvars import ContextVar
 import tempfile
@@ -53,7 +54,13 @@ from ..methodology.canonical import model_facing_source_ids
 from ..methodology.execution import MAX_CALCULATION_NODES, calculation_output_complete
 from ..storage.models import ModelStore
 from ..storage.store import DomainStore, now_iso
-from .engine import CpModelBundle, ModelInputError, json_value, project_cp2b
+from .engine import (
+    WORKSHEET_SCHEMA_VERSION,
+    CpModelBundle,
+    ModelInputError,
+    json_value,
+    project_cp2b,
+)
 
 # Per-request memo of validated snapshot artifacts (F23): set by the public
 # entry points and by _resolve_snapshot when no scope is active.
@@ -360,6 +367,68 @@ def _with_audit_tabs(worksheet: dict[str, Any], payload: dict[str, Any] | None) 
             raise ModelInputError(f"duplicate {tab['title']} worksheet")
         result["tabs"].append(tab)
     return result
+
+
+def _authorize_worksheet_source_links(
+    worksheet: dict[str, Any],
+    live_sources: list[dict[str, Any]],
+) -> None:
+    """Resolve vendor worksheet references against this snapshot's live pins."""
+    source_blocks: dict[str, set[str] | None] = {}
+    for source in live_sources:
+        source_id = source.get("id")
+        if not isinstance(source_id, str) or not source_id:
+            continue
+        if source_id in source_blocks:
+            source_blocks[source_id] = None
+            continue
+        block_counts = Counter(
+            block_id
+            for block in source.get("blocks") or []
+            if isinstance(block, dict)
+            if isinstance((block_id := block.get("block_id")), str)
+        )
+        source_blocks[source_id] = {
+            block_id for block_id, count in block_counts.items() if count == 1
+        }
+
+    for tab in worksheet.get("tabs") or []:
+        for cell in tab.get("cells") or []:
+            links: list[dict[str, str | None]] = []
+            serialized = cell.get("source_refs")
+            references = (
+                serialized.split("; ")
+                if isinstance(serialized, str) and serialized
+                else ()
+            )
+            for reference in references:
+                fields = reference.split(" | ")
+                if len(fields) != 3 or any(not field for field in fields):
+                    continue
+                source_id, locator, _as_of = fields
+                block_ids = source_blocks.get(source_id)
+                if block_ids is None:
+                    continue
+                links.append({
+                    "source_id": source_id,
+                    "block_id": locator if locator in block_ids else None,
+                })
+            cell["source_links"] = links
+
+
+def _worksheet_supports_source_links(build: dict[str, Any]) -> bool:
+    """NULL is the exact pre-source-link worksheet contract.
+
+    Build rows already had this nullable version column before links existed,
+    making it the durable discriminator between legacy replay and new builds.
+    Unknown claimed versions are rejected by identity validation.
+    """
+    return build.get("worksheet_schema_version") == WORKSHEET_SCHEMA_VERSION
+
+
+def _worksheet_schema_version_is_known(build: dict[str, Any]) -> bool:
+    """Only the exact legacy and current worksheet contracts can be replayed."""
+    return build.get("worksheet_schema_version") in (None, WORKSHEET_SCHEMA_VERSION)
 
 
 def _table_rows(markdown: str, table_id: str) -> list[dict[str, str]]:
@@ -887,6 +956,7 @@ class ModelService:
             or build.get("calculation_runtime") != self.bundle.calculation_runtime
             or build.get("registry_version") != registry["version"]
             or build.get("registry_digest") != registry["digest"]
+            or not _worksheet_schema_version_is_known(build)
             or not _is_sha256(build.get("assumptions_digest"))
             or not _is_sha256(build.get("outputs_digest"))
             or not _is_sha256(build.get("payload_digest"))
@@ -1530,6 +1600,7 @@ class ModelService:
             "calculation_runtime": self.bundle.calculation_runtime,
             "registry_version": registry["version"],
             "registry_digest": registry["digest"],
+            "worksheet_schema_version": WORKSHEET_SCHEMA_VERSION,
         }
         # At most one active (queued/building) job per case: a newer accepted
         # snapshot re-points the standing job rather than stacking a second.
@@ -1703,10 +1774,16 @@ class ModelService:
         resolved = self._resolved_inputs(build, deadline=deadline)
         if resolved.get("pathway_effect") is not None:
             base_build = resolved["base_build"]
+            payload = copy.deepcopy(resolved["model_payload"])
+            if _worksheet_supports_source_links(build):
+                _authorize_worksheet_source_links(
+                    payload,
+                    self._live_snapshot_sources(resolved["snapshot"]),
+                )
             return (
                 {
-                    "payload": copy.deepcopy(resolved["model_payload"]),
-                    "payload_digest": digest(resolved["model_payload"]),
+                    "payload": payload,
+                    "payload_digest": digest(payload),
                     "qa": copy.deepcopy(base_build["qa"]),
                 },
                 {
@@ -1719,6 +1796,11 @@ class ModelService:
         self._check_deadline(deadline)
         payload = serialized["payload"]
         payload["source_lineage"] = copy.deepcopy(resolved["source_lineage"])
+        if _worksheet_supports_source_links(build):
+            _authorize_worksheet_source_links(
+                payload,
+                self._live_snapshot_sources(resolved["snapshot"]),
+            )
         result = {
             "payload": payload,
             "payload_digest": digest(payload),
@@ -1908,6 +1990,11 @@ class ModelService:
         deadline = _deadline if _deadline is not None else self._new_deadline()
         self._check_deadline(deadline)
         build = self._require_current(case_id, request.build_id)
+        if not _worksheet_schema_version_is_known(build):
+            raise ValueError(
+                "MODEL_REVISION_INVALID: build identity mismatch on worksheet_schema_version"
+            )
+        resolved = self._resolved_inputs(build, deadline=deadline)
         self._validate_registry(request.registry_version, request.registry_digest)
         parent = self._parent(case_id, request.parent_revision_id)
         if parent is not None and parent.get("build_id") != request.build_id:
@@ -1921,6 +2008,11 @@ class ModelService:
             self.bundle.serialize_workbook(model, calculations)["payload"],
             build.get("payload") or {},
         )
+        if _worksheet_supports_source_links(build):
+            _authorize_worksheet_source_links(
+                worksheet,
+                self._live_snapshot_sources(resolved["snapshot"]),
+            )
         baseline = parent["outputs"] if parent is not None else default_outputs
         envelope = {
             "case_id": case_id,
@@ -1952,6 +2044,8 @@ class ModelService:
 
         if build["payload_digest"] != digest(build["payload"]):
             raise invalid("payload_digest")
+        if not _worksheet_schema_version_is_known(build):
+            raise invalid("worksheet_schema_version")
         if build.get("methodology_build_id") != self.engine.bundle.build_id:
             raise invalid("methodology_build_id")
         if build.get("calculation_runtime") != self.bundle.calculation_runtime:

@@ -36,8 +36,13 @@ import {
   primaryModelAction,
   queueCalculation,
   scrubberCommitDecision,
+  selectedWorksheetCell,
   worksheetCellAuthority,
   worksheetColumns,
+  worksheetPeriodHeaderRows,
+  worksheetPeriodFamilies,
+  worksheetRowGroups,
+  worksheetSections,
   formatModelValue,
   type AssumptionDefinition,
   type AssumptionRegistry,
@@ -46,6 +51,7 @@ import {
   type ModelPreview,
   type WireAssumptionValue,
   type WorksheetPayload,
+  type WorksheetSelection,
 } from "./modelBuilderState";
 import styles from "./ModelBuilder.module.css";
 
@@ -150,15 +156,23 @@ function formatWorksheetValue(cell?: WorksheetCell) {
 function WorksheetGrid({
   tab,
   selected,
+  sections,
+  periodHeaderRows,
+  visibleColumns,
+  visibleRows,
   onSelect,
 }: {
   tab: WorksheetTab;
   selected: WorksheetCell | null;
+  sections: ReturnType<typeof worksheetSections>;
+  periodHeaderRows: number[];
+  visibleColumns: number[];
+  visibleRows: number[];
   onSelect: (cell: WorksheetCell) => void;
 }) {
   const cells = useMemo(() => new Map(tab.cells.map((cell) => [`${cell.row}:${cell.column}`, cell])), [tab.cells]);
-  const columns = useMemo(() => worksheetColumns(tab.max_column), [tab.max_column]);
-  const [activeCell, setActiveCell] = useState({ row: 1, column: 1 });
+  const columns = useMemo(() => worksheetColumns(tab.max_column).filter((column) => visibleColumns.includes(column.column)), [tab.max_column, visibleColumns]);
+  const [activeCell, setActiveCell] = useState({ row: visibleRows[0] || 1, column: visibleColumns[0] || 1 });
   const onCellKeyDown = (event: ReactKeyboardEvent<HTMLTableCellElement>, row: number, column: number, cell?: WorksheetCell) => {
     if ((event.key === "Enter" || event.key === " ") && cell && (cell.source_refs || cell.formula)) {
       event.preventDefault();
@@ -170,9 +184,11 @@ function WorksheetGrid({
     }[event.key];
     if (!movement) return;
     event.preventDefault();
+    const rowIndex = visibleRows.indexOf(row);
+    const columnIndex = visibleColumns.indexOf(column);
     const next = {
-      row: Math.min(tab.max_row, Math.max(1, row + movement[0])),
-      column: Math.min(tab.max_column, Math.max(1, column + movement[1])),
+      row: visibleRows[Math.min(visibleRows.length - 1, Math.max(0, rowIndex + movement[0]))],
+      column: visibleColumns[Math.min(visibleColumns.length - 1, Math.max(0, columnIndex + movement[1]))],
     };
     setActiveCell(next);
     event.currentTarget.closest("table")?.querySelector<HTMLTableCellElement>(`td[data-row="${next.row}"][data-column="${next.column}"]`)?.focus();
@@ -183,10 +199,10 @@ function WorksheetGrid({
       <caption className="sr-only">Read-only {tab.title} worksheet. Formula values are calculated on the server.</caption>
       <colgroup><col className="worksheet-row-number" />{columns.map((column) => <col key={column.column} />)}</colgroup>
       <thead><tr><th scope="col"><span className="sr-only">Row number</span></th>{columns.map((column) => <th scope="col" key={column.column}>{column.letter}</th>)}</tr></thead>
-      <tbody>{Array.from({ length: tab.max_row }, (_, rowIndex) => {
-        const row = rowIndex + 1;
-        return <tr key={row}><th scope="row">{row}</th>{Array.from({ length: tab.max_column }, (_unused, columnIndex) => {
-          const cell = cells.get(`${row}:${columnIndex + 1}`);
+      <tbody>{visibleRows.map((row) => {
+        const section = sections.find((item) => item.startRow === row);
+        return <tr key={row} data-sheet-row={row} data-period-header={periodHeaderRows.includes(row) ? "true" : undefined} data-worksheet-section={section?.id}><th scope="row">{row}</th>{columns.map(({ column, letter }) => {
+          const cell = cells.get(`${row}:${column}`);
           const fillClass = cell?.style?.fill ? worksheetFillClasses[cell.style.fill.toLowerCase()] || "" : "";
           const authority = worksheetCellAuthority(cell?.write_class ?? null);
           const className = [
@@ -196,21 +212,23 @@ function WorksheetGrid({
             cell && selected?.address === cell.address ? "is-selected" : "",
           ].filter(Boolean).join(" ");
           const value = formatWorksheetValue(cell);
-          const column = columnIndex + 1;
-          const address = cell?.address || `${columns[columnIndex]?.letter || column}${row}`;
+          const address = cell?.address || `${letter}${row}`;
           const hasLineage = Boolean(cell && (cell.source_refs || cell.formula));
-          return <td key={column} className={className} title={cell?.formula ? `${authority.label} · ${cell.formula}` : authority.label} data-write-class={cell?.write_class || "LOCKED"} data-address={address} data-row={row} data-column={column} tabIndex={activeCell.row === row && activeCell.column === column ? 0 : -1} aria-label={`${address}: ${value || "blank"}. ${authority.label}.${hasLineage ? " Press Enter to show lineage." : ""}`} onFocus={() => setActiveCell({ row, column })} onKeyDown={(event) => onCellKeyDown(event, row, column, cell)}>{hasLineage && cell ? <button className="worksheet-cell-link" type="button" tabIndex={-1} aria-label={`Show lineage for ${cell.semantic_id || cell.address}`} aria-controls="model-cell-lineage" aria-expanded={selected?.address === cell.address} onClick={() => { setActiveCell({ row, column }); onSelect(cell); }}>{value || "—"}</button> : value}</td>;
+          return <td key={column} className={className} title={cell?.formula ? `${authority.label} · ${cell.formula}` : authority.label} data-write-class={cell?.write_class || "LOCKED"} data-address={address} data-row={row} data-column={column} data-semantic-id={cell?.semantic_id || undefined} tabIndex={activeCell.row === row && activeCell.column === column ? 0 : -1} aria-label={`${address}: ${value || "blank"}. ${authority.label}.${hasLineage ? " Press Enter to show lineage." : ""}`} onFocus={() => setActiveCell({ row, column })} onKeyDown={(event) => onCellKeyDown(event, row, column, cell)}>{hasLineage && cell ? <button className="worksheet-cell-link" type="button" tabIndex={-1} aria-label={`Show lineage for ${cell.semantic_id || cell.address}`} aria-controls="model-cell-lineage" aria-expanded={selected?.address === cell.address} onClick={() => { setActiveCell({ row, column }); onSelect(cell); }}>{value || "—"}</button> : value}</td>;
         })}</tr>;
       })}</tbody>
     </table>
   </div>;
 }
 
-function WorksheetSurface({ payload }: { payload: WorksheetPayload }) {
+function WorksheetSurface({ payload, onOpenEvidence }: { payload: WorksheetPayload; onOpenEvidence: (sourceId: string, blockId: string | null, opener: HTMLElement) => void }) {
   const [activeTab, setActiveTab] = useState(payload.tabs[0]?.id || "");
-  const [selectedCell, setSelectedCell] = useState<WorksheetCell | null>(null);
+  const [selection, setSelection] = useState<WorksheetSelection | null>(null);
+  const [periodFamily, setPeriodFamily] = useState("ALL");
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(() => new Set());
   const tab = payload.tabs.find((item) => item.id === activeTab) || payload.tabs[0] || null;
-  const selectTab = (next: WorksheetTab) => { setActiveTab(next.id); setSelectedCell(null); };
+  const selectedCell = selectedWorksheetCell(payload, selection);
+  const selectTab = (next: WorksheetTab) => { setActiveTab(next.id); setSelection(null); setPeriodFamily("ALL"); };
   const onTabKeyDown = (event: ReactKeyboardEvent<HTMLButtonElement>, index: number) => {
     if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
     event.preventDefault();
@@ -219,12 +237,44 @@ function WorksheetSurface({ payload }: { payload: WorksheetPayload }) {
     document.getElementById(`model-tab-${payload.tabs[nextIndex].id}`)?.focus();
   };
   if (!tab) return <div className="empty">The saved model has no worksheet tabs.</div>;
+  const periodFamilies = worksheetPeriodFamilies(tab);
+  const periodHeaderRows = worksheetPeriodHeaderRows(tab, periodFamilies);
+  const sections = worksheetSections(tab);
+  const groups = worksheetRowGroups(tab);
+  const selectedFamily = periodFamilies.find((family) => family.id === periodFamily);
+  const visibleColumns = selectedFamily ? [1, ...selectedFamily.columns] : worksheetColumns(tab.max_column).map((column) => column.column);
+  const visibleRows = Array.from({ length: tab.max_row }, (_, index) => index + 1).filter((row) => !groups.some((group) => collapsedGroups.has(group.id) && row > group.startRow && row <= group.endRow));
+  const setFamily = (family: string) => {
+    setPeriodFamily(family);
+    if (selection?.tabId === tab.id) {
+      const cell = selectedWorksheetCell(payload, selection);
+      const columns = family === "ALL" ? visibleColumns : periodFamilies.find((item) => item.id === family)?.columns || [];
+      if (cell && cell.column !== 1 && !columns.includes(cell.column)) setSelection(null);
+    }
+  };
+  const toggleGroup = (groupId: string) => {
+    setCollapsedGroups((current) => {
+      const next = new Set(current);
+      if (next.has(groupId)) next.delete(groupId); else next.add(groupId);
+      return next;
+    });
+    const group = groups.find((item) => item.id === groupId);
+    if (group && selection?.tabId === tab.id) {
+      const cell = selectedWorksheetCell(payload, selection);
+      if (cell && cell.row > group.startRow && cell.row <= group.endRow) setSelection(null);
+    }
+  };
   return <>
     <div className="worksheet-tabs" role="tablist" aria-label="Model worksheets">{payload.tabs.map((item, index) => <button id={`model-tab-${item.id}`} key={item.id} className="worksheet-tab" type="button" role="tab" aria-selected={item.id === tab.id} aria-controls="model-worksheet-panel" tabIndex={item.id === tab.id ? 0 : -1} onClick={() => selectTab(item)} onKeyDown={(event) => onTabKeyDown(event, index)}>{item.title}</button>)}</div>
-    <div id="model-worksheet-panel" role="tabpanel" aria-labelledby={`model-tab-${tab.id}`}><WorksheetGrid key={tab.id} tab={tab} selected={selectedCell} onSelect={setSelectedCell} /></div>
+    {periodFamilies.length || sections.length || groups.length ? <div className={styles.worksheetTools}>
+      {periodFamilies.length ? <div className={styles.worksheetToolGroup} role="group" aria-label="Period family"><span>Periods</span><button type="button" className={periodFamily === "ALL" ? "button small is-active" : "button small"} aria-pressed={periodFamily === "ALL"} onClick={() => setFamily("ALL")}>All</button>{periodFamilies.map((family) => <button type="button" className={periodFamily === family.id ? "button small is-active" : "button small"} aria-pressed={periodFamily === family.id} key={family.id} onClick={() => setFamily(family.id)}>{family.label}</button>)}</div> : null}
+      {sections.length ? <nav className={styles.worksheetToolGroup} aria-label="Worksheet sections"><span>Sections</span>{sections.map((section) => <button className="button small" type="button" key={section.id} onClick={() => document.querySelector(`[data-worksheet-section="${section.id}"]`)?.scrollIntoView({ block: "start" })}>{section.label}</button>)}</nav> : null}
+      {groups.length ? <div className={styles.worksheetToolGroup} role="group" aria-label="Worksheet row groups"><span>Rows</span>{groups.map((group) => <button className="button small" type="button" aria-expanded={!collapsedGroups.has(group.id)} key={group.id} onClick={() => toggleGroup(group.id)}>{collapsedGroups.has(group.id) ? "Expand" : "Collapse"} {group.label}</button>)}</div> : null}
+    </div> : null}
+    <div id="model-worksheet-panel" role="tabpanel" aria-labelledby={`model-tab-${tab.id}`}><WorksheetGrid key={`${tab.id}:${periodFamily}:${[...collapsedGroups].sort().join(",")}`} tab={tab} selected={selectedCell} sections={sections} periodHeaderRows={periodHeaderRows} visibleColumns={visibleColumns} visibleRows={visibleRows} onSelect={(cell) => setSelection({ tabId: tab.id, address: cell.address })} /></div>
     <section className={styles.lineage} id="model-cell-lineage" aria-labelledby="model-cell-lineage-heading">
       <h3 id="model-cell-lineage-heading">Cell lineage</h3>
-      {selectedCell ? <><dl className="state-facts"><dt>Cell</dt><dd className="mono">{tab.title}!{selectedCell.address}</dd><dt>Owner</dt><dd>{selectedCell.owner || "CP-MODEL"}</dd><dt>Period</dt><dd className="mono">{selectedCell.period_id || "—"}</dd></dl>{selectedCell.formula ? <code className="lineage-code">{selectedCell.formula}</code> : null}<p className="mono lineage-source">{selectedCell.source_refs || "Calculated on the server from mapped inputs."}</p></> : <p className="muted">Select a sourced or calculated worksheet value to inspect its lineage.</p>}
+      {selectedCell ? <><dl className="state-facts"><dt>Cell</dt><dd className="mono">{tab.title}!{selectedCell.address}</dd><dt>Owner</dt><dd>{selectedCell.owner || "CP-MODEL"}</dd><dt>Period</dt><dd className="mono">{selectedCell.period_id || "—"}</dd></dl>{selectedCell.formula ? <code className="lineage-code">{selectedCell.formula}</code> : null}<p className="mono lineage-source">{selectedCell.source_refs || "Calculated on the server from mapped inputs."}</p>{selectedCell.source_refs && !("source_links" in selectedCell) ? <p className="status warning">Source navigation is unavailable for this pre-upgrade model version. The raw reference remains readable; use Sources to inspect governed evidence.</p> : null}{selectedCell.source_links?.length ? <div className={styles.lineageActions}>{selectedCell.source_links.map((link, index) => <button className="button small" type="button" key={`${link.source_id}:${link.block_id || "source"}:${index}`} onClick={(event) => onOpenEvidence(link.source_id, link.block_id, event.currentTarget)}>Open evidence {link.source_id}{link.block_id ? ` · ${link.block_id}` : ""}</button>)}</div> : null}</> : <p className="muted">Select a sourced or calculated worksheet value to inspect its lineage.</p>}
     </section>
   </>;
 }
@@ -316,10 +366,12 @@ function modelStatusTone(status?: ModelReadiness["status"]) {
 export default function ModelBuilder({
   caseId,
   role,
+  onOpenEvidence,
   onDraftStateChange,
 }: {
   caseId: string;
   role: string;
+  onOpenEvidence: (sourceId: string, blockId: string | null, opener: HTMLElement) => void;
   onDraftStateChange?: (dirty: boolean) => void;
 }) {
   const [inventory, setInventory] = useState<ModelInventory | null>(null);
@@ -341,6 +393,7 @@ export default function ModelBuilder({
   const [signOffNote, setSignOffNote] = useState("");
   const [conflict, setConflict] = useState<ConflictMetadata | null>(null);
   const [unavailable, setUnavailable] = useState<{ worksheet?: boolean; tornado?: boolean; rebase?: boolean; revisionExport?: boolean; revisionDownload?: boolean }>({});
+  const [visiblePanels, setVisiblePanels] = useState({ assumptions: true, sensitivity: true, history: true });
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
   const [pending, setPending] = useState("");
@@ -359,6 +412,9 @@ export default function ModelBuilder({
   const dirtyRef = useRef(false);
   const draftAuthorityRef = useRef<DraftAuthority | null>(null);
   const canWrite = role !== "READER";
+  const togglePanel = (panel: keyof typeof visiblePanels) => {
+    setVisiblePanels((current) => ({ ...current, [panel]: !current[panel] }));
+  };
 
   const refresh = useCallback(async (signal?: AbortSignal, showLoading = true) => {
     if (!caseId) return false;
@@ -730,6 +786,9 @@ export default function ModelBuilder({
     <section className="panel span-12 model-builder-command">
       <div className="panel-header"><h2>Model</h2><span className={`status ${modelStatusTone(status)}`} role="status" aria-live="polite">{status ? humanizeCode(status) : ""}</span></div>
       <div className="panel-body model-builder-command-body"><div><strong>Application model · {activeRevision ? `R${activeRevision.revision_number}` : "Application version"}</strong><p className="muted">{activeRevision ? `${activeRevision.created_by} · ${formatDate(activeRevision.created_at)} · ${activeRevision.note}` : status === "READY" ? "Built from the accepted application and saved as the starting version. Forecast assumptions create the next version." : "Build the application model from accepted credit analysis."}</p></div><div className="model-primary-action">{renderPrimaryAction()}<button className="button small" type="button" disabled={loading} onClick={() => void refresh()}>{loading ? "Refreshing…" : "Refresh"}</button></div></div>
+      {status === "READY" ? <div className={styles.panelControls} role="group" aria-label="Model panels">
+        {(["assumptions", "sensitivity", "history"] as const).map((panel) => <button className="button small" type="button" aria-pressed={visiblePanels[panel]} key={panel} onClick={() => togglePanel(panel)}>{visiblePanels[panel] ? "Hide" : "Show"} {panel}</button>)}
+      </div> : null}
       {/* Readiness notices sit in their own body so nothing renders flush on the
           panel border. The server's typed blockers are the authority; the generic
           "accept a run" block appears only when the server names none, and the
@@ -743,8 +802,8 @@ export default function ModelBuilder({
       </div> : null}
     </section>
 
-    {status === "READY" && registry ? <section className={`panel span-12 ${styles.workspace}`}>
-      <aside className={styles.assumptions} aria-labelledby="forecast-assumptions-heading">
+    {status === "READY" && registry ? <section className={`panel span-12 ${styles.workspace} ${!visiblePanels.assumptions ? styles.noAssumptions : ""} ${!visiblePanels.sensitivity ? styles.noSensitivity : ""}`}>
+      {visiblePanels.assumptions ? <aside className={styles.assumptions} aria-labelledby="forecast-assumptions-heading">
         <div className={styles.sectionHeader}><h3 id="forecast-assumptions-heading">Forecast assumptions</h3><span className={`status ${dirty ? "warning" : "success"}`}>{dirtyCount} CHANGES</span></div>
         <div className={styles.caseSwitch} role="group" aria-label="Forecast case"><button type="button" className={selectedCase === "BASE" ? "button small is-active" : "button small"} aria-pressed={selectedCase === "BASE"} onClick={() => setSelectedCase("BASE")}>Base</button><button type="button" className={selectedCase === "DOWNSIDE" ? "button small is-active" : "button small"} aria-pressed={selectedCase === "DOWNSIDE"} onClick={() => setSelectedCase("DOWNSIDE")}>Downside</button></div>
         <p className="muted">Only forward periods are editable. Drag any value horizontally or type it. “All” broadcasts to exactly the available forecast years.</p>
@@ -756,19 +815,19 @@ export default function ModelBuilder({
           return <fieldset className={styles.driver} key={`${definition.assumption_id}:${selectedCase}`}><legend><span>{definition.label}</span><small>{definition.unit}</small></legend><div className={styles.forecastValues}><label><span>All forecast years</span><ForecastScrubber key={`${definition.assumption_id}:${selectedCase}:ALL:${scope.value}`} value={scope.value} mixed={scope.mixed} label={`${definition.label}, all forecast years, ${selectedCase}`} minimum={Number(definition.hard_min)} maximum={Number(definition.hard_max)} step={step} disabled={!canWrite || !scope.editable} onCommit={(value) => editAssumption(definition, selectedCase, "ALL", value)} /></label>{rows.map((row) => <label key={assumptionKey(row)}><span>{row.period_id}</span><ForecastScrubber key={`${assumptionKey(row)}:${row.value ?? ""}`} value={row.value === null ? "" : String(row.value)} label={`${definition.label}, ${row.period_id}, ${selectedCase}`} minimum={Number(definition.hard_min)} maximum={Number(definition.hard_max)} step={step} disabled={!canWrite || row.status !== "READY"} onCommit={(value) => editAssumption(definition, selectedCase, row.period_id, value)} />{row.status !== "READY" ? <small>{humanizeCode(row.gap_code || row.status)}</small> : <small>App {formatModelValue(row.default_value)}</small>}</label>)}</div></fieldset>;
         })}</div>
 
-      </aside>
+      </aside> : null}
 
       <section className={styles.model} aria-labelledby="application-model-heading">
         <div className={styles.sectionHeader}><h3 id="application-model-heading">{displayWorksheet?.identity.issuer_name || "Application model"}</h3>{pending === "preview" ? <span className="status warning">RECALCULATING</span> : previewCurrent ? <span className="status success">CURRENT</span> : null}</div>
-        {displayWorksheet ? <WorksheetSurface key={worksheetKey} payload={displayWorksheet} /> : unavailable.worksheet ? <Unavailable title="Application model worksheet" /> : <LoadState loading error="" />}
+        {displayWorksheet ? <WorksheetSurface key={worksheetKey} payload={displayWorksheet} onOpenEvidence={onOpenEvidence} /> : unavailable.worksheet ? <Unavailable title="Application model worksheet" /> : <LoadState loading error="" />}
       </section>
 
-      <aside className={styles.tornado} aria-labelledby="tornado-heading">
+      {visiblePanels.sensitivity ? <aside className={styles.tornado} aria-labelledby="tornado-heading">
         <div className={styles.sectionHeader}><h3 id="tornado-heading">Tornado</h3>{tornadoLoading ? <span className="status warning">CALCULATING</span> : null}</div>
         <label className={styles.control}>Output<select value={tornadoOutputId} onChange={(event) => setTornadoOutputId(event.target.value as typeof tornadoOutputId)}>{TORNADO_METRICS.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</select></label>
         <div className={styles.intensity} role="group" aria-label="Driver swing intensity"><span>Swing</span>{([0.5, 1, 1.5] as const).map((value) => <button type="button" className={tornadoIntensity === value ? "button small is-active" : "button small"} aria-pressed={tornadoIntensity === value} key={value} onClick={() => setTornadoIntensity(value)}>±{value}×</button>)}</div>
         {unavailable.tornado ? <Unavailable title="Tornado" /> : tornado && tornado.output_id === tornadoOutputId && tornado.case === selectedCase ? <TornadoChart result={tornado} metric={selectedMetric} /> : tornadoError ? <p className="error" role="alert">{tornadoError}</p> : <p className="muted">The four legacy drivers recalculate against the complete current forecast.</p>}
-      </aside>
+      </aside> : null}
     </section> : null}
 
           {dirty && canWrite ? <section className="panel span-12" data-model-approval aria-labelledby="model-approval-title"><div className="panel-body approval-panel">
@@ -788,7 +847,7 @@ export default function ModelBuilder({
       : primaryAction === "PREVIEW" ? <button data-primary-model-action="PREVIEW" className="button primary" type="button" disabled={pending === "preview"} onClick={() => void previewDraft()}>{pending === "preview" ? "Recalculating…" : "Recalculate forecast"}</button> : null}</div>
     </div></section> : null}
 
-    {status === "READY" ? <section className={`panel span-12 ${styles.versions}`}>
+    {status === "READY" && visiblePanels.history ? <section className={`panel span-12 ${styles.versions}`}>
       <details open={Boolean(rebase)}><summary>Model versions</summary>
         <div className="table-wrap" tabIndex={0} role="region" aria-label="Model versions"><table><thead><tr><th scope="col">Version</th><th scope="col">State</th><th scope="col">Saved</th><th scope="col">Sign-Off Note</th><th scope="col">Exact XLSX</th></tr></thead><tbody><tr><th scope="row">Application version</th><td><span className={`status ${activeRevision ? "idle" : "success"}`}>{activeRevision ? "BASELINE" : "CURRENT"}</span></td><td>{build?.completed_at ? formatDate(build.completed_at) : "—"}</td><td>Accepted application assumptions</td><td>{build?.export?.status === "READY" ? <a className="button small" href={`${apiBase}/api/cases/${caseId}/models/${build.id}/download`} download>Download</a> : <span className="muted">{build?.export?.status ? humanizeCode(build.export.status) : "Not requested"}</span>}</td></tr>{revisions.map((revision) => <tr key={revision.id}><th scope="row">R{revision.revision_number}<br /><IdentityValue value={revision.id} /></th><td><span className={`status ${revision.state === "ACTIVE" ? "success" : revision.state === "STALE" ? "warning" : "idle"}`}>{humanizeCode(revision.state)}</span></td><td>{revision.created_by}<br /><span className="muted">{formatDate(revision.created_at)}</span></td><td>{revision.note}</td><td><div className="row-actions">{revision.export?.status === "READY" ? unavailable.revisionDownload ? <Unavailable title="Exact version download" /> : <button className="button small" type="button" disabled={pending === `download:${revision.id}`} onClick={() => void downloadRevisionExport(revision)}>Download</button> : null}{canWrite && (revision.export?.status === "FAILED" || revision.export?.status === "NOT_REQUESTED") ? unavailable.revisionExport ? <Unavailable title="Exact version export" /> : <button className="button small" type="button" disabled={pending === `export:${revision.id}`} onClick={() => void queueRevisionExport(revision)}>Export</button> : null}{revision.export?.status === "QUEUED" || revision.export?.status === "EXPORTING" ? <span className="status warning">{humanizeCode(revision.export.status)}</span> : null}{canWrite && revision.state !== "ACTIVE" && build?.status === "READY" && !unavailable.rebase ? <button className="button small" type="button" disabled={pending === `rebase:${revision.id}`} onClick={() => void requestRebase(revision)}>Rebase</button> : null}</div></td></tr>)}</tbody></table></div>
         {rebase ? <div className={styles.rebase}><div><h4>Compatible</h4><p className="num">{rebase.compatible.length}</p></div><div><h4>Changed</h4><p className="num">{rebase.changed.length}</p></div><div><h4>Invalidated</h4><p className="num">{rebase.invalidated.length}</p></div><button className="button" type="button" disabled={!canWrite || Boolean(rebase.invalidated.length)} onClick={applyRebase}>Apply rebase to local forecast</button></div> : null}

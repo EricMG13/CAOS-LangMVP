@@ -881,6 +881,57 @@ def test_worksheet_serialization_requires_no_external_binaries(monkeypatch):
     assert model_tab["cells"]
     assert all("semantic_id" in cell for cell in model_tab["cells"])
     assert any("SRC-1" in json.dumps(cell.get("source_refs", [])) for cell in model_tab["cells"])
+    assert all("source_links" not in cell for cell in model_tab["cells"]), (
+        "the workbook serializer carries raw vendor references but cannot authorize source links"
+    )
+
+
+def test_model_service_authorizes_only_exact_pinned_worksheet_references():
+    from caos.models.service import _authorize_worksheet_source_links
+
+    raw_references = [
+        "src-pinned | b00001 | 2026-08-24",
+        "src-pinned | Annual report p. 42 | 2026-08-24",
+        "src-pinned | b00001 | 2026-08-24; src-second | note 12 | 2026-08-24",
+        "src-unpinned | b00001 | 2026-08-24",
+        "src-pinned | b00001 | 2026-08-24 | injected",
+        "src-ambiguous | b00003 | 2026-08-24",
+        "src-duplicate-block | b00004 | 2026-08-24",
+    ]
+    payload = {
+        "tabs": [{
+            "cells": [
+                {"address": f"A{index}", "source_refs": source_refs}
+                for index, source_refs in enumerate(raw_references, 1)
+            ],
+        }],
+    }
+    live_sources = [
+        {"id": "src-pinned", "blocks": [{"block_id": "b00001"}]},
+        {"id": "src-second", "blocks": [{"block_id": "b00002"}]},
+        {"id": "src-ambiguous", "blocks": [{"block_id": "b00003"}]},
+        {"id": "src-duplicate-block", "blocks": [{"block_id": "b00004"}, {"block_id": "b00004"}]},
+        {"id": "src-ambiguous", "blocks": [{"block_id": "b00003"}]},
+    ]
+
+    _authorize_worksheet_source_links(payload, live_sources)
+
+    cells = payload["tabs"][0]["cells"]
+    assert [cell["source_refs"] for cell in cells] == raw_references, "raw compatibility text is unchanged"
+    assert cells[0]["source_links"] == [{"source_id": "src-pinned", "block_id": "b00001"}]
+    assert cells[1]["source_links"] == [{"source_id": "src-pinned", "block_id": None}], (
+        "a free-form locator authorizes the pinned source, never an invented block"
+    )
+    assert cells[2]["source_links"] == [
+        {"source_id": "src-pinned", "block_id": "b00001"},
+        {"source_id": "src-second", "block_id": None},
+    ]
+    assert cells[3]["source_links"] == [], "an unpinned reference remains visible but is not clickable"
+    assert cells[4]["source_links"] == [], "a malformed vendor reference has no clickable target"
+    assert cells[5]["source_links"] == [], "an ambiguous source identity has no clickable target"
+    assert cells[6]["source_links"] == [{"source_id": "src-duplicate-block", "block_id": None}], (
+        "a duplicate block identity never authorizes exact block navigation"
+    )
 
 
 # --- CP-2B derived projection -----------------------------------------------------
@@ -1706,6 +1757,10 @@ async def test_http_worksheet_route_serves_the_ready_build_payload(client, model
     worksheet = response.json()
     assert worksheet["payload"]["schema_version"] == "caos.model.worksheet.v1"
     assert worksheet["build_id"] == build["id"]
+    cells = [cell for tab in worksheet["payload"]["tabs"] for cell in tab["cells"]]
+    assert all("source_links" in cell for cell in cells)
+    sourced = next(cell for cell in cells if cell.get("source_refs"))
+    assert sourced["source_links"] and sourced["source_links"][0]["block_id"] is None
 
 
 async def test_http_one_way_route_calculates_without_persisting(client, models, engine, store):
@@ -2113,6 +2168,121 @@ async def test_sign_off_validates_exact_current_build_identity(models, engine, s
         models.sign_off(case["id"], request)
     assert models.revisions(case["id"]) == []
     assert store.audit_trail() == before_audit
+
+
+async def test_pre_source_link_build_and_revision_replay_without_rewriting_identity(
+    models, engine, store, tmp_path,
+):
+    """A NULL worksheet version is the exact pre-upgrade contract.
+
+    The old build/revision remains usable and exportable with its original
+    digests. Claiming the current version without its authorized projection,
+    or changing its payload without its digest, still fails closed.
+    """
+    from caos.models.engine import WORKSHEET_SCHEMA_VERSION
+
+    case, build = await _built_case(models, engine, store)
+    legacy_payload = copy.deepcopy(build["payload"])
+    for tab in legacy_payload["tabs"]:
+        for cell in tab["cells"]:
+            cell.pop("source_links", None)
+    legacy_digest = _digest(legacy_payload)
+    assert models.builds.update_build(
+        build["id"],
+        worksheet_schema_version=None,
+        payload=legacy_payload,
+        payload_digest=legacy_digest,
+    )
+
+    registry = models.assumption_registry(case["id"], build["id"])
+    preview = models.preview(case["id"], _preview_request(registry, build["id"]))
+    preview_cells = [cell for tab in preview["worksheet"]["tabs"] for cell in tab["cells"]]
+    assert all("source_links" not in cell for cell in preview_cells)
+    signed = models.sign_off(
+        case["id"], _sign_off_request(registry, build["id"], preview)
+    )
+    assert signed["build_payload_digest"] == legacy_digest
+    assert models.validated_build(case["id"], build["id"])["payload"] == legacy_payload
+    assert models.queue_export(signed["id"], "analyst")["export"]["status"] == "QUEUED"
+    exported = models.run_export_for_tests(signed["id"])
+    assert exported["export"]["status"] == "READY"
+    content, sha256 = models.download(case["id"], signed["id"])
+    assert hashlib.sha256(content).hexdigest() == sha256 == exported["export"]["sha256"]
+    exported_path = tmp_path / "legacy-signed-revision.xlsx"
+    exported_path.write_bytes(content)
+    from caos.models.service import _assert_workbook_semantics
+    _assert_workbook_semantics(exported_path, signed["worksheet"])
+
+    assert models.builds.update_build(
+        build["id"], worksheet_schema_version=WORKSHEET_SCHEMA_VERSION,
+    )
+    with pytest.raises(ValueError, match=r"MODEL_REVISION_INVALID:.*payload"):
+        models.validated_build(case["id"], build["id"])
+
+    assert models.builds.update_build(build["id"], worksheet_schema_version=None)
+    changed_payload = copy.deepcopy(legacy_payload)
+    changed_payload["tabs"][0]["cells"][0]["value"] = "tampered"
+    assert models.builds.update_build(build["id"], payload=changed_payload)
+    with pytest.raises(ValueError, match=r"MODEL_REVISION_INVALID:.*payload_digest"):
+        models.validated_build(case["id"], build["id"])
+
+
+async def test_current_worksheet_version_pins_authorized_preview_and_revision_links(
+    models, engine, store,
+):
+    from caos.models.engine import WORKSHEET_SCHEMA_VERSION
+
+    case, build = await _built_case(models, engine, store)
+    assert build["worksheet_schema_version"] == WORKSHEET_SCHEMA_VERSION
+    cells = [cell for tab in build["payload"]["tabs"] for cell in tab["cells"]]
+    assert all("source_links" in cell for cell in cells)
+
+    registry = models.assumption_registry(case["id"], build["id"])
+    preview = models.preview(case["id"], _preview_request(registry, build["id"]))
+    preview_cells = [cell for tab in preview["worksheet"]["tabs"] for cell in tab["cells"]]
+    assert all("source_links" in cell for cell in preview_cells)
+    signed = models.sign_off(
+        case["id"], _sign_off_request(registry, build["id"], preview)
+    )
+    signed_cells = [cell for tab in signed["worksheet"]["tabs"] for cell in tab["cells"]]
+    assert all("source_links" in cell for cell in signed_cells)
+
+    original_payload = copy.deepcopy(build["payload"])
+    forged_payload = copy.deepcopy(original_payload)
+    sourced = next(
+        cell
+        for tab in forged_payload["tabs"]
+        for cell in tab["cells"]
+        if cell["source_links"]
+    )
+    sourced["source_links"].append({"source_id": "forged", "block_id": "b99999"})
+    assert models.builds.update_build(
+        build["id"], payload=forged_payload, payload_digest=_digest(forged_payload)
+    )
+    with pytest.raises(ValueError, match=r"MODEL_REVISION_INVALID:.*payload"):
+        models.validated_build(case["id"], build["id"])
+
+    assert models.builds.update_build(
+        build["id"], payload=original_payload, payload_digest=_digest(original_payload)
+    )
+    assert models.builds.update_build(build["id"], worksheet_schema_version="unknown.version")
+    with pytest.raises(ValueError, match=r"MODEL_REVISION_INVALID:.*worksheet_schema_version"):
+        models.preview(case["id"], _preview_request(registry, build["id"]))
+    with pytest.raises(ValueError, match=r"MODEL_REVISION_INVALID:.*worksheet_schema_version"):
+        models.validated_build(case["id"], build["id"])
+
+
+async def test_unknown_worksheet_version_cannot_supply_a_prior_full_credit_base(
+    models, engine, store,
+):
+    case, build = await _built_case(models, engine, store)
+    snapshot = engine.runs.get_snapshot(build["snapshot_id"])
+    assert snapshot is not None
+    resolved = models._resolve_snapshot(snapshot)
+    assert models.builds.update_build(build["id"], worksheet_schema_version="unknown.version")
+
+    with pytest.raises(Exception, match="validated READY Full Credit"):
+        models._validated_base_build(snapshot, resolved)
 
 
 @pytest.mark.parametrize("field", ["methodology_build_id", "calculation_runtime"])
