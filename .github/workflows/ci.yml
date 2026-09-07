@@ -117,6 +117,13 @@ jobs:
     name: Browser — workbench journey and accessibility
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      # The browser gate uses the disposable integration assembly below. These
+      # are fixture-only trusted-edge values, never production credentials.
+      CAOS_URL: http://127.0.0.1:19181
+      CAOS_EDGE_SECRET: ci-browser-fixture-secret
+      CAOS_TEST_USER: analyst.qa@local.invalid
+      CAOS_TEST_GROUPS: caos-analyst
     strategy:
       fail-fast: false
       matrix:
@@ -146,13 +153,18 @@ jobs:
         run: npx playwright install --with-deps ${{ matrix.browser }}
       - name: Start combined app
         run: |
-          # Every route is provider-backed; the keyless browser gates bind the
-          # development-only host-control provider (DECISIONS §14 D8), which is
-          # orchestration proof, never analysis. That binding is production-refused,
-          # so the gates run dev.py — run.py is the production entrypoint only.
-          nohup env ANTHROPIC_API_KEY="" CAOS_PROVIDER=host_control AGENT_EXECUTION_ENABLED=true python caos/server/dev.py > server.log 2>&1 &
+          # This is the disposable browser-only assembly: production-shaped
+          # HTTP identity and static assets, isolated SQLite, and canonical
+          # synthetic model/report answer keys. It is never a production path.
+          data_dir="${RUNNER_TEMP}/caos-browser-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-${{ matrix.browser }}"
+          test ! -e "$data_dir"
+          nohup python qa/serve_browser_integration.py \
+            --port 19181 \
+            --data-dir "$data_dir" \
+            --scanner-fixture \
+            --report-fixtures > server.log 2>&1 &
           for i in $(seq 1 30); do
-            curl -sf http://127.0.0.1:8000/api/health && exit 0
+            curl -sf http://127.0.0.1:19181/api/health && exit 0
             sleep 1
           done
           cat server.log
