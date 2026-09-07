@@ -24,6 +24,10 @@ test("report recovery is scope-bound and rejects malformed draft blocks", () => 
 
 test("report recovery rejects values outside the server draft contract", () => {
   const parse = (patch: Record<string, unknown>) => parseReportRecovery(JSON.stringify({ ...valid, ...patch }), "case/1", "FULL_CREDIT", "analyst a");
+  const opinionForm = { opinion: "Unsigned view", limitations: "", material_overrides: "", rationale: "" };
+  assert.deepEqual(parse({ opinionForm })?.opinionForm, opinionForm);
+  assert.equal(parse({ opinionForm: { ...opinionForm, opinion: "x".repeat(4001) } }), null);
+  assert.equal(parse({ opinionForm: { ...opinionForm, rationale: [] } }), null);
   assert.equal(parse({ expectedVersion: Number.MAX_SAFE_INTEGER + 1 }), null);
   assert.equal(parse({ blocks: Array.from({ length: 121 }, () => valid.blocks[0]) }), null);
   assert.equal(parse({ blocks: [{ ...valid.blocks[0], text: "x".repeat(20_001) }] }), null);

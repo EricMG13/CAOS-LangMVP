@@ -3,7 +3,7 @@
 
 One parameterized matrix: binding × pathway × depth × pack × cold repetition.
 Every cell is one fresh process over one fresh store, driven through the
-ordinary provider path (`run.build_provider` for a live binding; the local
+ordinary provider path (`caos.engine.catalog.build_provider` for a live binding; the local
 answer-keyed double for host control), the public API for admission and
 runs, the engine for waiting and acceptance, and the worker's build function
 for the model effect. Each result is scored against the pack's attested
@@ -213,7 +213,7 @@ def build_binding(kind: str, settings: Any, key: dict[str, Any], cell_id: str) -
     if kind == "host_control":
         return RecordingProvider(AnswerKeyedProvider(key, cell_id))
     from caos.engine.provider import AgentError
-    from run import build_provider
+    from caos.engine.catalog import build_provider
 
     provider = None
     try:
@@ -241,7 +241,7 @@ def binding_identity_digest(kind: str) -> str:
 
     if kind == "host_control":
         return host_control_identity(adapter_version=ADAPTER_VERSION).identity_digest
-    from run import build_provider
+    from caos.engine.catalog import build_provider
 
     settings = cell_settings(kind, Path(os.environ.get("TMPDIR", "/tmp")) / "caos-qualification-identity")
     import asyncio

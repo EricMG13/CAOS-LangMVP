@@ -309,7 +309,7 @@ test("draft navigation uses one focus-returning native dialog and preserves befo
   assert.match(workspace, /if \(state\?\.caosModelDraftGuard \|\| state\?\.caosReportDraftGuard\) \{ modelHistoryGuardRef\.current = true; return; \}/);
   const finish = workspace.slice(workspace.indexOf("const finishDraftDiscard"), workspace.indexOf("const commitCaseSelection"));
   assert.doesNotMatch(finish, /(?:model|report)DraftDirtyRef\.current = false|modelHistoryGuardRef\.current = false/);
-  assert.match(reportStudio, /useEffect\(\(\) => \(\) => onDraftStateChange\(false\), \[onDraftStateChange\]\)/);
+  assert.match(reportStudio, /useEffect\(\(\) => \(\) => notifyDraftStateChange\(false\), \[notifyDraftStateChange\]\)/);
   assert.match(workbenchShell, /document\.querySelector\("dialog\[open\]"\)/);
   for (const proof of ["modified dirty link was intercepted", "dirty same-route confirmation dropped protection", "command shortcut opened a nested modal", "dirty pathway cancel changed pathway", "dirty pathway confirm did not change pathway", "confirming browser history did not traverse exactly one boundary"]) assert.match(smoke, new RegExp(proof));
 });

@@ -22,7 +22,6 @@ from fastapi import HTTPException, UploadFile
 
 from ..contracts import digest
 from ..engine.runtime import EngineError
-from ..identity import require_case_member
 from ..observability import log_event
 from ..sources.classify import (
     classify_document,
@@ -32,7 +31,7 @@ from ..sources.classify import (
     select_route,
     suggest_sector,
 )
-from ..sources.domain import Vault, prepare_upload
+from ..sources.domain import Vault, prepare_upload, publish_sources
 
 MAX_INTAKE_FILES = 40
 UNIDENTIFIED_ISSUER = "Unidentified issuer"
@@ -81,29 +80,51 @@ class IntakeService:
 
     async def submit(self, *, actor: str, uploads: list[UploadFile], case_id: str | None) -> tuple[dict[str, Any], bool]:
         """Returns (intake row, created). Raises IntakeRefused for a pack that
-        admits nothing; global authorization happens at the route."""
-        explicit_case = require_case_member(self.store, case_id, actor, write=True) if case_id else None
+        admits nothing; HTTP authorization is the route's job and happens first."""
+        explicit_case = self.store.get_case(case_id) if case_id else None
+        if case_id and explicit_case is None:
+            raise HTTPException(status_code=404, detail="case not found")
         try:
             return await self._submit(
                 actor=actor, uploads=uploads, explicit_case=explicit_case,
             )
-        except IntakeRefused as exc:
-            self.store.refuse_intake(actor, exc.code, case_id=case_id)
-            log_event("intake.refused", case_id=case_id, code=exc.code, files=len(uploads))
+        except BaseException as exc:
+            if isinstance(exc, IntakeRefused):
+                self.store.refuse_intake(actor, exc.code, case_id=case_id)
+                log_event("intake.refused", case_id=case_id, code=exc.code, files=len(uploads))
             raise
 
-    async def _submit(self, *, actor: str, uploads: list[UploadFile], explicit_case: dict[str, Any] | None) -> tuple[dict[str, Any], bool]:
+    async def _submit(self, *, actor: str, uploads: list[UploadFile],
+                      explicit_case: dict[str, Any] | None) -> tuple[dict[str, Any], bool]:
         if not uploads:
             raise IntakeRefused("INTAKE_NO_FILES", "No documents were supplied.")
         if len(uploads) > MAX_INTAKE_FILES:
             raise IntakeRefused("INTAKE_TOO_MANY_FILES", f"{len(uploads)} documents exceed the {MAX_INTAKE_FILES}-file intake ceiling.")
 
         prepared = await self._prepare(uploads)
-        documents = self._classify(prepared)
+        documents = await asyncio.to_thread(self._classify, prepared)
+
+        def commit() -> tuple[dict[str, Any], bool, dict[str, Any] | None]:
+            # Case resolution and idempotency must see the same admission boundary.
+            with self.store.authority_guard():
+                return self._admit(actor, explicit_case, documents)
+
+        intake, created, brief = await asyncio.to_thread(commit)
+        if not created:
+            return intake, False
+        self._import_market_marks(intake["case_id"], actor, documents)
+        if intake["status"] == "clarification":
+            return intake, True
+        return await self._start(intake, actor=actor, route=intake["record"]["route"], brief=brief), True
+
+    def _admit(self, actor: str, explicit_case: dict[str, Any] | None,
+               documents: list[dict[str, Any]]) -> tuple[dict[str, Any], bool, dict[str, Any] | None]:
         issuer, issuer_confidence = self._resolve_issuer(documents, explicit_case)
         case, new_case = self._resolve_case(actor, explicit_case, issuer, documents)
-        if case is not None:
-            require_case_member(self.store, case["id"], actor, write=True)
+        if case and not self.store.is_member(case["id"], actor, {"ANALYST", "APPROVER", "ADMIN"}):
+            if not self.store.is_member(case["id"], actor):
+                raise HTTPException(status_code=404, detail="case not found")
+            raise HTTPException(status_code=403, detail="case write standing required")
         self._apply_existing_sources(case, documents)
         self._apply_dispositions(documents)
 
@@ -114,8 +135,13 @@ class IntakeService:
         intake_key = digest({"actor": actor, "issuer": normalize_issuer(issuer), "digests": digests})
         existing = self.store.find_intake_by_key(actor, intake_key)
         if existing is not None and (case is None or existing["case_id"] == case["id"]):
-            require_case_member(self.store, existing["case_id"], actor, write=True)
-            return existing, False
+            if not self.store.is_member(existing["case_id"], actor, {"ANALYST", "APPROVER", "ADMIN"}):
+                if not self.store.is_member(existing["case_id"], actor):
+                    raise HTTPException(status_code=404, detail="case not found")
+                raise HTTPException(status_code=403, detail="case write standing required")
+            active_ids = {source["id"] for source in self.store.list_sources(existing["case_id"])}
+            if all(document["source_id"] in active_ids for document in existing["record"]["documents"]):
+                return existing, False, None
 
         route = select_route(documents)
         brief = next((document.pop("_brief") for document in documents if document.get("_brief")), None)
@@ -133,9 +159,8 @@ class IntakeService:
             "coverage": coverage(documents),
             "documents": [self._manifest_row(document) for document in documents],
         }
-        admitted = [document["_prepared"] for document in documents
-                    if (document["disposition"] != "duplicate" or document["_first"])
-                    and document["_prepared"].get("id")]
+        admitted = [document["_prepared"] for document in documents if document["disposition"] != "duplicate" or document["_first"]]
+        admitted = [item for item in admitted if item.get("id")]
         usable = any(document["disposition"] == "used" for document in documents)
         status = "clarification" if not usable else "execution_unavailable"
         refusal = None if usable else {
@@ -147,37 +172,22 @@ class IntakeService:
                 if document["disposition"] != "used"
             ],
         }
-        def commit() -> tuple[dict[str, Any], bool]:
-            with Vault(self.settings).admission(self.store, admitted):
-                # Another submission may have committed while this one waited
-                # for the vault lock. Replays neither create a case nor start a run.
-                existing = self.store.find_intake_by_key(actor, intake_key)
-                if existing is not None and (case is None or existing["case_id"] == case["id"]):
-                    require_case_member(self.store, existing["case_id"], actor, write=True)
-                    return existing, False
-                return self.store.admit_intake(
+        try:
+            with publish_sources(self.store, Vault(self.settings), admitted):
+                intake = self.store.admit_intake(
                     actor=actor, case_id=case["id"] if case else None, new_case=new_case,
                     prepared=admitted, intake_key=intake_key, status=status, record=record, refusal=refusal,
-                    require_standing=True,
-                ), True
-
-        try:
-            intake, created = await asyncio.to_thread(commit)
+                )
         except ValueError as exc:
             if str(exc).startswith("CASE_STANDING_REVOKED:"):
-                raise HTTPException(status_code=403, detail="analyst authority required") from exc
+                raise HTTPException(status_code=403, detail=str(exc)) from exc
             if str(exc) == "source content already active":
                 raise IntakeRefused("INTAKE_SOURCE_CONFLICT", "A document in the pack is already active in this case under different metadata.") from exc
             raise
-        if not created:
-            return intake, False
         case_id = intake["case_id"]
         log_event("intake.admitted", case_id=case_id, intake_id=intake["id"], sources=len(admitted),
                   pathway=route["pathway"], status=status)
-        self._import_market_marks(case_id, actor, documents)
-        if not usable:
-            return intake, True
-        return await self._start(intake, actor=actor, route=route, brief=brief), True
+        return intake, True, brief
 
     # -- steps ---------------------------------------------------------------------
 

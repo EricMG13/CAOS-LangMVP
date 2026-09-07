@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import fcntl
 import hashlib
 import io
 import json
@@ -13,7 +12,7 @@ import struct
 import zipfile
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
 
 from fastapi import HTTPException, UploadFile
 
@@ -82,32 +81,9 @@ class Vault:
         """Whether these bytes are already at their content address."""
         return (self.root / self._key(sha256)).exists()
 
-    @contextmanager
-    def admission(self, catalog: DomainStore, prepared: list[dict[str, Any]]):
-        """Publish and commit under one lock; rollback only unreferenced bytes.
-
-        Preparation owns its bytes in memory. No shared path is touched until
-        this synchronous section, which must run off the event loop.
-        """
-        # ponytail: vault-wide lock; use digest locks if admission throughput requires it.
-        lock = os.open(self.root, os.O_RDONLY)
-        try:
-            fcntl.flock(lock, fcntl.LOCK_EX)
-            published: set[str] = set()
-            try:
-                for source in prepared:
-                    sha256 = source["sha256"]
-                    if not self.holds(sha256):
-                        published.add(sha256)
-                    source["vault_path"] = self.put(source.pop("content"), sha256)
-                yield
-            finally:
-                # Also handles a caller that commits successfully and then raises.
-                for sha256 in published:
-                    if not catalog.source_digest_referenced(sha256):
-                        (self.root / self._key(sha256)).unlink(missing_ok=True)
-        finally:
-            os.close(lock)
+    def discard(self, sha256: str) -> None:
+        """Remove unreferenced bytes under the admission authority guard."""
+        (self.root / self._key(sha256)).unlink(missing_ok=True)
 
     def put(self, content: bytes, sha256: str) -> str:
         actual = hashlib.sha256(content).hexdigest()
@@ -462,13 +438,7 @@ def pack_blocks(text: str) -> list[dict[str, Any]]:
 
 
 def _admit_content(vault: Vault, filename: str, media_type: str, content: bytes) -> dict[str, Any]:
-    """The synchronous half of admission: the malware scan (a blocking clamd
-    socket in production), the archive screen and extraction.
-    Seconds on a large workbook, so `prepare_upload` runs it on
-    a worker thread (DECISIONS §10.8, no event-loop starvation).
-
-    Bytes stay private until the caller publishes and commits the admission.
-    """
+    """Scan and extract on a worker thread; keep bytes private until commit."""
     scan_content(content, vault.settings)
     validate_archive(content)
     sha256 = hashlib.sha256(content).hexdigest()
@@ -486,8 +456,8 @@ def _admit_content(vault: Vault, filename: str, media_type: str, content: bytes)
 
 async def prepare_upload(vault: Vault, upload: UploadFile, max_bytes: int) -> dict[str, Any]:
     """Every admission check, in the order the single-source route has always
-    applied them. Returns the prepared bytes and extracted
-    source row minus its case binding; nothing touches the store. The intake
+    applied them. Returns private bytes and source metadata; nothing is
+    published and nothing touches the store. The intake
     (Task 8) prepares a whole pack through here before admitting any of it, so
     admission stays in one place (the route comment above records the drift a
     second copy caused)."""
@@ -503,6 +473,31 @@ async def prepare_upload(vault: Vault, upload: UploadFile, max_bytes: int) -> di
     return await asyncio.to_thread(
         _admit_content, vault, filename, upload.content_type or "application/octet-stream", content,
     )
+
+
+@contextmanager
+def publish_sources(catalog: DomainStore, vault: Vault, prepared: list[dict[str, Any]]) -> Iterator[None]:
+    """Publish and commit without letting another admission race rollback.
+
+    This synchronous scope must include the metadata commit. Even a failure
+    reading its result cannot remove bytes the transaction already committed.
+    """
+    # ponytail: one app's publication lock; cross-process ownership if multi-app ingestion is introduced.
+    with catalog.authority_guard():
+        rollback_candidates: list[str] = []
+        try:
+            for source in prepared:
+                sha256 = source["sha256"]
+                if not vault.holds(sha256):
+                    rollback_candidates.append(sha256)
+                source["vault_path"] = vault.put(source.pop("content"), sha256)
+            yield
+        except BaseException:
+            referenced = catalog.referenced_source_digests(rollback_candidates)
+            for sha256 in rollback_candidates:
+                if sha256 not in referenced:
+                    vault.discard(sha256)
+            raise
 
 
 async def ingest_upload(
@@ -522,7 +517,7 @@ async def ingest_upload(
         "_require_standing": True,
     }
     def commit() -> dict[str, Any]:
-        with vault.admission(catalog, [source]):
+        with publish_sources(catalog, vault, [source]):
             return catalog.ingest(source, actor)
 
     try:

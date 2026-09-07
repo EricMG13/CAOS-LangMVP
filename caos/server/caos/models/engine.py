@@ -309,6 +309,7 @@ class CellExpectation:
 @dataclass(frozen=True)
 class RenderedWorkbook:
     formulas: tuple[CellExpectation, ...]
+    formula_values: dict[tuple[str, str], Any]
     mappings: tuple[Any, ...]
     model_cells: dict[tuple[str, str], str]
 
@@ -669,6 +670,7 @@ class CpModelBundle:
             workbook.close()
         return RenderedWorkbook(
             formulas=tuple(expectations),
+            formula_values={(item.sheet, item.cell): item.expected for item in rendered.formulas},
             mappings=tuple(rendered.mappings),
             model_cells=dict(rendered.model_cells),
         )
@@ -797,7 +799,6 @@ def _assumptions_tab(model: Any) -> dict[str, Any]:
 def _serialize_workbook_file(draft: Path, rendered: RenderedWorkbook, model: Any, calculations: Any) -> dict[str, Any]:
     from openpyxl import load_workbook
 
-    expectations = {(item.sheet, item.cell): item for item in rendered.formulas}
     mappings = {item.target: item for item in rendered.mappings}
     workbook = load_workbook(draft, data_only=False, read_only=False)
     try:
@@ -809,11 +810,11 @@ def _serialize_workbook_file(draft: Path, rendered: RenderedWorkbook, model: Any
             for row in worksheet.iter_rows():
                 for cell in row:
                     address = cell.coordinate
-                    expectation = expectations.get((sheet_name, address))
-                    if cell.value is None and expectation is None:
+                    target = (sheet_name, address)
+                    if cell.value is None and target not in rendered.formula_values:
                         continue
                     formula = cell.value if isinstance(cell.value, str) and cell.value.startswith("=") else None
-                    value = expectation.expected if expectation is not None else cell.value
+                    value = rendered.formula_values.get(target) if formula else cell.value
                     mapping = mappings.get(f"{sheet_name}!{address}")
                     cells.append({
                         "address": address,

@@ -41,7 +41,8 @@ from ..storage.deliverables import (
 )
 from ..storage.models import model_builds, model_revisions
 from ..storage.runs import run_artifacts, run_budgets, run_events, run_nodes, run_snapshots, runs
-from ..storage.store import DomainStore, case_intakes, source_sets, sources
+from ..storage.store import DomainStore, audit_chain_heads, audit_events, case_intakes, case_members, cases, source_sets, sources
+from .chain import CHAIN_FIELDS
 
 PACKAGE_SCHEMA_VERSION = "caos.audit-package.v1"
 VERIFIER_PATH = "caos/server/caos/audit/verify_package.py"
@@ -85,12 +86,11 @@ def _scrub(value: Any) -> Any:
     return value
 
 
-def _rows(engine: sa.Engine, table: sa.Table, *clauses: Any, order: Any = None) -> list[dict[str, Any]]:
+def _rows(conn: sa.Connection, table: sa.Table, *clauses: Any, order: Any = None) -> list[dict[str, Any]]:
     query = sa.select(table).where(*clauses)
     if order is not None:
         query = query.order_by(order)
-    with engine.connect() as conn:
-        return [dict(row) for row in conn.execute(query).mappings().all()]
+    return [dict(row) for row in conn.execute(query).mappings().all()]
 
 
 def _vault_bytes(vault_dir: Path, meta: dict[str, Any] | None) -> tuple[bytes | None, str | None]:
@@ -116,37 +116,53 @@ def build_case_package(
     generated_by: str,
     generated_at: str,
 ) -> bytes:
-    case = store.get_case(case_id)
-    if case is None:
+    with store.engine.connect() as conn:
+        if conn.dialect.name == "postgresql":
+            conn = conn.execution_options(isolation_level="REPEATABLE READ")
+        else:
+            # sqlite's legacy transaction mode does not BEGIN for SELECTs.
+            conn.exec_driver_sql("BEGIN")
+        return _build_case_package(
+            conn=conn, vault_dir=vault_dir, case_id=case_id, methodology_build_id=methodology_build_id,
+            generated_by=generated_by, generated_at=generated_at,
+        )
+
+
+def _build_case_package(
+    *, conn: sa.Connection, vault_dir: Path, case_id: str, methodology_build_id: str | None,
+    generated_by: str, generated_at: str,
+) -> bytes:
+    case_rows = _rows(conn, cases, cases.c.id == case_id)
+    if not case_rows:
         raise ValueError("CASE_NOT_FOUND")
-    engine = store.engine
-    records = DeliverableStore(engine)
+    case = case_rows[0]
+    case["members"] = {row["subject"]: row["role"] for row in _rows(conn, case_members, case_members.c.case_id == case_id)}
     objects: dict[str, bytes] = {}
 
     def put_json(path: str, value: Any) -> None:
         objects[path] = (canonical_json(value) + "\n").encode("utf-8")
 
     put_json("case/case.json", {**case, "members": dict(case.get("members") or {})})
-    put_json("case/sources.json", _scrub(_rows(engine, sources, sources.c.case_id == case_id, order=sources.c.created_at)))
-    put_json("case/source_sets.json", _rows(engine, source_sets, source_sets.c.case_id == case_id, order=source_sets.c.version))
-    put_json("case/intakes.json", _scrub(_rows(engine, case_intakes, case_intakes.c.case_id == case_id, order=case_intakes.c.created_at)))
+    put_json("case/sources.json", _scrub(_rows(conn, sources, sources.c.case_id == case_id, order=sources.c.created_at)))
+    put_json("case/source_sets.json", _rows(conn, source_sets, source_sets.c.case_id == case_id, order=source_sets.c.version))
+    put_json("case/intakes.json", _scrub(_rows(conn, case_intakes, case_intakes.c.case_id == case_id, order=case_intakes.c.created_at)))
 
-    run_rows = _rows(engine, runs, runs.c.case_id == case_id, order=runs.c.created_at)
+    run_rows = _rows(conn, runs, runs.c.case_id == case_id, order=runs.c.created_at)
     run_index = []
     for run in run_rows:
         run_id = run["id"]
         run_index.append({"run_id": run_id, "pathway": run["pathway"], "depth": run["depth"], "status": run["status"]})
         put_json(f"runs/{run_id}/run.json", _scrub(run))
-        put_json(f"runs/{run_id}/nodes.json", _rows(engine, run_nodes, run_nodes.c.run_id == run_id, order=run_nodes.c.stage))
-        put_json(f"runs/{run_id}/artifacts.json", _rows(engine, run_artifacts, run_artifacts.c.run_id == run_id, order=run_artifacts.c.created_at))
-        put_json(f"runs/{run_id}/events.json", _rows(engine, run_events, run_events.c.run_id == run_id, order=run_events.c.seq))
-        put_json(f"runs/{run_id}/budget.json", _rows(engine, run_budgets, run_budgets.c.run_id == run_id))
-        put_json(f"runs/{run_id}/snapshot.json", _rows(engine, run_snapshots, run_snapshots.c.run_id == run_id))
+        put_json(f"runs/{run_id}/nodes.json", _rows(conn, run_nodes, run_nodes.c.run_id == run_id, order=run_nodes.c.stage))
+        put_json(f"runs/{run_id}/artifacts.json", _rows(conn, run_artifacts, run_artifacts.c.run_id == run_id, order=run_artifacts.c.created_at))
+        put_json(f"runs/{run_id}/events.json", _rows(conn, run_events, run_events.c.run_id == run_id, order=run_events.c.seq))
+        put_json(f"runs/{run_id}/budget.json", _rows(conn, run_budgets, run_budgets.c.run_id == run_id))
+        put_json(f"runs/{run_id}/snapshot.json", _rows(conn, run_snapshots, run_snapshots.c.run_id == run_id))
     put_json("runs/index.json", run_index)
 
-    builds = _rows(engine, model_builds, model_builds.c.case_id == case_id, order=model_builds.c.seq)
+    builds = _rows(conn, model_builds, model_builds.c.case_id == case_id, order=model_builds.c.seq)
     put_json("models/builds.json", builds)
-    revisions = _rows(engine, model_revisions, model_revisions.c.case_id == case_id, order=model_revisions.c.seq)
+    revisions = _rows(conn, model_revisions, model_revisions.c.case_id == case_id, order=model_revisions.c.seq)
     put_json("models/revisions.json", revisions)
     model_exports = []
     for record in [*builds, *revisions]:
@@ -161,15 +177,15 @@ def build_case_package(
         model_exports.append(entry)
     put_json("models/exports.json", model_exports)
 
-    put_json("deliverables/revisions.json", _rows(engine, deliverable_revisions, deliverable_revisions.c.case_id == case_id, order=deliverable_revisions.c.seq))
-    put_json("deliverables/opinions.json", _rows(engine, deliverable_opinions, deliverable_opinions.c.case_id == case_id, order=deliverable_opinions.c.seq))
+    put_json("deliverables/revisions.json", _rows(conn, deliverable_revisions, deliverable_revisions.c.case_id == case_id, order=deliverable_revisions.c.seq))
+    put_json("deliverables/opinions.json", _rows(conn, deliverable_opinions, deliverable_opinions.c.case_id == case_id, order=deliverable_opinions.c.seq))
     put_json("deliverables/freeze_jobs.json", [
         {key: value for key, value in job.items() if key != "frozen_record"}
-        for job in _rows(engine, deliverable_freeze_jobs, deliverable_freeze_jobs.c.case_id == case_id, order=deliverable_freeze_jobs.c.seq)
+        for job in _rows(conn, deliverable_freeze_jobs, deliverable_freeze_jobs.c.case_id == case_id, order=deliverable_freeze_jobs.c.seq)
     ])
-    frozen_rows = _rows(engine, deliverable_frozen, deliverable_frozen.c.case_id == case_id, order=deliverable_frozen.c.seq)
-    put_json("deliverables/frozen.json", [records._frozen(row) for row in frozen_rows])
-    put_json("deliverables/receipts.json", [row["receipt"] for row in _rows(engine, deliverable_filing_receipts, deliverable_filing_receipts.c.case_id == case_id, order=deliverable_filing_receipts.c.seq)])
+    frozen_rows = _rows(conn, deliverable_frozen, deliverable_frozen.c.case_id == case_id, order=deliverable_frozen.c.seq)
+    put_json("deliverables/frozen.json", [DeliverableStore._frozen(row) for row in frozen_rows])
+    put_json("deliverables/receipts.json", [row["receipt"] for row in _rows(conn, deliverable_filing_receipts, deliverable_filing_receipts.c.case_id == case_id, order=deliverable_filing_receipts.c.seq)])
     export_index = []
     for row in frozen_rows:
         for format_name, meta in sorted((row.get("exports") or {}).items()):
@@ -183,9 +199,12 @@ def build_case_package(
             export_index.append(entry)
     put_json("deliverables/exports.json", export_index)
 
-    chain = store.audit_chain(case_id)
+    chain = [{key: row[key] for key in (*CHAIN_FIELDS, "digest")}
+             for row in _rows(conn, audit_events, audit_events.c.chain_key == case_id, order=audit_events.c.chain_seq)]
+    heads = _rows(conn, audit_chain_heads, audit_chain_heads.c.chain_key == case_id)
+    head = heads[0] if heads else None
     objects["audit/events.jsonl"] = ("".join(canonical_json(row) + "\n" for row in chain)).encode("utf-8")
-    put_json("audit/head.json", store.audit_chain_head(case_id))
+    put_json("audit/head.json", head)
     put_json("methodology.json", {"build_id": methodology_build_id})
     put_json("environment.json", {
         "python": sys.version.split()[0],
@@ -205,7 +224,7 @@ def build_case_package(
         "generated_at": generated_at,
         "generated_by": generated_by,
         "methodology_build_id": methodology_build_id,
-        "audit_chain_head": store.audit_chain_head(case_id),
+        "audit_chain_head": head,
         "objects": manifest_objects,
     }
     manifest["package_digest"] = digest(manifest_objects)

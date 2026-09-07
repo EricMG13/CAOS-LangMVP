@@ -5,6 +5,15 @@ export function modelDisplayStatus(readiness?: Pick<ModelReadiness, "status" | "
 }
 
 export type ModelCase = "BASE" | "DOWNSIDE";
+
+let calculationTail: Promise<unknown> = Promise.resolve();
+
+export function queueCalculation<T>(calculate: () => Promise<T>, isCurrent: () => boolean): Promise<T | null> {
+  // Keep the queue across component remounts: aborting fetch does not stop server calculation.
+  const next = calculationTail.then(() => isCurrent() ? calculate() : null);
+  calculationTail = next.catch(() => undefined);
+  return next;
+}
 export type AssumptionStatus = "READY" | "UNAVAILABLE" | "NOT_APPLICABLE";
 
 // ponytail: one calculation at a time per tab; coordinate across tabs if needed.

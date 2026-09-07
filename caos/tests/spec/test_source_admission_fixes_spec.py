@@ -18,6 +18,8 @@ import hashlib
 import math
 import sys
 import time
+import threading
+from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
@@ -39,6 +41,132 @@ from test_intake_spec import (  # noqa: E402
 )
 
 EXE = ("notes.exe", b"MZ\x90\x00", "application/octet-stream")
+
+
+async def test_failed_pack_cannot_delete_a_concurrent_upload(store, settings):
+    from caos.intake.service import IntakeRefused, IntakeService
+    from caos.sources.domain import Vault, ingest_upload
+
+    reached, release = asyncio.Event(), asyncio.Event()
+    bad = make_upload("bad.txt", b"\xff", TEXT)
+
+    async def paused_read(size=-1):
+        reached.set()
+        await release.wait()
+        return b"\xff"
+
+    bad.read = paused_read
+    case = store.create_case("Other case", "Northstar Holdings", "Services", "other")
+    service = IntakeService(store=store, engine=None, settings=settings)
+    task = asyncio.create_task(service.submit(
+        actor="analyst", uploads=[make_upload("annual.txt", annual_report(), TEXT), bad], case_id=None,
+    ))
+    await asyncio.wait_for(reached.wait(), timeout=10)
+    saved = await ingest_upload(store, Vault(settings), case["id"], "other",
+                                make_upload("annual.txt", annual_report(), TEXT), settings.max_source_bytes)
+    release.set()
+    with pytest.raises(IntakeRefused):
+        await task
+    assert Vault(settings).verify(store.get_source_private(saved["id"])) == annual_report()
+    _assert_no_orphan(settings, store)
+
+
+@pytest.mark.parametrize("failure", ["update_intake", "get_intake"])
+async def test_post_commit_failure_preserves_committed_bytes(store, settings, monkeypatch, failure):
+    from caos.intake.service import IntakeService
+    from caos.sources.domain import Vault
+
+    def fail(*args, **kwargs):
+        raise RuntimeError("injected post-commit failure")
+
+    monkeypatch.setattr(store, failure, fail)
+    with pytest.raises(RuntimeError, match="post-commit"):
+        await IntakeService(store=store, engine=None, settings=settings).submit(
+            actor="analyst", uploads=[make_upload("annual.txt", annual_report(), TEXT)], case_id=None,
+        )
+    case = store.list_cases("analyst")[0]
+    source = store.list_sources(case["id"])[0]
+    assert Vault(settings).verify(store.get_source_private(source["id"])) == annual_report()
+
+
+def test_implicit_intake_requires_write_standing(client, store, settings):
+    case = store.create_case("Protected", "Northstar Holdings", "Services", "owner")
+    store.add_member(case["id"], "owner", "analyst", "READER", actor_role="ADMIN")
+    response = submit(client, GOLDEN_PACK)
+    assert response.status_code == 403, response.text
+    assert store.list_sources(case["id"]) == []
+    assert _vault_files(settings) == []
+
+
+async def test_reupload_withdrawn_pack_creates_fresh_source_identity(store, settings):
+    from caos.intake.service import IntakeService
+
+    service = IntakeService(store=store, engine=None, settings=settings)
+
+    async def send():
+        return await service.submit(actor="analyst", case_id=None, uploads=[
+            make_upload(name, content, media) for name, content, media in GOLDEN_PACK[:2]
+        ])
+
+    first, _ = await send()
+    original = first["record"]["documents"][0]["source_id"]
+    store.withdraw(first["case_id"], original, "analyst")
+    second, created = await send()
+    assert created and second["id"] != first["id"]
+    assert second["record"]["documents"][0]["source_id"] != original
+    assert len(store.list_sources(first["case_id"])) == 2
+    retry, created = await send()
+    assert not created and retry["id"] == second["id"]
+
+
+@pytest.mark.parametrize("period", ["First quarter fiscal 2026", "First quarter FY 2026", "First quarter FY2026", "First quarter of fiscal year 2026"])
+def test_explicit_fiscal_period_precedes_calendar_inference(period):
+    from caos.sources.classify import classify_document
+
+    content = (f"Northstar Holdings\nFORM 10-Q\n{period}\n"
+               "For the quarterly period ended November 30, 2025\nRevenue 120")
+    result = classify_document("q1.txt", content.encode(), hashlib.sha256(content.encode()).hexdigest(),
+                               [{"block_id": "b1", "text": content}])
+    assert result["period"] == {"fiscal_year": 2026, "quarter": 1, "label": "FY2026-Q1"}
+
+
+async def test_simultaneous_identical_intakes_share_one_case_and_commit(store, settings, monkeypatch):
+    from caos.intake.service import IntakeService
+
+    barrier = threading.Barrier(2)
+    entered = threading.local()
+    original = store.authority_guard
+
+    @contextmanager
+    def guard():
+        if not getattr(entered, "started", False):
+            entered.started = True
+            barrier.wait(timeout=5)
+        with original():
+            yield
+
+    monkeypatch.setattr(store, "authority_guard", guard)
+    service = IntakeService(store=store, engine=None, settings=settings)
+    results = await asyncio.gather(*(service.submit(
+        actor="analyst", case_id=None, uploads=[make_upload("annual.txt", annual_report(), TEXT)],
+    ) for _ in range(2)))
+    assert results[0][0]["id"] == results[1][0]["id"]
+    assert sorted(created for _, created in results) == [False, True]
+    assert len(store.list_cases("analyst")) == 1
+
+
+def test_resolved_intake_rechecks_standing_at_commit(client, store, settings, monkeypatch):
+    case = store.create_case("Protected", "Northstar Holdings", "Services", "analyst")
+    original = store.admit_intake
+
+    def revoke_then_commit(**kwargs):
+        store.add_member(case["id"], "operator", "analyst", "READER", actor_role="ADMIN")
+        return original(**kwargs)
+
+    monkeypatch.setattr(store, "admit_intake", revoke_then_commit)
+    response = submit(client, GOLDEN_PACK)
+    assert response.status_code == 403, response.text
+    assert store.list_sources(case["id"]) == [] and _vault_files(settings) == []
 
 
 # --- helpers ------------------------------------------------------------------------

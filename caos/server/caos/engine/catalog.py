@@ -197,3 +197,66 @@ def load_catalog(settings: Settings) -> ProviderCatalog:
                                           "available": False, "status": "unavailable",
                                           "unavailable_code": getattr(exc, "code", "AGENT_PROVIDER_UNQUALIFIED")}
     return ProviderCatalog(bindings, default, settings=settings, unavailable=unavailable)
+
+
+def build_provider(settings: Settings):
+    """Assemble an explicit catalog, or preserve a single legacy development binding."""
+    if settings.provider_catalog_path is not None:
+        if settings.provider_binding == "host_control":
+            raise AgentError("AGENT_PROVIDER_UNQUALIFIED", "host control cannot select an external catalog")
+        return load_catalog(settings)
+    configured = {
+        "anthropic": bool(settings.anthropic_api_key.strip()),
+        "openai": bool(settings.openai_api_key.strip()),
+        "openrouter": bool(settings.openrouter_api_key.strip()),
+    }
+    selected = settings.provider_binding
+    if not selected:
+        names = [name for name, present in configured.items() if present]
+        if len(names) > 1:
+            raise AgentError("AGENT_PROVIDER_UNQUALIFIED", "multiple provider credentials require explicit selection")
+        selected = names[0] if names else ""
+    qualification_configured = settings.provider_qualification_path is not None or bool(settings.provider_qualification_digest)
+    if qualification_configured and (settings.provider_qualification_path is None or not settings.provider_qualification_digest):
+        raise AgentError("AGENT_QUALIFICATION_MISSING", "qualification path and digest are both required")
+    if settings.environment == "production" and (selected in {"openrouter", "host_control", "codex"} or configured["openrouter"]):
+        raise AgentError("AGENT_PROVIDER_UNQUALIFIED", "the selected adapter is development-only")
+    if not settings.agent_execution_enabled:
+        return None
+    if selected == "host_control":
+        if any(configured.values()):
+            raise AgentError("AGENT_PROVIDER_UNQUALIFIED", "the host-control binding excludes provider credentials")
+        from .host_control import HostControlProvider
+
+        return HostControlProvider()
+    if selected == "codex":
+        from .codex import CodexProvider
+
+        return CodexProvider(settings.openai_model, methodology_root=settings.deploy_v_root,
+                             account_policy=settings.provider_account_policy)
+    if not selected or not configured.get(selected):
+        if settings.environment == "production" or selected:
+            raise AgentError("AGENT_PROVIDER_UNAVAILABLE", "the selected provider credential is not configured")
+        return None
+    qualification = None
+    if qualification_configured:
+        qualification = ProviderQualification.from_path(settings.provider_qualification_path, settings.provider_qualification_digest)
+    if settings.environment == "production":
+        if qualification is None:
+            raise AgentError("AGENT_QUALIFICATION_MISSING", "production agent execution requires qualification")
+        qualification.validate_candidate(candidate_commit=settings.candidate_commit,
+                                         image_set_digest=settings.image_set_digest, corpus_digest=settings.corpus_digest)
+        require_account_policy(settings.provider_account_policy)
+    if selected == "anthropic":
+        from .anthropic import AnthropicProvider
+
+        return AnthropicProvider(settings.anthropic_api_key, settings.anthropic_model, qualification=qualification,
+                                 methodology_root=settings.deploy_v_root, account_policy=settings.provider_account_policy)
+    if selected == "openai":
+        from .openai import OpenAIProvider
+
+        return OpenAIProvider(settings.openai_api_key, settings.openai_model, qualification=qualification,
+                              methodology_root=settings.deploy_v_root, account_policy=settings.provider_account_policy)
+    from .openrouter import OpenRouterProvider
+
+    return OpenRouterProvider(settings.openrouter_api_key, settings.openrouter_model, qualification=qualification)

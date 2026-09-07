@@ -39,9 +39,9 @@ Pydantic state, lean by design — large payloads live in the domain store, the 
 
 ## 4. Persistence boundary
 
-Three stores, one database:
+Three storage owners, with separate domain and checkpoint databases:
 
-1. **LangGraph checkpointer** (`langgraph-checkpoint-postgres` in production, `-sqlite` in dev/tests) owns execution state: node progress, interrupts, resumability. A worker restart resumes every unfinished thread from its last checkpoint at startup (re-invoke with `None` input); the kill/resume test proves it.
+1. **LangGraph checkpointer** owns execution state: node progress, interrupts, resumability. The original proposal named PostgreSQL in production; the implemented single-instance topology uses SQLite checkpoints in every environment, with PostgreSQL for production domain rows (see the current topology in `CLAUDE.md`). A worker restart resumes every unfinished thread from its last checkpoint at startup (re-invoke with `None` input); the kill/resume test proves it.
 2. **Domain store** (one SQLAlchemy-Core schema, SQLite dev/tests + Postgres prod) owns the entities: cases/members, sources/blocks, source_sets + immutable history, runs (read model row), run_events (append-only, per-run monotonic sequence), artifacts, snapshots, model builds/jobs/revisions/exports, deliverable revisions/frozen/exports, loan universes, audit (append-only). Store transactions keep the legacy atomicity contracts: state+audit together, state+event together, CAS with typed conflicts carrying current state.
 3. **Vault** — content-addressed bytes (sources, model workbooks, deliverable exports), atomic fsync+rename writes, sha256-verified on every read. Ported from legacy `sources/domain.py` semantics unchanged.
 

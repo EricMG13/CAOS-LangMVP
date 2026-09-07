@@ -14,7 +14,7 @@ import DeliverableDocument, {
   type TemplateBlock,
 } from "./DeliverableDocument";
 import { draftTextSections, overlayAnalystText, type DocumentSection } from "./documentTypes";
-import { browserTabId, parseReportRecovery, reportRecoveryKey, type RecoveryModelSelection, type ReportRecovery } from "./reportRecovery";
+import { browserTabId, claimBrowserTabId, parseReportRecovery, reportRecoveryKey, type OpinionForm, type RecoveryModelSelection, type ReportRecovery } from "./reportRecovery";
 import { canFileFrozen, freezeChecklist, freezeJobIsPending } from "./reportStudioState";
 
 const apiBase = process.env.NEXT_PUBLIC_API_URL || "";
@@ -49,7 +49,6 @@ type OpinionState = { head: OpinionRecord | null; current: boolean; reasons: str
 // A freeze is a worker job; the frozen record appears in frozen_history once the job is PUBLISHED.
 type FreezeJob = { job_id: string; case_id: string; pathway: Pathway; status: "QUEUED" | "RENDERING" | "PUBLISHED" | "FAILED"; draft_version: number; draft_digest: string; deliverable_id: string | null; error: { code: string } | null; requested_by: string; requested_at: string; completed_at: string | null };
 type FilingReceipt = { schema_version: string; receipt_id: string; deliverable_id: string; case_id: string; pathway: Pathway; draft_version: number; draft_digest: string; preview_digest: string; input_fingerprint: string; approval_hash: string; content_digest: string | null; exports: Record<string, string>; opinion_id: string | null; signed_by: string | null; frozen_by: string; frozen_at: string; approved_by: string; approved_at: string; receipt_digest: string };
-type OpinionForm = { opinion: string; limitations: string; material_overrides: string; rationale: string };
 type WorkspaceResponse = { template: DeliverableTemplate; current: DraftRevision | null; history: DraftRevision[]; frozen_history: FrozenDeliverable[]; model_eligibility: ModelEligibility; opinion: OpinionState; pending_freezes: FreezeJob[] };
 type SaveState = { kind: "IDLE" | "INCOMPLETE" | "DIRTY" | "SAVING" | "SAVED" | "CONFLICT" | "ERROR"; detail?: string; version?: number };
 type RegistryResponse = {
@@ -194,7 +193,7 @@ export default function ReportStudio(props: ReportProps) {
   return <ReportEditor {...props} initialPathway={initialPathway} />;
 }
 
-function ReportEditor({ caseId, role, subject = "", selectedCase, onDraftStateChange, requestDraftDiscard, initialPathway }: ReportProps & { initialPathway: Pathway }) {
+function ReportEditor({ caseId, role, subject = "", selectedCase, onDraftStateChange: notifyDraftStateChange, requestDraftDiscard, initialPathway }: ReportProps & { initialPathway: Pathway }) {
   const [pathway, setPathway] = useState<Pathway>(initialPathway);
   const [workspace, setWorkspace] = useState<WorkspaceResponse | null>(null);
   const [blocks, setBlocks] = useState<DeliverableBlock[]>([]);
@@ -214,6 +213,10 @@ function ReportEditor({ caseId, role, subject = "", selectedCase, onDraftStateCh
   const [error, setError] = useState("");
   const [changeComment, setChangeComment] = useState("");
   const [opinionForm, setOpinionForm] = useState<OpinionForm>(EMPTY_OPINION);
+  const opinionFormRef = useRef<OpinionForm>(EMPTY_OPINION);
+  const onDraftStateChange = useCallback((dirty: boolean) => {
+    notifyDraftStateChange(dirty || Object.values(opinionFormRef.current).some(Boolean));
+  }, [notifyDraftStateChange]);
   const [receipt, setReceipt] = useState<FilingReceipt | null>(null);
   const [registry, setRegistry] = useState<RegistryResponse | null>(null);
   const [scenarioForm, setScenarioForm] = useState({ assumptionId: "", case: "BASE", periodId: "", value: "" });
@@ -268,12 +271,15 @@ function ReportEditor({ caseId, role, subject = "", selectedCase, onDraftStateCh
     currentScope.current = scope;
     setLoading(true); setLoadError(""); setError(""); setMessage(""); setSelectedFrozen(null); setReceipt(null); setConflict(null);
     try {
+      await claimBrowserTabId().catch(() => undefined);
       const next = await reportRequest<WorkspaceResponse>(`/api/cases/${caseId}/deliverables/${pathway}/draft`, {}, signal);
       if (generation !== loadGeneration.current || currentScope.current !== scope) return;
       const nextBlocks = next.current?.content.blocks || initializeBlocks(next.template);
       savedVersion.current = next.current?.version || 0;
       unsavedDraft.current = false;
       setDraftIsUnsaved(false);
+      opinionFormRef.current = EMPTY_OPINION;
+      setOpinionForm(EMPTY_OPINION);
       setPersistedVersion(savedVersion.current);
       const nextModelSelection = next.current?.content.model_selection || next.model_eligibility.default_model_selection;
       setWorkspace(next); setBlocks(nextBlocks); setModelSelection(nextModelSelection); setSelectedBlockId(nextBlocks[0]?.block_id || ""); setSaveState(next.current ? { kind: "SAVED", version: next.current.version } : { kind: "IDLE" });
@@ -309,7 +315,7 @@ function ReportEditor({ caseId, role, subject = "", selectedCase, onDraftStateCh
     // from /api/me after the first render on a cold deep link.
   }, [caseId, onDraftStateChange, pathway, subject]);
 
-  useEffect(() => () => onDraftStateChange(false), [onDraftStateChange]);
+  useEffect(() => () => notifyDraftStateChange(false), [notifyDraftStateChange]);
 
   useEffect(() => {
     loadGeneration.current += 1; draftGeneration.current = 0; saveGeneration.current = 0; savedVersion.current = 0; unsavedDraft.current = false; saveChain.current = Promise.resolve();
@@ -320,6 +326,27 @@ function ReportEditor({ caseId, role, subject = "", selectedCase, onDraftStateCh
     const timer = window.setTimeout(() => void load(controller.signal), 0);
     return () => { controller.abort(); window.clearTimeout(timer); loadGeneration.current += 1; lifecycleGeneration.current += 1; lifecycleInFlight.current = false; if (saveTimer.current !== null) window.clearTimeout(saveTimer.current); if (freezePollTimer.current !== null) window.clearTimeout(freezePollTimer.current); };
   }, [caseId, load, pathway]);
+
+  const retainRecovery = useCallback((nextBlocks: DeliverableBlock[], selection: ModelSelection | null, opinion: OpinionForm, unsaved: boolean) => {
+    const dirty = unsaved || Object.values(opinion).some((value) => value.length > 0);
+    onDraftStateChange(dirty);
+    if (!dirty) {
+      const cleared = clearBrowserRecovery(caseId, pathway, subject);
+      setRecovery(null);
+      setRecoveryError(cleared ? "" : "The saved work's browser recovery copy could not be cleared.");
+    } else if (workspace) {
+      const copy: ReportRecovery = { subject, caseId, pathway, savedAt: Date.now(), expectedVersion: savedVersion.current, templateId: workspace.template.template_id, templateVersion: workspace.template.template_version, modelSelection: selection, blocks: nextBlocks, opinionForm: opinion };
+      if (storeBrowserRecovery(copy)) { setRecovery((current) => current ? copy : null); setRecoveryError(""); }
+      else setRecoveryError("Browser recovery could not be updated. Keep this tab open until your work is saved and signed.");
+    }
+  }, [caseId, onDraftStateChange, pathway, subject, workspace]);
+
+  const changeOpinion = (patch: Partial<OpinionForm>) => {
+    const next = { ...opinionFormRef.current, ...patch };
+    opinionFormRef.current = next;
+    setOpinionForm(next);
+    retainRecovery(blocks, modelSelection, next, unsavedDraft.current);
+  };
 
   const enqueueSave = useCallback((snapshot: DeliverableBlock[], selection: ModelSelection | null, generation: number, scope: string) => {
     if (!workspace || !canWrite || scope !== currentScope.current) return;
@@ -334,7 +361,7 @@ function ReportEditor({ caseId, role, subject = "", selectedCase, onDraftStateCh
         savedVersion.current = next.current?.version || savedVersion.current;
         setPersistedVersion(savedVersion.current);
         setWorkspace(next); setConflict(null);
-        if (generation === saveGeneration.current) { unsavedDraft.current = false; setDraftIsUnsaved(false); setBlocks(next.current?.content.blocks || prepared); setSaveState({ kind: "SAVED", version: savedVersion.current }); const cleared = clearBrowserRecovery(caseId, pathway, subject); setRecovery(null); setRecoveryError(cleared ? "" : "The server saved this revision, but its browser recovery copy could not be cleared."); onDraftStateChange(false); }
+        if (generation === saveGeneration.current) { unsavedDraft.current = false; setDraftIsUnsaved(false); setBlocks(next.current?.content.blocks || prepared); setSaveState({ kind: "SAVED", version: savedVersion.current }); retainRecovery(next.current?.content.blocks || prepared, selection, opinionFormRef.current, false); }
       } catch (caught) {
         if (scope !== currentScope.current) return;
         if (caught instanceof ReportRequestError && caught.status === 409 && typeof caught.detail === "object" && caught.detail) {
@@ -345,7 +372,7 @@ function ReportEditor({ caseId, role, subject = "", selectedCase, onDraftStateCh
         setSaveState({ kind: "ERROR", detail: firstErrorMessage(caught, "Autosave failed") });
       }
     });
-  }, [canWrite, caseId, onDraftStateChange, pathway, subject, workspace]);
+  }, [canWrite, caseId, pathway, retainRecovery, subject, workspace]);
 
   const markChanged = useCallback((nextBlocks: DeliverableBlock[], nextSelection = modelSelection) => {
     setBlocks(nextBlocks); setModelSelection(nextSelection); setSelectedFrozen(null); setMessage(""); setError(""); setConflict(null);
@@ -353,16 +380,12 @@ function ReportEditor({ caseId, role, subject = "", selectedCase, onDraftStateCh
     saveGeneration.current = generation;
     unsavedDraft.current = true;
     setDraftIsUnsaved(true);
-    setSaveState({ kind: "DIRTY" }); onDraftStateChange(true);
-    if (workspace) {
-      const copy: ReportRecovery = { subject, caseId, pathway, savedAt: Date.now(), expectedVersion: savedVersion.current, templateId: workspace.template.template_id, templateVersion: workspace.template.template_version, modelSelection: nextSelection, blocks: nextBlocks };
-      if (storeBrowserRecovery(copy)) { setRecovery((current) => current ? copy : null); setRecoveryError(""); }
-      else setRecoveryError("Browser recovery could not be updated. Keep this tab open until the server save succeeds.");
-    }
+    setSaveState({ kind: "DIRTY" });
+    retainRecovery(nextBlocks, nextSelection, opinionFormRef.current, true);
     if (saveTimer.current !== null) window.clearTimeout(saveTimer.current);
     const scope = currentScope.current;
     saveTimer.current = window.setTimeout(() => enqueueSave(nextBlocks, nextSelection, generation, scope), AUTOSAVE_DELAY_MS);
-  }, [caseId, enqueueSave, modelSelection, onDraftStateChange, pathway, subject, workspace]);
+  }, [enqueueSave, modelSelection, retainRecovery]);
 
   useEffect(() => {
     if (saveState.kind !== "ERROR" || !draftIsUnsaved || !canWrite) return;
@@ -373,6 +396,8 @@ function ReportEditor({ caseId, role, subject = "", selectedCase, onDraftStateCh
   const applyRecovery = (retryNow: boolean) => {
     if (!workspace || !recovery || recovery.templateId !== workspace.template.template_id || recovery.templateVersion !== workspace.template.template_version) { setRecoveryError("This recovery copy belongs to a different template version and cannot be restored here."); return; }
     savedVersion.current = recovery.expectedVersion;
+    opinionFormRef.current = recovery.opinionForm || EMPTY_OPINION;
+    setOpinionForm(opinionFormRef.current);
     markChanged(recovery.blocks, recovery.modelSelection);
     setSelectedBlockId(recovery.blocks[0]?.block_id || "");
     if (retryNow) { if (saveTimer.current !== null) window.clearTimeout(saveTimer.current); enqueueSave(recovery.blocks, recovery.modelSelection, draftGeneration.current, currentScope.current); }
@@ -464,7 +489,9 @@ function ReportEditor({ caseId, role, subject = "", selectedCase, onDraftStateCh
     try {
       const next = await reportRequest<WorkspaceResponse>(`/api/cases/${caseId}/deliverables/${pathway}/draft`, { method: "PUT", body: JSON.stringify({ expected_version: workspace.current?.version || 0, template_id: workspace.template.template_id, template_version: workspace.template.template_version, model_selection: revision.content.model_selection, blocks: revision.content.blocks.map(contractBlock) }) });
       if (!lifecycleIsCurrent(token)) return;
-      savedVersion.current = next.current?.version || savedVersion.current; unsavedDraft.current = false; setDraftIsUnsaved(false); setPersistedVersion(savedVersion.current); setWorkspace(next); setBlocks(next.current?.content.blocks || revision.content.blocks); setModelSelection(next.current?.content.model_selection || null); setSelectedFrozen(null); setSaveState({ kind: "SAVED", version: savedVersion.current }); onDraftStateChange(false); setMessage(`Restored v${revision.version} as new revision v${savedVersion.current}.`); editorFocus.current?.focus();
+      savedVersion.current = next.current?.version || savedVersion.current; unsavedDraft.current = false; setDraftIsUnsaved(false); setPersistedVersion(savedVersion.current); setWorkspace(next); setBlocks(next.current?.content.blocks || revision.content.blocks); setModelSelection(next.current?.content.model_selection || null); setSelectedFrozen(null); setSaveState({ kind: "SAVED", version: savedVersion.current });
+      retainRecovery(next.current?.content.blocks || revision.content.blocks, next.current?.content.model_selection || null, opinionFormRef.current, false);
+      setMessage(`Restored v${revision.version} as new revision v${savedVersion.current}.`); editorFocus.current?.focus();
     } catch (caught) { if (lifecycleIsCurrent(token)) setError(firstErrorMessage(caught, "Unable to restore revision")); }
     finally { finishLifecycle(token); }
   };
@@ -481,6 +508,8 @@ function ReportEditor({ caseId, role, subject = "", selectedCase, onDraftStateCh
       if (!lifecycleIsCurrent(token)) return;
       setWorkspace((value) => value ? { ...value, opinion: { head: signed, current: true, reasons: [] } } : value);
       setOpinionForm(EMPTY_OPINION);
+      opinionFormRef.current = EMPTY_OPINION;
+      retainRecovery(blocks, modelSelection, EMPTY_OPINION, unsavedDraft.current);
       setMessage(`Opinion signed on saved Draft v${current.version}.`);
     } catch (caught) { if (lifecycleIsCurrent(token)) setError(firstErrorMessage(caught, "Unable to sign the opinion")); }
     finally { finishLifecycle(token); }
@@ -516,7 +545,7 @@ function ReportEditor({ caseId, role, subject = "", selectedCase, onDraftStateCh
 
   const freeze = async () => {
     const current = workspace?.current;
-    if (!current || unsavedDraft.current || saveState.kind !== "SAVED" || current.version !== savedVersion.current || !modelSelectionIsCurrent(modelSelection, workspace.model_eligibility) || !workspace.opinion?.current) return;
+    if (!current || unsavedDraft.current || Object.values(opinionFormRef.current).some(Boolean) || saveState.kind !== "SAVED" || current.version !== savedVersion.current || !modelSelectionIsCurrent(modelSelection, workspace.model_eligibility) || !workspace.opinion?.current) return;
     const token = beginLifecycle("freeze");
     if (!token) return;
     try {
@@ -532,19 +561,28 @@ function ReportEditor({ caseId, role, subject = "", selectedCase, onDraftStateCh
     } catch (caught) { if (lifecycleIsCurrent(token)) { setError(firstErrorMessage(caught, "Unable to freeze Deliverable")); finishLifecycle(token); } }
   };
 
-  const loadReceipt = useCallback(async (frozen: FrozenDeliverable) => {
-    setReceipt(null);
-    if (!frozen.approved_by) return;
-    try { setReceipt(await reportRequest<FilingReceipt>(`/api/cases/${caseId}/deliverables/by-id/${frozen.id}/receipt`)); }
-    catch (caught) {
-      // A record filed before detached receipts existed has none; that is a fact, not a failure.
-      if (!(caught instanceof ReportRequestError && caught.status === 404)) setError(firstErrorMessage(caught, "Unable to load the filing receipt"));
-    }
-  }, [caseId]);
+  useEffect(() => {
+    const controller = new AbortController();
+    const loadReceipt = async () => {
+      setReceipt(null);
+      if (!selectedFrozen?.approved_by) return;
+      try {
+        const next = await reportRequest<FilingReceipt>(`/api/cases/${caseId}/deliverables/by-id/${selectedFrozen.id}/receipt`, {}, controller.signal);
+        if (controller.signal.aborted) return;
+        if (next.case_id !== caseId || next.deliverable_id !== selectedFrozen.id) throw new Error("Filing receipt identity does not match this frozen output.");
+        setReceipt(next);
+      } catch (caught) {
+        // Older filed records have no detached receipt.
+        if (!controller.signal.aborted && !(caught instanceof ReportRequestError && caught.status === 404)) setError(firstErrorMessage(caught, "Unable to load the filing receipt"));
+      }
+    };
+    void loadReceipt();
+    return () => controller.abort();
+  }, [caseId, selectedFrozen]);
 
   const selectFrozen = (frozen: FrozenDeliverable | null) => {
+    setReceipt(null);
     setSelectedFrozen(frozen);
-    if (frozen) void loadReceipt(frozen); else setReceipt(null);
   };
 
   const fileFrozen = async () => {
@@ -555,7 +593,6 @@ function ReportEditor({ caseId, role, subject = "", selectedCase, onDraftStateCh
       const filed = await reportRequest<FrozenDeliverable>(`/api/cases/${caseId}/deliverables/by-id/${selectedFrozen.id}/approve`, { method: "POST", body: JSON.stringify({ preview_digest: selectedFrozen.preview_digest, input_fingerprint: selectedFrozen.input_fingerprint }) });
       if (!lifecycleIsCurrent(token)) return;
       setSelectedFrozen(filed); setWorkspace((current) => current ? { ...current, frozen_history: current.frozen_history.map((item) => item.id === filed.id ? filed : item.status === "FILED" ? { ...item, status: "SUPERSEDED", superseded_by_id: filed.id } : item) } : current); setMessage("Exact Frozen Deliverable filed; the detached receipt records the approver.");
-      void loadReceipt(filed);
     } catch (caught) { if (lifecycleIsCurrent(token)) setError(firstErrorMessage(caught, "Unable to file Deliverable")); }
     finally { finishLifecycle(token); }
   };
@@ -567,7 +604,9 @@ function ReportEditor({ caseId, role, subject = "", selectedCase, onDraftStateCh
     try {
       const next = await reportRequest<{ frozen: FrozenDeliverable; draft: DraftRevision }>(`/api/cases/${caseId}/deliverables/by-id/${selectedFrozen.id}/request-changes`, { method: "POST", body: JSON.stringify({ preview_digest: selectedFrozen.preview_digest, input_fingerprint: selectedFrozen.input_fingerprint, comment: changeComment.trim() }) });
       if (!lifecycleIsCurrent(token)) return;
-      savedVersion.current = next.draft.version; unsavedDraft.current = false; setDraftIsUnsaved(false); setPersistedVersion(next.draft.version); setSelectedFrozen(null); setBlocks(next.draft.content.blocks); setModelSelection(next.draft.content.model_selection); setWorkspace((current) => current ? { ...current, current: next.draft, history: [...current.history, next.draft], frozen_history: current.frozen_history.map((item) => item.id === next.frozen.id ? next.frozen : item), opinion: current.opinion?.head ? { ...current.opinion, current: false, reasons: ["DRAFT_REVISION_CHANGED"] } : current.opinion } : current); setSaveState({ kind: "SAVED", version: next.draft.version }); setChangeComment(""); setMessage(`Changes requested; editable Draft v${next.draft.version} created.`); onDraftStateChange(false); window.setTimeout(() => { if (lifecycleIsCurrent(token)) editorFocus.current?.focus(); }, 0);
+      savedVersion.current = next.draft.version; unsavedDraft.current = false; setDraftIsUnsaved(false); setPersistedVersion(next.draft.version); setSelectedFrozen(null); setBlocks(next.draft.content.blocks); setModelSelection(next.draft.content.model_selection); setWorkspace((current) => current ? { ...current, current: next.draft, history: [...current.history, next.draft], frozen_history: current.frozen_history.map((item) => item.id === next.frozen.id ? next.frozen : item), opinion: current.opinion?.head ? { ...current.opinion, current: false, reasons: ["DRAFT_REVISION_CHANGED"] } : current.opinion } : current); setSaveState({ kind: "SAVED", version: next.draft.version }); setChangeComment(""); setMessage(`Changes requested; editable Draft v${next.draft.version} created.`);
+      retainRecovery(next.draft.content.blocks, next.draft.content.model_selection, opinionFormRef.current, false);
+      window.setTimeout(() => { if (lifecycleIsCurrent(token)) editorFocus.current?.focus(); }, 0);
     } catch (caught) { if (lifecycleIsCurrent(token)) setError(firstErrorMessage(caught, "Unable to request changes")); }
     finally { finishLifecycle(token); }
   };
@@ -578,7 +617,7 @@ function ReportEditor({ caseId, role, subject = "", selectedCase, onDraftStateCh
       invalidateLifecycle(`${caseId}\u0000${next}`);
       onDraftStateChange(false); setPathway(next);
     };
-    if (unsavedDraft.current || ["DIRTY", "SAVING", "INCOMPLETE", "ERROR"].includes(saveState.kind)) {
+    if (unsavedDraft.current || Object.values(opinionFormRef.current).some(Boolean) || ["DIRTY", "SAVING", "INCOMPLETE", "ERROR"].includes(saveState.kind)) {
       requestDraftDiscard("Discard the unsaved draft before changing pathway?", change, undefined, trigger);
     } else change();
   };
@@ -594,7 +633,7 @@ function ReportEditor({ caseId, role, subject = "", selectedCase, onDraftStateCh
   const exactSavedRevision = Boolean(workspace.current) && !draftIsUnsaved && saveState.kind === "SAVED" && workspace.current?.version === persistedVersion;
   const opinionState: OpinionState = workspace.opinion ?? { head: null, current: false, reasons: ["OPINION_SIGNOFF_REQUIRED"] };
   const pendingJobs: FreezeJob[] = workspace.pending_freezes ?? [];
-  const opinionCurrent = Boolean(opinionState.head) && opinionState.current && exactSavedRevision;
+  const opinionCurrent = Boolean(opinionState.head) && opinionState.current && exactSavedRevision && !Object.values(opinionForm).some(Boolean);
   const [writeCheck, revisionCheck, selectionCheck, availabilityCheck, opinionCheck] = freezeChecklist({
     canWrite,
     exactSavedRevision,
@@ -633,7 +672,7 @@ function ReportEditor({ caseId, role, subject = "", selectedCase, onDraftStateCh
           <fieldset className="report-model-picker"><legend>Deliverable model</legend>{workspace.model_eligibility.active_revision ? <label><input type="radio" name="report-model" checked={modelSelection?.kind === "ANALYST_REVISION"} onChange={() => chooseModel("ACTIVE")} disabled={!canWrite || authoringLocked} />Active Analyst Model <code>{workspace.model_eligibility.active_revision.revision_id}</code></label> : null}{!workspace.model_eligibility.active_revision && workspace.model_eligibility.application_build ? <label><input type="checkbox" checked={modelSelection?.kind === "APPLICATION_BUILD"} onChange={(event) => chooseModel(event.target.checked ? "FALLBACK" : "NONE")} disabled={!canWrite || authoringLocked} />I acknowledge fallback to the Application Model Build <code>{workspace.model_eligibility.application_build.build_id}</code></label> : null}{workspace.template.model_requirement === "OPTIONAL" ? <button className="button small" type="button" onClick={() => chooseModel("NONE")} disabled={!canWrite || authoringLocked || modelSelection === null}>Omit model</button> : null}</fieldset>
           <EvidencePicker key={caseId} caseId={caseId} canCite={canWrite && !authoringLocked && Boolean(selectedBlock && "citations" in selectedBlock)} isCited={(sourceId, blockId) => Boolean(selectedBlock && "citations" in selectedBlock && selectedBlock.citations.some((citation) => citation.source_id === sourceId && citation.block_ids.includes(blockId)))} onCite={cite} onRemove={removeCitation} />
           {modelSelection && registry ? <details className="scenario-insert"><summary>Scenario insertion <span>Temporary server calculation</span></summary><div className="scenario-fields"><div className="field"><label htmlFor="scenario-assumption">Assumption</label><select id="scenario-assumption" value={scenarioForm.assumptionId} onChange={(event) => { const assumptionId = event.target.value; const available = registry.defaults.find((row) => row.assumption_id === assumptionId && row.case === scenarioForm.case && row.status === "READY") || registry.defaults.find((row) => row.assumption_id === assumptionId && row.status === "READY"); setScenarioForm((current) => ({ ...current, assumptionId, case: available?.case || current.case, periodId: available?.period_id || "" })); }} disabled={authoringLocked}>{registry.definitions.map((definition) => <option key={definition.assumption_id} value={definition.assumption_id}>{definition.label || definition.assumption_id}</option>)}</select></div><div className="field"><label htmlFor="scenario-case">Case</label><select id="scenario-case" value={scenarioForm.case} onChange={(event) => { const caseName = event.target.value as "BASE" | "DOWNSIDE"; const available = registry.defaults.find((row) => row.assumption_id === scenarioForm.assumptionId && row.case === caseName && row.status === "READY"); setScenarioForm((current) => ({ ...current, case: caseName, periodId: available?.period_id || "" })); }} disabled={authoringLocked}><option value="BASE">Base</option><option value="DOWNSIDE">Downside</option></select></div><div className="field"><label htmlFor="scenario-period">Period</label><select id="scenario-period" value={scenarioForm.periodId} onChange={(event) => setScenarioForm((current) => ({ ...current, periodId: event.target.value }))} disabled={authoringLocked}>{scenarioPeriods.map((periodId) => <option key={periodId} value={periodId}>{periodId}</option>)}</select></div><div className="field"><label htmlFor="scenario-value">Shock value</label><input id="scenario-value" inputMode="decimal" value={scenarioForm.value} onChange={(event) => setScenarioForm((current) => ({ ...current, value: event.target.value }))} disabled={authoringLocked} /></div></div><button className="button small" type="button" onClick={() => void insertScenario()} disabled={!canWrite || authoringLocked || !scenarioForm.periodId || !scenarioForm.value}>{pending === "scenario" ? "Calculating…" : "Calculate and insert exact exhibit"}</button></details> : null}
-          {conflict ? <StateBlock shape="action" tone="warning" live="alert" title="Shared Draft conflict" body={<>{conflict.author} saved v{conflict.version} at {formatDate(conflict.created_at)}. Your local content remains unchanged.</>}><button className="button small" type="button" onClick={() => { savedVersion.current = conflict.version; setPersistedVersion(conflict.version); setWorkspace((current) => current ? { ...current, current: conflict, history: [...current.history.filter((item) => item.id !== conflict.id), conflict] } : current); setSaveState({ kind: "DIRTY" }); markChanged(blocks); }} disabled={authoringLocked}>Retry over current v{conflict.version}</button><button className="button small" type="button" onClick={() => { setBlocks(conflict.content.blocks); setModelSelection(conflict.content.model_selection); savedVersion.current = conflict.version; unsavedDraft.current = false; setDraftIsUnsaved(false); setPersistedVersion(conflict.version); setConflict(null); setSaveState({ kind: "SAVED", version: conflict.version }); onDraftStateChange(false); }} disabled={authoringLocked}>Use shared v{conflict.version}</button></StateBlock> : null}
+          {conflict ? <StateBlock shape="action" tone="warning" live="alert" title="Shared Draft conflict" body={<>{conflict.author} saved v{conflict.version} at {formatDate(conflict.created_at)}. Your local content remains unchanged.</>}><button className="button small" type="button" onClick={() => { savedVersion.current = conflict.version; setPersistedVersion(conflict.version); setWorkspace((current) => current ? { ...current, current: conflict, history: [...current.history.filter((item) => item.id !== conflict.id), conflict] } : current); setSaveState({ kind: "DIRTY" }); markChanged(blocks); }} disabled={authoringLocked}>Retry over current v{conflict.version}</button><button className="button small" type="button" onClick={() => { setBlocks(conflict.content.blocks); setModelSelection(conflict.content.model_selection); savedVersion.current = conflict.version; unsavedDraft.current = false; setDraftIsUnsaved(false); setPersistedVersion(conflict.version); setConflict(null); setSaveState({ kind: "SAVED", version: conflict.version }); retainRecovery(conflict.content.blocks, conflict.content.model_selection, opinionFormRef.current, false); }} disabled={authoringLocked}>Use shared v{conflict.version}</button></StateBlock> : null}
           <section className="approval-panel" data-freeze-approval aria-labelledby="freeze-approval-title">
             <div><span className="meta-label">What will bind</span><h3 id="freeze-approval-title">Exact saved Draft revision as an immutable Deliverable</h3></div>
             <dl className="state-facts">
@@ -645,10 +684,10 @@ function ReportEditor({ caseId, role, subject = "", selectedCase, onDraftStateCh
               <dt>Current opinion sign-off</dt><dd><span className={`status ${opinionCheck.ready ? "success" : "warning"}`}>{opinionCheck.ready ? "Ready" : "Blocked"}</span>{opinionState.head ? <div className="opinion-record" data-opinion-head><p><strong>{opinionState.head.signed_by}</strong> · {formatDate(opinionState.head.signed_at)} · Draft v{opinionState.head.draft_version}</p><p>{opinionState.head.opinion}</p>{!opinionState.current ? <p className="muted">Stale: {opinionState.reasons.map(humanizeCode).join(", ")}. Sign again on the current revision.</p> : null}</div> : <div className="muted">No signed opinion yet. The analyst signs the opinion, limitations, material overrides and rationale on the exact saved revision.</div>}</dd>
             </dl>
             {canWrite ? <form className="opinion-form" data-opinion-form onSubmit={(event) => { event.preventDefault(); void signOpinion(); }}>
-              <div className="field"><label htmlFor="opinion-text">Opinion</label><textarea id="opinion-text" value={opinionForm.opinion} maxLength={4000} onChange={(event) => setOpinionForm((current) => ({ ...current, opinion: event.target.value }))} disabled={authoringLocked} /></div>
-              <div className="field"><label htmlFor="opinion-limitations">Limitations</label><textarea id="opinion-limitations" value={opinionForm.limitations} maxLength={4000} onChange={(event) => setOpinionForm((current) => ({ ...current, limitations: event.target.value }))} disabled={authoringLocked} /></div>
-              <div className="field"><label htmlFor="opinion-overrides">Material overrides (write “None” explicitly)</label><textarea id="opinion-overrides" value={opinionForm.material_overrides} maxLength={4000} onChange={(event) => setOpinionForm((current) => ({ ...current, material_overrides: event.target.value }))} disabled={authoringLocked} /></div>
-              <div className="field"><label htmlFor="opinion-rationale">Rationale</label><textarea id="opinion-rationale" value={opinionForm.rationale} maxLength={8000} onChange={(event) => setOpinionForm((current) => ({ ...current, rationale: event.target.value }))} disabled={authoringLocked} /></div>
+              <div className="field"><label htmlFor="opinion-text">Opinion</label><textarea id="opinion-text" value={opinionForm.opinion} maxLength={4000} onChange={(event) => changeOpinion({ opinion: event.target.value })} disabled={authoringLocked} /></div>
+              <div className="field"><label htmlFor="opinion-limitations">Limitations</label><textarea id="opinion-limitations" value={opinionForm.limitations} maxLength={4000} onChange={(event) => changeOpinion({ limitations: event.target.value })} disabled={authoringLocked} /></div>
+              <div className="field"><label htmlFor="opinion-overrides">Material overrides (write “None” explicitly)</label><textarea id="opinion-overrides" value={opinionForm.material_overrides} maxLength={4000} onChange={(event) => changeOpinion({ material_overrides: event.target.value })} disabled={authoringLocked} /></div>
+              <div className="field"><label htmlFor="opinion-rationale">Rationale</label><textarea id="opinion-rationale" value={opinionForm.rationale} maxLength={8000} onChange={(event) => changeOpinion({ rationale: event.target.value })} disabled={authoringLocked} /></div>
               <div className="report-actions"><button className="button" type="submit" disabled={!exactSavedRevision || !opinionFormComplete || lifecycleBusy}>{pending === "sign" ? "Signing…" : `Sign opinion on saved v${workspace.current?.version || "—"}`}</button><span>The sign-off binds this exact revision, snapshot, source set and model identity; editing any of them requires signing again.</span></div>
             </form> : null}
             {pendingFreeze ? <p className="status warning freeze-job" role="status" aria-live="polite" data-freeze-job>Freeze of Draft v{pendingFreeze.draft_version} is {humanizeCode(pendingFreeze.status).toLowerCase()} · the worker publishes and verifies every export before the frozen record exists.</p> : null}

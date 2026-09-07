@@ -73,7 +73,7 @@ These items block an enterprise-testing-ready claim until evidence closes them:
 | ID | Current condition | Required closure |
 |---|---|---|
 | ETR-B01 | Closed by Task 8 (2026-09-02) and rerun on candidate `2026-09-04-b88c0f8` (2026-09-04: intake suite 30 passed in the candidate junit; documents-only journey passed in Chromium, Firefox and WebKit against the frozen app image — `gates/browser/`): `POST /api/intake` creates or resolves the case, admits every document or none, classifies the evidence server-side, selects the route from host classification and starts the run; the Cases page drop zone is the entry surface and the run console opens the review. Live-model qualification of the journey remains open | Keep the six document-only route selections and the refusal, recovery, restart and reader checks retained in `spec/test_intake_spec.py` and the workbench smoke; qualify the journey against the qualified provider in Tasks 11 and 13 |
-| ETR-B02 | Closed by Task 5 and proven on candidate `2026-09-04-b88c0f8` (2026-09-04): the enterprise MVP exposes one environment-wide qualified binding and no picker; `run.py::build_provider` refuses an unqualified or ambiguous binding and the candidate manifest records the sole binding (`test_provider_identity` 17 passed in the candidate junit; `MANIFEST.json` binding) | Keep the single pinned binding; the live binding's qualification record is ER-L3's |
+| ETR-B02 | Updated by DECISIONS §14.24 (2026-09-06): an authorized enterprise operator selects the default from a server-configured qualified provider/model catalog. The selection applies only to newly admitted runs; existing runs retain their exact binding and no implicit fallback is allowed. Task 5 evidence on candidate `2026-09-04-b88c0f8` covers the superseded single-binding policy, not qualification of the current catalog | Rerun catalog/default-switch controls on the frozen candidate; every enabled binding requires its own current qualification record under ER-L3 |
 | ETR-B03 | Closed by exclusion on candidate `2026-09-04-b88c0f8` (2026-09-04): OpenRouter (and `z-ai/glm-5.3-flash`) is a development-only binding that production refuses; it is not in the enterprise profile and never a qualification binding (`test_openrouter_provider` 20 passed in the candidate junit; `qualify.py` refuses it as a live binding) | Keep it excluded; admission needs the full matrix |
 | ETR-B04 | Closed by Task 5B and proven on candidate `2026-09-04-b88c0f8` (2026-09-04): the active provider's identity (provider, model, version, adapter, parameter-context digest) rides every attempt, artifact, snapshot, run event and acceptance audit row (`test_provider_identity` in the candidate junit); AUD-003 in the package records the attempt-row fields not yet asserted (request digest, usage, retry, repair) | Keep the identity on every path; close the AUD-003 assertion gap in a later candidate |
 | ETR-B05 | OPEN on candidate `2026-09-04-b88c0f8` (2026-09-04): the real-issuer Carnival corpus is digest-pinned and run under host control (`CORPUS_FULL=1` 35 passed; host-control matrix 32 pass / 5 BLOCKED EXTERNAL, verdict `ORCHESTRATION_PROOF_INCOMPLETE`; ledger row F-RUN-18 PASS under host control), but the final live matrix has no retained cell (ER-L3 never ran) and the analyst-approved answer keys, C20, C21 and C22 are external | Three retained live passes per required cell bound to this candidate, analyst-scope answer-key approvals, and the C20–C22 packs |
@@ -225,9 +225,9 @@ Before execution, classify every supplied source by document type, reporting/for
 
 ## Test route compilation and execution
 
-Run these tests for Full Credit, Earnings Update, Covenant and Refinancing, Relative Value, Distressed, and Deep Research at screen and full depth:
+Run these tests for Full Credit, Earnings Update, Covenant and Refinancing, Relative Value, and Distressed at screen and full depth, and Deep Research at its supported full depth:
 
-Each of the twelve route/depth cells requires a complete answer-keyed success pack. Sparse, ambiguous, hostile, or over-limit refusal packs are additional tests and cannot replace a successful cell.
+Each of the eleven supported route/depth cells requires a complete answer-keyed success pack. Deep Research/screen must be refused as unsupported, not counted as a success cell. Sparse, ambiguous, hostile, or over-limit refusal packs are additional tests and cannot replace a successful cell.
 
 - **RUN-001**: Compile a static node set and edge set from only pathway, depth, verified catalog, and build
 - **RUN-002**: Produce the same route and plan digest for identical inputs
@@ -262,7 +262,7 @@ Each of the twelve route/depth cells requires a complete answer-keyed success pa
 
 ## Qualify every provider and model
 
-Let `Q` contain every provider, model identifier, model version, context policy, and parameter set exposed in the enterprise test. Execute the complete matrix `Q × six pathways × two depths × required corpus packs`.
+Let `Q` contain every provider, model identifier, model version, context policy, and parameter set exposed in the enterprise test. Execute the complete matrix `Q × eleven supported pathway/depth pairs × required corpus packs` (the five non-research pathways at both depths, Deep Research at full depth only).
 
 - **MOD-001**: Hide every model that lacks a current qualification result for the candidate build
 - **MOD-002**: Pin the exact provider, model ID, provider-reported version when available, parameters, and adapter version at run start
@@ -540,7 +540,7 @@ Run these checks:
 
 - **PERF-001**: Prove admission refuses the twenty-first active job before allocating provider or worker capacity
 - **PERF-002**: Prove per-subject stream, preview, and request ceilings do not affect other subjects
-- **PERF-003**: Hold 20 route-balanced runs across all six pathways and both depths with mixed deterministic and agent modules without cross-case data or event leakage
+- **PERF-003**: Hold 20 route-balanced runs across all six pathways and their supported depths with mixed deterministic and agent modules without cross-case data or event leakage
 - **PERF-004**: Upload maximum-size supported files concurrently and preserve atomic intake
 - **PERF-005**: List 100 cases without loading evidence-block bodies and keep response growth proportional to returned metadata
 - **PERF-006**: Exercise 100-document source lists, source-set pins, withdrawals, and audit export
@@ -604,7 +604,7 @@ The MVP is enterprise-testing ready only when all conditions below are true:
 
 - Every G0 through G9 gate passes on the same candidate commit
 - Every selectable model passes the complete qualification matrix
-- All six pathways pass every applicable route, model, corpus, publication, browser, and reconstruction gate at both depths
+- All six pathways pass every applicable route, model, corpus, publication, browser, and reconstruction gate at their supported depths
 - Every accepted model and interpretation proves complete, reasoned coverage of all relevant supplied annual, quarterly/interim, forecast, and forecast-revision documents
 - Independent blind review finds every required browser, Markdown, PDF, and XLSX deliverable no worse than the pinned Credit Operating System benchmark
 - Every core test has a retained result and no required test is skipped, waived, flaky, or marked not run

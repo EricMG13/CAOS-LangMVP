@@ -68,6 +68,72 @@ def _retamper(package: bytes, mutate) -> bytes:
     return output.getvalue()
 
 
+@pytest.mark.parametrize("manifest", [[], {"schema_version": "unknown", "case_id": "missing-case", "objects": {},
+                                         "package_digest": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"}])
+def test_verifier_refuses_structurally_empty_archives(tmp_path, manifest):
+    output = io.BytesIO()
+    with zipfile.ZipFile(output, "w") as archive:
+        archive.writestr("manifest.json", json.dumps(manifest))
+    code, report = _run_verifier(tmp_path, output.getvalue())
+    assert code != 0 and report.get("ok") is False, report
+
+
+@pytest.mark.parametrize("remove_section", [True, False])
+def test_verifier_requires_frozen_authority_even_if_object_digests_are_rewritten(
+    client, settings, store, tmp_path, remove_section,
+):
+    from caos.audit.verify_package import digest
+    import hashlib
+
+    _, case, _, _ = _filed_case(client, settings, store)
+    with zipfile.ZipFile(io.BytesIO(_download(client, case["id"]).content)) as archive:
+        contents = {name: archive.read(name) for name in archive.namelist()}
+    manifest = json.loads(contents.pop("manifest.json"))
+    if remove_section:
+        del contents["deliverables/frozen.json"]
+    else:
+        contents["deliverables/frozen.json"] = b"[]"
+    manifest["objects"] = {name: {"sha256": hashlib.sha256(body).hexdigest(), "size": len(body)}
+                           for name, body in contents.items()}
+    manifest["package_digest"] = digest(manifest["objects"])
+    contents["manifest.json"] = json.dumps(manifest).encode()
+    output = io.BytesIO()
+    with zipfile.ZipFile(output, "w") as archive:
+        for name, body in contents.items():
+            archive.writestr(name, body)
+    code, report = _run_verifier(tmp_path, output.getvalue())
+    assert code == 1 and report["ok"] is False, report
+    assert "FROZEN_RECORD_MISSING" in {item["code"] for item in report["findings"]}
+
+
+def test_package_uses_one_snapshot_while_case_and_audit_change(client, settings, store, tmp_path, monkeypatch):
+    from caos.audit import package
+    from caos.storage.store import case_intakes
+
+    _, case, _, _ = _filed_case(client, settings, store)
+    with store.engine.connect() as conn:
+        conn.exec_driver_sql("PRAGMA journal_mode=WAL")
+    original = package._rows
+    changed = False
+
+    def read_then_change(connection, table, *clauses, **kwargs):
+        nonlocal changed
+        rows = original(connection, table, *clauses, **kwargs)
+        if table is case_intakes and not changed:
+            changed = True
+            store.audit_event("test.concurrent_change", "analyst", case_id=case["id"])
+        return rows
+
+    monkeypatch.setattr(package, "_rows", read_then_change)
+    response = _download(client, case["id"])
+    assert response.status_code == 200, response.text
+    with zipfile.ZipFile(io.BytesIO(response.content)) as archive:
+        assert b"test.concurrent_change" not in archive.read("audit/events.jsonl")
+    assert changed
+    code, report = _run_verifier(tmp_path, response.content)
+    assert code == 0 and report["ok"], report
+
+
 def test_package_is_case_authorized_audited_and_offline_verifiable_in_a_clean_directory(client, settings, store, tmp_path):
     svc, case, source, frozen = _filed_case(client, settings, store)
     assert _download(client, case["id"], {"x-caos-role": "ADMIN", "x-forwarded-user": "outsider"}).status_code == 404

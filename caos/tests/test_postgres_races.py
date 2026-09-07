@@ -384,13 +384,46 @@ def test_concurrent_identical_intake_packs_admit_one_pack(stores):
                                   prepared=[dict(item) for item in pack], intake_key=new_id("key"),
                                   status="ADMITTED", record={"pack": 1})
 
-    winner, loser = _one_winner(race(lambda: admit(a, "a"), park_a, lambda: admit(b, "b"), park_b))
+    winner, loser = _one_winner(race(lambda: admit(a, "analyst"), park_a, lambda: admit(b, "analyst"), park_b))
     assert isinstance(loser, ValueError) and str(loser) == "source content already active"
     assert len(a.intakes_for_case(case["id"])) == 1 and a.intakes_for_case(case["id"])[0]["id"] == winner["id"]
     assert len(a.list_sources(case["id"])) == 1
     assert a.current_source_set(case["id"])["version"] == 1
     assert len(_audit_actions(a, "intake.admitted")) == 1
     _chain_intact(a)
+
+
+def test_audit_package_keeps_one_postgres_snapshot(stores, monkeypatch, tmp_path):
+    import io
+    import zipfile
+
+    from caos.audit import package, verify_package
+    from caos.storage.store import case_intakes
+
+    a, b = stores
+    case = _seed_case(a)
+    RunStore(a.engine)
+    original = package._rows
+    changed = False
+
+    def read_then_change(connection, table, *clauses, **kwargs):
+        nonlocal changed
+        rows = original(connection, table, *clauses, **kwargs)
+        if table is case_intakes and not changed:
+            changed = True
+            b.audit_event("test.concurrent_change", "analyst", case_id=case["id"])
+        return rows
+
+    monkeypatch.setattr(package, "_rows", read_then_change)
+    content = package.build_case_package(store=a, vault_dir=tmp_path, case_id=case["id"],
+                                         methodology_build_id=None, generated_by="analyst", generated_at=now_iso())
+    with zipfile.ZipFile(io.BytesIO(content)) as archive:
+        assert b"test.concurrent_change" not in archive.read("audit/events.jsonl")
+    assert changed
+    path = tmp_path / "snapshot.zip"
+    path.write_bytes(content)
+    report = verify_package.verify(str(path))
+    assert report["ok"], report
 
 
 # --- upload and withdrawal interleave (SIM-014) ----------------------------------

@@ -704,6 +704,16 @@ def test_workbook_pins_registry_identity_and_cell_expectations_match_engine(tmp_
     assert ("covenant_headroom", "BASE::FY2025") not in rendered.model_cells, "unavailable covenant cell omitted"
 
     payload = bundle.serialize_workbook(model, calculations)
+    for tab in payload["payload"]["tabs"]:
+        for cell in tab["cells"]:
+            if cell["formula"]:
+                assert not isinstance(cell["value"], str) or not cell["value"].startswith("="), (tab["title"], cell)
+    snapshot = next(tab for tab in payload["payload"]["tabs"] if tab["title"] == "Credit Snapshot")
+    model_tab = next(tab for tab in payload["payload"]["tabs"] if tab["title"] == "Model")
+    snapshot_value = next(cell for cell in snapshot["cells"] if cell["address"] == "B35")
+    model_value = next(cell for cell in model_tab["cells"] if cell["address"] == "K9")
+    assert snapshot_value["formula"] == "='Model'!K9"
+    assert snapshot_value["value"] == model_value["value"] and snapshot_value["value"] is not None
     registry = bundle.assumption_registry
     audit_tab = _tab(payload, "_AUDIT")
     assert registry["version"] in audit_tab and registry["digest"] in audit_tab

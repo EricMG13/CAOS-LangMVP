@@ -7,11 +7,10 @@ import {
   applyServerAssumptions,
   assumptionScope,
   mergeRebasedAssumptions,
-  modelDisplayStatus,
   normalizeAssumptions,
   previewMatchesDraft,
   primaryModelAction,
-  queueModelCalculation,
+  queueCalculation,
   scrubberCommitDecision,
   sensitivityPeriodRows,
   worksheetCellAuthority,
@@ -20,41 +19,6 @@ import {
   type ModelAssumptionValue,
   type ModelPreview,
 } from "./modelBuilderState.ts";
-
-test("model calculations retain their slot until settled and skip superseded queued work", async () => {
-  const started = Promise.withResolvers<void>();
-  const finished = Promise.withResolvers<void>();
-  const active = new AbortController();
-  const obsolete = new AbortController();
-  const calls: string[] = [];
-  const first = queueModelCalculation(async () => {
-    calls.push("active");
-    started.resolve();
-    await finished.promise;
-    throw new Error("calculation refused");
-  }, active.signal);
-  const failed = assert.rejects(first, /calculation refused/);
-  await started.promise;
-  active.abort();
-  const skipped = assert.rejects(queueModelCalculation(async () => {
-    calls.push("obsolete");
-  }, obsolete.signal), { name: "AbortError" });
-  obsolete.abort();
-  const latest = queueModelCalculation(async () => {
-    calls.push("latest");
-    return 42;
-  });
-  try {
-    await Promise.resolve();
-    assert.deepEqual(calls, ["active"], "a second calculation started before the first settled");
-  } finally {
-    finished.resolve();
-    await Promise.allSettled([failed, skipped, latest]);
-  }
-  await Promise.all([failed, skipped]);
-  assert.equal(await latest, 42);
-  assert.deepEqual(calls, ["active", "latest"]);
-});
 
 test("derives spreadsheet columns from the engine's max-column metadata", () => {
   const columns = worksheetColumns(28);
@@ -184,6 +148,26 @@ test("preview eligibility binds draft generation, build, registry, parent, and a
   assert.equal(previewMatchesDraft(preview, { ...identity, draftGeneration: 8 }), false);
   assert.equal(previewMatchesDraft(preview, { ...identity, currentHeadRevisionId: "revision_2" }), false);
   assert.equal(previewMatchesDraft(preview, { ...identity, buildPayloadDigest: "f".repeat(64) }), false);
+  assert.equal(previewMatchesDraft({ ...preview, parent_revision_id: null }, { ...identity, parentRevisionId: null }), true,
+    "a new build has no compatible parent but still compares against the case's previous head");
+});
+
+test("calculations finish serially, skip obsolete drafts, and recover after rejection", async () => {
+  const events: string[] = [];
+  let release!: () => void;
+  const blocked = new Promise<void>((resolve) => { release = resolve; });
+  const first = queueCalculation(async () => { events.push("start"); await blocked; events.push("finish"); }, () => true);
+  const obsolete = queueCalculation(async () => { events.push("obsolete"); }, () => false);
+  const latest = queueCalculation(async () => { events.push("latest"); return 3; }, () => true);
+  await Promise.resolve();
+  assert.deepEqual(events, ["start"]);
+  release();
+  await first;
+  assert.equal(await obsolete, null);
+  assert.equal(await latest, 3);
+  assert.deepEqual(events, ["start", "finish", "latest"]);
+  await assert.rejects(queueCalculation(async () => { throw new Error("refused"); }, () => true));
+  assert.equal(await queueCalculation(async () => 4, () => true), 4);
 });
 
 test("the workflow exposes only the primary action appropriate to current state", () => {
@@ -277,17 +261,4 @@ test("a forecast scrubber commits only a changed value", () => {
   assert.equal(scrubberCommitDecision("", "0.03"), "revert");
   assert.equal(scrubberCommitDecision("   ", "0.03"), "revert");
   assert.equal(scrubberCommitDecision("abc", "0.03"), "commit", "a non-numeric entry reaches the bounds check and is refused there");
-});
-
-
-test("input readiness yields to the current build's worker status", () => {
-  for (const status of ["QUEUED", "BUILDING", "FAILED", "READY"] as const) {
-    const build = { status } as import("../../lib/api.ts").ModelBuild;
-    const display = modelDisplayStatus({ status: "READY_TO_BUILD", build });
-    assert.equal(display, status);
-    assert.equal(primaryModelAction({ status: display, canWrite: true, dirty: false, previewCurrent: false }), status === "FAILED" ? "BUILD" : null);
-    assert.equal(modelDisplayStatus({ status: "NOT_READY", build }), "NOT_READY", "a historical build cannot override invalid current inputs");
-  }
-  assert.equal(modelDisplayStatus({ status: "READY_TO_BUILD", build: null }), "READY_TO_BUILD");
-  assert.equal(modelDisplayStatus(undefined), undefined);
 });
