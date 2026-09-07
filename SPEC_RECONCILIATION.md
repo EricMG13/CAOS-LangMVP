@@ -868,3 +868,29 @@ signature. `PACKAGE_MANIFEST.json::signable` is `false` and
 | A PASS could rest on prose | every PASS row carries at least one `junit:`/`junit-module:`/`artifact:` reference; a PASS without evidence is an assembly defect that fails the build |
 | An OPEN could hide without an owner | an OPEN, FAIL or BLOCKED EXTERNAL row without an owner is an assembly defect |
 | Evidence from the superseded candidate could leak in | the object set is the candidate directory alone; `2026-09-03-c4f0270` has its own directory and is referenced nowhere in the package |
+
+## Analyst Workbench coverage contract (2026-09-07)
+
+`docs/ANALYST_VIEW_COVERAGE.md` is the test-input ledger for presentation
+coverage. Its authority tuple is `(methodology build ID, current registry module
+ID, pinned table/section ID, required columns)`. A presentation test must fail if
+an active module disappears from the ledger, a required table/section is neither
+rendered nor explicitly unavailable with a typed reason, or a required column is
+silently dropped. The ledger is not executable routing authority and must never
+change `compiled_route`.
+
+| Contract | Planned failing check / acceptance owner |
+| --- | --- |
+| Complete cash-flow worksheet and forecast-only cash roll-forward | Task 1: `test_model_builder_spec.py`, `test_source_complete_modelling_spec.py` |
+| Source-authorized complete worksheet navigation | Task 2: model serializer/state tests, HTTP contract tests, workbench smoke |
+| Minimum cash uses one disclosed complete forecast horizon | Task 3: tornado/minimum-cash tests in `test_model_builder_spec.py` |
+| Served run graph equals the static compiled graph | Task 4: `runGraph.test.ts`; six pathways × two depths HTTP edge comparison |
+| Validated artifacts project through a bounded mapping version | Task 5: `test_module_presentation_spec.py`, `test_http_contracts_spec.py` |
+| Analysis charts and equivalent tables contain the same facts | Task 6: `chartRecipe.test.ts`, frontend authority and build checks |
+| v2 reports populate from modules without a required IC memo; v1 dispatch remains exact | Task 7: deliverable specs plus Report state/recovery tests |
+| Incremental reports bind the selected accepted overlay and ancestry | Task 8: incremental publication and source-complete modelling specs |
+| Frozen publication alone drives browser/PDF/XLSX/Markdown data | Task 9: publication, golden and standalone-verifier specs |
+| Governed workbench journey preserves authority across cases, recovery and export | Task 10: backend acceptance set, fault regressions, browser/axe matrix and audit-package verification |
+
+No row relaxes the ten invariants, module method, route membership, accepted
+artifact boundary, model Sign-Off, opinion Sign-Off, freeze or independent filing.

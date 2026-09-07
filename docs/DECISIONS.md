@@ -1022,3 +1022,35 @@ Consolidation note: where §6 conflicts with §10/§11/§12 (output Σ vs Σ+max
     full-pathway evaluation. The old sealed matrix and machine-authored keys
     remain unchanged; provider compliance, source sufficiency/fidelity and
     independent analyst qualification are not inferred from transport fixes.
+
+26. **Analyst Workbench presentation and Deliverable compatibility
+    (2026-09-07).** The current execution engine, six pathway identities,
+    methodology routes and canonical module artifacts remain authoritative.
+    Presentation is a separate, bounded host projection: the versioned mapping
+    recorded in `docs/ANALYST_VIEW_COVERAGE.md` maps current registry module IDs
+    and their pinned table/section contracts into Analysis views, Report
+    sections, or an explicit table-only presentation. It is documentation and
+    test input, never a second execution registry. Every required analytical
+    table remains available; charts are used only for a real numeric comparison,
+    trajectory, distribution or matrix. Qualitative work stays legible as
+    narrative, evidence matrices and status registers, so a decorative chart is
+    never a coverage requirement.
+
+    The default Full Credit Deliverable title is **Credit Report**. The other
+    five pathway identities and their existing titles remain unchanged. CP-6
+    remains in every route that currently contains it, and its IC-specific
+    challenge content may populate a Credit Report when present; neither CP-6
+    nor a separately authored IC memo is a new prerequisite for report
+    composition. Opinion Sign-Off, freeze, source authority, immutable model
+    selection and independent filing controls remain unchanged.
+
+    New Deliverable revisions use `caos.deliverable-template.v2`: fixed,
+    developer-designed sections populated from validated module presentations
+    and the selected governed model, with optional separately labelled Analyst
+    Commentary and declared optional-section choices. Analyst requests remain
+    analyst-authored inputs only and cannot become generated facts. Stored v1
+    drafts, recovery copies, revisions and Frozen/Filed Deliverables continue to
+    dispatch through their recorded v1 template and renderer identities; no read,
+    save, restore, recovery, freeze, filing or export path silently recomposes
+    them as v2. Adopting v2 requires an explicit new revision and renewed
+    Sign-Off. Frozen bytes remain immutable.

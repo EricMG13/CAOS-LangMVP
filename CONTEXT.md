@@ -95,8 +95,20 @@ A committee-ready document produced for one CAOS analytical pathway.
 _Avoid_: Report type, output pack
 
 **Pathway Template**:
-The defined structure for a pathway’s Deliverable: Investment Committee Credit Memo, Earnings Update, Covenant and Refinancing Brief, Relative Value Note, Scenario and Recovery Pack, or Evidence-Bound Research Memorandum.
+The defined structure for a pathway’s Deliverable: Credit Report, Earnings Update, Covenant and Refinancing Brief, Relative Value Note, Scenario and Recovery Pack, or Evidence-Bound Research Memorandum. The six pathway identities do not change with their presentation titles.
 _Avoid_: Archetype, report template
+
+**Credit Report**:
+The default Full Credit Deliverable title. Its developer-designed sections are populated from accepted module outputs and the selected governed model. IC-specific content may be included when available, but a separately authored IC memo is not a prerequisite.
+_Avoid_: Investment Committee Credit Memo (as the default Full Credit title), mandatory IC memo
+
+**Module View**:
+A versioned, developer-designed Analysis or Report presentation of validated module tables and sections. It preserves every required source table and never changes the canonical module artifact or execution registry.
+_Avoid_: Generated dashboard, runtime chart plan
+
+**Analyst Commentary**:
+An optional, separately labelled Narrative Block attached to module-populated Deliverable sections. It may interpret or qualify accepted analysis, but never supplies authoritative generated facts.
+_Avoid_: Required report input, generated finding
 
 **Credit Snapshot**:
 The opening summary section of a Deliverable, not a separate Deliverable.
