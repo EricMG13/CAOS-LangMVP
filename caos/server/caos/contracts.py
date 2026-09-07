@@ -154,7 +154,11 @@ class CreateCaseRequest(StrictModel):
 
 
 class MemberRequest(StrictModel):
-    subject: str = Field(min_length=1, max_length=200)
+    # The one string that decides who may file: it reaches `case_members` and the
+    # hash-chained `case.member_added` audit row, so it carries the same boundary
+    # every pinned string does — NFC before the bound, no control bytes, no bidi
+    # overrides (CVE-2021-42574 would reorder the actor's name for every reviewer).
+    subject: NonBlankBoundaryText = Field(min_length=1, max_length=200)
     role: Role = Role.READER
 
 

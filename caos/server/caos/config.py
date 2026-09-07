@@ -4,6 +4,7 @@ import os
 import re
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 from urllib.parse import unquote, urlsplit
 
 
@@ -73,65 +74,95 @@ class Settings:
     # Fail-closed posture: agent (LLM) execution stays off without explicit opt-in.
     agent_execution_enabled: bool = False
 
+    # Every environment variable this reads, once each: `from_env` walks this
+    # list and the limits spec pins that no read carries a default of its own.
+    ENV_NAMES = (
+        "ENVIRONMENT", "DATABASE_URL", "CAOS_STORAGE_DIR", "EDGE_PROXY_SECRET", "SESSION_SECRET",
+        "PORT", "MAX_UPLOAD_MB", "MAX_SOURCE_MB", "RATE_LIMIT_PER_MINUTE", "MAX_CONCURRENT_STREAMS",
+        "MAX_CONCURRENT_PREVIEWS", "CLAMAV_HOST", "CLAMAV_PORT", "ANTHROPIC_API_KEY", "ANTHROPIC_MODEL",
+        "OPENROUTER_API_KEY", "OPENROUTER_MODEL", "CAOS_PROVIDER_QUALIFICATION_PATH",
+        "CAOS_PROVIDER_QUALIFICATION_DIGEST", "CAOS_PROVIDER", "AGENT_EXECUTION_ENABLED",
+        "OPENAI_API_KEY", "OPENAI_MODEL", "CAOS_PROVIDER_CATALOG_PATH", "CAOS_PROVIDER_ACCOUNT_POLICY",
+        "CAOS_DEFAULT_PROVIDER_BINDING", "CAOS_BUILD_COMMIT", "CAOS_IMAGE_SET_DIGEST",
+        "CAOS_CORPUS_DIGEST", "CAOS_ENTERPRISE_OPERATOR_SUBJECTS",
+    )
+
     @classmethod
     def from_env(cls) -> "Settings":
-        port = int(os.getenv("PORT", "8000"))
-        max_upload_mb = int(os.getenv("MAX_UPLOAD_MB", "32"))
-        max_source_mb = int(os.getenv("MAX_SOURCE_MB", "25"))
-        clamav_port = int(os.getenv("CLAMAV_PORT", "3310"))
-        rate_limit = int(os.getenv("RATE_LIMIT_PER_MINUTE", "300"))
-        max_streams = int(os.getenv("MAX_CONCURRENT_STREAMS", "4"))
-        max_previews = int(os.getenv("MAX_CONCURRENT_PREVIEWS", "2"))
-        if not 0 <= port <= 65535:
+        """The dataclass above is the only place a default is written.
+
+        `from_env` passes on the values a deployment actually set, so the pinned
+        figure and the figure a deployment runs under cannot drift apart; the
+        range checks run on the effective value — set or defaulted — instead of
+        on a second copy of the literal (W17, 2026-09-06 review).
+        """
+        raw = {name: os.getenv(name) for name in cls.ENV_NAMES if name != "AGENT_EXECUTION_ENABLED"}
+        chosen: dict[str, Any] = {}
+
+        def when_set(name: str, field: str, convert: Any = str) -> None:
+            if raw[name] is not None:
+                chosen[field] = convert(raw[name])
+
+        when_set("ENVIRONMENT", "environment")
+        when_set("DATABASE_URL", "database_url")
+        when_set("CAOS_STORAGE_DIR", "storage_dir", Path)
+        when_set("EDGE_PROXY_SECRET", "edge_proxy_secret")
+        when_set("SESSION_SECRET", "session_secret")
+        when_set("PORT", "port", int)
+        when_set("MAX_UPLOAD_MB", "max_upload_bytes", lambda mb: int(mb) * 1024 * 1024)
+        when_set("MAX_SOURCE_MB", "max_source_bytes", lambda mb: int(mb) * 1024 * 1024)
+        when_set("RATE_LIMIT_PER_MINUTE", "rate_limit_per_minute", int)
+        when_set("MAX_CONCURRENT_STREAMS", "max_concurrent_streams", int)
+        when_set("MAX_CONCURRENT_PREVIEWS", "max_concurrent_previews", int)
+        when_set("CLAMAV_HOST", "clamav_host")
+        when_set("CLAMAV_PORT", "clamav_port", int)
+        when_set("ANTHROPIC_API_KEY", "anthropic_api_key")
+        when_set("ANTHROPIC_MODEL", "anthropic_model")
+        when_set("OPENAI_API_KEY", "openai_api_key")
+        when_set("OPENAI_MODEL", "openai_model")
+        when_set("CAOS_PROVIDER_ACCOUNT_POLICY", "provider_account_policy")
+        when_set("CAOS_DEFAULT_PROVIDER_BINDING", "default_provider_binding")
+        when_set("CAOS_BUILD_COMMIT", "candidate_commit")
+        when_set("CAOS_IMAGE_SET_DIGEST", "image_set_digest")
+        when_set("CAOS_CORPUS_DIGEST", "corpus_digest")
+        when_set("CAOS_ENTERPRISE_OPERATOR_SUBJECTS", "enterprise_operator_subjects",
+                 lambda subjects: tuple(value.strip() for value in subjects.split(",") if value.strip()))
+        if raw["CAOS_PROVIDER_CATALOG_PATH"]:
+            chosen["provider_catalog_path"] = Path(raw["CAOS_PROVIDER_CATALOG_PATH"])
+        when_set("OPENROUTER_API_KEY", "openrouter_api_key")
+        when_set("OPENROUTER_MODEL", "openrouter_model")
+        when_set("CAOS_PROVIDER_QUALIFICATION_DIGEST", "provider_qualification_digest")
+        when_set("CAOS_PROVIDER", "provider_binding", _provider_binding)
+        if raw["CAOS_PROVIDER_QUALIFICATION_PATH"]:
+            chosen["provider_qualification_path"] = Path(raw["CAOS_PROVIDER_QUALIFICATION_PATH"])
+        settings = cls(
+            agent_execution_enabled=_strict_bool("AGENT_EXECUTION_ENABLED", cls.agent_execution_enabled),
+            **chosen,
+        )
+        settings._check_ranges()
+        return settings
+
+    def _check_ranges(self) -> None:
+        """The admission ceilings, checked on the effective values. The messages
+        name the environment variable because that is what an operator sets."""
+        upload_mb = self.max_upload_bytes // (1024 * 1024)
+        source_mb = self.max_source_bytes // (1024 * 1024)
+        if not 0 <= self.port <= 65535:
             raise ValueError("PORT must be between 0 and 65535")
-        if max_upload_mb <= 0:
+        if upload_mb <= 0:
             raise ValueError("MAX_UPLOAD_MB must be greater than 0")
-        if not 0 < max_source_mb <= max_upload_mb:
+        if not 0 < source_mb <= upload_mb:
             raise ValueError("MAX_SOURCE_MB must be greater than 0 and no larger than MAX_UPLOAD_MB")
-        if not 1 <= clamav_port <= 65535:
+        if not 1 <= self.clamav_port <= 65535:
             raise ValueError("CLAMAV_PORT must be between 1 and 65535")
-        for name, value in (("RATE_LIMIT_PER_MINUTE", rate_limit),
-                            ("MAX_CONCURRENT_STREAMS", max_streams),
-                            ("MAX_CONCURRENT_PREVIEWS", max_previews)):
+        for name, value in (("RATE_LIMIT_PER_MINUTE", self.rate_limit_per_minute),
+                            ("MAX_CONCURRENT_STREAMS", self.max_concurrent_streams),
+                            ("MAX_CONCURRENT_PREVIEWS", self.max_concurrent_previews)):
             if value <= 0:
                 raise ValueError(f"{name} must be greater than 0")
-        qualification_path = os.getenv("CAOS_PROVIDER_QUALIFICATION_PATH", "")
-        catalog_path = os.getenv("CAOS_PROVIDER_CATALOG_PATH", "")
-        operators = tuple(value.strip() for value in os.getenv("CAOS_ENTERPRISE_OPERATOR_SUBJECTS", "").split(",") if value.strip())
+        operators = self.enterprise_operator_subjects
         if len(operators) > 100 or any(not re.fullmatch(r"[^\s\x00-\x1f\x7f]{1,160}", value) for value in operators):
             raise ValueError("CAOS_ENTERPRISE_OPERATOR_SUBJECTS contains an invalid subject")
-        return cls(
-            environment=os.getenv("ENVIRONMENT", "development"),
-            database_url=os.getenv("DATABASE_URL", ""),
-            storage_dir=Path(os.getenv("CAOS_STORAGE_DIR", "/tmp/caos-vault")),
-            edge_proxy_secret=os.getenv("EDGE_PROXY_SECRET", "dev-edge-secret"),
-            session_secret=os.getenv("SESSION_SECRET", "dev-insecure-session-secret"),
-            port=port,
-            max_upload_bytes=max_upload_mb * 1024 * 1024,
-            max_source_bytes=max_source_mb * 1024 * 1024,
-            rate_limit_per_minute=rate_limit,
-            max_concurrent_streams=max_streams,
-            max_concurrent_previews=max_previews,
-            clamav_host=os.getenv("CLAMAV_HOST", ""),
-            clamav_port=clamav_port,
-            anthropic_api_key=os.getenv("ANTHROPIC_API_KEY", ""),
-            openai_api_key=os.getenv("OPENAI_API_KEY", ""),
-            openai_model=os.getenv("OPENAI_MODEL", ""),
-            provider_catalog_path=Path(catalog_path) if catalog_path else None,
-            provider_account_policy=os.getenv("CAOS_PROVIDER_ACCOUNT_POLICY", ""),
-            default_provider_binding=os.getenv("CAOS_DEFAULT_PROVIDER_BINDING", ""),
-            candidate_commit=os.getenv("CAOS_BUILD_COMMIT", ""),
-            image_set_digest=os.getenv("CAOS_IMAGE_SET_DIGEST", ""),
-            corpus_digest=os.getenv("CAOS_CORPUS_DIGEST", ""),
-            enterprise_operator_subjects=operators,
-            openrouter_api_key=os.getenv("OPENROUTER_API_KEY", ""),
-            openrouter_model=os.getenv("OPENROUTER_MODEL", "z-ai/glm-5.3-flash"),
-            anthropic_model=os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-6"),
-            provider_qualification_path=Path(qualification_path) if qualification_path else None,
-            provider_qualification_digest=os.getenv("CAOS_PROVIDER_QUALIFICATION_DIGEST", ""),
-            provider_binding=_provider_binding(os.getenv("CAOS_PROVIDER", "")),
-            agent_execution_enabled=_strict_bool("AGENT_EXECUTION_ENABLED", False),
-        )
 
     # Values that exist to be replaced. `.env.example` ships every required
     # secret empty so Compose's `${VAR:?}` fails closed on an uncopied file;

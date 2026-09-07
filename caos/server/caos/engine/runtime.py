@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 import concurrent.futures
 import contextlib
+import functools
 import json
 import logging
 import sqlite3
@@ -302,13 +303,31 @@ class Engine:
         thread would break the one-loop-per-thread assumption (_loop_key)."""
         self._auto_continue = True
 
-    def _schedule_continuation(self, run_id: str) -> None:
-        if not self._auto_continue or self.runs.get_run(run_id)["status"] != "running":
+    # A continuation that dies on an infrastructure fault (a locked SQLite file,
+    # a dropped connection, a vault OSError) is retried from the last checkpoint
+    # with this backoff and then failed closed with a typed code: a run reaches
+    # a terminal event without a process restart (invariant 6, DECISIONS §10.9),
+    # instead of standing `running` forever with its admission slot held. Tests
+    # shorten the schedule.
+    CONTINUATION_RETRY_DELAYS: tuple[float, ...] = (1.0, 5.0, 30.0)
+
+    def _schedule_continuation(self, run_id: str, *, driver: Any = None, attempt: int = 0,
+                               require_running: bool = True) -> None:
+        if not self._auto_continue:
+            return
+        with self._lifecycle_lock:
+            # Checked before the store is read: a retry timer can fire after
+            # aclose(), and the store is gone by then.
+            if self._closing or self._closed:
+                return
+        status = self.runs.get_run(run_id)["status"]
+        if (status != "running") if require_running else (status in TERMINAL):
             return
         with self._lifecycle_lock:
             if self._closing or self._closed:
                 return
-            task = asyncio.get_running_loop().create_task(self.wait(run_id))
+            drive = driver or self.wait
+            task = asyncio.get_running_loop().create_task(drive(run_id))
             self._continuations.add(task)
 
         def finish(done: asyncio.Task[Any]) -> None:
@@ -318,9 +337,19 @@ class Engine:
                 error = done.exception()
             except asyncio.CancelledError:
                 return
-            if error is not None:
-                log_event("engine.continuation_failed", level=logging.ERROR, run_id=run_id,
-                          detail=type(error).__name__)
+            if error is None:
+                return
+            log_event("engine.continuation_failed", level=logging.ERROR, run_id=run_id,
+                      detail=type(error).__name__, attempt=attempt)
+            if attempt < len(self.CONTINUATION_RETRY_DELAYS):
+                asyncio.get_running_loop().call_later(
+                    self.CONTINUATION_RETRY_DELAYS[attempt],
+                    functools.partial(self._schedule_continuation, run_id, driver=driver,
+                                      attempt=attempt + 1, require_running=require_running),
+                )
+                return
+            if self.runs.finalize_failure(run_id, "RUN_EXECUTION_FAILED", None):
+                log_event("refusal", run_id=run_id, module_id=None, code="RUN_EXECUTION_FAILED")
 
         task.add_done_callback(finish)
 
@@ -1829,9 +1858,10 @@ class Engine:
                     self._charge_active_if_metered(run_id, self._clock() - started)
                 self.runs.finalize_success(run_id)
         except (AgentError, StoreConflict) as exc:
-            log_event("refusal", run_id=run_id, module_id=None, code=exc.code)
-            self.runs.finalize_failure(run_id, exc.code, None)
-            raise ModuleFailure(exc.code, None) from exc
+            module_id = exc.module_id if isinstance(exc, ModuleFailure) else None
+            log_event("refusal", run_id=run_id, module_id=module_id, code=exc.code)
+            self.runs.finalize_failure(run_id, exc.code, module_id)
+            raise ModuleFailure(exc.code, module_id) from exc
         return {"error": None}
 
     def _verify_run_artifacts(self, run_id: str, plan: dict[str, Any]) -> None:
@@ -2151,6 +2181,13 @@ class Engine:
         except AgentError as exc:
             return await self._finalize_identity_failure(run_id, exc)
         self._raw_schema_check(run_id)
+        lock = self._thread_locks.get((self._loop_key(), run_id))
+        if lock is not None and lock.locked():
+            # §10.3: an API resume skips a held thread. It must never wait
+            # behind the continuation for the rest of the run — with a live
+            # provider that is minutes, longer than any proxy timeout — and
+            # the caller could not tell "already running" from "resumed".
+            raise EngineError("RESUME_NOT_APPLIED", "run is executing")
         ticket = self.runs.latest_ticket(run_id)
         if ticket is not None:
             # §12.21: consume the one-shot ticket before acting on the resume.
@@ -2250,7 +2287,7 @@ class Engine:
                 # so re-enter the node from the last checkpoint (invariant 6).
                 self._raw_schema_check(run["id"])
                 log_event("recovery.run", run_id=run["id"], action="resumed_after_gate")
-                await self._drive(run["id"], None)
+                await self._recover_drive(run["id"], None)
                 continue
             self._raw_schema_check(run["id"])
             if graph_state.created_at is None:
@@ -2258,10 +2295,39 @@ class Engine:
                 # through the graph from a fresh initial state (§10.5/§10.9 —
                 # capacity self-heals, no orphaned queued slots).
                 log_event("recovery.run", run_id=run["id"], action="readmitted")
-                await self._drive(run["id"], self._initial_state(run))
+                await self._recover_drive(run["id"], self._initial_state(run))
             else:
                 log_event("recovery.run", run_id=run["id"], action="resumed")
-                await self._drive(run["id"], None)
+                await self._recover_drive(run["id"], None)
+
+    async def _recover_drive(self, run_id: str, input_value: Any) -> None:
+        """Under the serving entrypoint (auto-continue on) a stranded run is
+        re-driven as a background continuation, so the socket binds now and
+        readiness answers while it executes — §10.5's bounded re-admission,
+        not a serial replay of every in-flight run before the bind, which left
+        the API dark for the sum of their budgets after any restart. Without
+        auto-continue (tests, explicit control) the drive stays inline so
+        `await engine.recover()` leaves the run terminal."""
+        if self._auto_continue:
+            log_event("recovery.run", run_id=run_id, action="scheduled")
+            self._schedule_continuation(
+                run_id, driver=functools.partial(self._recover_run, input_value=input_value),
+                require_running=False,
+            )
+            return
+        await self._drive(run_id, input_value)
+
+    async def _recover_run(self, run_id: str, *, input_value: Any) -> Any:
+        run = self.runs.get_run(run_id)
+        if run is None or run["status"] in TERMINAL:
+            return None
+        if input_value is not None:
+            # Readmission from a fresh initial state applies only while no
+            # checkpoint exists; a retry after the first checkpoint resumes.
+            graph = await self._graph(run["pathway"], run["depth"])
+            if (await graph.aget_state(self._config(run_id))).created_at is not None:
+                input_value = None
+        return await self._drive(run_id, input_value)
 
     def readiness(self) -> dict[str, bool]:
         """What has to hold before this instance should take traffic: the domain
@@ -2418,8 +2484,7 @@ class Engine:
         snapshot = self.runs.get_snapshot(snapshot_id)
         if snapshot is None or snapshot["case_id"] != case_id:
             raise EngineError("SNAPSHOT_NOT_FOUND", snapshot_id)
-        self.store.update_case(case_id, visible_snapshot_id=snapshot_id)
-        self.store.audit_event("snapshot.visible_switched", actor, case_id=case_id, snapshot_id=snapshot_id)
+        self.store.switch_visible_snapshot(case_id, snapshot_id, actor=actor)
 
     def snapshot_view(self, case_id: str) -> dict[str, Any]:
         case = self.store.get_case(case_id)

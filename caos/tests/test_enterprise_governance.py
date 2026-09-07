@@ -38,7 +38,10 @@ def test_bootstrap_http_requires_independent_operator_and_never_grants_visibilit
         assert client.get(f"/api/cases/{case}", headers=headers()).status_code == 404
         assert client.get(f"/api/cases/{case}/sources", headers=headers()).status_code == 404
         assert client.get("/api/me", headers=headers()).json()["can_manage_providers"]
-        assert store.add_member(case, "approver", "approver", "READER")
+        with pytest.raises(ValueError, match="^MEMBER_SELF_ROLE_CHANGE"):
+            store.add_member(case, "approver", "approver", "READER")
+        assert store.add_member(case, "approver", "case-admin", "ADMIN")
+        assert store.add_member(case, "case-admin", "approver", "READER")
         assert client.post(route, headers=headers(), json=body).json() == receipt.json()
         assert store.is_member(case, "approver", {"READER"})
         assert client.post(route, headers=headers(), json={**body, "subject": "other"}).status_code == 409

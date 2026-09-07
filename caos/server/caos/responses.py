@@ -208,6 +208,16 @@ class EvidenceSearchResponse(WireModel):
     next_cursor: str | None
 
 
+class RunErrorResponse(WireModel):
+    """The typed failure of a run or of its blamed node: the refusal code, the
+    module it names (None for a run-level refusal) and, for the one paused
+    state that carries prose, a host-owned sentence — never document text."""
+
+    code: str
+    module_id: str | None = None
+    message: str | None = None
+
+
 class RunNodeResponse(WireModel):
     id: str
     run_id: str
@@ -218,7 +228,7 @@ class RunNodeResponse(WireModel):
     status: str
     attempt: int
     artifact_id: str | None
-    error: Any
+    error: RunErrorResponse | None
 
 
 class RunEventResponse(WireModel):
@@ -241,7 +251,7 @@ class RunResponse(WireModel):
     upgraded_from_run_id: str | None
     created_by: str
     created_at: str
-    error: Any
+    error: RunErrorResponse | None
     provider_identity: ProviderIdentityResponse | None
 
 

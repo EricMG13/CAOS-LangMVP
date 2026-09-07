@@ -67,6 +67,11 @@ _INK, _META, _RULE = "#16161e", "#5c5c66", "#9c998e"
 # The font pin (DejaVu 2.37, Bitstream Vera licence in fonts/LICENSE). The
 # bytes are the pin: a host copy of the same family name never substitutes.
 FONT_DIR = Path(__file__).resolve().parent / "fonts"
+# The renderer's own identity, stamped into every frozen payload and embedded
+# in every approved golden. It lives here, with the code whose output it names,
+# so a render change and its version move together (W12, 2026-09-06 review).
+RENDERER_VERSION = "caos.deliverable-renderer.v3"
+
 FONT_BUNDLE = {
     "DejaVuSans.ttf": "7da195a74c55bef988d0d48f9508bd5d849425c1770dba5d7bfc6ce9ed848954",
     "DejaVuSans-Bold.ttf": "e6476c1b80502924294eed40894c5b18e06c181444ca953e5334262df9c27724",

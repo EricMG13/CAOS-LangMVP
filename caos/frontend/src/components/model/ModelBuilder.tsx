@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import {
   KeyboardEvent as ReactKeyboardEvent,
   PointerEvent as ReactPointerEvent,
@@ -50,6 +49,10 @@ import styles from "./ModelBuilder.module.css";
 
 const apiBase = process.env.NEXT_PUBLIC_API_URL || "";
 const PX_PER_STEP = 4;
+// One interval for the worker-backed states this surface waits on: a QUEUED or
+// BUILDING build and a QUEUED or EXPORTING revision export (the same convention as
+// ReportStudio's FREEZE_POLL_MS). ModelBuilder.test.ts pins the re-arm on it.
+const EXPORT_POLL_MS = 1500;
 const TORNADO_METRICS = [
   { id: "net_leverage", label: "Net leverage", unit: "x" },
   { id: "cumulative_fcf", label: "Cumulative FCF", unit: "$M" },
@@ -188,7 +191,7 @@ function WorksheetGrid({
             "worksheet-cell", authority.className, fillClass,
             cell?.style?.bold ? "is-bold" : "", cell?.style?.italic ? "is-italic" : "",
             cell?.value_type === "number" || cell?.value_type === "formula" && typeof cell.value === "number" ? "num" : "",
-            selected?.address === cell?.address ? "is-selected" : "",
+            cell && selected?.address === cell.address ? "is-selected" : "",
           ].filter(Boolean).join(" ");
           const value = formatWorksheetValue(cell);
           const column = columnIndex + 1;
@@ -508,9 +511,9 @@ export default function ModelBuilder({
     const poll = async () => {
       if (buildPending) await refresh(undefined, false);
       else await refreshRevisionExports();
-      if (active) timer = window.setTimeout(poll, 1500);
+      if (active) timer = window.setTimeout(poll, EXPORT_POLL_MS);
     };
-    timer = window.setTimeout(poll, 1500);
+    timer = window.setTimeout(poll, EXPORT_POLL_MS);
     return () => { active = false; window.clearTimeout(timer); };
   }, [refresh, refreshRevisionExports, revisions, status]);
 
@@ -722,28 +725,17 @@ export default function ModelBuilder({
     <section className="panel span-12 model-builder-command">
       <div className="panel-header"><h2>Model</h2><span className={`status ${modelStatusTone(status)}`} role="status" aria-live="polite">{status ? humanizeCode(status) : ""}</span></div>
       <div className="panel-body model-builder-command-body"><div><strong>Application model · {activeRevision ? `R${activeRevision.revision_number}` : "Application version"}</strong><p className="muted">{activeRevision ? `${activeRevision.created_by} · ${formatDate(activeRevision.created_at)} · ${activeRevision.note}` : status === "READY" ? "Built from the accepted application and saved as the starting version. Forecast assumptions create the next version." : "Build the application model from accepted credit analysis."}</p></div><div className="model-primary-action">{renderPrimaryAction()}<button className="button small" type="button" disabled={loading} onClick={() => void refresh()}>{loading ? "Refreshing…" : "Refresh"}</button></div></div>
-      {status === "NOT_READY" ? <StateBlock tone="warning" title="Accepted analysis required" body="Accept a completed Full Credit run before building the application model." /> : null}
-      {status === "NOT_READY" ? <Link className="button small" href={withQuery("/run", { case: caseId })}>Open Run</Link> : null}
-      {status === "QUEUED" || status === "BUILDING" ? <StateBlock title={status === "QUEUED" ? "Build queued" : "Calculating application model"} body="The server is validating canonical inputs and saving the reconciled worksheet." /> : null}
-      {status === "FAILED" ? <StateBlock tone="warning" live="alert" code={build?.error?.code || "MODEL_CALCULATION_FAILED"} body={build?.error?.detail || "The model calculation did not complete."} /> : null}
-      {inventory?.readiness.blockers.map((blocker) => <div className="callout warning model-blocker" key={blocker.code}><strong>{humanizeCode(blocker.code)}</strong><br />{blocker.detail}</div>)}
-      {message ? <p className={message.includes("Unable") || message.includes("conflict") || message.includes("changed") ? "error" : "muted"} role="status" aria-live="polite">{message}</p> : null}
-      {dirty && canWrite ? <section className="approval-panel" data-model-approval aria-labelledby="model-approval-title">
-        <div><span className="meta-label">What will bind</span><h3 id="model-approval-title">Current forecast preview as the next saved model version</h3><p className="muted">Changed assumption slots: <strong className="num">{dirtyCount}</strong></p></div>
-        <dl className="state-facts">
-          <dt>Preview digest</dt><dd>{previewCurrent ? preview?.preview_digest ? <IdentityValue value={preview.preview_digest} /> : "Unavailable" : "Recalculation required"}</dd>
-          <dt>Accepted snapshot</dt><dd>{previewCurrent ? preview?.accepted_snapshot_id ? <IdentityValue value={preview.accepted_snapshot_id} /> : "Unavailable" : build?.accepted_snapshot_id ? <IdentityValue value={build.accepted_snapshot_id} /> : "Unavailable"}</dd>
-          <dt>Application build</dt><dd>{build?.id ? <IdentityValue value={build.id} /> : "Unavailable"}</dd>
-          <dt>Build payload digest</dt><dd>{build?.payload_digest ? <IdentityValue value={build.payload_digest} /> : "Unavailable"}</dd>
-          <dt>Registry digest</dt><dd>{registry?.digest ? <IdentityValue value={registry.digest} /> : "Unavailable"}</dd>
-          <dt>Parent model version</dt><dd>{draftAuthority?.parentRevisionId ? <IdentityValue value={draftAuthority.parentRevisionId} /> : "Application version"}</dd>
-        </dl>
-        {conflict || authorityMismatch ? <div className="callout warning" role="alert"><strong>Model authority changed</strong><p>Your local forecast is preserved. Current version {currentVersionId ? <IdentityValue value={currentVersionId} /> : "Application version"}; draft parent {draftAuthority?.parentRevisionId ? <IdentityValue value={draftAuthority.parentRevisionId} /> : "Application version"}.</p>{conflictRebaseRevision && build?.status === "READY" ? unavailable.rebase ? <Unavailable title="Rebase preview" /> : <button className="button small" type="button" disabled={pending === `rebase:${conflictRebaseRevision.id}`} onClick={() => void requestRebase(conflictRebaseRevision)}>Review and rebase local draft</button> : null}</div> : null}
-        <div className={styles.signOff}><label htmlFor="model-signoff-note">Sign-Off Note <span aria-hidden="true">*</span></label><textarea id="model-signoff-note" required maxLength={2000} value={signOffNote} onChange={(event) => setSignOffNote(event.target.value)} placeholder="What changed, why, and the evidence behind it." /><p className="muted">Required actor note stored with this exact model version.</p></div>
-        <div className="top-actions">{primaryAction === "SIGN_OFF"
-          ? <button data-primary-model-action="SIGN_OFF" className="button primary" type="button" disabled={pending === "sign-off" || !signOffNote.trim()} onClick={() => void signOff()}>{pending === "sign-off" ? "Saving…" : "Save model version"}</button>
-          : primaryAction === "PREVIEW" ? <button data-primary-model-action="PREVIEW" className="button primary" type="button" disabled={pending === "preview"} onClick={() => void previewDraft()}>{pending === "preview" ? "Recalculating…" : "Recalculate forecast"}</button> : null}</div>
-      </section> : null}
+      {/* Readiness notices sit in their own body so nothing renders flush on the
+          panel border. The server's typed blockers are the authority; the generic
+          "accept a run" block appears only when the server names none, and the
+          Run link is the first blocker's action rather than a floating control. */}
+      {status === "NOT_READY" || status === "QUEUED" || status === "BUILDING" || status === "FAILED" || inventory?.readiness.blockers.length || message ? <div className="panel-body flow">
+        {status === "NOT_READY" && !inventory?.readiness.blockers.length ? <StateBlock tone="warning" shape="action" title="Accepted analysis required" body="Accept a completed Full Credit run before building the application model." action={{ label: "Open Run", href: withQuery("/run", { case: caseId }) }} /> : null}
+        {status === "QUEUED" || status === "BUILDING" ? <StateBlock title={status === "QUEUED" ? "Build queued" : "Calculating application model"} body="The server is validating canonical inputs and saving the reconciled worksheet." /> : null}
+        {status === "FAILED" ? <StateBlock tone="warning" live="alert" code={build?.error?.code || "MODEL_CALCULATION_FAILED"} body={build?.error?.detail || "The model calculation did not complete."} /> : null}
+        {inventory?.readiness.blockers.map((blocker, index) => <StateBlock tone="warning" shape="action" code={blocker.code} body={blocker.detail} key={blocker.code} action={index === 0 && status === "NOT_READY" ? { label: "Open Run", href: withQuery("/run", { case: caseId }) } : undefined} />)}
+        {message ? <p className={message.includes("Unable") || message.includes("conflict") || message.includes("changed") ? "error" : "muted"} role="status" aria-live="polite">{message}</p> : null}
+      </div> : null}
     </section>
 
     {status === "READY" && registry ? <section className={`panel span-12 ${styles.workspace}`}>
@@ -773,6 +765,23 @@ export default function ModelBuilder({
         {unavailable.tornado ? <Unavailable title="Tornado" /> : tornado && tornado.output_id === tornadoOutputId && tornado.case === selectedCase ? <TornadoChart result={tornado} metric={selectedMetric} /> : tornadoError ? <p className="error" role="alert">{tornadoError}</p> : <p className="muted">The four legacy drivers recalculate against the complete current forecast.</p>}
       </aside>
     </section> : null}
+
+          {dirty && canWrite ? <section className="panel span-12" data-model-approval aria-labelledby="model-approval-title"><div className="panel-body approval-panel">
+      <div><span className="meta-label">What will bind</span><h3 id="model-approval-title">Current forecast preview as the next saved model version</h3><p className="muted">Changed assumption slots: <strong className="num">{dirtyCount}</strong></p></div>
+      <dl className="state-facts">
+      <dt>Preview digest</dt><dd>{previewCurrent ? preview?.preview_digest ? <IdentityValue value={preview.preview_digest} /> : "Unavailable" : "Recalculation required"}</dd>
+      <dt>Accepted snapshot</dt><dd>{previewCurrent ? preview?.accepted_snapshot_id ? <IdentityValue value={preview.accepted_snapshot_id} /> : "Unavailable" : build?.accepted_snapshot_id ? <IdentityValue value={build.accepted_snapshot_id} /> : "Unavailable"}</dd>
+      <dt>Application build</dt><dd>{build?.id ? <IdentityValue value={build.id} /> : "Unavailable"}</dd>
+      <dt>Build payload digest</dt><dd>{build?.payload_digest ? <IdentityValue value={build.payload_digest} /> : "Unavailable"}</dd>
+      <dt>Registry digest</dt><dd>{registry?.digest ? <IdentityValue value={registry.digest} /> : "Unavailable"}</dd>
+      <dt>Parent model version</dt><dd>{draftAuthority?.parentRevisionId ? <IdentityValue value={draftAuthority.parentRevisionId} /> : "Application version"}</dd>
+      </dl>
+      {conflict || authorityMismatch ? <div className="callout warning" role="alert"><strong>Model authority changed</strong><p>Your local forecast is preserved. Current version {currentVersionId ? <IdentityValue value={currentVersionId} /> : "Application version"}; draft parent {draftAuthority?.parentRevisionId ? <IdentityValue value={draftAuthority.parentRevisionId} /> : "Application version"}.</p>{conflictRebaseRevision && build?.status === "READY" ? unavailable.rebase ? <Unavailable title="Rebase preview" /> : <button className="button small" type="button" disabled={pending === `rebase:${conflictRebaseRevision.id}`} onClick={() => void requestRebase(conflictRebaseRevision)}>Review and rebase local draft</button> : null}</div> : null}
+      <div className={styles.signOff}><label htmlFor="model-signoff-note">Sign-Off Note <span aria-hidden="true">*</span></label><textarea id="model-signoff-note" required maxLength={2000} value={signOffNote} onChange={(event) => setSignOffNote(event.target.value)} placeholder="What changed, why, and the evidence behind it." /><p className="muted">Required actor note stored with this exact model version.</p></div>
+      <div className="top-actions">{primaryAction === "SIGN_OFF"
+      ? <button data-primary-model-action="SIGN_OFF" className="button primary" type="button" disabled={pending === "sign-off" || !signOffNote.trim()} onClick={() => void signOff()}>{pending === "sign-off" ? "Saving…" : "Save model version"}</button>
+      : primaryAction === "PREVIEW" ? <button data-primary-model-action="PREVIEW" className="button primary" type="button" disabled={pending === "preview"} onClick={() => void previewDraft()}>{pending === "preview" ? "Recalculating…" : "Recalculate forecast"}</button> : null}</div>
+    </div></section> : null}
 
     {status === "READY" ? <section className={`panel span-12 ${styles.versions}`}>
       <details open={Boolean(rebase)}><summary>Model versions</summary>

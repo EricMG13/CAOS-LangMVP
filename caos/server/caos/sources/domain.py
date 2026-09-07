@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import io
 import json
@@ -42,11 +43,17 @@ MAX_BLOCK_CHARS = 20_000
 # count must not track document size. Past this many, lines are grouped into
 # blocks wide enough to hold the count down. It is a switch point, not a hard
 # cap: once the width needed would exceed MAX_BLOCK_CHARS the count grows again,
-# to at most MAX_SOURCE_TEXT / MAX_BLOCK_CHARS = 600 for any shape of document.
+# but only with length — every block but the last is full to within
+# width/BLOCK_SLACK_DIVISOR, so a 12 MB document is at most ~641 blocks whatever
+# its line shape (measured: 600 for 10k-character lines, 625 for 1k).
 MAX_BLOCKS_PER_SOURCE = 320
 # Floor on a grouped block, so a merely-large document is not chopped into
 # hundreds of fragments when a few hundred would index it just as well.
 TARGET_BLOCK_CHARS = 4_000
+# How near full a grouped block may be before it is flushed rather than split
+# mid-line: a block ends within width/BLOCK_SLACK_DIVISOR of full, so the count
+# is bounded by the document's length rather than by its line shape.
+BLOCK_SLACK_DIVISOR = 16
 MAX_XLSX_EXTRACT_WORKSHEETS = 64
 MAX_XLSX_EXTRACT_ROWS = 25_000
 MAX_XLSX_EXTRACT_COLUMNS = 64
@@ -68,6 +75,19 @@ class Vault:
         ):
             raise ValueError("invalid source digest")
         return f"sources/{sha256[:2]}/{sha256}"
+
+    def holds(self, sha256: str) -> bool:
+        """Whether these bytes are already at their content address."""
+        return (self.root / self._key(sha256)).exists()
+
+    def discard(self, sha256: str) -> None:
+        """Take out bytes this request published and no row references.
+
+        Content addressing means one file can belong to several cases, so only
+        the caller that published it may call this, and only while its own
+        admission has failed.
+        """
+        (self.root / self._key(sha256)).unlink(missing_ok=True)
 
     def put(self, content: bytes, sha256: str) -> str:
         actual = hashlib.sha256(content).hexdigest()
@@ -383,6 +403,7 @@ def pack_blocks(text: str) -> list[dict[str, Any]]:
         return [_line_block(*fragment) for fragment in fragments]
 
     width = min(MAX_BLOCK_CHARS, max(TARGET_BLOCK_CHARS, math.ceil(len(text) / MAX_BLOCKS_PER_SOURCE)))
+    slack = width // BLOCK_SLACK_DIVISOR
     blocks: list[dict[str, Any]] = []
     buffer: list[str] = []
     first = last = fragments[0][0]
@@ -395,16 +416,57 @@ def pack_blocks(text: str) -> list[dict[str, Any]]:
                                  "\n".join(buffer), "builtin-v2"))
             buffer, size = [], 0
 
+    # A fragment that does not fit is split at the boundary, never pushed into a
+    # block of its own: a line wider than the room left used to flush the block
+    # and take one for itself, so every line in (width/2, width] became a block
+    # and the count tracked document size again — 12 MB of 10k-character lines
+    # was 1 199 blocks, and two such documents exceeded MAX_MANIFEST_BLOCKS
+    # (W4, 2026-09-06 review). Now every block but the last is full to within
+    # `slack`, so the count is bounded by length alone for any line shape.
     for index, _part, fragment in fragments:
-        if buffer and size + len(fragment) + 1 > width:
-            flush()
-        if not buffer:
-            first = index
-        buffer.append(fragment)
-        size += len(fragment) + 1
-        last = index
+        while fragment:
+            room = width if not buffer else width - size - 1
+            if room <= 0:
+                flush()
+                continue
+            if not buffer:
+                first = index
+            piece, fragment = fragment[:room], fragment[room:]
+            size = len(piece) if not buffer else size + 1 + len(piece)
+            buffer.append(piece)
+            last = index
+            if fragment or width - size <= slack:
+                flush()
     flush()
     return blocks
+
+
+def _admit_content(vault: Vault, filename: str, media_type: str, content: bytes) -> dict[str, Any]:
+    """The synchronous half of admission: the malware scan (a blocking clamd
+    socket in production), the archive screen, extraction, and the vault write
+    with its fsync. Seconds on a large workbook, so `prepare_upload` runs it on
+    a worker thread (DECISIONS §10.8, no event-loop starvation).
+
+    `published_now` says whether this call put the bytes at their content
+    address, so a caller whose admission is refused later can take out what it
+    published and leave what another case owns (W2).
+    """
+    scan_content(content, vault.settings)
+    validate_archive(content)
+    sha256 = hashlib.sha256(content).hexdigest()
+    blocks = extract_blocks(filename, content)
+    published_now = not vault.holds(sha256)
+    vault_path = vault.put(content, sha256)
+    return {
+        "filename": filename,
+        "media_type": media_type,
+        "bytes": len(content),
+        "sha256": sha256,
+        "vault_path": vault_path,
+        "blocks": blocks,
+        "withdrawn": False,
+        "published_now": published_now,
+    }
 
 
 async def prepare_upload(vault: Vault, upload: UploadFile, max_bytes: int) -> dict[str, Any]:
@@ -423,20 +485,9 @@ async def prepare_upload(vault: Vault, upload: UploadFile, max_bytes: int) -> di
         raise HTTPException(status_code=422, detail="source is empty")
     if len(content) > max_bytes:
         raise HTTPException(status_code=413, detail="source exceeds upload limit")
-    scan_content(content, vault.settings)
-    validate_archive(content)
-    sha256 = hashlib.sha256(content).hexdigest()
-    blocks = extract_blocks(filename, content)
-    vault_path = vault.put(content, sha256)
-    return {
-        "filename": filename,
-        "media_type": upload.content_type or "application/octet-stream",
-        "bytes": len(content),
-        "sha256": sha256,
-        "vault_path": vault_path,
-        "blocks": blocks,
-        "withdrawn": False,
-    }
+    return await asyncio.to_thread(
+        _admit_content, vault, filename, upload.content_type or "application/octet-stream", content,
+    )
 
 
 async def ingest_upload(
@@ -448,6 +499,7 @@ async def ingest_upload(
     max_bytes: int,
 ) -> dict[str, Any]:
     prepared = await prepare_upload(vault, upload, max_bytes)
+    published_now = prepared.pop("published_now")
     source = {
         **prepared,
         "case_id": case_id,
@@ -456,8 +508,12 @@ async def ingest_upload(
     }
     try:
         return catalog.ingest(source, actor)
-    except ValueError as exc:
-        if str(exc) == "source content already active":
+    except BaseException as exc:
+        # Nothing references these bytes: the row that would have is exactly
+        # what failed to commit (W2). Bytes another case already owns stay.
+        if published_now:
+            vault.discard(prepared["sha256"])
+        if isinstance(exc, ValueError) and str(exc) == "source content already active":
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         raise
 

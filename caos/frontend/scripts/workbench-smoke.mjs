@@ -448,7 +448,7 @@ try {
     const url = new URL(window.location.href);
     return url.searchParams.get("case") === expectedCaseId && !url.searchParams.has("run");
   }, idleCase.id);
-  await page.getByText("No current execution. Drop documents on Cases to start analysis, or compile a route here.", { exact: true }).waitFor();
+  await page.getByText("No current execution. Drop documents on Portfolio to start analysis, or compile a route here.", { exact: true }).waitFor();
   // The URL settling correctly is not enough: a stale route replay can re-attach the
   // previous issuer's run and then self-correct, which is still a wrong read.
   const boundaryUrlWrites = await page.evaluate(([boundaryCaseId, staleRunId]) => {
@@ -2426,7 +2426,15 @@ try {
   await awaitFocus(chip, "closing the evidence drawer opened by a scripted click did not return focus to the chip that passed itself as opener");
   await chip.click();
   await evidence.getByText("earnings.txt").waitFor();
-  await evidence.getByText(/Source-level reference; no block locator supplied/).waitFor();
+  // The drawer lands on the block the citation named (FE-G4): the cited block is
+  // listed first and marked, and the source-level fallback sentence is absent.
+  await evidence.locator(`[data-cited-block="${source.blocks[0].block_id}"]`).first().waitFor();
+  assert.equal(await evidence.getByText(/Source-level reference; no block locator supplied/).count(), 0, "the drawer denied a block locator the artifact supplied");
+  await page.keyboard.press("Escape");
+  await evidence.waitFor({ state: "hidden" });
+  await page.locator(".evidence-ref").getByRole("button", { name: source.blocks[0].block_id, exact: true }).click();
+  await awaitFocus(evidence.locator(`#drawer-block-${source.blocks[0].block_id}`), "the exact citation did not focus its block");
+  assert.equal(new URL(await evidence.getByRole("link", { name: "Open full source" }).getAttribute("href"), baseURL).searchParams.get("block"), source.blocks[0].block_id, "the full-source link lost the selected block");
   await evidence.getByRole("link", { name: "Open full source" }).click();
   await page.waitForURL((url) => url.pathname.replace(/\/$/, "") === "/sources" && url.searchParams.get("source") === source.id);
   await evidence.waitFor({ state: "hidden" });

@@ -107,7 +107,7 @@ export type CaseRecord = {
   available_pathways?: string[];
   deep_research_available?: boolean;
   deep_research_unavailable_reason?: string | null;
-  // The case's latest document-first intake; the Cases page reads the record
+  // The case's latest document-first intake; the Portfolio page reads the record
   // only when this names one, never by probing for a 404.
   latest_intake_id?: string | null;
 };
@@ -139,11 +139,16 @@ export const workflows: readonly Workflow[] = [
 // Human module names beside the ids. Every name is the module's own `skill_slug`
 // in caos/server/caos/modules/registry.py — the registry carries no separate label
 // field — and each is corroborated by the H1 of the vendored SKILL.md that slug
-// names. Nothing here is invented: an id the registry does not carry a slug for
-// (CP-PARSE) or does not carry at all (CP-MODEL, CP-DR) falls back to the id, and
-// superseded ids are deliberately not aliased onto their absorbers, because
-// MODULE_GRANULARITY.md records several of those absorptions as naming drift.
+// names. Nothing here is invented. CP-PARSE's entry names CP-0's skill
+// (`cp-0-source-readiness`), whose H1 and profile gate name the two runnable
+// profiles "CP-PARSE DataPreparation" and "CP-0 SourceReadiness", so CP-PARSE
+// takes the skill's own name for its profile rather than CP-0's; CP-DR's entry is
+// `cp-dr-deep-research`. An id the registry does not carry at all (CP-MODEL) falls
+// back to the id, and superseded ids are deliberately not aliased onto their
+// absorbers, because MODULE_GRANULARITY.md records several of those absorptions
+// as naming drift.
 const moduleNames: Record<string, string> = {
+  "CP-PARSE": "Data Preparation",
   "CP-0": "Source Readiness",
   "CP-1": "Canonical Data Foundation",
   "CP-1A": "Business Transaction Fact Pack",
@@ -160,6 +165,7 @@ const moduleNames: Record<string, string> = {
   "CP-4C": "Restructuring Fulcrum",
   "CP-5": "Evidence Trace Validator",
   "CP-6": "IC Debate Challenge",
+  "CP-DR": "Deep Research",
   "CP-L10": "Financial Change Screen",
 };
 
@@ -172,6 +178,69 @@ export function moduleLabel(moduleId: string): string {
 // helper, and every surface that shows a typed refusal beside its detail.
 export function humanizeCode(code: string) {
   return code.replaceAll("_", " ");
+}
+
+// The typed failure of a run or of its blamed node (RunErrorResponse in
+// caos/server/caos/responses.py): the refusal code, the module it names (null for
+// a run-level refusal) and, for the one paused state that carries prose
+// (PLAN_APPROVAL_REQUIRED), a host-owned sentence — never document text.
+export type RunError = { code: string; module_id?: string | null; message?: string | null };
+
+// The sentence Run shows beside a typed failure. StateNote already prefixes the
+// humanized code, so this names the blamed module by its registry name and repeats
+// the host's sentence only when the server sent one — never a client-invented
+// "Run exception" for a code the server typed.
+export function runErrorDetail(error: RunError): string {
+  const moduleId = error.module_id?.trim() || "";
+  const name = moduleId ? moduleLabel(moduleId) : "";
+  const blame = !moduleId
+    ? "Run-level refusal; no module is blamed."
+    : name === moduleId ? `Refused by ${moduleId}.` : `Refused by ${name} (${moduleId}).`;
+  const message = error.message?.trim() || "";
+  return message ? `${blame} ${message}` : blame;
+}
+
+// The Deep Research brief's bounds, mirrored from ResearchBrief in
+// caos/server/caos/contracts.py, which is the source of truth: ten list items
+// combined (each list is also capped at ten, which the combined cap implies), 200
+// characters per item, 400 for the question and the decision context, 200 for the
+// time horizon. The server bounds NFC code points, so the client counts the same —
+// never UTF-16 units, which would refuse a legal line of astral or decomposed
+// characters the server admits.
+export const BRIEF_LIMITS = { listItems: 10, itemChars: 200, textChars: 400, horizonChars: 200 } as const;
+
+function codePointLength(value: string): number {
+  return [...value.normalize("NFC")].length;
+}
+
+export function researchBriefListsWithinBounds(mustAnswer: readonly string[], exclusions: readonly string[]): boolean {
+  return mustAnswer.length + exclusions.length <= BRIEF_LIMITS.listItems
+    && [...mustAnswer, ...exclusions].every((line) => codePointLength(line) <= BRIEF_LIMITS.itemChars);
+}
+
+// The evidence drawer shows every block the citation named and caps only the
+// uncited remainder: a citation naming more blocks than the cap never loses one
+// silently, and the sentence beneath the list says exactly what is shown. Cited
+// blocks keep their source order ahead of the rest.
+export const UNCITED_BLOCK_PREVIEW = 20;
+
+export function evidenceBlockPreview<T extends { block_id: string }>(
+  blocks: readonly T[],
+  citedIds: readonly string[],
+  uncitedLimit = UNCITED_BLOCK_PREVIEW,
+): { blocks: T[]; citedCount: number; remaining: number; note: string | null } {
+  const cited = blocks.filter((block) => citedIds.includes(block.block_id));
+  const uncited = blocks.filter((block) => !citedIds.includes(block.block_id));
+  const remaining = Math.max(0, uncited.length - uncitedLimit);
+  const shown = cited.length
+    ? `Showing the ${cited.length} cited block${cited.length === 1 ? "" : "s"} and the first ${uncitedLimit} others.`
+    : `Showing the first ${uncitedLimit} blocks.`;
+  return {
+    blocks: [...cited, ...uncited.slice(0, uncitedLimit)],
+    citedCount: cited.length,
+    remaining,
+    note: remaining ? `${shown} Open the full source for the remaining ${remaining} block${remaining === 1 ? "" : "s"}.` : null,
+  };
 }
 
 export function compactIdentity(value: string, leading = 12, trailing = 4) {

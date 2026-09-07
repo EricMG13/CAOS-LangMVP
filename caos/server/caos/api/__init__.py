@@ -134,6 +134,30 @@ class RVSaveRequest(BaseModel):
     rows: list[RVQuickRow] = Field(min_length=1, max_length=500)
 
 
+# The `cases` columns plus the membership the store joins on: the case wire is
+# built from these, so a new column is a deliberate wire change (W13).
+_CASE_ROW_KEYS = (
+    "id", "name", "issuer", "sector", "created_by", "created_at",
+    "members", "accepted_snapshot_id", "visible_snapshot_id", "current_execution_id",
+)
+
+# The largest cursor the run-event log can hold (SQLite INTEGER is 64-bit
+# signed). A Last-Event-ID naming no position this log can hold — negative,
+# unparsable, or beyond the range — is the start: it used to raise inside the
+# SSE generator after the 200 headers, and an EventSource retried it forever.
+MAX_EVENT_CURSOR = 2 ** 62
+
+
+def _event_cursor(header: str | None) -> int:
+    if header is None or len(header) > 32:
+        return 0
+    try:
+        cursor = int(header)
+    except ValueError:
+        return 0
+    return cursor if 0 <= cursor <= MAX_EVENT_CURSOR else 0
+
+
 class RequestCeilings:
     """Per-subject admission ceilings.
 
@@ -142,9 +166,10 @@ class RequestCeilings:
     one NAT and would not slow a single account with a token. A token bucket
     bounds sustained request rate. Two concurrency counters bound the shapes the
     bucket cannot see, because they cost one request but hold a worker for their
-    whole lifetime: the long-lived run-events tail and the synchronous model
-    preview, which is the one expensive computation outside the queued-job
-    admission ceiling.
+    whole lifetime: the long-lived run-events tail, and every synchronous model
+    calculation outside the queued-job admission ceiling — the preview, a
+    scenario, a tornado, a one-way sensitivity and a rebase preview, which run
+    the same bounded computation and share one counter (CALCULATION_PATHS).
 
     ponytail: in-process counters, single app instance — which is what this
     deployment already is (run checkpoints are SQLite on the data volume, see
@@ -184,12 +209,24 @@ class RequestCeilings:
     def _refused(detail: str) -> JSONResponse:
         return JSONResponse(status_code=429, content={"detail": detail}, headers={"retry-after": "60"})
 
+    # Every route that runs the bounded model calculation synchronously
+    # (models.service MAX_CALCULATION_SECONDS) on a threadpool worker: each holds
+    # a worker for its whole lifetime, so each is bounded by the one calculation
+    # ceiling rather than by the sustained-rate bucket alone (W7, 2026-09-06).
+    CALCULATION_PATHS = (
+        "/models/previews",
+        "/models/scenarios",
+        "/models/tornado",
+        "/models/sensitivities/one-way",
+        "/model-revisions/rebase-preview",
+    )
+
     def _slot(self, scope: Any) -> tuple[dict[str, int], int, str] | None:
         path = scope["path"]
         if path.startswith("/api/runs/") and path.endswith("/events"):
             return self._streams, self.settings.max_concurrent_streams, "too many open run-event streams"
-        if path.endswith("/models/previews"):
-            return self._previews, self.settings.max_concurrent_previews, "too many model previews in flight"
+        if any(path.endswith(suffix) for suffix in self.CALCULATION_PATHS):
+            return self._previews, self.settings.max_concurrent_previews, "too many model calculations in flight"
         return None
 
     async def __call__(self, scope: Any, receive: Any, send: Any) -> None:
@@ -428,7 +465,9 @@ def create_app(*, settings: Settings, store: DomainStore, engine: Any) -> FastAP
             else (False, "The run engine is not attached to this instance.")
         )
         return {
-            **case,
+            # A projection, not the row: a column a migration adds reaches an
+            # extra="forbid" response model and 500s every case route (W13).
+            **{key: case.get(key) for key in _CASE_ROW_KEYS},
             "source_count": len(current["source_ids"]) if current else 0,
             # One source of truth for the cut: the same set start_run refuses
             # against. A pathway added there lights up in the workbench with no
@@ -612,7 +651,9 @@ def create_app(*, settings: Settings, store: DomainStore, engine: Any) -> FastAP
         except KeyError as exc:
             raise HTTPException(status_code=404, detail="note not found") from exc
         except ValueError as exc:
-            raise HTTPException(status_code=409, detail=str(exc)) from exc
+            raise HTTPException(
+                status_code=409, detail={"code": "SOURCE_CONTENT_ALREADY_ACTIVE"},
+            ) from exc
 
     # -- relative value ------------------------------------------------------
 
@@ -741,7 +782,7 @@ def create_app(*, settings: Settings, store: DomainStore, engine: Any) -> FastAP
                 ),
             )
         except ValueError as exc:
-            raise HTTPException(status_code=422, detail=str(exc)) from exc
+            raise HTTPException(status_code=422, detail={"code": "RUN_REQUEST_INVALID"}) from exc
         except RuntimeError as exc:
             code = getattr(exc, "code", "RUN_START_FAILED")
             if code == "ADMISSION_BUSY":
@@ -778,10 +819,7 @@ def create_app(*, settings: Settings, store: DomainStore, engine: Any) -> FastAP
         reconnects resume without replay. The stream closes once a terminal run is
         fully delivered; live runs hold it open with keepalive comments."""
         visible_run(run_id, identity(request))
-        try:
-            cursor = int(request.headers.get("last-event-id", "0"))
-        except ValueError:
-            cursor = 0
+        cursor = _event_cursor(request.headers.get("last-event-id"))
 
         # ponytail: per-connection 0.4s DB poll, not a wakeup bus — run_events is
         # tiny and Run Console holds one stream; add a notify hook if fan-out grows.
@@ -813,7 +851,12 @@ def create_app(*, settings: Settings, store: DomainStore, engine: Any) -> FastAP
     @app.post("/api/runs/{run_id}/resume", response_model=wire.CanonicalRunResponse, response_model_exclude_unset=True)
     async def resume_run(run_id: str, request: Request) -> dict[str, Any]:
         visible_run(run_id, identity(request), write=True)
-        return _wire_run(await engine.resume(run_id))
+        try:
+            return _wire_run(await engine.resume(run_id))
+        except RuntimeError as exc:
+            if getattr(exc, "code", None) == "RESUME_NOT_APPLIED":
+                raise HTTPException(status_code=409, detail={"code": "RESUME_NOT_APPLIED"}) from exc
+            raise
 
     # -- Deep Research plan approval (Task 7; invariant 5) ------------------------
 

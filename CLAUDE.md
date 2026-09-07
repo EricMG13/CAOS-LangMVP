@@ -53,8 +53,10 @@ Standing rules that back them:
   to the pinned key sets in `caos/tests/spec/test_http_contracts_spec.py`. Two
   carve-outs are real and deliberate, so do not read "strict" as universal. SSE
   and binary downloads are not JSON at all (`OPENAPI_EXEMPT`). And six
-  service-owned envelopes — model queue, assumption registry, preview, scenario,
-  revision, frozen deliverable — subclass `OpenWireModel` (`extra="allow"`)
+  service-owned envelopes — model queue, assumption registry, worksheet,
+  preview, rebase preview, revision, scenario, tornado, one-way sensitivity,
+  deliverable content, frozen deliverable (eleven `OpenWireModel` subclasses in
+  `responses.py`) — subclass `OpenWireModel` (`extra="allow"`)
   because their payload shape belongs to the model/deliverable service rather
   than the wire contract. Everything else is `extra="forbid"` both ways and
   serves nothing undeclared.
@@ -148,10 +150,12 @@ Standing rules that back them:
   the host's "sans"; the cross-format goldens pin page counts under that
   bundle, so a renderer change is reviewed by regenerating them
   (`CAOS_REGENERATE_GOLDENS=1`) after inspecting every page and sheet.
-- `observability.py` — structured JSON logs on stdout (stdlib only). Seven log
-  points and no debug channel: run/node transitions (all of them via
-  `RunStore._emit`), typed refusals, provider call start/finish, budget
-  reserve/reconcile, the gate interrupt, startup recovery, worker job failures.
+- `observability.py` — structured JSON logs on stdout (stdlib only). Seven
+  kinds of log point (seventeen event names today) and no debug channel:
+  run/node transitions (all of them via `RunStore._emit`), typed refusals,
+  provider call start/finish, budget reserve/reconcile, the gate interrupt,
+  startup recovery and continuation retries, worker job failures and
+  recoveries, intake dispositions.
   **Never log source text, evidence block text, module output, prompts, or
   anything else a document produced** — log the typed code, never `str(exc)`
   from either process. The worker records exception classes only. Every string,
@@ -162,9 +166,11 @@ Standing rules that back them:
 ## How to add or upgrade a module
 
 The registry is the only seam (`DECISIONS.md §7`). Adding or upgrading a module
-touches `caos/server/caos/modules/registry.py` alone: one entry —
-`module_id`, `mode` (`agent` | `deterministic`), `skill_slug`,
-`reference_files`, `max_output_tokens`, `aliases` for superseded ids (see
+touches `caos/server/caos/modules/registry.py` alone: one `ModuleSpec` —
+`module_id`, `mode_full` and `mode_screen` (both `agent` since §14.12;
+`deterministic` is the test-only placeholder), `skill_slug`, `reference_files`,
+`max_output_tokens`, `calculators`, `derived_projections`, `source_mode`,
+`plan_approval` (CP-DR only) — plus an `_ALIASES` row for superseded ids (see
 `MODULE_GRANULARITY.md`). The graph builder consumes only the registry and the
 catalog routes. Land it as an isolated commit: the registry entry plus its
 wiring test (`caos/tests/test_module_wiring.py` pattern). Do not touch the
@@ -453,10 +459,17 @@ engine, the bundle, or the routes.
   must not track document size: `pack_blocks` in `sources/domain.py` emits one
   block per line while a document is small (byte-identical to the old
   extractor, `builtin-v1`, `{"line": n}` locators) and bounded line groups once
-  it is not (`builtin-v2`, `{"lines": [first, last]}`), splitting any line wider
-  than `MAX_BLOCK_CHARS` instead of refusing it. A 300-page annual report is
-  ~145 blocks rather than 7,119, and three 12 MB credit agreements still pin one
-  run inside `MAX_MANIFEST_BLOCKS`. What is still refused: extracted text over
+  it is not (`builtin-v2`, `{"lines": [first, last]}`), splitting any line at the
+  group's own width instead of giving it a block of its own. A 300-page annual
+  report is ~145 blocks rather than 7,119, and three 12 MB credit agreements
+  still pin one run inside `MAX_MANIFEST_BLOCKS`. That last claim was false
+  until 2026-09-06: a line wider than the room left used to flush the block and
+  take one for itself, so 12 MB of 10–20k-character lines was 1,199 blocks and
+  two such documents exceeded the ceiling (the adversarial review's W4). Every
+  block but the last is now full to within `width/BLOCK_SLACK_DIVISOR`, so the
+  count follows length, not line shape: 12 MB of 10k-character lines is 600
+  blocks, of 1k-character lines 625, and three of either fit one manifest
+  (`caos/tests/spec/test_source_admission_fixes_spec.py`). What is still refused: extracted text over
   `MAX_SOURCE_TEXT` (12 MB) and uploads over `max_source_bytes` (25 MB). The unit
   CAOS ingests is one user-provided document, not a multi-document container.
 - `npm run test:production-inventory` does not pass against this build and never

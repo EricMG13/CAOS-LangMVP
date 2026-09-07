@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
-import { acceptanceSlotSummary, acceptedAuthorityMatch, destinationFromSlug, destinationMeta, evidenceKind, forwardedRoutes, formatBlockLocator, humanizeCode, moduleLabel, protectDirtyDraftUnload, routeDestinations, routeFor, routeSlugs, supersededAcceptance, withQuery, workflows } from "./workbench.ts";
+import { BRIEF_LIMITS, UNCITED_BLOCK_PREVIEW, acceptanceSlotSummary, acceptedAuthorityMatch, destinationFromSlug, destinationMeta, evidenceBlockPreview, evidenceKind, forwardedRoutes, formatBlockLocator, humanizeCode, moduleLabel, protectDirtyDraftUnload, researchBriefListsWithinBounds, routeDestinations, routeFor, routeSlugs, runErrorDetail, supersededAcceptance, withQuery, workflows } from "./workbench.ts";
 
 const workbenchShell = readFileSync(new URL("../components/WorkbenchShell.tsx", import.meta.url), "utf8");
 const workspace = readFileSync(new URL("../components/Workspace.tsx", import.meta.url), "utf8");
@@ -248,6 +248,17 @@ test("the shell omits the redundant reading taxonomy and renders its command sho
   assert.ok(Object.values(destinationMeta).every((meta) => !("reading" in meta)));
   assert.doesNotMatch(workbenchShell, /Reading:/);
   assert.match(workbenchShell, /Command <kbd aria-hidden="true">⌘K<\/kbd>/);
+});
+
+test("the Report grid reflows instead of clipping its paper column, and checkboxes keep their own width (FE-G4)", () => {
+  // Audit P1: three pixel minima summing past 900px under overflow: hidden clipped the
+  // paper preview between 901 and ~1283px; the paper column now has no pixel minimum.
+  const studio = styles.match(/\.report-studio \{[^}]*\}/)?.[0] ?? "";
+  assert.match(studio, /minmax\(0, 5\.5fr\)/);
+  assert.doesNotMatch(studio, /minmax\(440px/);
+  // Critique P1: `.field input { width: 100% }` stretched the intake bind checkbox 748px
+  // wide, severing it from its label; the rule excludes checkboxes as the coarse-pointer rule does.
+  assert.match(styles, /\.field input:not\(\[type="checkbox"\]\), \.field select, \.field textarea \{ width: 100%/);
 });
 
 test("navigation and data captions use the four-role label taxonomy", () => {
@@ -498,10 +509,13 @@ test("module ids carry their registry name, and an unknown id stays the id", () 
   assert.equal(moduleLabel("CP-1"), "Canonical Data Foundation");
   assert.equal(moduleLabel("CP-2A"), "Downside Pathway");
   assert.equal(moduleLabel("CP-L10"), "Financial Change Screen");
-  // No registry slug, or not a registry module: never a name this client invented.
-  assert.equal(moduleLabel("CP-PARSE"), "CP-PARSE");
+  // Registry entries whose skill is shared or whose slug is its own name (N14):
+  // CP-PARSE runs the DataPreparation profile of cp-0-source-readiness, CP-DR is
+  // cp-dr-deep-research. Run must never label the Deep Research node "CP-DR".
+  assert.equal(moduleLabel("CP-PARSE"), "Data Preparation");
+  assert.equal(moduleLabel("CP-DR"), "Deep Research");
+  // Not a registry module: never a name this client invented.
   assert.equal(moduleLabel("CP-MODEL"), "CP-MODEL");
-  assert.equal(moduleLabel("CP-DR"), "CP-DR");
   // Superseded ids are not aliased onto their absorbers.
   assert.equal(moduleLabel("CP-2B"), "CP-2B");
 });
@@ -509,6 +523,67 @@ test("module ids carry their registry name, and an unknown id stays the id", () 
 test("a server code is never presented as a raw identifier", () => {
   assert.equal(humanizeCode("MODEL_EXPORT_FAILED"), "MODEL EXPORT FAILED");
   assert.equal(humanizeCode("PAUSED"), "PAUSED");
+});
+
+// W10: the run failure is RunErrorResponse (code, the blamed module_id or null, and
+// a host-owned message only for the paused plan-approval state). StateNote prefixes
+// the humanized code; this is the rest of the sentence, and it never says "Run
+// exception" for a typed code.
+test("a typed run failure names the blamed module by its registry name and repeats no code", () => {
+  assert.equal(runErrorDetail({ code: "OUTPUT_SCHEMA_INVALID", module_id: "CP-1" }), "Refused by Canonical Data Foundation (CP-1).");
+  assert.equal(runErrorDetail({ code: "OUTPUT_SCHEMA_INVALID", module_id: "CP-9Z" }), "Refused by CP-9Z.");
+  assert.equal(runErrorDetail({ code: "SOURCE_SET_WITHDRAWN", module_id: null }), "Run-level refusal; no module is blamed.");
+  assert.equal(runErrorDetail({ code: "SOURCE_SET_WITHDRAWN" }), "Run-level refusal; no module is blamed.");
+  assert.equal(runErrorDetail({ code: "GEOMETRY_FAILURE", message: " Controlled fixture failure. " }), "Run-level refusal; no module is blamed. Controlled fixture failure.");
+  assert.equal(runErrorDetail({ code: "BUDGET_EXCEEDED", module_id: "CP-DR", message: "Host sentence." }), "Refused by Deep Research (CP-DR). Host sentence.");
+  assert.doesNotMatch(runErrorDetail({ code: "OUTPUT_SCHEMA_INVALID", module_id: "CP-1", message: null }), /Run exception|OUTPUT_SCHEMA_INVALID/);
+});
+
+// W18: the Deep Research brief bounds are the server's (ResearchBrief in
+// caos/server/caos/contracts.py), and the server bounds NFC code points, so a
+// 200-code-point line of astral or decomposed characters is within bounds here too.
+test("research brief lists are bounded in NFC code points, exactly as the server bounds them", () => {
+  assert.deepEqual(BRIEF_LIMITS, { listItems: 10, itemChars: 200, textChars: 400, horizonChars: 200 });
+  const astral = "\u{1D538}".repeat(BRIEF_LIMITS.itemChars); // 400 UTF-16 units, 200 code points
+  const decomposed = "e\u0301".repeat(BRIEF_LIMITS.itemChars); // 400 code points before NFC, 200 after
+  assert.equal(astral.length, 2 * BRIEF_LIMITS.itemChars);
+  assert.equal(researchBriefListsWithinBounds([astral], [decomposed]), true);
+  assert.equal(researchBriefListsWithinBounds([`${astral}x`], []), false);
+  assert.equal(researchBriefListsWithinBounds([], [`${decomposed}x`]), false);
+  const ten = Array.from({ length: BRIEF_LIMITS.listItems }, (_, index) => `line ${index}`);
+  assert.equal(researchBriefListsWithinBounds(ten, []), true);
+  assert.equal(researchBriefListsWithinBounds(ten.slice(0, 5), ten.slice(0, 5)), true);
+  assert.equal(researchBriefListsWithinBounds(ten, ["one more"]), false);
+  assert.equal(researchBriefListsWithinBounds([], []), true);
+});
+
+// W18: the evidence drawer shows every cited block and caps only the uncited
+// remainder, and its sentence says exactly that.
+test("the evidence drawer never drops a cited block and its cap sentence is truthful", () => {
+  const blocks = Array.from({ length: 60 }, (_, index) => ({ block_id: `b${index}` }));
+  const citedIds = Array.from({ length: 25 }, (_, index) => `b${index * 2 + 1}`);
+  const preview = evidenceBlockPreview(blocks, citedIds);
+  assert.equal(UNCITED_BLOCK_PREVIEW, 20);
+  assert.equal(preview.citedCount, 25);
+  assert.equal(preview.blocks.length, 25 + UNCITED_BLOCK_PREVIEW);
+  assert.deepEqual(preview.blocks.slice(0, 25).map((block) => block.block_id), citedIds);
+  assert.ok(preview.blocks.slice(25).every((block) => !citedIds.includes(block.block_id)));
+  assert.equal(preview.remaining, 60 - 25 - UNCITED_BLOCK_PREVIEW);
+  assert.equal(preview.note, "Showing the 25 cited blocks and the first 20 others. Open the full source for the remaining 15 blocks.");
+  // A citation naming a block the source no longer carries counts nothing.
+  assert.equal(evidenceBlockPreview(blocks.slice(0, 3), ["missing"]).citedCount, 0);
+  // One cited block, no remainder: everything is shown and no sentence is needed.
+  const small = evidenceBlockPreview(blocks.slice(0, 21), ["b20"]);
+  assert.deepEqual(small.blocks.map((block) => block.block_id)[0], "b20");
+  assert.equal(small.blocks.length, 21);
+  assert.equal(small.remaining, 0);
+  assert.equal(small.note, null);
+  // Source-level citation: the original sentence stays truthful.
+  const uncited = evidenceBlockPreview(blocks, []);
+  assert.equal(uncited.blocks.length, UNCITED_BLOCK_PREVIEW);
+  assert.equal(uncited.note, "Showing the first 20 blocks. Open the full source for the remaining 40 blocks.");
+  assert.equal(evidenceBlockPreview(blocks.slice(0, 21), ["b0"]).note, null);
+  assert.equal(evidenceBlockPreview(blocks.slice(0, 22), ["b0"]).note, "Showing the 1 cited block and the first 20 others. Open the full source for the remaining 1 block.");
 });
 
 test("workspace identities compact only beyond the exact display threshold", async () => {

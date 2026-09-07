@@ -290,16 +290,62 @@ def verify_chain(rows: list[dict[str, Any]], head: dict[str, Any] | None) -> lis
 # --- the verifier ------------------------------------------------------------------
 
 
+# The most any single member may inflate to when the manifest does not declare a
+# usable size. A reviewer runs this on a package they were handed, so a member is
+# refused on its declared size BEFORE it is opened, and the read itself is capped:
+# a crafted package cannot inflate into the review machine's memory (X3).
+MAX_MEMBER_BYTES = 64 * 1024 * 1024
+# How far past its declared size a member may still be read. A tampered member
+# is a few bytes longer than the manifest says and must be read so the digest
+# comparison convicts it; a bomb is orders of magnitude longer and is refused
+# unread. The margin is what separates the two.
+MEMBER_SIZE_MARGIN = 64 * 1024
+
+
 class Package:
     def __init__(self, path: str) -> None:
         self.archive = zipfile.ZipFile(path)
         self.names = set(self.archive.namelist())
+        # name -> the size the manifest declares, filled once the manifest is read.
+        self.limits: dict[str, Any] = {}
+        # Members refused for size, each recorded once as a finding.
+        self.oversized: dict[str, dict[str, Any]] = {}
+
+    def limit_for(self, name: str) -> tuple[int, int]:
+        """(the size the manifest holds this member to, the bytes it may occupy
+        while being read). Without a usable declared size the hard ceiling is
+        both."""
+        declared = self.limits.get(name)
+        if isinstance(declared, int) and not isinstance(declared, bool) and 0 <= declared <= MAX_MEMBER_BYTES:
+            return declared, min(declared + MEMBER_SIZE_MARGIN, MAX_MEMBER_BYTES)
+        return MAX_MEMBER_BYTES, MAX_MEMBER_BYTES
 
     def bytes(self, name: str) -> bytes:
-        return self.archive.read(name)
+        """The member's bytes, or b"" once it is refused for size.
+
+        A refusal is recorded, never raised: the verifier reports on a crafted
+        package instead of dying on it, and every later step sees an empty
+        member rather than an inflated one.
+        """
+        if name in self.oversized:
+            return b""
+        limit, allowance = self.limit_for(name)
+        declared = self.archive.getinfo(name).file_size
+        if declared > allowance:
+            self.oversized[name] = {"code": "OBJECT_SIZE_EXCEEDED", "path": name, "declared": declared, "limit": limit}
+            return b""
+        with self.archive.open(name) as handle:
+            content = handle.read(allowance + 1)
+        if len(content) > allowance:
+            # The central directory understated the member: the read stopped at
+            # the ceiling, so nothing beyond it was ever held in memory.
+            self.oversized[name] = {"code": "OBJECT_SIZE_EXCEEDED", "path": name, "declared": len(content), "limit": limit}
+            return b""
+        return content
 
     def json(self, name: str) -> Any:
-        return json.loads(self.bytes(name).decode("utf-8"))
+        content = self.bytes(name)
+        return None if name in self.oversized else json.loads(content.decode("utf-8"))
 
     def jsonl(self, name: str) -> list[dict[str, Any]]:
         return [json.loads(line) for line in self.bytes(name).decode("utf-8").splitlines() if line.strip()]
@@ -337,14 +383,19 @@ def verify(path: str) -> dict[str, Any]:
         findings.append({"code": code, **detail})
 
     package = Package(path)
-    manifest = package.json("manifest.json")
+    manifest = package.json("manifest.json") or {}
     objects = manifest.get("objects") or {}
+    package.limits = {
+        name: meta.get("size") for name, meta in objects.items() if isinstance(meta, dict)
+    }
     # 1. every object named, present, digest and size exact; nothing extra.
     for name, meta in objects.items():
         if name not in package.names:
             finding("OBJECT_MISSING", path=name)
             continue
         content = package.bytes(name)
+        if name in package.oversized:
+            continue  # refused unread; the finding is collected below
         if hashlib.sha256(content).hexdigest() != meta.get("sha256") or len(content) != meta.get("size"):
             finding("OBJECT_DIGEST_MISMATCH", path=name)
     for name in sorted(package.names - set(objects) - {"manifest.json"}):
@@ -369,23 +420,23 @@ def verify(path: str) -> dict[str, Any]:
         actions.setdefault(row.get("action"), []).append(row)
 
     # 3. runs: plan and snapshot digests.
-    for entry in package.json("runs/index.json") if "runs/index.json" in package.names else []:
+    for entry in (package.json("runs/index.json") or []) if "runs/index.json" in package.names else []:
         run_id = entry["run_id"]
-        run = package.json(f"runs/{run_id}/run.json")
+        run = package.json(f"runs/{run_id}/run.json") or {}
         if run.get("plan_digest") and digest(run.get("plan")) != run.get("plan_digest"):
             finding("RUN_PLAN_DIGEST_MISMATCH", run_id=run_id)
-        for snapshot in package.json(f"runs/{run_id}/snapshot.json"):
+        for snapshot in package.json(f"runs/{run_id}/snapshot.json") or []:
             preimage = {key: value for key, value in snapshot.items() if key not in {"digest", "id"}}
             if digest(preimage) != snapshot.get("digest"):
                 finding("SNAPSHOT_DIGEST_MISMATCH", run_id=run_id, snapshot_id=snapshot.get("id"))
         checked["runs"] = checked.get("runs", 0) + 1
 
     # 4. models: payload digests and published workbooks.
-    builds = package.json("models/builds.json") if "models/builds.json" in package.names else []
+    builds = (package.json("models/builds.json") or []) if "models/builds.json" in package.names else []
     for build in builds:
         if build.get("payload") is not None and build.get("payload_digest") and digest(build["payload"]) != build["payload_digest"]:
             finding("MODEL_PAYLOAD_DIGEST_MISMATCH", build_id=build.get("id"))
-    for entry in package.json("models/exports.json") if "models/exports.json" in package.names else []:
+    for entry in (package.json("models/exports.json") or []) if "models/exports.json" in package.names else []:
         if entry.get("problem"):
             finding("MODEL_EXPORT_" + entry["problem"], target_id=entry.get("target_id"))
         elif entry.get("path") in package.names and hashlib.sha256(package.bytes(entry["path"])).hexdigest() != entry.get("sha256"):
@@ -393,11 +444,11 @@ def verify(path: str) -> dict[str, Any]:
     checked["model_builds"] = len(builds)
 
     # 5. deliverables: frozen records, opinions, receipts, filed bytes, reconstruction.
-    frozen_records = package.json("deliverables/frozen.json") if "deliverables/frozen.json" in package.names else []
-    opinions = {row["opinion_id"]: row for row in (package.json("deliverables/opinions.json") if "deliverables/opinions.json" in package.names else [])}
-    receipts = {row["deliverable_id"]: row for row in (package.json("deliverables/receipts.json") if "deliverables/receipts.json" in package.names else [])}
-    exports = package.json("deliverables/exports.json") if "deliverables/exports.json" in package.names else []
-    sources = {row["id"]: row for row in (package.json("case/sources.json") if "case/sources.json" in package.names else [])}
+    frozen_records = (package.json("deliverables/frozen.json") or []) if "deliverables/frozen.json" in package.names else []
+    opinions = {row["opinion_id"]: row for row in ((package.json("deliverables/opinions.json") or []) if "deliverables/opinions.json" in package.names else [])}
+    receipts = {row["deliverable_id"]: row for row in ((package.json("deliverables/receipts.json") or []) if "deliverables/receipts.json" in package.names else [])}
+    exports = (package.json("deliverables/exports.json") or []) if "deliverables/exports.json" in package.names else []
+    sources = {row["id"]: row for row in ((package.json("case/sources.json") or []) if "case/sources.json" in package.names else [])}
     for row in opinions.values():
         if digest({key: row.get(key) for key in OPINION_KEYS if key != "opinion_digest"}) != row.get("opinion_digest"):
             finding("OPINION_DIGEST_MISMATCH", opinion_id=row.get("opinion_id"))
@@ -482,6 +533,8 @@ def verify(path: str) -> dict[str, Any]:
     checked["frozen_deliverables"] = len(frozen_records)
     checked["markdown_reconstructed"] = reconstructed
     checked["receipts"] = len(receipts)
+    findings.extend(package.oversized[name] for name in sorted(package.oversized))
+
     return {"ok": not findings, "case_id": manifest.get("case_id"), "schema_version": manifest.get("schema_version"),
             "checked": checked, "findings": findings}
 

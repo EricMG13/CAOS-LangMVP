@@ -84,7 +84,11 @@ test("model sign-off is one ordered approval sequence and remains reader-gated",
   assert.ok(approval.indexOf("What will bind") < approval.indexOf('className="state-facts"'));
   assert.ok(approval.indexOf('className="state-facts"') < approval.indexOf("Sign-Off Note"));
   assert.ok(approval.indexOf("Sign-Off Note") < approval.indexOf("Save model version"));
-  assert.match(modelBuilder, /dirty && canWrite \? <section className="approval-panel" data-model-approval/);
+  assert.match(modelBuilder, /dirty && canWrite \? <section className="panel span-12" data-model-approval/);
+  // FE-G4: the sign-off panel renders below the worksheet, never above it, so a
+  // first edit does not displace the model; and a blank cell is never "selected".
+  assert.ok(modelBuilder.indexOf("${styles.workspace}") < start, "the sign-off panel renders above the worksheet");
+  assert.match(modelBuilder, /cell && selected\?\.address === cell\.address \? "is-selected"/);
   assert.doesNotMatch(modelBuilder.slice(modelBuilder.indexOf("model-builder-command-body"), start), /Save model version/);
 });
 
@@ -121,7 +125,11 @@ test("export polling fetches only lightweight revision export states", () => {
 });
 
 test("revision export polling retries without overlapping requests", () => {
-  assert.match(modelBuilder, /const poll = async \(\) => \{[\s\S]*await refreshRevisionExports\(\);[\s\S]*if \(active\) timer = window\.setTimeout\(poll, 1500\)/);
+  // The interval is one named constant (W18), and the re-arm still rides it:
+  // a poll schedules the next only after its own await, and only while mounted.
+  assert.match(modelBuilder, /^const EXPORT_POLL_MS = \d+;$/m);
+  assert.match(modelBuilder, /const poll = async \(\) => \{[\s\S]*await refreshRevisionExports\(\);[\s\S]*if \(active\) timer = window\.setTimeout\(poll, EXPORT_POLL_MS\)/);
+  assert.doesNotMatch(modelBuilder, /setTimeout\(poll, \d+\)/);
   assert.match(modelBuilder, /active = false;[\s\S]*window\.clearTimeout\(timer\)/);
 });
 

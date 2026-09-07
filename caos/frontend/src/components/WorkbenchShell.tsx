@@ -8,6 +8,8 @@ import {
   SnapshotView,
   WorkflowId,
   destinationMeta,
+  evidenceBlockPreview,
+  UNCITED_BLOCK_PREVIEW,
   evidenceKind,
   routeFor,
   withQuery,
@@ -29,6 +31,10 @@ export type DrawerState = {
     withdrawn?: boolean;
     blocks: { block_id: string; locator: Record<string, unknown>; text?: string }[];
   };
+  // The block ids the citation named, in citation order; empty when the artifact
+  // cited the source as a whole (FE-G4 critique P1: the drawer used to deny a
+  // locator the chip beside it had just shown).
+  blockIds: string[];
   // The control that opened the drawer, passed from its click: focus returns
   // here on close. Never inferred from document.activeElement (FE-A0 F11).
   opener?: HTMLElement | null;
@@ -108,10 +114,7 @@ export default function WorkbenchShell({
   const dialogRef = useRef<HTMLDialogElement>(null);
   const drawerRef = useRef<HTMLDialogElement>(null);
   const drawerHeadingRef = useRef<HTMLHeadingElement>(null);
-  const [drawerBlockLimit, setDrawerBlockLimit] = useState(20);
-  const minimumDrawerBlockLimit = drawer ? Math.max(20, drawer.source.blocks.findIndex((block) => block.block_id === drawer.blockId) + 1) : 20;
-  // Render an exact target in the first drawer commit, before focus is scheduled.
-  const visibleDrawerBlockLimit = Math.max(drawerBlockLimit, minimumDrawerBlockLimit);
+  const [drawerBlockLimit, setDrawerBlockLimit] = useState(UNCITED_BLOCK_PREVIEW);
   const drawerTriggerRef = useRef<HTMLElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const resultRef = useRef<HTMLDivElement>(null);
@@ -178,10 +181,10 @@ export default function WorkbenchShell({
     }
     // Exact evidence navigation reveals the cited block before focus moves.
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    setDrawerBlockLimit(minimumDrawerBlockLimit);
+    setDrawerBlockLimit(UNCITED_BLOCK_PREVIEW);
     const frame = window.requestAnimationFrame(() => (drawer.blockId ? document.getElementById(`drawer-block-${drawer.blockId}`) : drawerHeadingRef.current)?.focus());
     return () => { dialog.removeEventListener("cancel", cancel); window.cancelAnimationFrame(frame); };
-  }, [drawer, minimumDrawerBlockLimit]);
+  }, [drawer]);
 
   useEffect(() => {
     const openShortcut = (event: globalThis.KeyboardEvent) => {
@@ -241,6 +244,7 @@ export default function WorkbenchShell({
   const drawerTitle = drawer?.source.filename || "Context";
   let drawerBody: ReactNode = null;
   if (drawer) {
+    const blockPreview = evidenceBlockPreview(drawer.source.blocks, drawer.blockIds, drawerBlockLimit);
     drawerBody = <div className="state-block">
       <dl>
         <dt className="meta-label">Source ID</dt><dd className="mono">{drawer.evidenceId}</dd>
@@ -248,16 +252,18 @@ export default function WorkbenchShell({
         <dt className="meta-label">Visible snapshot</dt><dd>{visibleSnapshotId ? <IdentityValue value={visibleSnapshotId} /> : visibleSnapshotIdentity}</dd>
         <dt className="meta-label">Visible source set</dt><dd className="mono">{visibleSourceSetIdentity}</dd>
       </dl>
-      {drawer.blockId ? <p className="status success">Exact block reference · {drawer.blockId}</p> : <p className="status warning">Source-level reference; no block locator supplied by this artifact.</p>}
+      {drawer.blockIds.length ? <p className="mono muted">Cited blocks: {drawer.blockIds.join(" · ")}</p> : <p className="status warning">Source-level reference; no block locator supplied by this artifact.</p>}
+      {drawer.blockId ? <p className="status success">Exact block reference · {drawer.blockId}</p> : null}
       {drawer.source.withdrawn ? <p className="status warning">Withdrawn source · historical evidence only.</p> : null}
       <h3>Available source text</h3>
       <div className="source-blocks">
-        {drawer.source.blocks.slice(0, visibleDrawerBlockLimit).map((block) => <article id={`drawer-block-${block.block_id}`} tabIndex={-1} className={drawer.blockId === block.block_id ? "source-block is-selected" : "source-block"} key={block.block_id}>
-          <div className="meta-label">{block.block_id}</div>
+        {blockPreview.blocks.map((block) => <article id={`drawer-block-${block.block_id}`} tabIndex={-1} className={drawer.blockId === block.block_id ? "source-block is-selected" : "source-block"} key={block.block_id} data-cited-block={drawer.blockIds.includes(block.block_id) ? block.block_id : undefined}>
+          <div className="meta-label">{block.block_id}{drawer.blockIds.includes(block.block_id) ? <> · <span className="status success">Cited</span></> : null}</div>
           <p>{block.text || "No extracted text."}</p>
         </article>)}
         {!drawer.source.blocks.length && <p className="muted">No extracted source text.</p>}
-        {drawer.source.blocks.length > visibleDrawerBlockLimit && <button className="button small" type="button" onClick={() => setDrawerBlockLimit(visibleDrawerBlockLimit + 20)}>Show more blocks</button>}
+        {blockPreview.note && <p className="muted">{blockPreview.note}</p>}
+        {blockPreview.remaining > 0 && <button className="button small" type="button" onClick={() => setDrawerBlockLimit(drawerBlockLimit + UNCITED_BLOCK_PREVIEW)}>Show more blocks</button>}
       </div>
       <Link className="button small" href={withQuery(routeFor("Sources"), { case: caseId, source: drawer.source.id, block: drawer.blockId })} onNavigate={closeDrawer}>Open full source</Link>
     </div>;

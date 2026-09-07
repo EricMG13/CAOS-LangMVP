@@ -43,6 +43,107 @@ def test_declared_enterprise_ceilings_are_the_configured_defaults():
     assert (MAX_ACTIVE_JOBS, MAX_INTAKE_FILES, MAX_MANIFEST_BLOCKS) == (20, 40, 2_000)
 
 
+def test_the_dataclass_default_is_the_only_default(monkeypatch):
+    """W17 (2026-09-06 review): `from_env` used to repeat every default as an
+    `os.getenv(NAME, "<literal>")` fallback, so the pinned dataclass figure and
+    the figure a deployment actually ran under could drift apart. With nothing
+    set, from_env is the dataclass, field for field."""
+    import ast
+    import inspect
+
+    from caos import config
+    from caos.config import Settings
+
+    for name in Settings.ENV_NAMES:
+        monkeypatch.delenv(name, raising=False)
+    from_env = Settings.from_env()
+    assert from_env == Settings()
+    assert (from_env.max_source_bytes, from_env.max_upload_bytes) == (25 * 1024 * 1024, 32 * 1024 * 1024)
+    assert (from_env.rate_limit_per_minute, from_env.max_concurrent_streams, from_env.max_concurrent_previews) == (300, 4, 2)
+    assert (from_env.port, from_env.clamav_port, from_env.anthropic_model, from_env.openrouter_model) == (
+        Settings.port, Settings.clamav_port, Settings.anthropic_model, Settings.openrouter_model)
+
+    # No second copy of any default: every environment read in config.py is a
+    # bare `os.getenv(name)`, never `os.getenv(name, "<literal>")`.
+    getenv_calls = [
+        node for node in ast.walk(ast.parse(inspect.getsource(config)))
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "getenv" and isinstance(node.func.value, ast.Name) and node.func.value.id == "os"
+    ]
+    assert getenv_calls, "config.py reads the environment through os.getenv"
+    assert all(len(call.args) == 1 and not call.keywords for call in getenv_calls), \
+        "an os.getenv default is a second copy of a Settings default"
+
+
+def test_from_env_reads_exactly_the_declared_variables(monkeypatch):
+    from types import SimpleNamespace
+
+    from caos import config
+    from caos.config import Settings
+
+    read: list[str] = []
+    monkeypatch.setattr(config, "os", SimpleNamespace(getenv=lambda name: (read.append(name), None)[1]))
+    assert Settings.from_env() == Settings()
+    assert set(read) == set(Settings.ENV_NAMES) and len(Settings.ENV_NAMES) == len(set(Settings.ENV_NAMES))
+
+
+def test_enterprise_provider_settings_survive_environment_projection(monkeypatch, tmp_path):
+    from caos.config import Settings
+
+    for name in Settings.ENV_NAMES:
+        monkeypatch.delenv(name, raising=False)
+    values = {
+        "OPENAI_API_KEY": ("openai_api_key", "test-key"),
+        "OPENAI_MODEL": ("openai_model", "configured-model"),
+        "CAOS_PROVIDER_ACCOUNT_POLICY": ("provider_account_policy", "enterprise-policy"),
+        "CAOS_DEFAULT_PROVIDER_BINDING": ("default_provider_binding", "chatgpt"),
+        "CAOS_BUILD_COMMIT": ("candidate_commit", "a" * 40),
+        "CAOS_IMAGE_SET_DIGEST": ("image_set_digest", "b" * 64),
+        "CAOS_CORPUS_DIGEST": ("corpus_digest", "c" * 64),
+    }
+    for name, (_field, value) in values.items():
+        monkeypatch.setenv(name, value)
+    monkeypatch.setenv("CAOS_PROVIDER_CATALOG_PATH", str(tmp_path / "catalog.json"))
+    monkeypatch.setenv("CAOS_ENTERPRISE_OPERATOR_SUBJECTS", " operator-a, ,operator-b ")
+    settings = Settings.from_env()
+    assert all(getattr(settings, field) == value for field, value in values.values())
+    assert settings.provider_catalog_path == tmp_path / "catalog.json"
+    assert settings.enterprise_operator_subjects == ("operator-a", "operator-b")
+    monkeypatch.setenv("CAOS_PROVIDER_CATALOG_PATH", "")
+    assert Settings.from_env().provider_catalog_path is None
+    monkeypatch.setenv("PORT", "70000")
+    monkeypatch.setenv("CAOS_ENTERPRISE_OPERATOR_SUBJECTS", "invalid subject")
+    with pytest.raises(ValueError, match="^PORT must be between 0 and 65535$"):
+        Settings.from_env()
+
+
+def test_range_checks_apply_to_the_effective_values(monkeypatch):
+    """The checks the old from_env made on its own literals now run on whatever
+    value is effective — set or default — with the same messages."""
+    from caos.config import Settings
+
+    for name in Settings.ENV_NAMES:
+        monkeypatch.delenv(name, raising=False)
+    for name, value, message in (
+        ("PORT", "70000", "PORT must be between 0 and 65535"),
+        ("MAX_UPLOAD_MB", "0", "MAX_UPLOAD_MB must be greater than 0"),
+        ("MAX_SOURCE_MB", "33", "MAX_SOURCE_MB must be greater than 0 and no larger than MAX_UPLOAD_MB"),
+        ("CLAMAV_PORT", "0", "CLAMAV_PORT must be between 1 and 65535"),
+        ("RATE_LIMIT_PER_MINUTE", "0", "RATE_LIMIT_PER_MINUTE must be greater than 0"),
+        ("MAX_CONCURRENT_STREAMS", "0", "MAX_CONCURRENT_STREAMS must be greater than 0"),
+        ("MAX_CONCURRENT_PREVIEWS", "-1", "MAX_CONCURRENT_PREVIEWS must be greater than 0"),
+        ("CAOS_ENTERPRISE_OPERATOR_SUBJECTS", "invalid subject", "CAOS_ENTERPRISE_OPERATOR_SUBJECTS contains an invalid subject"),
+        ("CAOS_ENTERPRISE_OPERATOR_SUBJECTS", ",".join(["operator"] * 101), "CAOS_ENTERPRISE_OPERATOR_SUBJECTS contains an invalid subject"),
+    ):
+        monkeypatch.setenv(name, value)
+        with pytest.raises(ValueError) as refused:
+            Settings.from_env()
+        assert str(refused.value) == message, name
+        monkeypatch.delenv(name)
+    monkeypatch.setenv("MAX_SOURCE_MB", "32")  # at the default request ceiling: admitted
+    assert Settings.from_env().max_source_bytes == Settings().max_upload_bytes
+
+
 def test_source_size_ceiling_below_at_and_above_refuses_before_scan_or_vault(tmp_path, store, engine, monkeypatch):
     from caos.sources import domain
 
@@ -168,11 +269,11 @@ async def test_active_job_ceiling_refuses_the_twenty_first_before_any_reservatio
     assert admitted.status_code == 201, "capacity returned admits the next job"
 
 
-async def _drive_slot(path: str, setting: str, ceiling: int, refusal: str, tmp_path):
+async def _drive_slot(path: str, setting: str, ceiling: int, refusal: str, tmp_path, *, probe: str | None = None):
     """Hold `ceiling` requests open on the slotted route for subject A, then
-    prove the next A request is refused, subject B is admitted, and every slot
-    is returned. Driven against the middleware directly: TestClient cannot hold
-    a response open."""
+    prove the next A request (on `probe`, the same route by default) is
+    refused, subject B is admitted, and every slot is returned. Driven against
+    the middleware directly: TestClient cannot hold a response open."""
     from caos.api import RequestCeilings
     from caos.config import Settings
 
@@ -187,32 +288,67 @@ async def _drive_slot(path: str, setting: str, ceiling: int, refusal: str, tmp_p
 
     ceilings = RequestCeilings(stub_app, settings=Settings(storage_dir=tmp_path / "vault", **{setting: ceiling}))
 
-    def scope(subject: str) -> dict:
-        return {"type": "http", "method": "POST", "path": path, "headers": [(b"x-forwarded-user", subject.encode())]}
+    def scope(subject: str, route: str = path) -> dict:
+        return {"type": "http", "method": "POST", "path": route, "headers": [(b"x-forwarded-user", subject.encode())]}
 
-    async def call(subject: str, sink: list):
+    async def call(subject: str, sink: list, route: str = path):
         async def collect(message):
             sink.append(message)
-        await ceilings(scope(subject), None, collect)
+        await ceilings(scope(subject, route), None, collect)
 
     held = [asyncio.create_task(call("subject-a", [])) for _ in range(ceiling)]
     for _ in range(ceiling):
         await started.acquire()
     refused: list[dict] = []
-    await call("subject-a", refused)
+    await call("subject-a", refused, probe or path)
     assert refused[0]["status"] == 429 and json.loads(bytes(refused[1]["body"]))["detail"] == refusal
-    other = asyncio.create_task(call("subject-b", []))
+    other = asyncio.create_task(call("subject-b", [], probe or path))
     await started.acquire()                       # subject B holds a slot of its own
     released.set()
     await asyncio.gather(*held, other)
     again: list[dict] = []
-    await call("subject-a", again)
+    await call("subject-a", again, probe or path)
     assert again[0]["status"] == 200, "every slot is returned when the request ends"
 
 
-async def test_preview_ceiling_at_and_above_is_per_subject_and_returned(tmp_path):
-    await _drive_slot("/api/cases/c/models/previews", "max_concurrent_previews", 2,
-                      "too many model previews in flight", tmp_path)
+# Every synchronous model calculation: each runs the same bounded computation
+# (models.service MAX_CALCULATION_SECONDS) on a threadpool worker, so each holds
+# a worker for its whole lifetime and each is bounded by the one calculation
+# ceiling (W7, 2026-09-06 review).
+CALCULATION_PATHS = (
+    "/api/cases/c/models/previews",
+    "/api/cases/c/models/scenarios",
+    "/api/cases/c/models/tornado",
+    "/api/cases/c/models/sensitivities/one-way",
+    "/api/cases/c/model-revisions/rebase-preview",
+)
+CALCULATION_REFUSAL = "too many model calculations in flight"
+
+
+@pytest.mark.parametrize("path", CALCULATION_PATHS)
+async def test_calculation_ceiling_at_and_above_is_per_subject_and_returned(tmp_path, path):
+    await _drive_slot(path, "max_concurrent_previews", 2, CALCULATION_REFUSAL, tmp_path)
+
+
+@pytest.mark.parametrize("probe", CALCULATION_PATHS[1:])
+async def test_calculation_paths_share_one_counter(tmp_path, probe):
+    """Two previews in flight fill the ceiling for a scenario, a tornado, a
+    one-way sensitivity and a rebase preview alike: one counter, not five."""
+    await _drive_slot(CALCULATION_PATHS[0], "max_concurrent_previews", 2, CALCULATION_REFUSAL, tmp_path, probe=probe)
+
+
+def test_only_the_calculation_routes_and_the_events_tail_are_slotted(tmp_path):
+    from caos.api import RequestCeilings
+    from caos.config import Settings
+
+    ceilings = RequestCeilings(None, settings=Settings(storage_dir=tmp_path / "vault"))
+    for path in CALCULATION_PATHS:
+        assert ceilings._slot({"path": path}) is not None, path
+    assert ceilings._slot({"path": "/api/runs/r/events"}) is not None
+    for path in ("/api/cases/c/model", "/api/cases/c/models", "/api/cases/c/models/b/download",
+                 "/api/cases/c/model-revisions", "/api/cases/c/model-revisions/sign-off",
+                 "/api/cases/c/models/previews/extra", "/api/cases"):
+        assert ceilings._slot({"path": path}) is None, path
 
 
 async def test_stream_ceiling_at_and_above_is_per_subject_and_returned(tmp_path):
