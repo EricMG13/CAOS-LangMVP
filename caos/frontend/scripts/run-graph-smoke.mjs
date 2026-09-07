@@ -31,12 +31,16 @@ const invalid = run("run-invalid", "case-a", "running", [
   { id: "duplicate-second", module_id: "CP-1", stage: 1, dependencies: [null], status: "ready", artifact_id: null },
 ]);
 const other = run("run-other", "case-b", "succeeded", [{ id: "other-node", module_id: "CP-4C", stage: 0, dependencies: [], status: "succeeded", artifact_id: "art-other" }]);
+const ordinaryPause = run("run-source-pause", "case-c", "paused", [
+  { id: "source-pause-node", module_id: "CP-PARSE", stage: 0, dependencies: [], status: "pending", artifact_id: null },
+], { error: { code: "SOURCE_SET_EMPTY", module_id: "CP-PARSE", message: "Upload governed source material." } });
 let currentLive = running;
 const cases = [
   { id: "case-a", name: "Graph QA", issuer: "Branch and Merge", sector: "Services", source_count: 1, current_execution_id: running.id, members: { "analyst.qa@local.invalid": "ANALYST" }, accepted_snapshot_id: null, available_pathways: ["FULL_CREDIT", "DEEP_RESEARCH"], deep_research_available: true, latest_intake_id: null },
   { id: "case-b", name: "Switch QA", issuer: "Other Credit", sector: "Industrials", source_count: 1, current_execution_id: other.id, members: { "analyst.qa@local.invalid": "ANALYST" }, accepted_snapshot_id: null, available_pathways: ["FULL_CREDIT"], deep_research_available: false, latest_intake_id: null },
+  { id: "case-c", name: "Ordinary Pause QA", issuer: "Empty Source", sector: "Services", source_count: 0, current_execution_id: ordinaryPause.id, members: { "analyst.qa@local.invalid": "ANALYST" }, accepted_snapshot_id: null, available_pathways: ["FULL_CREDIT"], deep_research_available: false, latest_intake_id: null },
 ];
-const runs = { "run-live": () => currentLive, "run-research": () => research, "run-invalid": () => invalid, "run-other": () => other };
+const runs = { "run-live": () => currentLive, "run-research": () => research, "run-invalid": () => invalid, "run-other": () => other, "run-source-pause": () => ordinaryPause };
 let streamRequests = 0;
 let releaseSecondStream;
 const secondStream = new Promise((resolve) => { releaseSecondStream = resolve; });
@@ -49,7 +53,7 @@ const context = await browser.newContext({ viewport: { width: 1440, height: 1000
   "x-forwarded-groups": "caos-analyst",
 } : {} });
 const page = await context.newPage();
-await page.route("**/api/**", async (route) => {
+const routeApi = async (route) => {
   const url = new URL(route.request().url());
   const json = (body, status = 200) => route.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) });
   if (url.pathname === "/api/me") return json({ role: "ANALYST", subject: "analyst.qa@local.invalid", can_bootstrap_approver: false, can_manage_providers: false });
@@ -67,7 +71,8 @@ await page.route("**/api/**", async (route) => {
     return route.fulfill({ status: 200, headers: { "content-type": "text/event-stream", "cache-control": "no-cache" }, body: `event: node.running\ndata: {}\n\n` });
   }
   return json({ detail: "not found" }, 404);
-});
+};
+await page.route("**/api/**", routeApi);
 
 try {
   await page.goto(`${baseURL}/run/?case=case-a&run=run-live`, { waitUntil: "domcontentloaded" });
@@ -134,7 +139,70 @@ try {
   await page.getByText("Restructuring Fulcrum", { exact: true }).waitFor();
   assert.equal(await page.getByRole("heading", { name: "Node inspector" }).count(), 0, "node selection crossed the case/run boundary");
   assert.equal(await page.getByText("Updates ended", { exact: true }).count(), 1, "old stream freshness crossed the case/run boundary");
-  console.log(JSON.stringify({ status: "passed", evidence: "route-controlled UI states", streamRequests, screenshots: ["run-graph-branch-merge-inspector-1440.png", "run-graph-branch-merge-inspector-720.png", "run-graph-invalid-inspector-720.png"] }));
+
+  // A controllable EventSource proves the two refetch owners and the disposal
+  // boundary directly. The normal stream exercise above remains intact; this
+  // second page deliberately invokes callbacks that a real browser will no
+  // longer deliver after close so a stale callback cannot hide behind transport
+  // behaviour.
+  await context.addInitScript(() => {
+    class ControlledEventSource {
+      constructor(url) {
+        this.url = url;
+        this.closed = false;
+        this.listeners = new Map();
+        globalThis.__caosControlledSources ||= [];
+        globalThis.__caosControlledSources.push(this);
+      }
+      addEventListener(name, callback) {
+        const listeners = this.listeners.get(name) || [];
+        listeners.push(callback);
+        this.listeners.set(name, listeners);
+      }
+      close() { this.closed = true; }
+      open() { this.onopen?.(new Event("open")); }
+      emit(name) { for (const callback of this.listeners.get(name) || []) callback(new MessageEvent(name, { data: "{}" })); }
+    }
+    globalThis.EventSource = ControlledEventSource;
+  });
+  currentLive = running;
+  const lifecyclePage = await context.newPage();
+  await lifecyclePage.route("**/api/**", routeApi);
+  let lifecycleRunFetches = 0;
+  lifecyclePage.on("request", (request) => {
+    if (request.method() === "GET" && new URL(request.url()).pathname === "/api/runs/run-live") lifecycleRunFetches += 1;
+  });
+  await lifecyclePage.goto(`${baseURL}/run/?case=case-a&run=run-live`, { waitUntil: "domcontentloaded" });
+  await lifecyclePage.locator('[data-run-node-id="node-left"]').waitFor();
+  await lifecyclePage.waitForFunction(() => globalThis.__caosControlledSources?.length === 1);
+  const initialFetches = lifecycleRunFetches;
+  await lifecyclePage.evaluate(() => globalThis.__caosControlledSources[0].open());
+  for (let attempt = 0; lifecycleRunFetches < initialFetches + 1 && attempt < 20; attempt += 1) await lifecyclePage.waitForTimeout(25);
+  assert.equal(lifecycleRunFetches, initialFetches + 1, "EventSource onopen did not own exactly one run refetch");
+  const afterOpen = lifecycleRunFetches;
+  await lifecyclePage.evaluate(() => globalThis.__caosControlledSources[0].emit("node.succeeded"));
+  for (let attempt = 0; lifecycleRunFetches < afterOpen + 1 && attempt < 20; attempt += 1) await lifecyclePage.waitForTimeout(25);
+  assert.equal(lifecycleRunFetches, afterOpen + 1, "the persisted node.succeeded event did not own a distinct run refetch");
+  const afterNamedEvent = lifecycleRunFetches;
+
+  await lifecyclePage.getByLabel("Select case").selectOption("case-c");
+  await lifecyclePage.locator('[data-run-node-id="source-pause-node"]').waitFor();
+  assert.equal(await lifecyclePage.evaluate(() => globalThis.__caosControlledSources[0].closed), true, "the old run stream was not disposed on a case/run boundary");
+  await lifecyclePage.locator('[data-run-node-id="source-pause-node"]').click();
+  const pauseInspector = lifecyclePage.getByRole("region", { name: "Node inspector" });
+  assert.match(await pauseInspector.textContent(), /Run-level errorSOURCE SET EMPTY/);
+  assert.equal(await pauseInspector.getByText("Research pause", { exact: true }).count(), 0, "an ordinary source pause was mislabelled as a research pause");
+  const afterDispose = lifecycleRunFetches;
+  await lifecyclePage.evaluate(() => {
+    const stale = globalThis.__caosControlledSources[0];
+    stale.open();
+    stale.emit("node.succeeded");
+  });
+  await lifecyclePage.waitForTimeout(250);
+  assert.equal(lifecycleRunFetches, afterDispose, "a disposed stream callback refetched its stale run");
+  await lifecyclePage.close();
+
+  console.log(JSON.stringify({ status: "passed", evidence: "route-controlled UI states", streamRequests, lifecycle: { initial_fetches: initialFetches, after_open: afterOpen, after_named_event: afterNamedEvent, disposed_callback_refetches: lifecycleRunFetches - afterDispose, ordinary_pause: "SOURCE_SET_EMPTY" }, screenshots: ["run-graph-branch-merge-inspector-1440.png", "run-graph-branch-merge-inspector-720.png", "run-graph-invalid-inspector-720.png"] }));
 } finally {
   await context.close();
   await browser.close();

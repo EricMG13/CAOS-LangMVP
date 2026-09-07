@@ -11,6 +11,9 @@
     "test:identity-a11y": "npm run build && node scripts/identity-a11y.mjs",
     "test:production-inventory": "node scripts/production-inventory.mjs",
     "test:workbench": "node scripts/workbench-smoke.mjs",
+    "test:qualification": "node scripts/task10-qualification.mjs",
+    "test:incremental-qualification": "node scripts/task10-incremental-qualification.mjs",
+    "test:graph-matrix": "node scripts/task10-graph-matrix.mjs",
     "test:focus": "node scripts/focus-restoration-smoke.mjs",
     "test:browsers": "node scripts/run-browsers.mjs",
     "test:unit": "node --test 'src/**/*.test.ts' 'scripts/**/*.test.mjs'"

@@ -1,0 +1,6 @@
+(node:33961) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///Users/ericguei/Claude/Projects/CAOS-LangMVP/.claude/worktrees/analyst-workbench-codex/caos/frontend/src/lib/workbench.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to /Users/ericguei/Claude/Projects/CAOS-LangMVP/.claude/worktrees/analyst-workbench-codex/caos/frontend/package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+{"active":"<summary>Optional composition</summary>","navigator":"<nav class=\"report-section-nav\" aria-label=\"Deliverable sections\"><button type=\"button\" class=\"is-active\" aria-current=\"true\"><span>01</span>Credit Thesis<small>Required</small></button><button type=\"button\" class=\"\"><span>02</span>Capital Structure and Liquidity<small>Required</small></button><button type=\"button\" class=\"\"><span>03</span>Evidence Register<small>Required</small></button></nav>","platform":"MacIntel"}
+ALT_TAB {"active":"<button type=\"button\" class=\"is-active\" aria-current=\"true\"><span>01</span>Credit Thesis<small>Required</small></button>","inNavigator":true}

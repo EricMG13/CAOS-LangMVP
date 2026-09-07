@@ -1,0 +1,72 @@
+{
+  "schema_version": "caos.task10-incremental-qualification.v1",
+  "fixture_authority": "actual disposable accepted Full Credit followed by accepted Earnings Update using host-control report fixtures",
+  "subject": "task10-incremental-e54e1ef2@local.invalid",
+  "exports": {
+    "md": {
+      "path": "/private/tmp/caos-task10-final.cPQ6nz/evidence/incremental-attempt-1/task10-incremental/dlv-33460c5a7f9a0819de1ca6c63ce557c9f9f4f3e76b77c79eea4b36cbdfe96bc5.md",
+      "sha256": "852cf3fd6a62d6159bb2235e3af15a731449b0eefbd6913f16b4c6a48fe6fff6",
+      "size": 33507
+    },
+    "pdf": {
+      "path": "/private/tmp/caos-task10-final.cPQ6nz/evidence/incremental-attempt-1/task10-incremental/dlv-33460c5a7f9a0819de1ca6c63ce557c9f9f4f3e76b77c79eea4b36cbdfe96bc5.pdf",
+      "sha256": "661b3313be0afa0e1277c641ee0e2db3cd5495330046038e4bb379ec1cd83003",
+      "size": 1045413
+    },
+    "xlsx": {
+      "path": "/private/tmp/caos-task10-final.cPQ6nz/evidence/incremental-attempt-1/task10-incremental/dlv-33460c5a7f9a0819de1ca6c63ce557c9f9f4f3e76b77c79eea4b36cbdfe96bc5.xlsx",
+      "sha256": "4994569a80548b95632896a9a0c8d9d9437076dc485426bdf81f79946bb842b5",
+      "size": 40684
+    }
+  },
+  "case_id": "case-e8643dec0d194296a1dd",
+  "base": {
+    "run_id": "run-2771c10e3b5b458c8f99",
+    "snapshot_id": "snap-013857010ba243dfa3e0",
+    "build_id": "mdl-6e9a4b8878f842b3a913",
+    "build_payload_digest": "29f8f740e3a1dd41bcfd64221a09c7de226c4b802f52c258baa9153bcf3d0b56"
+  },
+  "incremental": {
+    "pathway": "EARNINGS_UPDATE",
+    "run_id": "run-6afa2def14cf410498cd",
+    "snapshot_id": "snap-35315157c700453ca0fc",
+    "previous_snapshot_id": "snap-013857010ba243dfa3e0",
+    "build_id": "mdl-f27dcf570ee84aa5bece",
+    "build_payload_digest": "4c40e88cd7c0a37b5210f6f9783fb60634c4c17693c6d98b67e101fd633fa1e0",
+    "deliverable_id": "dlv-33460c5a7f9a0819de1ca6c63ce557c9f9f4f3e76b77c79eea4b36cbdfe96bc5",
+    "frozen_preview_digest": "a8e8ca121733c166cb46fc749423a7124323f384ed897d3c73d40c5d34fb68e1",
+    "approved_by": "task10-incremental-approver-e54e1ef2@local.invalid"
+  },
+  "audit_package": {
+    "path": "/private/tmp/caos-task10-final.cPQ6nz/evidence/incremental-attempt-1/task10-incremental/audit-package-case-e8643dec0d194296a1dd.zip",
+    "sha256": "b5e4b0afe3f04cf3336933289cb9f4d11aceb39b0c879899d6149882be0c8c86",
+    "size": 1039438
+  },
+  "receipt": {
+    "schema_version": "caos.filing-receipt.v1",
+    "receipt_id": "rcpt-a5a02651f8cf438a8be9",
+    "deliverable_id": "dlv-33460c5a7f9a0819de1ca6c63ce557c9f9f4f3e76b77c79eea4b36cbdfe96bc5",
+    "case_id": "case-e8643dec0d194296a1dd",
+    "pathway": "EARNINGS_UPDATE",
+    "draft_version": 2,
+    "draft_digest": "bbe9a1a165959be1ed4f60f296eb288a70dc9c1b9d413b8b1e744d2f0c56ac72",
+    "preview_digest": "a8e8ca121733c166cb46fc749423a7124323f384ed897d3c73d40c5d34fb68e1",
+    "input_fingerprint": "4524da916df1672ff8c3811f32c977beb5df7cb3ba8ad05b7ab286a6d8716454",
+    "approval_hash": "sha256:a8e8ca121733c166cb46fc749423a7124323f384ed897d3c73d40c5d34fb68e1",
+    "content_digest": "b0eb99b34a5d7abc6a4a3d732cd22b4d1d3e3e814479948daf6981e974ac2532",
+    "exports": {
+      "md": "852cf3fd6a62d6159bb2235e3af15a731449b0eefbd6913f16b4c6a48fe6fff6",
+      "pdf": "661b3313be0afa0e1277c641ee0e2db3cd5495330046038e4bb379ec1cd83003",
+      "xlsx": "4994569a80548b95632896a9a0c8d9d9437076dc485426bdf81f79946bb842b5"
+    },
+    "opinion_id": "opn-7bd81406156d4c009a96",
+    "signed_by": "task10-incremental-e54e1ef2@local.invalid",
+    "frozen_by": "task10-incremental-e54e1ef2@local.invalid",
+    "frozen_at": "2026-09-07T21:19:52.650480+00:00",
+    "approved_by": "task10-incremental-approver-e54e1ef2@local.invalid",
+    "approved_at": "2026-09-07T21:20:09.005738+00:00",
+    "receipt_digest": "3b303d21400dbc2e61f0f6ef1dc04e2d4e4be8ba0421dd2c9df51977b7f30199"
+  },
+  "console_errors": [],
+  "status": "passed"
+}

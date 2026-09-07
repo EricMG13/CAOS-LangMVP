@@ -36,8 +36,14 @@ try {
   const errors = [];
   context.on("page", (opened) => opened.on("pageerror", (error) => errors.push(error.message)));
   page.on("pageerror", (error) => errors.push(error.message));
+  const openPublicationControls = async (target) => {
+    const toggle = target.getByRole("button", { name: "Commentary, model and publication" });
+    if (await toggle.getAttribute("aria-expanded") !== "true") await toggle.click();
+    assert.equal(await toggle.getAttribute("aria-expanded"), "true");
+  };
   const reportURL = `/report/?case=${caseId}`;
   await page.goto(reportURL);
+  await openPublicationControls(page);
   await page.locator("#opinion-text").fill("PARENT UNSIGNED OPINION");
   await page.getByRole("link", { name: "Portfolio", exact: true }).click();
   const discard = page.getByRole("dialog").filter({ hasText: "Discard changes" });
@@ -48,6 +54,7 @@ try {
   assert.ok(parentId);
 
   const [child] = await Promise.all([page.waitForEvent("popup"), page.evaluate(() => window.open(location.href))]);
+  await openPublicationControls(child);
   await child.locator("#opinion-text").fill("CHILD UNSIGNED OPINION");
   const childId = await child.evaluate(() => sessionStorage.getItem("caos:tab-id"));
   assert.notEqual(childId, parentId, "a cloned tab reused live recovery ownership");
@@ -60,6 +67,7 @@ try {
   // A reload must reclaim the old document's slot, not strand its recovery.
   page.on("dialog", (dialog) => dialog.accept());
   await page.reload();
+  await openPublicationControls(page);
   await page.getByRole("button", { name: "Restore copy", exact: true }).click();
   assert.equal(await page.locator("#opinion-text").inputValue(), "PARENT UNSIGNED OPINION");
   assert.equal(await page.evaluate(() => sessionStorage.getItem("caos:tab-id")), parentId);
@@ -70,35 +78,68 @@ try {
   const frozen = (id, version) => ({ id, case_id: caseId, pathway: "FULL_CREDIT", draft_version: version,
     status: "FILED", frozen_by: "fixture-signer", frozen_at: "2026-09-07T00:00:00Z", approved_by: "fixture-approver",
     approved_at: "2026-09-07T01:00:00Z", signed_by: "fixture-signer", digest: "a".repeat(64),
-    payload: { template: workspace.template, content: { blocks: [] } }, exports: {},
+    payload: { template: workspace.template, content: { blocks: [] }, evidence: [] }, exports: {},
   });
   const first = frozen("receipt-order-a", 91), second = frozen("receipt-order-b", 92);
   const receiptPage = await context.newPage();
   await receiptPage.route(`**/api/cases/${caseId}/deliverables/FULL_CREDIT/draft`, (route) => route.fulfill({ json: {
     ...workspace, frozen_history: [first, second],
   } }));
-  let releaseA, startedA, finishedA;
+  let releaseA, startedA, requestA;
+  const receiptRequests = [];
   const heldA = new Promise((resolve) => { releaseA = resolve; });
   const waitingA = new Promise((resolve) => { startedA = resolve; });
-  const completedA = new Promise((resolve) => { finishedA = resolve; });
-  await receiptPage.route(`**/api/cases/${caseId}/deliverables/by-id/*/receipt`, async (route) => {
+  await receiptPage.route((url) => url.pathname.startsWith(`/api/cases/${caseId}/deliverables/by-id/`) && url.pathname.endsWith("/receipt"), async (route) => {
+    receiptRequests.push(route.request().url());
     const isA = route.request().url().includes(first.id);
-    if (isA) { startedA(); await heldA; }
+    if (isA) { requestA = route.request(); startedA(); await heldA; }
     await route.fulfill({ json: { case_id: caseId, deliverable_id: isA ? first.id : second.id,
       receipt_id: isA ? "RECEIPT_A" : "RECEIPT_B", receipt_digest: "b".repeat(64) } });
-    if (isA) finishedA();
   });
   await receiptPage.goto(reportURL);
+  await openPublicationControls(receiptPage);
+  const historyLabels = await receiptPage.locator(".report-history button").allInnerTexts();
+  assert.ok(historyLabels.some((label) => label.includes("Draft v91")) && historyLabels.some((label) => label.includes("Draft v92")),
+    `receipt-race fixture did not render both governed versions: ${historyLabels.join(" | ")}`);
   await receiptPage.getByRole("button", { name: /Draft v91/i }).click();
-  await waitingA;
+  const selectedV91 = receiptPage.locator(".status.warning").filter({ hasText: "Draft v91" });
+  try { await selectedV91.waitFor({ timeout: 10_000 }); }
+  catch {
+    const receiptStatuses = await receiptPage.locator(".status").allInnerTexts();
+    assert.fail(`selecting governed v91 failed before the receipt request; statuses: ${receiptStatuses.join(" | ") || "none"}; page errors: ${errors.join(" | ") || "none"}`);
+  }
+  await Promise.race([waitingA, new Promise((_, reject) => setTimeout(() => reject(new Error(`Draft v91 did not request its filing receipt; observed: ${receiptRequests.join(", ") || "none"}`)), 10_000))]);
+  assert.ok(requestA, "the held v91 receipt request identity was not retained");
+  // Install the exact request's browser-settlement waiter before selecting B:
+  // React's AbortController may cancel A during that click, before the held
+  // route is released. Either a browser-level cancellation or a fully-finished
+  // response is a settled stale request; a route-handler return is not.
+  const aSettled = new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => { cleanup(); reject(new Error("held Draft v91 receipt did not settle in the browser")); }, 10_000);
+    const cleanup = () => {
+      clearTimeout(timeout);
+      receiptPage.off("requestfailed", onFailed);
+      receiptPage.off("response", onResponse);
+    };
+    const onFailed = (request) => {
+      if (request !== requestA) return;
+      cleanup(); resolve("requestfailed");
+    };
+    const onResponse = async (response) => {
+      if (response.request() !== requestA) return;
+      try { await response.finished(); cleanup(); resolve("response-finished"); }
+      catch (error) { cleanup(); reject(error); }
+    };
+    receiptPage.on("requestfailed", onFailed);
+    receiptPage.on("response", onResponse);
+  });
   await receiptPage.getByRole("button", { name: /Draft v92/i }).click();
   await receiptPage.locator("[data-filing-receipt]").filter({ hasText: "RECEIPT_B" }).waitFor();
   releaseA();
-  await completedA;
-  await receiptPage.waitForTimeout(100);
+  const aSettlement = await aSettled;
   assert.match(await receiptPage.locator("[data-filing-receipt]").innerText(), /RECEIPT_B/);
   await receiptPage.close();
-  console.log("PASS F14: delayed receipt cannot replace the selected frozen output's receipt");
+  console.log(`PASS F14: delayed receipt cannot replace the selected frozen output's receipt (${aSettlement})`);
   await page.close();
 
   const buildFor = async (generation) => {
@@ -195,17 +236,20 @@ try {
 
   const savedReport = await context.newPage();
   await savedReport.goto(reportURL);
-  const nav = savedReport.getByRole("navigation", { name: "Deliverable sections" }).getByRole("button");
-  await nav.first().waitFor();
   const draftResponse = () => savedReport.waitForResponse((response) => response.request().method() === "PUT"
     && response.url().endsWith("/deliverables/FULL_CREDIT/draft"));
   const initialSave = draftResponse();
-  for (let index = 0; index < await nav.count(); index++) {
-    await nav.nth(index).click();
-    const editor = savedReport.locator('.report-compose textarea[id^="narrative-"]');
-    if (await editor.count()) await editor.fill(`Saved recovery section ${index + 1}.`);
-  }
+  await savedReport.getByRole("button", { name: "Save module-populated draft", exact: true }).click();
   await checked(await initialSave, 201);
+  await savedReport.locator(".report-save-state").filter({ hasText: "Saved v1" }).waitFor();
+  await openPublicationControls(savedReport);
+  await savedReport.getByRole("button", { name: "Add commentary", exact: true }).first().click();
+  const commentary = savedReport.getByLabel("Analyst commentary", { exact: true });
+  const baselineCommentarySave = draftResponse();
+  await commentary.fill("Saved recovery section.");
+  await savedReport.getByLabel("Analyst judgment", { exact: true }).check();
+  await checked(await baselineCommentarySave, 201);
+  await savedReport.locator(".report-save-state").filter({ hasText: "Saved v2" }).waitFor();
   const recoveryCopy = () => savedReport.evaluate(() => {
     const tab = sessionStorage.getItem("caos:tab-id");
     return Object.entries(localStorage).filter(([key]) => key.startsWith("caos:report-recovery:") && key.includes(tab))
@@ -218,9 +262,8 @@ try {
     if (route.request().method() === "PUT") { startedSave(); await heldSave; }
     await route.continue();
   });
-  await nav.first().click();
   const secondSave = draftResponse();
-  await savedReport.locator('.report-compose textarea[id^="narrative-"]').fill("Updated recovery section.");
+  await commentary.fill("Updated recovery section.");
   await waitingSave;
   await savedReport.locator("#opinion-text").fill("UNSIGNED DURING AUTOSAVE");
   releaseSave();

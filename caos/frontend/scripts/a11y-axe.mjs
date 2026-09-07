@@ -4,11 +4,14 @@
 // against that build; pointing this at `next dev` fails on the "Proposed research
 // plan" wait, which looks like a product defect but is a harness mismatch.
 import assert from "node:assert/strict";
-import { chromium } from "playwright";
+import { chromium, firefox, webkit } from "playwright";
 import AxeBuilder from "@axe-core/playwright";
 import { destinationFromSlug, forwardedRoutes, routeDestinations } from "../src/lib/workbench.ts";
 
 const baseUrl = process.env.CAOS_URL || "http://127.0.0.1:8000";
+const engines = { chromium, firefox, webkit };
+const browserName = process.env.CAOS_BROWSER || "chromium";
+assert.ok(browserName in engines, `CAOS_BROWSER must be one of ${Object.keys(engines).join(", ")}`);
 const identityHeaders = process.env.CAOS_EDGE_SECRET ? {
   "x-edge-authorization": process.env.CAOS_EDGE_SECRET,
   "x-forwarded-user": process.env.CAOS_TEST_USER || "analyst.qa@local.invalid",
@@ -30,7 +33,7 @@ const viewports = [
   // 720 CSS pixels represents a 1440-wide desktop at 200% browser zoom.
   { name: "desktop-200-percent", width: 720, height: 900 },
 ];
-const browser = await chromium.launch({ headless: true });
+const browser = await engines[browserName].launch({ headless: true });
 const violations = [];
 
 try {
@@ -277,7 +280,7 @@ try {
     assert.equal(await governedPaper.getByText("Locked · model", { exact: true }).getAttribute("title"), `Authority ${reportRevisionId}`);
     const pathwaySelect = reportPage.getByLabel("Pathway template");
     await pathwaySelect.focus();
-    await reportPage.keyboard.press("Tab");
+    await reportPage.keyboard.press(browserName === "webkit" ? "Alt+Tab" : "Tab");
     assert.equal(await reportPage.evaluate(() => document.activeElement?.closest(".report-section-nav") !== null), true, `${viewport.name} Report Studio Tab did not move into the section navigator`);
     const evidenceInspector = reportPage.locator("details.evidence-inspector");
     await evidenceInspector.locator(":scope > summary").click();
@@ -305,7 +308,7 @@ try {
     schema_version: "caos.frozen-deliverable.v1", case_id: reportCaseId, pathway: "FULL_CREDIT",
     draft: { id: reportDraft.id, version: reportDraft.version, digest: reportDraft.digest },
     template: { title: reportWorkspace.template.title, template_id: reportWorkspace.template.template_id, template_version: reportWorkspace.template.template_version },
-    content: reportDraft.content, publication: null, preview_digest: digestChar.repeat(64),
+    content: reportDraft.content, evidence: [], publication: null, preview_digest: digestChar.repeat(64),
   });
   const frozenRecord = { id: "frozen_a11y_review", case_id: reportCaseId, pathway: "FULL_CREDIT", draft_version: reportDraft.version, status: "FROZEN", frozen_by: "analyst.qa@local.invalid", frozen_at: "2026-08-26T10:45:00Z", approved_by: null, approved_at: null, superseded_by_id: null, change_request: null, digest: reportDraft.digest, preview_digest: "a".repeat(64), input_fingerprint: "e".repeat(64), payload: frozenPayload("a"), exports: {}, opinion_id: "opinion_a11y", signed_by: "analyst.qa@local.invalid" };
   const filedRecord = { ...frozenRecord, id: "frozen_a11y_filed", draft_version: reportDraft.version - 1, status: "FILED", approved_by: "approver.qa@local.invalid", approved_at: "2026-08-26T12:00:00Z", preview_digest: "b".repeat(64), payload: frozenPayload("b"), exports: { md: { sha256: "1".repeat(64), size: 1024, filename: "memo.md" }, pdf: { sha256: "2".repeat(64), size: 4096, filename: "memo.pdf" }, xlsx: { sha256: "3".repeat(64), size: 8192, filename: "memo.xlsx" } } };
@@ -381,5 +384,5 @@ if (violations.length) {
   console.error(JSON.stringify({ violations }, null, 2));
   process.exitCode = 1;
 } else {
-  console.log(JSON.stringify({ routes: routes.length, forwarders: forwardedRoutes.length, viewports: viewports.length, combinations: routes.length * viewports.length + 23, pendingPlanFixture: true, adminGovernanceAxeChecks: 2, readyModelFixture: true, readyReportFixture: true, states: ["empty", "populated", "review", "filed", "loading", "error", "refusal"], modelBuilderAxeChecks: 12, modelBuilderKeyboardTabChecks: 3, reportStudioAxeChecks: 3, reportStudioKeyboardTabChecks: 3, violations: 0 }));
+  console.log(JSON.stringify({ browser: browserName, browser_version: browser.version(), routes: routes.length, forwarders: forwardedRoutes.length, viewports: viewports.length, combinations: routes.length * viewports.length + 20, pendingPlanFixture: true, adminGovernanceAxeChecks: 2, readyModelFixture: true, readyReportFixture: true, states: ["empty", "populated", "review", "filed", "loading", "error", "refusal"], modelBuilderAxeChecks: 9, modelBuilderKeyboardTabChecks: 3, reportStudioAxeChecks: 3, reportStudioKeyboardTabChecks: 3, violations: 0 }));
 }

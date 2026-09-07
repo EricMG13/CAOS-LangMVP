@@ -185,6 +185,16 @@ test("browser proof carries the signed model into the canonical report and downl
 test("paper columns collapse at the paper boundary before text is crushed", () => {
   assert.match(styles, /\.report-paper \{[^}]*container-type: inline-size/);
   assert.match(styles, /@container \(max-width: 660px\)[\s\S]*?\.rd-cols-2[\s\S]*?grid-template-columns: 1fr/);
+  const paperBoundary = styles.indexOf("@media (max-width: 1100px)");
+  const legacyCompactBoundary = styles.indexOf("@media (max-width: 900px)");
+  const twoColumnReport = styles.indexOf(".report-generated, .report-generated.report-controls-open { grid-template-columns: minmax(190px, 1fr) minmax(0, 2fr); }", paperBoundary);
+  assert.ok(paperBoundary >= 0 && twoColumnReport > paperBoundary && twoColumnReport < legacyCompactBoundary,
+    "the report must enter its two-column reading arrangement by 1100px, before the legacy 900px shell breakpoint");
+});
+
+test("paper chart source labels and links use paper contrast tokens in every interaction state", () => {
+  assert.match(styles, /\.chart-exhibit-paper \.chart-exhibit-sources > span \{ color: var\(--caos-paper-meta\); \}/);
+  assert.match(styles, /\.chart-exhibit-paper \.chart-exhibit-sources a,\s*\.chart-exhibit-paper \.chart-exhibit-sources a:hover \{ color: var\(--caos-paper-link\); \}/);
 });
 
 test("Workspace owns and retires at most one shared draft-history sentinel", () => {

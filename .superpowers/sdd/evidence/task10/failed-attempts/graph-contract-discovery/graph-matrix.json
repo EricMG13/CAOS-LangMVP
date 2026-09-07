@@ -1,0 +1,9 @@
+{
+  "schema_version": "caos.task10-graph-matrix.v1",
+  "fixture_authority": "actual disposable host-control plan responses rendered by the production browser UI",
+  "subject": "task10-graph-b6b54678@local.invalid",
+  "case_id": null,
+  "combinations": [],
+  "status": "failed",
+  "error": "TypeError: response.request is not a function\n    at checkedJson (file:///Users/ericguei/Claude/Projects/CAOS-LangMVP/.claude/worktrees/analyst-workbench-codex/caos/frontend/scripts/task10-graph-matrix.mjs:43:57)\n    at async file:///Users/ericguei/Claude/Projects/CAOS-LangMVP/.claude/worktrees/analyst-workbench-codex/caos/frontend/scripts/task10-graph-matrix.mjs:58:18"
+}

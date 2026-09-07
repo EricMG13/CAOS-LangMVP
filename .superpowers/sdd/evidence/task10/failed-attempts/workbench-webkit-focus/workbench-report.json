@@ -1,0 +1,27 @@
+{
+  "schema_version": "caos.workbench-report.v1",
+  "browser": "webkit",
+  "browser_version": "26.5",
+  "base_url": "http://127.0.0.1:19276",
+  "started_at": "2026-09-07T22:10:14.267Z",
+  "duration_ms": 91521,
+  "timing": {
+    "domContentLoaded": 26,
+    "firstContentfulPaint": 115,
+    "budget": {
+      "domContentLoaded": 250,
+      "firstContentfulPaint": 400,
+      "enforced": false
+    }
+  },
+  "console_errors": [],
+  "beforeunload_prompts": 0,
+  "webkit_teardown_rejections": [],
+  "loaded_chart_axe_checks": 1,
+  "loaded_signed_stack_cases": 3,
+  "status": "failed",
+  "error": "AssertionError [ERR_ASSERTION]: period filtering did not leave focus on a visible control\n\nfalse !== true\n\n    at file:///Users/ericguei/Claude/Projects/CAOS-LangMVP/.claude/worktrees/analyst-workbench-codex/caos/frontend/scripts/workbench-smoke.mjs:1802:10\n    at runNextTicks (node:internal/process/task_queues:65:5)\n    at process.processImmediate (node:internal/timers:472:9)",
+  "screenshots": [
+    "/private/tmp/caos-task10-definitive.oTpXik/evidence/workbench-final/webkit/failure-1-page1.png"
+  ]
+}

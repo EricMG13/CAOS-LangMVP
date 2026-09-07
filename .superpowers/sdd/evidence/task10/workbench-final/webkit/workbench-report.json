@@ -1,0 +1,23 @@
+{
+  "schema_version": "caos.workbench-report.v1",
+  "browser": "webkit",
+  "browser_version": "26.5",
+  "base_url": "http://127.0.0.1:19276",
+  "started_at": "2026-09-07T22:12:43.030Z",
+  "duration_ms": 179895,
+  "timing": {
+    "domContentLoaded": 23,
+    "firstContentfulPaint": 97,
+    "budget": {
+      "domContentLoaded": 250,
+      "firstContentfulPaint": 400,
+      "enforced": false
+    }
+  },
+  "console_errors": [],
+  "beforeunload_prompts": 1,
+  "webkit_teardown_rejections": [],
+  "loaded_chart_axe_checks": 1,
+  "loaded_signed_stack_cases": 3,
+  "status": "passed"
+}

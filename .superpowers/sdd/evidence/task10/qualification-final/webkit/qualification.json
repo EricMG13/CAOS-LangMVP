@@ -1,0 +1,123 @@
+{
+  "schema_version": "caos.task10-qualification.v1",
+  "browser": "webkit",
+  "base_url": "http://127.0.0.1:19276",
+  "fixture_authority": "development host_control with opt-in canonical report answer keys; not live analytical qualification",
+  "screenshots": [
+    "/private/tmp/caos-task10-definitive.oTpXik/evidence/qualification-webkit-final/task10-qualification/webkit/run-1440.png",
+    "/private/tmp/caos-task10-definitive.oTpXik/evidence/qualification-webkit-final/task10-qualification/webkit/run-1024.png",
+    "/private/tmp/caos-task10-definitive.oTpXik/evidence/qualification-webkit-final/task10-qualification/webkit/run-720.png",
+    "/private/tmp/caos-task10-definitive.oTpXik/evidence/qualification-webkit-final/task10-qualification/webkit/analysis-1440.png",
+    "/private/tmp/caos-task10-definitive.oTpXik/evidence/qualification-webkit-final/task10-qualification/webkit/analysis-1024.png",
+    "/private/tmp/caos-task10-definitive.oTpXik/evidence/qualification-webkit-final/task10-qualification/webkit/analysis-720.png",
+    "/private/tmp/caos-task10-definitive.oTpXik/evidence/qualification-webkit-final/task10-qualification/webkit/analysis-chart-table-1440.png",
+    "/private/tmp/caos-task10-definitive.oTpXik/evidence/qualification-webkit-final/task10-qualification/webkit/analysis-chart-table-1024.png",
+    "/private/tmp/caos-task10-definitive.oTpXik/evidence/qualification-webkit-final/task10-qualification/webkit/analysis-chart-table-720.png",
+    "/private/tmp/caos-task10-definitive.oTpXik/evidence/qualification-webkit-final/task10-qualification/webkit/model-1440.png",
+    "/private/tmp/caos-task10-definitive.oTpXik/evidence/qualification-webkit-final/task10-qualification/webkit/model-1024.png",
+    "/private/tmp/caos-task10-definitive.oTpXik/evidence/qualification-webkit-final/task10-qualification/webkit/model-720.png",
+    "/private/tmp/caos-task10-definitive.oTpXik/evidence/qualification-webkit-final/task10-qualification/webkit/model-cash-flow-1440.png",
+    "/private/tmp/caos-task10-definitive.oTpXik/evidence/qualification-webkit-final/task10-qualification/webkit/model-cash-flow-1024.png",
+    "/private/tmp/caos-task10-definitive.oTpXik/evidence/qualification-webkit-final/task10-qualification/webkit/model-cash-flow-720.png",
+    "/private/tmp/caos-task10-definitive.oTpXik/evidence/qualification-webkit-final/task10-qualification/webkit/report-1440.png",
+    "/private/tmp/caos-task10-definitive.oTpXik/evidence/qualification-webkit-final/task10-qualification/webkit/report-1024.png",
+    "/private/tmp/caos-task10-definitive.oTpXik/evidence/qualification-webkit-final/task10-qualification/webkit/report-720.png",
+    "/private/tmp/caos-task10-definitive.oTpXik/evidence/qualification-webkit-final/task10-qualification/webkit/report-chart-table-1440.png",
+    "/private/tmp/caos-task10-definitive.oTpXik/evidence/qualification-webkit-final/task10-qualification/webkit/report-chart-table-1024.png",
+    "/private/tmp/caos-task10-definitive.oTpXik/evidence/qualification-webkit-final/task10-qualification/webkit/report-chart-table-720.png",
+    "/private/tmp/caos-task10-definitive.oTpXik/evidence/qualification-webkit-final/task10-qualification/webkit/report-controls-open-1024.png",
+    "/private/tmp/caos-task10-definitive.oTpXik/evidence/qualification-webkit-final/task10-qualification/webkit/report-reading-closed-1024.png"
+  ],
+  "exports": {
+    "md": {
+      "path": "/private/tmp/caos-task10-definitive.oTpXik/evidence/qualification-webkit-final/task10-qualification/webkit/dlv-a0f4a4fa5c00c78039ddc03cce02ef40d8f8e7bcde4e0881fb3a16b201f063ba.md",
+      "sha256": "26ce090143cb9994d2782cb254e8cfa7ef4bca1a00677ba5ddaaa27d573a1c8d",
+      "size": 42326
+    },
+    "pdf": {
+      "path": "/private/tmp/caos-task10-definitive.oTpXik/evidence/qualification-webkit-final/task10-qualification/webkit/dlv-a0f4a4fa5c00c78039ddc03cce02ef40d8f8e7bcde4e0881fb3a16b201f063ba.pdf",
+      "sha256": "4252c6d2672416c29f1899b9dd731a0509efbf05fe94d82887a5d01c03bf3a27",
+      "size": 2823126
+    },
+    "xlsx": {
+      "path": "/private/tmp/caos-task10-definitive.oTpXik/evidence/qualification-webkit-final/task10-qualification/webkit/dlv-a0f4a4fa5c00c78039ddc03cce02ef40d8f8e7bcde4e0881fb3a16b201f063ba.xlsx",
+      "sha256": "e274c38dbd9217e676fe7c6ee555ad695ca28ba695fba96c6c0ce5893655b176",
+      "size": 58930
+    }
+  },
+  "case_id": "case-720942fe4d974f5d80fe",
+  "run_id": "run-a4bae950d8594a668472",
+  "source_set_id": "set-974d8816732a4fd0ad51",
+  "source_set_digest": "4a6e9d30c3799326ac7b36e9c77424bfb9cf251f41a218f2bef6f72f981da4b3",
+  "accepted_snapshot_id": "snap-d40e52df8a0c4f4a9f18",
+  "accepted_snapshot_digest": "2c55ed17bf983aed3514e1db8d00cf946af1024938b71ff0660009e017f5a9d1",
+  "artifact_ids": [
+    "art-542cde96b0ed46fc80a5",
+    "art-ad554283cb7c446b9586",
+    "art-93db7e1a533d48f6abb8",
+    "art-0bfb850ee93f45c6b58e",
+    "art-2349beac75fa42e98444",
+    "art-9fa25bf5d2ac41e9b117",
+    "art-770ed830708f4e6e95df",
+    "art-4b278b59dada4356bf24",
+    "art-b79a9ff30f0b45ad9fa0",
+    "art-5f4d8da51981480d829d",
+    "art-192eddcd6c5242398a4d",
+    "art-57bb709f76ac4a9e996e",
+    "art-418baa90c2a54933b7f6",
+    "art-a9bf8d5178e448a88fdf",
+    "art-0e5a2ca9bb214019a724",
+    "art-09a48702bd174e82abae",
+    "art-3bdf33315de14bcf81dd"
+  ],
+  "loaded_chart_axe": true,
+  "model_build_id": "mdl-3f3f02c71bb84d69b29c",
+  "model_payload_digest": "3ad7e5e8080f4557021ca914a17870a0f66014e8ca8a4a8f9ff04a7950ebb5b2",
+  "model_revision_id": "rev-ce433740b16f4e988cef",
+  "model_revision_digest": "2c614a2023883f191e552c264f148c20f1d11f3a476067287413f226067f2e12",
+  "loaded_report_chart_axe": true,
+  "paper_source_colors": {
+    "label": "rgb(93, 93, 104)",
+    "link": "rgb(47, 84, 201)",
+    "link_hover": "rgb(47, 84, 201)"
+  },
+  "report_1024_paper_widths": {
+    "controls_open": 778,
+    "controls_closed": 499.34375
+  },
+  "deliverable_id": "dlv-a0f4a4fa5c00c78039ddc03cce02ef40d8f8e7bcde4e0881fb3a16b201f063ba",
+  "frozen_preview_digest": "b5d655badddc00b97bb2813d44cc7481cf3c652474399545476a3eefc5720f76",
+  "approved_by": "task10-approver-webkit-70a8a1d2@local.invalid",
+  "audit_package": {
+    "path": "/private/tmp/caos-task10-definitive.oTpXik/evidence/qualification-webkit-final/task10-qualification/webkit/audit-package-case-720942fe4d974f5d80fe.zip",
+    "sha256": "ffbbe14ab4a6c50dfd088e698ec5a7592943196034fe7970512b6efb0fc05f17",
+    "size": 2240632
+  },
+  "receipt": {
+    "schema_version": "caos.filing-receipt.v1",
+    "receipt_id": "rcpt-84d949d49c7b4cb489a6",
+    "deliverable_id": "dlv-a0f4a4fa5c00c78039ddc03cce02ef40d8f8e7bcde4e0881fb3a16b201f063ba",
+    "case_id": "case-720942fe4d974f5d80fe",
+    "pathway": "FULL_CREDIT",
+    "draft_version": 2,
+    "draft_digest": "366087b16c9c2e68b010b7fbdfa159441cf8efceb00f684ace1d1d5c9f31eae0",
+    "preview_digest": "b5d655badddc00b97bb2813d44cc7481cf3c652474399545476a3eefc5720f76",
+    "input_fingerprint": "0ad2e6445372c87be0dde6fb4ed296b12a206e0a314589a519f646ddc28c36d2",
+    "approval_hash": "sha256:b5d655badddc00b97bb2813d44cc7481cf3c652474399545476a3eefc5720f76",
+    "content_digest": "3501bf9bfde0ccc04b263398db205f0fcb550aa9cfd8a743f3b51dd90a4ab2d3",
+    "exports": {
+      "md": "26ce090143cb9994d2782cb254e8cfa7ef4bca1a00677ba5ddaaa27d573a1c8d",
+      "pdf": "4252c6d2672416c29f1899b9dd731a0509efbf05fe94d82887a5d01c03bf3a27",
+      "xlsx": "e274c38dbd9217e676fe7c6ee555ad695ca28ba695fba96c6c0ce5893655b176"
+    },
+    "opinion_id": "opn-4b5c2129c6d940f7bf83",
+    "signed_by": "task10-webkit-70a8a1d2@local.invalid",
+    "frozen_by": "task10-webkit-70a8a1d2@local.invalid",
+    "frozen_at": "2026-09-07T22:03:59.024073+00:00",
+    "approved_by": "task10-approver-webkit-70a8a1d2@local.invalid",
+    "approved_at": "2026-09-07T22:04:05.996547+00:00",
+    "receipt_digest": "69ef91181cbb9562663d895d2d4783c10e2c9ac493611047dceccb3f8d34bcdc"
+  },
+  "console_errors": [],
+  "status": "passed"
+}

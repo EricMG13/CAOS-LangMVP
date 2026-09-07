@@ -8,9 +8,12 @@
 
 **Tech Stack:** Existing Python/FastAPI/Pydantic services, React 19/Next.js 16 static export/TypeScript frontend, CSS/SVG, pytest, Node test runner and Playwright/axe. Use AntV G2 v5 for analytical charts, guided by the linked AntVis skills; use native SVG/CSS for the small staged run graph. Preserve the existing pango/pypdf/openpyxl publication stack.
 
-**Status:** Approved for sequential implementation on 2026-09-07. Task 0
-records the execution baseline and integrates the approved amendments below;
-Tasks 1–10 remain unimplemented until their own implementer/reviewer cycle.
+**Status:** Tasks 0–9 were implemented and independently approved in their
+sequential implementer/reviewer cycles. Task 10 owner qualification completed on
+2026-09-07 with durable evidence in
+`.superpowers/sdd/analyst-workbench-task-10-report.md`; its fresh independent
+task review and final whole-branch Astra review remain separate. This status does
+not claim live-provider qualification, merge, deployment or release.
 
 ## Global Constraints
 
@@ -109,18 +112,18 @@ No new database, background service, workflow framework, chart editor, arbitrary
 
 **Interfaces:** The ledger maps `(methodology build, module ID, table/section ID, required columns)` to an Analysis view, a Report section, or an explicit table-only presentation. It is documentation and test input, not a second execution registry.
 
-- [ ] Read the existing engineering/design contracts and relevant installed Next.js documentation. Record the execution worktree's branch, commit and bundle build ID.
-- [ ] Provision that worktree's test dependencies using the repository's declared runtimes. An untracked `.venv314` or `node_modules` in the original checkout will not appear automatically in a new worktree. Create the Python 3.14 environment with `python3.14 -m venv caos/server/.venv314`, install the hashed development lock with `caos/server/.venv314/bin/python -m pip install --require-hashes -r caos/server/requirements-dev.txt`, and run `npm ci` from `caos/frontend`. Use the Node version declared by the repository's CI configuration. Do not copy credentials or connect these checks to the original application's data directory.
-- [ ] Run the clean focused baseline before application changes: the existing
+- [x] Read the existing engineering/design contracts and relevant installed Next.js documentation. Record the execution worktree's branch, commit and bundle build ID.
+- [x] Provision that worktree's test dependencies using the repository's declared runtimes. An untracked `.venv314` or `node_modules` in the original checkout will not appear automatically in a new worktree. Create the Python 3.14 environment with `python3.14 -m venv caos/server/.venv314`, install the hashed development lock with `caos/server/.venv314/bin/python -m pip install --require-hashes -r caos/server/requirements-dev.txt`, and run `npm ci` from `caos/frontend`. Use the Node version declared by the repository's CI configuration. Do not copy credentials or connect these checks to the original application's data directory.
+- [x] Run the clean focused baseline before application changes: the existing
   model specification on Python 3.14 and the existing frontend unit suite on
   Node 24. Diagnose dependency/environment failures before reporting a product
   regression.
-- [ ] Record the report decision: default Full Credit output title is **Credit Report**; existing six pathway identities stay unchanged; IC-specific content may be included when present but is not a separate prerequisite.
-- [ ] Record template v2 as module-populated sections plus optional analyst commentary. Preserve v1 saved/frozen content through explicit version dispatch.
-- [ ] Populate the coverage ledger from the current registered modules and their pinned references. Full Credit currently includes CP-PARSE, CP-0, CP-1, CP-1A, CP-1B, CP-1D, CP-1C, CP-2, CP-2A, CP-2G, CP-2E, CP-2H, CP-3, CP-4, CP-4C, CP-5 and CP-6; Deep Research adds CP-DR. Use actual current identities, not legacy aliases.
-- [ ] Include `CP-L10` and its exact pinned nested profile tables because it is
+- [x] Record the report decision: default Full Credit output title is **Credit Report**; existing six pathway identities stay unchanged; IC-specific content may be included when present but is not a separate prerequisite.
+- [x] Record template v2 as module-populated sections plus optional analyst commentary. Preserve v1 saved/frozen content through explicit version dispatch.
+- [x] Populate the coverage ledger from the current registered modules and their pinned references. Full Credit currently includes CP-PARSE, CP-0, CP-1, CP-1A, CP-1B, CP-1D, CP-1C, CP-2, CP-2A, CP-2G, CP-2E, CP-2H, CP-3, CP-4, CP-4C, CP-5 and CP-6; Deep Research adds CP-DR. Use actual current identities, not legacy aliases.
+- [x] Include `CP-L10` and its exact pinned nested profile tables because it is
   active on SCREEN routes even though it is absent from the FULL route list.
-- [ ] Keep all required analytical tables available. Use narrative, evidence matrices and status registers for qualitative modules; a decorative chart is not a coverage requirement.
+- [x] Keep all required analytical tables available. Use narrative, evidence matrices and status registers for qualitative modules; a decorative chart is not a coverage requirement.
 
 Baseline commands, from the execution worktree:
 
@@ -141,7 +144,7 @@ caos/server/.venv314/bin/python -m pytest caos/tests/spec/test_model_builder_spe
 
 **Interfaces:** Reuse `CpModelBundle.calculate`, `serialize_workbook`, `_bundle`, `_forecast_paths`, `_built_case`, existing preview/Sign-Off/export helpers and worksheet semantic IDs. No new model API.
 
-- [ ] Add a coverage test to the existing model spec file:
+- [x] Add a coverage test to the existing model spec file:
 
 ```python
 def test_cash_flow_rows_are_present_in_the_authoritative_worksheet():
@@ -169,18 +172,18 @@ def test_cash_flow_rows_are_present_in_the_authoritative_worksheet():
         ))
 ```
 
-- [ ] Apply the CFO/FCF/NCF identities to every applicable available period,
+- [x] Apply the CFO/FCF/NCF identities to every applicable available period,
   including reported FY, quarterly, YTD, LTM and pro-forma columns. Historical
   closing cash is a sourced balance: do **not** assert prior cash + NCF for any
   reported column, and do not treat PF as a historical cash-flow reconciliation.
   Assert the cash roll-forward only for Base/Downside forecast columns, following
   each exact `rollforward_column_id`.
-- [ ] Preserve `RenderedWorkbook.formula_values`, which contains every rendered
+- [x] Preserve `RenderedWorkbook.formula_values`, which contains every rendered
   formula expectation. `formulas`/`CellExpectation` remains the narrower
   decision-output parity set. Extend the existing cross-sheet serializer
   regression rather than replacing either contract.
-- [ ] Extend the service journey: accepted artifacts → Model Build → changed forward assumption → preview → Signed-Off Revision → exact XLSX. Assert unchanged historical cells, matching selected-revision values and source/model identities throughout.
-- [ ] Run the coverage tests before changing production code. A passing coverage test means that calculation capability already exists; keep the test and make no unnecessary engine change.
+- [x] Extend the service journey: accepted artifacts → Model Build → changed forward assumption → preview → Signed-Off Revision → exact XLSX. Assert unchanged historical cells, matching selected-revision values and source/model identities throughout.
+- [x] Run the coverage tests before changing production code. A passing coverage test means that calculation capability already exists; keep the test and make no unnecessary engine change.
 
 ```bash
 caos/server/.venv314/bin/python -m pytest caos/tests/spec/test_model_builder_spec.py caos/tests/spec/test_source_complete_modelling_spec.py -q
@@ -207,21 +210,21 @@ navigation. Free-form locators remain visible and source-only. Malformed,
 ambiguous, unpinned or withdrawn refs have no clickable target. The UI continues
 to consume the existing worksheet endpoint.
 
-- [ ] Add serializer tests for a known source/block, a source-only locator, multiple references and an unresolved reference. Unresolved text remains visible, but no invented clickable target is returned.
-- [ ] Add pure UI tests for selected period families and row groups using real worksheet cells; keep selection tied to `(tab ID, cell address)` rather than the filtered array index.
-- [ ] Add explicit controls for assumptions, sensitivity and history panels; allow the worksheet to dominate when those panels are closed. Add period-family selection, section navigation and collapsible business/debt groups derived from worksheet metadata.
-- [ ] Keep business row labels and period headers visible during scrolling. Expose each served semantic ID as `data-semantic-id` on its worksheet cell for stable interaction tests. Do not hide reconciliation rows merely because their value is zero. At 720px, use controlled worksheet scrolling and stacked controls, not page-wide overflow.
-- [ ] Connect valid lineage targets to the existing evidence drawer or `/sources/` deep links. Pass the actual opener element; Escape returns focus to it. Calculated cells show their formula and producing authority.
-- [ ] Pass an authority-safe evidence opener from `Workspace` into
+- [x] Add serializer tests for a known source/block, a source-only locator, multiple references and an unresolved reference. Unresolved text remains visible, but no invented clickable target is returned.
+- [x] Add pure UI tests for selected period families and row groups using real worksheet cells; keep selection tied to `(tab ID, cell address)` rather than the filtered array index.
+- [x] Add explicit controls for assumptions, sensitivity and history panels; allow the worksheet to dominate when those panels are closed. Add period-family selection, section navigation and collapsible business/debt groups derived from worksheet metadata.
+- [x] Keep business row labels and period headers visible during scrolling. Expose each served semantic ID as `data-semantic-id` on its worksheet cell for stable interaction tests. Do not hide reconciliation rows merely because their value is zero. At 720px, use controlled worksheet scrolling and stacked controls, not page-wide overflow.
+- [x] Connect valid lineage targets to the existing evidence drawer or `/sources/` deep links. Pass the actual opener element; Escape returns focus to it. Calculated cells show their formula and producing authority.
+- [x] Pass an authority-safe evidence opener from `Workspace` into
   `ModelBuilder` with the actual opener element. Scope asynchronous evidence
   fetches by case and generation; do not duplicate workspace authority. Preserve
   `WorkbenchShell` stale-close protection and direct state clearing during
   full-source navigation.
-- [ ] Preserve serialized `queueCalculation`, skipped invalidated queued work,
+- [x] Preserve serialized `queueCalculation`, skipped invalidated queued work,
   case-wide `nextRevisions.at(-1)` head tracking,
   `expectedHeadRevisionId`/Sign-Off CAS and `modelDisplayStatus` for queued
   builds. Include their existing regressions in the focused check.
-- [ ] Verify keyboard cell/tab navigation and that collapsing/filtering a group moves focus to a remaining visible control.
+- [x] Verify keyboard cell/tab navigation and that collapsing/filtering a group moves focus to a remaining visible control.
 
 Browser acceptance assertions to add after the existing Model journey has loaded its worksheet:
 
@@ -263,7 +266,7 @@ Use the same horizon for baseline, low and high. Read raw Decimal cash through
 pinned `finite_operand` guard accepts finite Decimals, not serialized strings or
 ordinary integer fixtures.
 
-- [ ] Add the smallest pure selector beside the existing annual-output helpers, and test it before integrating it:
+- [x] Add the smallest pure selector beside the existing annual-output helpers, and test it before integrating it:
 
 ```python
 def minimum_cash_value(calculations, column_ids: list[str]):
@@ -285,13 +288,13 @@ from decimal import Decimal
 assert minimum_cash_value(calculations, ["BASE::FY2025", "BASE::FY2026"]) == Decimal("-20")
 ```
 
-- [ ] Route baseline, low and high tornado outputs through one selector. Build
+- [x] Route baseline, low and high tornado outputs through one selector. Build
   the horizon directly from `calculations.columns` for the requested case through
   the exact endpoint. Unknown, wrong-case or unavailable endpoints and any
   missing intermediate or shocked value fail `MODEL_TORNADO_OUTPUT_INVALID`;
   never continue by dropping an adverse bar.
-- [ ] Keep deadlines, registry checks, assumption bounds, stale revision refusal and finite-value guards unchanged. Add tests for negative minimum cash, final-year cash differing from the minimum, a missing intermediate value, non-finite values and Base/Downside isolation.
-- [ ] Display `Minimum cash · FY2025–FY2027` using the returned horizon. Keep the final-year cash metric separately labelled. Do not claim a quarterly minimum when only annual forecast outputs exist.
+- [x] Keep deadlines, registry checks, assumption bounds, stale revision refusal and finite-value guards unchanged. Add tests for negative minimum cash, final-year cash differing from the minimum, a missing intermediate value, non-finite values and Base/Downside isolation.
+- [x] Display `Minimum cash · FY2025–FY2027` using the returned horizon. Keep the final-year cash metric separately labelled. Do not claim a quarterly minimum when only annual forecast outputs exist.
 
 ```bash
 caos/server/.venv314/bin/python -m pytest caos/tests/spec/test_model_builder_spec.py -q -k 'tornado or minimum_cash'
@@ -308,7 +311,7 @@ caos/server/.venv314/bin/python -m pytest caos/tests/spec/test_model_builder_spe
 false linear rendering. `runGraph(nodes)` returns stage groups and exact
 `(source module ID, target module ID)` edges. No server graph or control changes.
 
-- [ ] Add a branch/merge regression test:
+- [x] Add a branch/merge regression test:
 
 ```typescript
 import assert from "node:assert/strict";
@@ -326,7 +329,7 @@ test("siblings are not displayed as dependencies", () => {
 });
 ```
 
-- [ ] Implement the pure projection without inferring adjacent-node edges:
+- [x] Implement the pure projection without inferring adjacent-node edges:
 
 ```typescript
 type GraphInput = { module_id: string; stage: number; dependencies: string[] };
@@ -348,19 +351,19 @@ export function runGraph(nodes: GraphInput[]) {
 }
 ```
 
-- [ ] Render stage columns with SVG dependency connectors and HTML node buttons. Keep an accessible ordered stage/node list that states upstream dependencies. Catch `RUN_GRAPH_INVALID` at the presentational boundary and show the served node list with an unavailable-graph notice; never draw guessed edges. Selected nodes expose an inline inspector, not a second global drawer.
-- [ ] Key `RunGraph` by `run.id`. Preserve selection across node updates and
+- [x] Render stage columns with SVG dependency connectors and HTML node buttons. Keep an accessible ordered stage/node list that states upstream dependencies. Catch `RUN_GRAPH_INVALID` at the presentational boundary and show the served node list with an unavailable-graph notice; never draw guessed edges. Selected nodes expose an inline inspector, not a second global drawer.
+- [x] Key `RunGraph` by `run.id`. Preserve selection across node updates and
   clear it on run switches. Actual node statuses are `pending`, `ready`,
   `running`, `succeeded`, `failed` and `cancelled`; a blocked run is a run-level
   pause plus `run.error`, never an invented node status.
-- [ ] Inspector fields: module, stage, served status, upstream inputs, exact-edge
+- [x] Inspector fields: module, stage, served status, upstream inputs, exact-edge
   downstream consumers, run-level error/research pause, output link and
   `provider_identity` where served. Do not fabricate durations, percentages, QA
   results or event history absent from the wire.
-- [ ] Preserve event-name-triggered refetch and add connection freshness:
+- [x] Preserve event-name-triggered refetch and add connection freshness:
   `onopen` marks live and refetches, `onerror` marks stale/disconnected without
   changing execution state, and case/run switches reset connection state.
-- [ ] Test pending, ready, running siblings, success, run-level blocked, failed,
+- [x] Test pending, ready, running siblings, success, run-level blocked, failed,
   cancelled, research approval, reconnect and cross-case/run switches. Add an
   HTTP test over all six pathways and both depths comparing served edges to
   `compiled_route.edges`; UI tests cover projection and the accessible invalid-
@@ -387,7 +390,7 @@ existing artifact/snapshot authority validation. Return a named, strict
 and bounded `unavailable` entries `{view_id, code}`. Add typed host presentation
 to `ArtifactResponse`; do not alter the provider's canonical envelope.
 
-- [ ] Start with the pinned CP-1 fixtures. Use stable identities, not headings chosen by a model:
+- [x] Start with the pinned CP-1 fixtures. Use stable identities, not headings chosen by a model:
 
 | Source | Binding | Initial view |
 |---|---|---|
@@ -397,14 +400,14 @@ to `ArtifactResponse`; do not alter the provider's canonical envelope.
 | `cp1b.model_comparator_register` | Explicit current/reference periods, comparison basis and supplied changes. | Earnings comparison; no recomputed change when the contract marks it unavailable. |
 | Model Build/Analyst Model Revision outputs | Selected model identity, Base/Downside, available annual periods. | Cash, FCF, leverage and coverage paths in Model/Report. |
 
-- [ ] Implement the Task 0 coverage ledger for CP-PARSE, CP-0, CP-1,
+- [x] Implement the Task 0 coverage ledger for CP-PARSE, CP-0, CP-1,
   CP-1A/1B/1C/1D, CP-2/2A/2G/2E/2H, CP-3/4/4C/5/6, CP-DR and screen-only
   CP-L10 using their verified current tables. Retain all required tables; add
   charts only where a numeric comparison, trajectory, distribution or matrix
   conveys an actual relationship.
-- [ ] Reuse existing canonical table parsing/visibility and finite-number guards. The pinned `cp_tables.py` parsers are reference implementations; do not execute a copied parser without the existing integrity boundary. If a host-side table reader is needed, reuse `canonical.py`'s scanner/cell splitter and test duplicate IDs, hidden tables, malformed rows and escaped pipes.
-- [ ] Keep raw artifact rendering available when a presentation mapping is unavailable. Emit typed view-level reasons such as `TABLE_MISSING`, `COLUMN_MISSING`, `PERIOD_BASIS_MISMATCH`, `UNIT_MISMATCH` and `INSUFFICIENT_POINTS`; do not replace missing data with fixture values.
-- [ ] Use a closed chart recipe inside the existing `DocumentChartSection.recipe`. The new recipe format is `caos.chart.v1`; supported kinds are `line`, `bar`, `stacked_bar` and `scatter`. Every point carries an unformatted finite numeric value, its display value, category/period, series and source references. The accessible table is derived from those same points. Chart configuration cannot contain JavaScript, HTML, remote URLs or arbitrary G2 options.
+- [x] Reuse existing canonical table parsing/visibility and finite-number guards. The pinned `cp_tables.py` parsers are reference implementations; do not execute a copied parser without the existing integrity boundary. If a host-side table reader is needed, reuse `canonical.py`'s scanner/cell splitter and test duplicate IDs, hidden tables, malformed rows and escaped pipes.
+- [x] Keep raw artifact rendering available when a presentation mapping is unavailable. Emit typed view-level reasons such as `TABLE_MISSING`, `COLUMN_MISSING`, `PERIOD_BASIS_MISMATCH`, `UNIT_MISMATCH` and `INSUFFICIENT_POINTS`; do not replace missing data with fixture values.
+- [x] Use a closed chart recipe inside the existing `DocumentChartSection.recipe`. The new recipe format is `caos.chart.v1`; supported kinds are `line`, `bar`, `stacked_bar` and `scatter`. Every point carries an unformatted finite numeric value, its display value, category/period, series and source references. The accessible table is derived from those same points. Chart configuration cannot contain JavaScript, HTML, remote URLs or arbitrary G2 options.
 
 Representative complete recipe fixture:
 
@@ -426,8 +429,8 @@ For scatter recipes require a separate finite `x_value` in addition to the displ
 Retain existing unversioned chart recipes as table exhibits, including scenario
 and appendix recipes; do not reinterpret them as `caos.chart.v1`.
 
-- [ ] Bind generated section origins to actual artifact IDs and evidence block IDs. Add a test proving projection is deterministic for the same artifact digest/mapping version, and a test that another artifact's ID cannot be substituted into its origin.
-- [ ] Update named HTTP response keys and cross-case/withdrawn/tampered-artifact tests. Do not introduce a new unauthenticated data endpoint.
+- [x] Bind generated section origins to actual artifact IDs and evidence block IDs. Add a test proving projection is deterministic for the same artifact digest/mapping version, and a test that another artifact's ID cannot be substituted into its origin.
+- [x] Update named HTTP response keys and cross-case/withdrawn/tampered-artifact tests. Do not introduce a new unauthenticated data endpoint.
 
 ```bash
 caos/server/.venv314/bin/python -m pytest caos/tests/spec/test_module_presentation_spec.py caos/tests/spec/test_http_contracts_spec.py -q
@@ -441,8 +444,8 @@ caos/server/.venv314/bin/python -m pytest caos/tests/spec/test_module_presentati
 
 **Interfaces:** `ChartExhibit({section, theme})` consumes the existing `DocumentChartSection` with the closed Task 5 recipe; `theme` is `"workspace" | "paper"`. `ModulePresentation({presentation})` renders projected sections without making its own snapshot request. `chartRecipe.ts` validates and converts the closed recipe to developer-owned G2 options.
 
-- [ ] Read the relevant G2 skill and references from [antvis/chart-visualization-skills](https://github.com/antvis/chart-visualization-skills) at implementation time and record the exact source revision. This is developer-time guidance only; do not send issuer data to a remote chart service or add runtime skill retrieval or a chart-generating agent.
-- [ ] Add G2 v5 as the one chart runtime dependency, resolve and review one
+- [x] Read the relevant G2 skill and references from [antvis/chart-visualization-skills](https://github.com/antvis/chart-visualization-skills) at implementation time and record the exact source revision. This is developer-time guidance only; do not send issuer data to a remote chart service or add runtime skill retrieval or a chart-generating agent.
+- [x] Add G2 v5 as the one chart runtime dependency, resolve and review one
   exact `5.x.y` version, then commit that exact package version with its lockfile:
 
 ```bash
@@ -450,12 +453,12 @@ cd caos/frontend
 npm install --save-exact @antv/g2@<reviewed-5.x.y>
 ```
 
-- [ ] Write adapter tests for line/bar/stacked-bar/scatter recipes, negative and zero values, canonical numeric parsing, mixed units, missing values, unsupported kinds and malicious configuration fields. Tests must assert the data points and encodings, not merely that a component name appears in source.
-- [ ] Initialize G2 only in the client component; lazy-load it for surfaces displaying a chart. Disable decorative animation. Resize to the containing panel, destroy the chart and observers on unmount, and handle rapid artifact switches without stale rendering.
-- [ ] Show a meaningful title, period/basis, units, legend where needed, source actions and a keyboard-accessible data table for each chart. Render table-only with a visible explanation if the chart cannot load; chart failure must not hide the module content.
-- [ ] Place summary and visual exhibits before the detailed stable tables and narrative for the selected module. Keep module navigation and the existing evidence rail; retain artifact digest, accepted snapshot and input fingerprint.
-- [ ] Add visual coverage for the numeric modules inventoried in Task 5. Qualitative modules receive structured decision/evidence tables and narrative hierarchy, not arbitrary numeric scoring.
-- [ ] Verify 1440px, 1024px and 720px, reduced motion, keyboard access, dark workspace contrast and source navigation. Switching accepted snapshots must update content, charts and evidence together.
+- [x] Write adapter tests for line/bar/stacked-bar/scatter recipes, negative and zero values, canonical numeric parsing, mixed units, missing values, unsupported kinds and malicious configuration fields. Tests must assert the data points and encodings, not merely that a component name appears in source.
+- [x] Initialize G2 only in the client component; lazy-load it for surfaces displaying a chart. Disable decorative animation. Resize to the containing panel, destroy the chart and observers on unmount, and handle rapid artifact switches without stale rendering.
+- [x] Show a meaningful title, period/basis, units, legend where needed, source actions and a keyboard-accessible data table for each chart. Render table-only with a visible explanation if the chart cannot load; chart failure must not hide the module content.
+- [x] Place summary and visual exhibits before the detailed stable tables and narrative for the selected module. Keep module navigation and the existing evidence rail; retain artifact digest, accepted snapshot and input fingerprint.
+- [x] Add visual coverage for the numeric modules inventoried in Task 5. Qualitative modules receive structured decision/evidence tables and narrative hierarchy, not arbitrary numeric scoring.
+- [x] Verify 1440px, 1024px and 720px, reduced motion, keyboard access, dark workspace contrast and source navigation. Switching accepted snapshots must update content, charts and evidence together.
 
 ```bash
 cd caos/frontend
@@ -482,15 +485,15 @@ available by stored identity. Persist the server-selected `mapping_version` in
 v2 revision content; recomposition uses that recorded version, and an explicit
 new revision is required to adopt a newer mapping.
 
-- [ ] Write a failing v2 test: save a draft with its Evidence Register and zero Narrative Blocks; assert the server composes populated module sections. Require real known fixture facts, section origins and source references, not the fallback text `Governed output pinned`.
-- [ ] Write compatibility tests before changing templates: v1 draft read, save,
+- [x] Write a failing v2 test: save a draft with its Evidence Register and zero Narrative Blocks; assert the server composes populated module sections. Require real known fixture facts, section origins and source references, not the fallback text `Governed output pinned`.
+- [x] Write compatibility tests before changing templates: v1 draft read, save,
   restore, browser recovery and both freeze paths remain under v1; Frozen/Filed
   v1 payloads and export hashes remain byte-identical. Moving to v2 is an
   explicit new revision requiring renewed Sign-Off; never silently recompose v1
   content under v2.
-- [ ] On the first unsaved opening, `workspace` returns a server-composed preview
+- [x] On the first unsaved opening, `workspace` returns a server-composed preview
   while preserving explicit model-selection acknowledgement.
-- [ ] Implement fixed report layouts by pathway:
+- [x] Implement fixed report layouts by pathway:
 
 | Pathway | Developer-designed sections, populated from accepted outputs |
 |---|---|
@@ -501,20 +504,20 @@ new revision is required to adopt a newer mapping.
 | Distressed & Restructuring | Priority stack; liquidity runway; scenario/breakpoint outputs; recovery/fulcrum; legal/process milestones; recommendations and limitations. |
 | Deep Research | Research question/scope; findings; evidence and counterevidence; implications; unresolved questions. |
 
-- [ ] Treat generated narrative as module content, with artifact/source origins; analyst amendments are separately labelled overlays. Do not recast provider text as an analyst opinion, invent recommendations, or create a second analytical synthesis call.
-- [ ] For every section, declare its exact source module/table binding in the coverage ledger. Missing required inputs produce a visible unavailable section and a typed publication blocker; intentionally optional inputs can be omitted with a reason. Reports for pathways without CP-6 must work without CP-6 or an IC memo.
-- [ ] Rework ReportStudio navigation around generated document sections rather than required textareas. Open the populated paper preview by default; provide inline “Add commentary”, include/omit controls for declared optional sections, source inspection and model selection. Persist optional-section IDs through autosave, recovery and freeze. Layout geometry remains developer-owned; no drag-and-drop page designer.
-- [ ] Use one validated citation union across included generated sections and
+- [x] Treat generated narrative as module content, with artifact/source origins; analyst amendments are separately labelled overlays. Do not recast provider text as an analyst opinion, invent recommendations, or create a second analytical synthesis call.
+- [x] For every section, declare its exact source module/table binding in the coverage ledger. Missing required inputs produce a visible unavailable section and a typed publication blocker; intentionally optional inputs can be omitted with a reason. Reports for pathways without CP-6 must work without CP-6 or an IC memo.
+- [x] Rework ReportStudio navigation around generated document sections rather than required textareas. Open the populated paper preview by default; provide inline “Add commentary”, include/omit controls for declared optional sections, source inspection and model selection. Persist optional-section IDs through autosave, recovery and freeze. Layout geometry remains developer-owned; no drag-and-drop page designer.
+- [x] Use one validated citation union across included generated sections and
   analyst citations. It populates both the visible Evidence Register and
   `DeliverableService._frozen_evidence`; `publishing.build_publication` evidence
   inventory/status reads `payload.evidence`. Test generated-only source and block
   citations through freeze and offline verification.
-- [ ] Preserve analyst-text claim-authority checks, current model-selection
+- [x] Preserve analyst-text claim-authority checks, current model-selection
   acknowledgements, `ReportStudio.retainRecovery`, cloned-tab ownership through
   `reportRecovery.claimBrowserTabId`, unsigned-opinion protection, guarded
   navigation/freeze, and receipt-request abort plus case/deliverable identity
   checks. Include `reportRecovery.test.ts` in focused checks.
-- [ ] Render chart sections through ChartExhibit in paper mode. Reuse exact data and recipe identities from Analysis where the same module view is selected.
+- [x] Render chart sections through ChartExhibit in paper mode. Reuse exact data and recipe identities from Analysis where the same module view is selected.
 
 ```bash
 caos/server/.venv314/bin/python -m pytest caos/tests/spec/test_deliverables_spec.py -q -k 'template or document or narrative or evidence or draft'
@@ -536,16 +539,16 @@ known-gap entries.
 
 **Interfaces:** Retain validated prior Full Credit ancestry, but select the accepted pathway's overlay Model Build or a compatible Signed-Off Revision when the report displays its effects. Bind both the overlay identity and its prior-model ancestry into the frozen payload and digest.
 
-- [ ] Add a failing regression to the existing live-incremental publication test: change an accepted Earnings Update calculation effect while leaving the prior Full Credit model unchanged; assert that the new report's effect section and model identity change. Repeat for Covenant & Refinancing.
-- [ ] Fix the shared model-authority resolver before composition: current
+- [x] Add a failing regression to the existing live-incremental publication test: change an accepted Earnings Update calculation effect while leaving the prior Full Credit model unchanged; assert that the new report's effect section and model identity change. Repeat for Covenant & Refinancing.
+- [x] Fix the shared model-authority resolver before composition: current
   resolution selects the prior Full Credit build too early. Select the accepted
   pathway overlay Model Build or a compatible Signed-Off Revision while
   preserving its validated Full Credit ancestry, model recomputation and source-
   lineage checks; do not patch renderers independently.
-- [ ] Distinguish **unchanged prior-model base values** from **new pathway effects**. The existing overlay may carry effects without recalculating every base worksheet cell; never label unchanged base values as an updated forecast.
-- [ ] Verify Relative Value and Deep Research effect inclusion where an eligible numeric overlay exists; model-optional reports remain usable without one. Preserve the already-supported Distressed binding.
-- [ ] Test wrong ancestry, wrong accepted run, stale Signed-Off Revision, withdrawn source, missing overlay, changed effect after Sign-Off, and a publication retry. A required missing overlay is a typed readiness blocker, not silent fallback.
-- [ ] Remove only the known-gap entries actually closed by passing tests; retain explicit limitations on effects that do not recalculate the full forecast.
+- [x] Distinguish **unchanged prior-model base values** from **new pathway effects**. The existing overlay may carry effects without recalculating every base worksheet cell; never label unchanged base values as an updated forecast.
+- [x] Verify Relative Value and Deep Research effect inclusion where an eligible numeric overlay exists; model-optional reports remain usable without one. Preserve the already-supported Distressed binding.
+- [x] Test wrong ancestry, wrong accepted run, stale Signed-Off Revision, withdrawn source, missing overlay, changed effect after Sign-Off, and a publication retry. A required missing overlay is a typed readiness blocker, not silent fallback.
+- [x] Remove only the known-gap entries actually closed by passing tests; retain explicit limitations on effects that do not recalculate the full forecast.
 
 ```bash
 caos/server/.venv314/bin/python -m pytest caos/tests/spec/test_deliverables_spec.py -q -k 'incremental or model or authority'
@@ -565,12 +568,12 @@ recipe values into deterministic vector marks; financial calculations remain
 elsewhere. Reuse the installed pango/pypdf/openpyxl stack; add no browser worker
 or provider SVG parser.
 
-- [ ] Add a publication fixture with positive, negative and zero values, long labels, multiple series and source references. Assert the frozen recipe, accessible rows and origin IDs are identical to the reviewed draft.
-- [ ] Extend the existing PDF renderer with chart blocks: reserve measured chart space, draw the closed kinds through the installed pypdf vector/content-stream primitives, retain pango for pinned-font labels, and place the equivalent table after the chart. Do not add a browser process to the worker or parse provider-supplied SVG.
-- [ ] Add native openpyxl charts bound to the exported numeric cells; preserve the underlying data sheets, safe-cell handling, sources and model identity. Markdown retains chart title/type, period/unit, sources and the equivalent table; explicitly treat it as the text representation.
-- [ ] Keep freeze asynchronous and hash-addressed. Increment `RENDERER_VERSION`; preserve existing stored exports. If Markdown changes, update its verbatim copy in the standalone audit verifier and the copy-parity test.
-- [ ] Verify charts cannot overprint footers, source notes or watermarks, and that tables paginate with repeated headers. Inspect every changed PDF page and XLSX sheet before regenerating goldens.
-- [ ] Assert filing serves the exact already-frozen bytes, including after an
+- [x] Add a publication fixture with positive, negative and zero values, long labels, multiple series and source references. Assert the frozen recipe, accessible rows and origin IDs are identical to the reviewed draft.
+- [x] Extend the existing PDF renderer with chart blocks: reserve measured chart space, draw the closed kinds through the installed pypdf vector/content-stream primitives, retain pango for pinned-font labels, and place the equivalent table after the chart. Do not add a browser process to the worker or parse provider-supplied SVG.
+- [x] Add native openpyxl charts bound to the exported numeric cells; preserve the underlying data sheets, safe-cell handling, sources and model identity. Markdown retains chart title/type, period/unit, sources and the equivalent table; explicitly treat it as the text representation.
+- [x] Keep freeze asynchronous and hash-addressed. Increment `RENDERER_VERSION`; preserve existing stored exports. If Markdown changes, update its verbatim copy in the standalone audit verifier and the copy-parity test.
+- [x] Verify charts cannot overprint footers, source notes or watermarks, and that tables paginate with repeated headers. Inspect every changed PDF page and XLSX sheet before regenerating goldens.
+- [x] Assert filing serves the exact already-frozen bytes, including after an
   application/template update. Preserve opinion-bound `filing_thread_id`
   including legacy identities, independent signer/freezer checks,
   `audit/package.py`'s single transaction snapshot, and verifier refusal of
@@ -594,7 +597,7 @@ CAOS_REGENERATE_GOLDENS=1 caos/server/.venv314/bin/python -m pytest caos/tests/s
 **Files:** Extend `frontend/scripts/workbench-smoke.mjs`, `a11y-axe.mjs`,
 relevant spec tests and `SPEC_RECONCILIATION.md`; add
 `caos/tests/spec/test_audit_package_spec.py` and
-`caos/tests/spec/test_verify_package_bounds.py` to the acceptance suites; retain
+`caos/tests/test_verify_package_bounds.py` to the acceptance suites; retain
 results under the existing test-results conventions.
 
 **Interfaces:** Use public application routes with
@@ -603,26 +606,32 @@ results under the existing test-results conventions.
 Never use the user's legacy port or case data. Host-control fixtures prove
 orchestration, not live analytical quality.
 
-- [ ] Run one seeded current-app journey through intake/run → inspect branching pipeline → accept → inspect visual Analysis → build/edit/sign off Model → open module-populated Report → add commentary → sign opinion → freeze → independently file → verify exports and audit package.
-- [ ] Assert the same case, accepted snapshot, artifact/model identities and source references throughout. Switch cases, selected runs and accepted snapshots mid-load; stale data must never flash as current.
-- [ ] Exercise Base/Downside, negative minimum cash, missing source/table/period, partial analysis, failed/cancelled modules, research-plan pause, stale revision, autosave conflict, browser recovery and export failure.
-- [ ] Capture Model, Report, Run and Analysis at 1440px, 1024px and 720px in Chromium, Firefox and WebKit. Inspect hierarchy, table/worksheet scrolling, actual graph edges, chart labels, print layout and focus restoration; run axe on populated and refusal states.
-- [ ] Run the complete relevant suites and existing performance tripwires. Record actual measurements; do not relax timing limits to accommodate eager chart loading without a separately reviewed reason.
+- [x] Run one seeded current-app journey through intake/run → inspect branching pipeline → accept → inspect visual Analysis → build/edit/sign off Model → open module-populated Report → add commentary → sign opinion → freeze → independently file → verify exports and audit package.
+- [x] Assert the same case, accepted snapshot, artifact/model identities and source references throughout. Switch cases, selected runs and accepted snapshots mid-load; stale data must never flash as current.
+- [x] Compare exact served and displayed dependency pairs for the 11 supported pathway/depth combinations. Retain Deep Research/screen as the existing API 422 plus UI-disabled negative contract; do not fabricate or claim a twelfth displayed DAG.
+- [x] Exercise Base/Downside, negative minimum cash, missing source/table/period, partial analysis, failed/cancelled modules, research-plan pause, stale revision, autosave conflict, browser recovery and export failure.
+- [x] Capture Model, Report, Run and Analysis at 1440px, 1024px and 720px in Chromium, Firefox and WebKit. Inspect hierarchy, table/worksheet scrolling, actual graph edges, chart labels, print layout and focus restoration; run axe on populated and refusal states.
+- [x] Run the complete relevant suites and existing performance tripwires. Record actual measurements; do not relax timing limits to accommodate eager chart loading without a separately reviewed reason.
 
 Backend, from repository root:
 
 ```bash
-caos/server/.venv314/bin/python -m pytest caos/tests/spec/test_model_builder_spec.py caos/tests/spec/test_source_complete_modelling_spec.py caos/tests/spec/test_module_presentation_spec.py caos/tests/spec/test_deliverables_spec.py caos/tests/spec/test_publication_spec.py caos/tests/spec/test_publication_goldens_spec.py caos/tests/spec/test_http_contracts_spec.py caos/tests/spec/test_audit_package_spec.py caos/tests/spec/test_verify_package_bounds.py -q
+caos/server/.venv314/bin/python -m pytest caos/tests/test_audit_regressions.py caos/tests/test_verify_package_bounds.py caos/tests/spec/test_model_builder_spec.py caos/tests/spec/test_source_complete_modelling_spec.py caos/tests/spec/test_module_presentation_spec.py caos/tests/spec/test_deliverables_spec.py caos/tests/spec/test_publication_spec.py caos/tests/spec/test_publication_charts_spec.py caos/tests/spec/test_publication_goldens_spec.py caos/tests/spec/test_http_contracts_spec.py caos/tests/spec/test_audit_package_spec.py caos/tests/spec/test_distressed_model_overlay.py caos/tests/spec/test_ordinary_distressed_e2e.py -q
 ```
 
-Frontend, from `caos/frontend`, after the disposable server and worker are ready:
+Frontend preparation, from `caos/frontend`, before starting the disposable harness:
 
 ```bash
 npm run lint
 npx tsc --noEmit
 npm run test:unit
-node scripts/fault-regressions.mjs
 npm run build
+```
+
+Then start the fresh disposable harness, which owns its worker, and run:
+
+```bash
+node scripts/fault-regressions.mjs
 npm run a11y
 npm run test:browsers
 ```
@@ -636,8 +645,13 @@ results directory before browser commands. Capture screenshots and export
 examples. Do not run `test:production-inventory`: its known deployment-specific
 routes are not part of this build.
 
-- [ ] Run the required `rewrite-tournament` and `confidence-review` gates on changed code. Record suspected defects, root-cause checks and repaired findings, not just a claim that the skills ran.
-- [ ] Deliver a completion report with per-workstream acceptance status, command results, screenshots, export examples, remaining limitations and explicit separation of fixture orchestration proof from live analytical qualification. No live-provider qualification is authorized.
+Qualification result: all Task 10 checkboxes below are backed by
+`.superpowers/sdd/analyst-workbench-task-10-report.md` and its SHA-256-manifested
+evidence. The 11-graph plus Deep Research/screen-negative distinction follows
+the current route/API contract; no unsupported route was invented.
+
+- [x] Run the required `rewrite-tournament` and `confidence-review` gates on changed code. Record suspected defects, root-cause checks and repaired findings, not just a claim that the skills ran.
+- [x] Deliver a completion report with per-workstream acceptance status, command results, screenshots, export examples, remaining limitations and explicit separation of fixture orchestration proof from live analytical qualification. No live-provider qualification is authorized.
 
 **Gate:** All four capability rows in the workstream table pass. A successful build or unit suite alone is not completion.
 

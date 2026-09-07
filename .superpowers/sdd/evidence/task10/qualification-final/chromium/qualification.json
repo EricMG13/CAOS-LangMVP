@@ -1,0 +1,123 @@
+{
+  "schema_version": "caos.task10-qualification.v1",
+  "browser": "chromium",
+  "base_url": "http://127.0.0.1:19276",
+  "fixture_authority": "development host_control with opt-in canonical report answer keys; not live analytical qualification",
+  "screenshots": [
+    "/private/tmp/caos-task10-definitive.oTpXik/evidence/qualification-chromium-final/task10-qualification/chromium/run-1440.png",
+    "/private/tmp/caos-task10-definitive.oTpXik/evidence/qualification-chromium-final/task10-qualification/chromium/run-1024.png",
+    "/private/tmp/caos-task10-definitive.oTpXik/evidence/qualification-chromium-final/task10-qualification/chromium/run-720.png",
+    "/private/tmp/caos-task10-definitive.oTpXik/evidence/qualification-chromium-final/task10-qualification/chromium/analysis-1440.png",
+    "/private/tmp/caos-task10-definitive.oTpXik/evidence/qualification-chromium-final/task10-qualification/chromium/analysis-1024.png",
+    "/private/tmp/caos-task10-definitive.oTpXik/evidence/qualification-chromium-final/task10-qualification/chromium/analysis-720.png",
+    "/private/tmp/caos-task10-definitive.oTpXik/evidence/qualification-chromium-final/task10-qualification/chromium/analysis-chart-table-1440.png",
+    "/private/tmp/caos-task10-definitive.oTpXik/evidence/qualification-chromium-final/task10-qualification/chromium/analysis-chart-table-1024.png",
+    "/private/tmp/caos-task10-definitive.oTpXik/evidence/qualification-chromium-final/task10-qualification/chromium/analysis-chart-table-720.png",
+    "/private/tmp/caos-task10-definitive.oTpXik/evidence/qualification-chromium-final/task10-qualification/chromium/model-1440.png",
+    "/private/tmp/caos-task10-definitive.oTpXik/evidence/qualification-chromium-final/task10-qualification/chromium/model-1024.png",
+    "/private/tmp/caos-task10-definitive.oTpXik/evidence/qualification-chromium-final/task10-qualification/chromium/model-720.png",
+    "/private/tmp/caos-task10-definitive.oTpXik/evidence/qualification-chromium-final/task10-qualification/chromium/model-cash-flow-1440.png",
+    "/private/tmp/caos-task10-definitive.oTpXik/evidence/qualification-chromium-final/task10-qualification/chromium/model-cash-flow-1024.png",
+    "/private/tmp/caos-task10-definitive.oTpXik/evidence/qualification-chromium-final/task10-qualification/chromium/model-cash-flow-720.png",
+    "/private/tmp/caos-task10-definitive.oTpXik/evidence/qualification-chromium-final/task10-qualification/chromium/report-1440.png",
+    "/private/tmp/caos-task10-definitive.oTpXik/evidence/qualification-chromium-final/task10-qualification/chromium/report-1024.png",
+    "/private/tmp/caos-task10-definitive.oTpXik/evidence/qualification-chromium-final/task10-qualification/chromium/report-720.png",
+    "/private/tmp/caos-task10-definitive.oTpXik/evidence/qualification-chromium-final/task10-qualification/chromium/report-chart-table-1440.png",
+    "/private/tmp/caos-task10-definitive.oTpXik/evidence/qualification-chromium-final/task10-qualification/chromium/report-chart-table-1024.png",
+    "/private/tmp/caos-task10-definitive.oTpXik/evidence/qualification-chromium-final/task10-qualification/chromium/report-chart-table-720.png",
+    "/private/tmp/caos-task10-definitive.oTpXik/evidence/qualification-chromium-final/task10-qualification/chromium/report-controls-open-1024.png",
+    "/private/tmp/caos-task10-definitive.oTpXik/evidence/qualification-chromium-final/task10-qualification/chromium/report-reading-closed-1024.png"
+  ],
+  "exports": {
+    "md": {
+      "path": "/private/tmp/caos-task10-definitive.oTpXik/evidence/qualification-chromium-final/task10-qualification/chromium/dlv-7e5b00ba600ae98c0f3fe0057dff35e3d56acdc9d7e97ebe546c6f089cf4c22d.md",
+      "sha256": "bcd9d41c33e36011d3c393fc419126c20e8e0501f8d6751d9adfd139e2b9f2ff",
+      "size": 42340
+    },
+    "pdf": {
+      "path": "/private/tmp/caos-task10-definitive.oTpXik/evidence/qualification-chromium-final/task10-qualification/chromium/dlv-7e5b00ba600ae98c0f3fe0057dff35e3d56acdc9d7e97ebe546c6f089cf4c22d.pdf",
+      "sha256": "42878a4b12090b5495356b8a5914d003d3a3b74b9a70c0f5f7b5bd7d0c34ff81",
+      "size": 2838082
+    },
+    "xlsx": {
+      "path": "/private/tmp/caos-task10-definitive.oTpXik/evidence/qualification-chromium-final/task10-qualification/chromium/dlv-7e5b00ba600ae98c0f3fe0057dff35e3d56acdc9d7e97ebe546c6f089cf4c22d.xlsx",
+      "sha256": "c50e8e5f0b5f0c9696d08c8fa29e90742d5f604bfd712abe9234db3a884491d4",
+      "size": 58904
+    }
+  },
+  "case_id": "case-1a63f2328b8842b58d2f",
+  "run_id": "run-129c8dbe112343668ac0",
+  "source_set_id": "set-59c0dd2f86704f9f93b6",
+  "source_set_digest": "417c63695be0567913ca2d5fe6a0295ec620b9325f01595afe8ca0ba7914cdd6",
+  "accepted_snapshot_id": "snap-b6b42d2e8cbd491ca5d3",
+  "accepted_snapshot_digest": "fa3c97c86ca95aa64fe985db4fd28e5a6c24df8d5d5f125cf6bf2433b119e33d",
+  "artifact_ids": [
+    "art-8c9d047997d64fa58a30",
+    "art-4eebdb81c5924b7d94f1",
+    "art-4eeca72bc82c4acbb2da",
+    "art-8fe25681e5634d92bb69",
+    "art-f4794f0934c148c8854b",
+    "art-2d259734e547428a9916",
+    "art-18aad948b70b4857aba8",
+    "art-a20e9202e3474adfb303",
+    "art-a3276a527572445da180",
+    "art-154219c9f8f94ef184a0",
+    "art-78b8c8427cd04676a1b5",
+    "art-3afdd69cfc14424196dc",
+    "art-988c6374a6cf4cc88ed1",
+    "art-3e8c28f238524a349ad1",
+    "art-83eaba39d1dc4e08b9c2",
+    "art-a6939acd90364d9c9532",
+    "art-2d3d8f509b2540f7a6a0"
+  ],
+  "loaded_chart_axe": true,
+  "model_build_id": "mdl-f773d355038a4aa1aa5f",
+  "model_payload_digest": "116d0e06eaa120c12baa1d5d6c476bf2eefcb6afa1a685bea4a24bcaa3705518",
+  "model_revision_id": "rev-a297103ff3724ce38c9e",
+  "model_revision_digest": "2c614a2023883f191e552c264f148c20f1d11f3a476067287413f226067f2e12",
+  "loaded_report_chart_axe": true,
+  "paper_source_colors": {
+    "label": "rgb(93, 93, 104)",
+    "link": "rgb(47, 84, 201)",
+    "link_hover": "rgb(47, 84, 201)"
+  },
+  "report_1024_paper_widths": {
+    "controls_open": 778,
+    "controls_closed": 499.34375
+  },
+  "deliverable_id": "dlv-7e5b00ba600ae98c0f3fe0057dff35e3d56acdc9d7e97ebe546c6f089cf4c22d",
+  "frozen_preview_digest": "5c84d440d3252b4dec8c857db3f7729ddb514c1d28636ed524376477b10a51dd",
+  "approved_by": "task10-approver-chromium-21ef69f3@local.invalid",
+  "audit_package": {
+    "path": "/private/tmp/caos-task10-definitive.oTpXik/evidence/qualification-chromium-final/task10-qualification/chromium/audit-package-case-1a63f2328b8842b58d2f.zip",
+    "sha256": "42a91762a98d0fff277be723f47b7e8fdab05ebde16abd59256c78302f27eb93",
+    "size": 2253792
+  },
+  "receipt": {
+    "schema_version": "caos.filing-receipt.v1",
+    "receipt_id": "rcpt-029d719497764894a287",
+    "deliverable_id": "dlv-7e5b00ba600ae98c0f3fe0057dff35e3d56acdc9d7e97ebe546c6f089cf4c22d",
+    "case_id": "case-1a63f2328b8842b58d2f",
+    "pathway": "FULL_CREDIT",
+    "draft_version": 2,
+    "draft_digest": "51284ca252a01696c146be61ed2ca5cc7e10db356704f30bd8403f59c02f4488",
+    "preview_digest": "5c84d440d3252b4dec8c857db3f7729ddb514c1d28636ed524376477b10a51dd",
+    "input_fingerprint": "db13374e57ce766a724373db530389281c51ac7c462bef1f4868884ffaf70de0",
+    "approval_hash": "sha256:5c84d440d3252b4dec8c857db3f7729ddb514c1d28636ed524376477b10a51dd",
+    "content_digest": "28b16cce92c41a814130bd41aa114e8fe57c81b40cf1221774d30cdfc68cd847",
+    "exports": {
+      "md": "bcd9d41c33e36011d3c393fc419126c20e8e0501f8d6751d9adfd139e2b9f2ff",
+      "pdf": "42878a4b12090b5495356b8a5914d003d3a3b74b9a70c0f5f7b5bd7d0c34ff81",
+      "xlsx": "c50e8e5f0b5f0c9696d08c8fa29e90742d5f604bfd712abe9234db3a884491d4"
+    },
+    "opinion_id": "opn-3e4f513c3670405db6eb",
+    "signed_by": "task10-chromium-21ef69f3@local.invalid",
+    "frozen_by": "task10-chromium-21ef69f3@local.invalid",
+    "frozen_at": "2026-09-07T21:59:11.917296+00:00",
+    "approved_by": "task10-approver-chromium-21ef69f3@local.invalid",
+    "approved_at": "2026-09-07T21:59:18.985257+00:00",
+    "receipt_digest": "76c39ceb7a84b74199ca251af1854b4c67b235dc3c61f3227ce1b8682007c01c"
+  },
+  "console_errors": [],
+  "status": "passed"
+}

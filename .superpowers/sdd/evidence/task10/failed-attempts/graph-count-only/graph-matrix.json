@@ -1,0 +1,998 @@
+{
+  "schema_version": "caos.task10-graph-matrix.v1",
+  "fixture_authority": "actual disposable host-control plan responses rendered by the production browser UI",
+  "subject": "task10-graph-0b11ca96@local.invalid",
+  "case_id": "case-1c21b41f0b414c469d88",
+  "combinations": [
+    {
+      "pathway": "FULL_CREDIT",
+      "depth": "screen",
+      "run_id": "run-5380821f484843e0bc9e",
+      "status_at_capture": "running",
+      "profile_id": "LITE_CREDIT_22",
+      "selection_id": "LITE_FULL_CREDIT_SCREEN",
+      "source_set_id": "set-291d986ae235497f9669",
+      "source_set_digest": "bd93b2cc04c36a328c73f57d076306bc9d76921a5deab5f86fc4bb82fdbb1515",
+      "served_nodes": [
+        {
+          "id": "node-7e043a446f844b29b600",
+          "module_id": "CP-PARSE",
+          "stage": 0,
+          "dependencies": []
+        },
+        {
+          "id": "node-150999059ba64c4eac97",
+          "module_id": "CP-0",
+          "stage": 1,
+          "dependencies": [
+            "CP-PARSE"
+          ]
+        },
+        {
+          "id": "node-dbe8d80f36b140ee824b",
+          "module_id": "CP-L10",
+          "stage": 2,
+          "dependencies": [
+            "CP-0"
+          ]
+        },
+        {
+          "id": "node-17907bb65b424c518f36",
+          "module_id": "CP-1A",
+          "stage": 3,
+          "dependencies": [
+            "CP-0"
+          ]
+        },
+        {
+          "id": "node-10090345bc884f618996",
+          "module_id": "CP-1C",
+          "stage": 4,
+          "dependencies": [
+            "CP-L10"
+          ]
+        },
+        {
+          "id": "node-aadffa08eccf4d958c9a",
+          "module_id": "CP-2A",
+          "stage": 5,
+          "dependencies": [
+            "CP-L10"
+          ]
+        },
+        {
+          "id": "node-cd394c2d2c8444dc99c2",
+          "module_id": "CP-2H",
+          "stage": 6,
+          "dependencies": [
+            "CP-L10"
+          ]
+        },
+        {
+          "id": "node-96da90a7543148218972",
+          "module_id": "CP-4C",
+          "stage": 7,
+          "dependencies": [
+            "CP-2A",
+            "CP-L10"
+          ]
+        },
+        {
+          "id": "node-1ed695dc1094457fb6ad",
+          "module_id": "CP-5",
+          "stage": 8,
+          "dependencies": [
+            "CP-1A",
+            "CP-1C",
+            "CP-2A",
+            "CP-2H",
+            "CP-4C",
+            "CP-L10"
+          ]
+        }
+      ],
+      "served_edge_count": 14,
+      "displayed_node_ids": [
+        "node-10090345bc884f618996",
+        "node-150999059ba64c4eac97",
+        "node-17907bb65b424c518f36",
+        "node-1ed695dc1094457fb6ad",
+        "node-7e043a446f844b29b600",
+        "node-96da90a7543148218972",
+        "node-aadffa08eccf4d958c9a",
+        "node-cd394c2d2c8444dc99c2",
+        "node-dbe8d80f36b140ee824b"
+      ],
+      "displayed_modules": [
+        "CP-0",
+        "CP-1A",
+        "CP-1C",
+        "CP-2A",
+        "CP-2H",
+        "CP-4C",
+        "CP-5",
+        "CP-L10",
+        "CP-PARSE"
+      ],
+      "displayed_edge_count": 14,
+      "screenshot": "/private/tmp/caos-task10.j0GTQN/evidence/graph-retry-1/task10-graph-matrix/full-credit-screen.png"
+    },
+    {
+      "pathway": "FULL_CREDIT",
+      "depth": "full",
+      "run_id": "run-720b573d90f8486bb6ae",
+      "status_at_capture": "running",
+      "profile_id": "FULL_CREDIT_32",
+      "selection_id": "FULL_CREDIT_ASSESSMENT",
+      "source_set_id": "set-291d986ae235497f9669",
+      "source_set_digest": "bd93b2cc04c36a328c73f57d076306bc9d76921a5deab5f86fc4bb82fdbb1515",
+      "served_nodes": [
+        {
+          "id": "node-54149b85ac174885815e",
+          "module_id": "CP-PARSE",
+          "stage": 0,
+          "dependencies": []
+        },
+        {
+          "id": "node-1d6b2c5e86d74f87b756",
+          "module_id": "CP-0",
+          "stage": 1,
+          "dependencies": [
+            "CP-PARSE"
+          ]
+        },
+        {
+          "id": "node-be1a314a9da6499b8eb6",
+          "module_id": "CP-1",
+          "stage": 2,
+          "dependencies": [
+            "CP-0"
+          ]
+        },
+        {
+          "id": "node-95e349280f984e9fbac2",
+          "module_id": "CP-1A",
+          "stage": 3,
+          "dependencies": [
+            "CP-0"
+          ]
+        },
+        {
+          "id": "node-f2a5847f8f714504b7fe",
+          "module_id": "CP-1B",
+          "stage": 4,
+          "dependencies": [
+            "CP-0"
+          ]
+        },
+        {
+          "id": "node-7a507a16e88a4e85b205",
+          "module_id": "CP-1D",
+          "stage": 5,
+          "dependencies": [
+            "CP-0"
+          ]
+        },
+        {
+          "id": "node-f38b14296ab3415f93d6",
+          "module_id": "CP-1C",
+          "stage": 6,
+          "dependencies": [
+            "CP-0"
+          ]
+        },
+        {
+          "id": "node-81ffdfab9640445686f2",
+          "module_id": "CP-2",
+          "stage": 7,
+          "dependencies": [
+            "CP-1",
+            "CP-1A",
+            "CP-1B",
+            "CP-1C",
+            "CP-1D"
+          ]
+        },
+        {
+          "id": "node-03deb80b7b18459eb465",
+          "module_id": "CP-2A",
+          "stage": 8,
+          "dependencies": [
+            "CP-1"
+          ]
+        },
+        {
+          "id": "node-ab6052d0bf1a45c19f9b",
+          "module_id": "CP-2G",
+          "stage": 9,
+          "dependencies": [
+            "CP-1",
+            "CP-1D",
+            "CP-2A"
+          ]
+        },
+        {
+          "id": "node-69b2de13a0e2489e9e44",
+          "module_id": "CP-2E",
+          "stage": 10,
+          "dependencies": [
+            "CP-0"
+          ]
+        },
+        {
+          "id": "node-b0b49e6d151d4b839889",
+          "module_id": "CP-2H",
+          "stage": 11,
+          "dependencies": [
+            "CP-1",
+            "CP-1D",
+            "CP-2G"
+          ]
+        },
+        {
+          "id": "node-900928ed93644edbbb0e",
+          "module_id": "CP-3",
+          "stage": 12,
+          "dependencies": [
+            "CP-1",
+            "CP-1A",
+            "CP-1C",
+            "CP-1D",
+            "CP-2",
+            "CP-2G",
+            "CP-2H"
+          ]
+        },
+        {
+          "id": "node-62f2792c5df24e8ea46b",
+          "module_id": "CP-4",
+          "stage": 13,
+          "dependencies": [
+            "CP-1",
+            "CP-1D"
+          ]
+        },
+        {
+          "id": "node-29f533ff0f1441ec9178",
+          "module_id": "CP-4C",
+          "stage": 14,
+          "dependencies": [
+            "CP-1",
+            "CP-2A",
+            "CP-2G",
+            "CP-4"
+          ]
+        },
+        {
+          "id": "node-88ff59ce2a2443e3b691",
+          "module_id": "CP-5",
+          "stage": 15,
+          "dependencies": [
+            "CP-1",
+            "CP-1A",
+            "CP-1B",
+            "CP-1C",
+            "CP-2",
+            "CP-2A",
+            "CP-2E",
+            "CP-2G",
+            "CP-2H",
+            "CP-3",
+            "CP-4",
+            "CP-4C"
+          ]
+        },
+        {
+          "id": "node-c32b5f02ca2c41168b9e",
+          "module_id": "CP-6",
+          "stage": 16,
+          "dependencies": [
+            "CP-1",
+            "CP-1A",
+            "CP-2",
+            "CP-2A",
+            "CP-2E",
+            "CP-3",
+            "CP-4C",
+            "CP-5"
+          ]
+        }
+      ],
+      "served_edge_count": 52,
+      "displayed_node_ids": [
+        "node-03deb80b7b18459eb465",
+        "node-1d6b2c5e86d74f87b756",
+        "node-29f533ff0f1441ec9178",
+        "node-54149b85ac174885815e",
+        "node-62f2792c5df24e8ea46b",
+        "node-69b2de13a0e2489e9e44",
+        "node-7a507a16e88a4e85b205",
+        "node-81ffdfab9640445686f2",
+        "node-88ff59ce2a2443e3b691",
+        "node-900928ed93644edbbb0e",
+        "node-95e349280f984e9fbac2",
+        "node-ab6052d0bf1a45c19f9b",
+        "node-b0b49e6d151d4b839889",
+        "node-be1a314a9da6499b8eb6",
+        "node-c32b5f02ca2c41168b9e",
+        "node-f2a5847f8f714504b7fe",
+        "node-f38b14296ab3415f93d6"
+      ],
+      "displayed_modules": [
+        "CP-0",
+        "CP-1",
+        "CP-1A",
+        "CP-1B",
+        "CP-1C",
+        "CP-1D",
+        "CP-2",
+        "CP-2A",
+        "CP-2E",
+        "CP-2G",
+        "CP-2H",
+        "CP-3",
+        "CP-4",
+        "CP-4C",
+        "CP-5",
+        "CP-6",
+        "CP-PARSE"
+      ],
+      "displayed_edge_count": 52,
+      "screenshot": "/private/tmp/caos-task10.j0GTQN/evidence/graph-retry-1/task10-graph-matrix/full-credit-full.png"
+    },
+    {
+      "pathway": "EARNINGS_UPDATE",
+      "depth": "screen",
+      "run_id": "run-f2500b402c3946bc8e50",
+      "status_at_capture": "running",
+      "profile_id": "LITE_CREDIT_22",
+      "selection_id": "LITE_EARNINGS_UPDATE",
+      "source_set_id": "set-291d986ae235497f9669",
+      "source_set_digest": "bd93b2cc04c36a328c73f57d076306bc9d76921a5deab5f86fc4bb82fdbb1515",
+      "served_nodes": [
+        {
+          "id": "node-35d5c0b7790049c0b641",
+          "module_id": "CP-PARSE",
+          "stage": 0,
+          "dependencies": []
+        },
+        {
+          "id": "node-fcb814b287ac4175b1da",
+          "module_id": "CP-0",
+          "stage": 1,
+          "dependencies": [
+            "CP-PARSE"
+          ]
+        },
+        {
+          "id": "node-7363a41e061f4f85972d",
+          "module_id": "CP-L10",
+          "stage": 2,
+          "dependencies": [
+            "CP-0"
+          ]
+        },
+        {
+          "id": "node-8c9cdf7f00d54871ad49",
+          "module_id": "CP-5",
+          "stage": 3,
+          "dependencies": [
+            "CP-L10"
+          ]
+        }
+      ],
+      "served_edge_count": 3,
+      "displayed_node_ids": [
+        "node-35d5c0b7790049c0b641",
+        "node-7363a41e061f4f85972d",
+        "node-8c9cdf7f00d54871ad49",
+        "node-fcb814b287ac4175b1da"
+      ],
+      "displayed_modules": [
+        "CP-0",
+        "CP-5",
+        "CP-L10",
+        "CP-PARSE"
+      ],
+      "displayed_edge_count": 3,
+      "screenshot": "/private/tmp/caos-task10.j0GTQN/evidence/graph-retry-1/task10-graph-matrix/earnings-update-screen.png"
+    },
+    {
+      "pathway": "EARNINGS_UPDATE",
+      "depth": "full",
+      "run_id": "run-1bb10c9509494dda8820",
+      "status_at_capture": "running",
+      "profile_id": "FULL_CREDIT_32",
+      "selection_id": "EARNINGS_UPDATE",
+      "source_set_id": "set-291d986ae235497f9669",
+      "source_set_digest": "bd93b2cc04c36a328c73f57d076306bc9d76921a5deab5f86fc4bb82fdbb1515",
+      "served_nodes": [
+        {
+          "id": "node-5de9eaea6c5a4a639368",
+          "module_id": "CP-PARSE",
+          "stage": 0,
+          "dependencies": []
+        },
+        {
+          "id": "node-d78d105c668242e2a922",
+          "module_id": "CP-0",
+          "stage": 1,
+          "dependencies": [
+            "CP-PARSE"
+          ]
+        },
+        {
+          "id": "node-79c5bb6ce36b4986976a",
+          "module_id": "CP-1",
+          "stage": 2,
+          "dependencies": [
+            "CP-0"
+          ]
+        },
+        {
+          "id": "node-24cae3fe3f2e4f0898fb",
+          "module_id": "CP-1B",
+          "stage": 3,
+          "dependencies": [
+            "CP-0"
+          ]
+        },
+        {
+          "id": "node-c9cef5e8171c4df08521",
+          "module_id": "CP-2",
+          "stage": 4,
+          "dependencies": [
+            "CP-1",
+            "CP-1B"
+          ]
+        },
+        {
+          "id": "node-aa5c4c08cb7f4d9e8789",
+          "module_id": "CP-5",
+          "stage": 5,
+          "dependencies": [
+            "CP-1",
+            "CP-1B",
+            "CP-2"
+          ]
+        }
+      ],
+      "served_edge_count": 8,
+      "displayed_node_ids": [
+        "node-24cae3fe3f2e4f0898fb",
+        "node-5de9eaea6c5a4a639368",
+        "node-79c5bb6ce36b4986976a",
+        "node-aa5c4c08cb7f4d9e8789",
+        "node-c9cef5e8171c4df08521",
+        "node-d78d105c668242e2a922"
+      ],
+      "displayed_modules": [
+        "CP-0",
+        "CP-1",
+        "CP-1B",
+        "CP-2",
+        "CP-5",
+        "CP-PARSE"
+      ],
+      "displayed_edge_count": 8,
+      "screenshot": "/private/tmp/caos-task10.j0GTQN/evidence/graph-retry-1/task10-graph-matrix/earnings-update-full.png"
+    },
+    {
+      "pathway": "COVENANT_REFINANCING",
+      "depth": "screen",
+      "run_id": "run-d1bf9237afba4cf0817a",
+      "status_at_capture": "running",
+      "profile_id": "LITE_CREDIT_22",
+      "selection_id": "LITE_COVENANT_REFINANCING",
+      "source_set_id": "set-291d986ae235497f9669",
+      "source_set_digest": "bd93b2cc04c36a328c73f57d076306bc9d76921a5deab5f86fc4bb82fdbb1515",
+      "served_nodes": [
+        {
+          "id": "node-980c8a23e4fc45baa722",
+          "module_id": "CP-PARSE",
+          "stage": 0,
+          "dependencies": []
+        },
+        {
+          "id": "node-9f9552431f8e4365a2f0",
+          "module_id": "CP-0",
+          "stage": 1,
+          "dependencies": [
+            "CP-PARSE"
+          ]
+        },
+        {
+          "id": "node-a1c44bc6ec164494b14f",
+          "module_id": "CP-L10",
+          "stage": 2,
+          "dependencies": [
+            "CP-0"
+          ]
+        },
+        {
+          "id": "node-ba043220591647b9ab6d",
+          "module_id": "CP-4C",
+          "stage": 3,
+          "dependencies": [
+            "CP-L10"
+          ]
+        },
+        {
+          "id": "node-166cb748e4a94c929868",
+          "module_id": "CP-5",
+          "stage": 4,
+          "dependencies": [
+            "CP-4C",
+            "CP-L10"
+          ]
+        }
+      ],
+      "served_edge_count": 5,
+      "displayed_node_ids": [
+        "node-166cb748e4a94c929868",
+        "node-980c8a23e4fc45baa722",
+        "node-9f9552431f8e4365a2f0",
+        "node-a1c44bc6ec164494b14f",
+        "node-ba043220591647b9ab6d"
+      ],
+      "displayed_modules": [
+        "CP-0",
+        "CP-4C",
+        "CP-5",
+        "CP-L10",
+        "CP-PARSE"
+      ],
+      "displayed_edge_count": 5,
+      "screenshot": "/private/tmp/caos-task10.j0GTQN/evidence/graph-retry-1/task10-graph-matrix/covenant-refinancing-screen.png"
+    },
+    {
+      "pathway": "COVENANT_REFINANCING",
+      "depth": "full",
+      "run_id": "run-f1ece500b74e4b6f91c1",
+      "status_at_capture": "running",
+      "profile_id": "FULL_CREDIT_32",
+      "selection_id": "COVENANT_REFINANCING",
+      "source_set_id": "set-291d986ae235497f9669",
+      "source_set_digest": "bd93b2cc04c36a328c73f57d076306bc9d76921a5deab5f86fc4bb82fdbb1515",
+      "served_nodes": [
+        {
+          "id": "node-f35e11ea6e9441b0a91c",
+          "module_id": "CP-PARSE",
+          "stage": 0,
+          "dependencies": []
+        },
+        {
+          "id": "node-7cc97ae316a9436a825d",
+          "module_id": "CP-0",
+          "stage": 1,
+          "dependencies": [
+            "CP-PARSE"
+          ]
+        },
+        {
+          "id": "node-9eb6228947f84f0c8177",
+          "module_id": "CP-1",
+          "stage": 2,
+          "dependencies": [
+            "CP-0"
+          ]
+        },
+        {
+          "id": "node-f1adb2e6aeb34f46b874",
+          "module_id": "CP-4",
+          "stage": 3,
+          "dependencies": [
+            "CP-1"
+          ]
+        },
+        {
+          "id": "node-cc317336d8e94103898f",
+          "module_id": "CP-4C",
+          "stage": 4,
+          "dependencies": [
+            "CP-1",
+            "CP-4"
+          ]
+        },
+        {
+          "id": "node-add4cd5f867849b2a880",
+          "module_id": "CP-5",
+          "stage": 5,
+          "dependencies": [
+            "CP-1",
+            "CP-4",
+            "CP-4C"
+          ]
+        }
+      ],
+      "served_edge_count": 8,
+      "displayed_node_ids": [
+        "node-7cc97ae316a9436a825d",
+        "node-9eb6228947f84f0c8177",
+        "node-add4cd5f867849b2a880",
+        "node-cc317336d8e94103898f",
+        "node-f1adb2e6aeb34f46b874",
+        "node-f35e11ea6e9441b0a91c"
+      ],
+      "displayed_modules": [
+        "CP-0",
+        "CP-1",
+        "CP-4",
+        "CP-4C",
+        "CP-5",
+        "CP-PARSE"
+      ],
+      "displayed_edge_count": 8,
+      "screenshot": "/private/tmp/caos-task10.j0GTQN/evidence/graph-retry-1/task10-graph-matrix/covenant-refinancing-full.png"
+    },
+    {
+      "pathway": "RELATIVE_VALUE",
+      "depth": "screen",
+      "run_id": "run-0a538d5e164d4e738791",
+      "status_at_capture": "running",
+      "profile_id": "LITE_CREDIT_22",
+      "selection_id": "LITE_RELATIVE_VALUE",
+      "source_set_id": "set-291d986ae235497f9669",
+      "source_set_digest": "bd93b2cc04c36a328c73f57d076306bc9d76921a5deab5f86fc4bb82fdbb1515",
+      "served_nodes": [
+        {
+          "id": "node-8fb05cc2323e4959b339",
+          "module_id": "CP-PARSE",
+          "stage": 0,
+          "dependencies": []
+        },
+        {
+          "id": "node-2273397f1384450a995a",
+          "module_id": "CP-0",
+          "stage": 1,
+          "dependencies": [
+            "CP-PARSE"
+          ]
+        },
+        {
+          "id": "node-b22e194d37c548bf8791",
+          "module_id": "CP-L10",
+          "stage": 2,
+          "dependencies": [
+            "CP-0"
+          ]
+        },
+        {
+          "id": "node-06b453240e714fbba76d",
+          "module_id": "CP-1C",
+          "stage": 3,
+          "dependencies": [
+            "CP-L10"
+          ]
+        }
+      ],
+      "served_edge_count": 3,
+      "displayed_node_ids": [
+        "node-06b453240e714fbba76d",
+        "node-2273397f1384450a995a",
+        "node-8fb05cc2323e4959b339",
+        "node-b22e194d37c548bf8791"
+      ],
+      "displayed_modules": [
+        "CP-0",
+        "CP-1C",
+        "CP-L10",
+        "CP-PARSE"
+      ],
+      "displayed_edge_count": 3,
+      "screenshot": "/private/tmp/caos-task10.j0GTQN/evidence/graph-retry-1/task10-graph-matrix/relative-value-screen.png"
+    },
+    {
+      "pathway": "RELATIVE_VALUE",
+      "depth": "full",
+      "run_id": "run-91ca4a58389948e0b9c4",
+      "status_at_capture": "running",
+      "profile_id": "FULL_CREDIT_32",
+      "selection_id": "RELATIVE_VALUE",
+      "source_set_id": "set-291d986ae235497f9669",
+      "source_set_digest": "bd93b2cc04c36a328c73f57d076306bc9d76921a5deab5f86fc4bb82fdbb1515",
+      "served_nodes": [
+        {
+          "id": "node-f40b12c63ddb4e6db586",
+          "module_id": "CP-PARSE",
+          "stage": 0,
+          "dependencies": []
+        },
+        {
+          "id": "node-25dc9bb9dfe24b58994c",
+          "module_id": "CP-0",
+          "stage": 1,
+          "dependencies": [
+            "CP-PARSE"
+          ]
+        },
+        {
+          "id": "node-52c26d64d593422981d8",
+          "module_id": "CP-1",
+          "stage": 2,
+          "dependencies": [
+            "CP-0"
+          ]
+        },
+        {
+          "id": "node-57bc535ede8749c9bc08",
+          "module_id": "CP-1C",
+          "stage": 3,
+          "dependencies": [
+            "CP-0"
+          ]
+        },
+        {
+          "id": "node-5ecb4ed58b99445eb941",
+          "module_id": "CP-2",
+          "stage": 4,
+          "dependencies": [
+            "CP-1",
+            "CP-1C"
+          ]
+        },
+        {
+          "id": "node-991276e8f7f34ad79f44",
+          "module_id": "CP-2G",
+          "stage": 5,
+          "dependencies": [
+            "CP-1"
+          ]
+        },
+        {
+          "id": "node-85096c204e8041eca73f",
+          "module_id": "CP-3",
+          "stage": 6,
+          "dependencies": [
+            "CP-1",
+            "CP-1C",
+            "CP-2",
+            "CP-2G"
+          ]
+        }
+      ],
+      "served_edge_count": 10,
+      "displayed_node_ids": [
+        "node-25dc9bb9dfe24b58994c",
+        "node-52c26d64d593422981d8",
+        "node-57bc535ede8749c9bc08",
+        "node-5ecb4ed58b99445eb941",
+        "node-85096c204e8041eca73f",
+        "node-991276e8f7f34ad79f44",
+        "node-f40b12c63ddb4e6db586"
+      ],
+      "displayed_modules": [
+        "CP-0",
+        "CP-1",
+        "CP-1C",
+        "CP-2",
+        "CP-2G",
+        "CP-3",
+        "CP-PARSE"
+      ],
+      "displayed_edge_count": 10,
+      "screenshot": "/private/tmp/caos-task10.j0GTQN/evidence/graph-retry-1/task10-graph-matrix/relative-value-full.png"
+    },
+    {
+      "pathway": "DISTRESSED_RESTRUCTURING",
+      "depth": "screen",
+      "run_id": "run-571ff663164a49199b84",
+      "status_at_capture": "running",
+      "profile_id": "LITE_CREDIT_22",
+      "selection_id": "LITE_DISTRESSED_RESTRUCTURING",
+      "source_set_id": "set-291d986ae235497f9669",
+      "source_set_digest": "bd93b2cc04c36a328c73f57d076306bc9d76921a5deab5f86fc4bb82fdbb1515",
+      "served_nodes": [
+        {
+          "id": "node-237dc532a4c2459cb40a",
+          "module_id": "CP-PARSE",
+          "stage": 0,
+          "dependencies": []
+        },
+        {
+          "id": "node-6095bab681b5488c8828",
+          "module_id": "CP-0",
+          "stage": 1,
+          "dependencies": [
+            "CP-PARSE"
+          ]
+        },
+        {
+          "id": "node-d09e4c120d834737af34",
+          "module_id": "CP-L10",
+          "stage": 2,
+          "dependencies": [
+            "CP-0"
+          ]
+        },
+        {
+          "id": "node-53bc989e9a654b99b881",
+          "module_id": "CP-2A",
+          "stage": 3,
+          "dependencies": [
+            "CP-L10"
+          ]
+        },
+        {
+          "id": "node-2985fcdf93a64e118681",
+          "module_id": "CP-2H",
+          "stage": 4,
+          "dependencies": [
+            "CP-L10"
+          ]
+        },
+        {
+          "id": "node-5e166c6ae7304f728048",
+          "module_id": "CP-4C",
+          "stage": 5,
+          "dependencies": [
+            "CP-2A",
+            "CP-L10"
+          ]
+        }
+      ],
+      "served_edge_count": 6,
+      "displayed_node_ids": [
+        "node-237dc532a4c2459cb40a",
+        "node-2985fcdf93a64e118681",
+        "node-53bc989e9a654b99b881",
+        "node-5e166c6ae7304f728048",
+        "node-6095bab681b5488c8828",
+        "node-d09e4c120d834737af34"
+      ],
+      "displayed_modules": [
+        "CP-0",
+        "CP-2A",
+        "CP-2H",
+        "CP-4C",
+        "CP-L10",
+        "CP-PARSE"
+      ],
+      "displayed_edge_count": 6,
+      "screenshot": "/private/tmp/caos-task10.j0GTQN/evidence/graph-retry-1/task10-graph-matrix/distressed-restructuring-screen.png"
+    },
+    {
+      "pathway": "DISTRESSED_RESTRUCTURING",
+      "depth": "full",
+      "run_id": "run-bfe4279f5f294fb69cb7",
+      "status_at_capture": "running",
+      "profile_id": "FULL_CREDIT_32",
+      "selection_id": "DISTRESSED_RESTRUCTURING",
+      "source_set_id": "set-291d986ae235497f9669",
+      "source_set_digest": "bd93b2cc04c36a328c73f57d076306bc9d76921a5deab5f86fc4bb82fdbb1515",
+      "served_nodes": [
+        {
+          "id": "node-5c24837afabc479b84e6",
+          "module_id": "CP-PARSE",
+          "stage": 0,
+          "dependencies": []
+        },
+        {
+          "id": "node-dacf08eb553149989ae6",
+          "module_id": "CP-0",
+          "stage": 1,
+          "dependencies": [
+            "CP-PARSE"
+          ]
+        },
+        {
+          "id": "node-74a8d9cb19da4e3288c8",
+          "module_id": "CP-1",
+          "stage": 2,
+          "dependencies": [
+            "CP-0"
+          ]
+        },
+        {
+          "id": "node-24e62946e70b4c2b8eea",
+          "module_id": "CP-2",
+          "stage": 3,
+          "dependencies": [
+            "CP-1"
+          ]
+        },
+        {
+          "id": "node-aefe84169eb54709b56e",
+          "module_id": "CP-2A",
+          "stage": 4,
+          "dependencies": [
+            "CP-1"
+          ]
+        },
+        {
+          "id": "node-fc06a215a1a14fe0bb86",
+          "module_id": "CP-2G",
+          "stage": 5,
+          "dependencies": [
+            "CP-1",
+            "CP-2A"
+          ]
+        },
+        {
+          "id": "node-620772f47d4f4d27939b",
+          "module_id": "CP-2H",
+          "stage": 6,
+          "dependencies": [
+            "CP-1",
+            "CP-2G"
+          ]
+        },
+        {
+          "id": "node-0c5cfb28ea6c4987a24f",
+          "module_id": "CP-4",
+          "stage": 7,
+          "dependencies": [
+            "CP-1"
+          ]
+        },
+        {
+          "id": "node-af9af79bdbad4a1c81ba",
+          "module_id": "CP-4C",
+          "stage": 8,
+          "dependencies": [
+            "CP-1",
+            "CP-2A",
+            "CP-2G",
+            "CP-4"
+          ]
+        },
+        {
+          "id": "node-bda0dcf12a824d20af85",
+          "module_id": "CP-3",
+          "stage": 9,
+          "dependencies": [
+            "CP-1",
+            "CP-2",
+            "CP-2G",
+            "CP-2H"
+          ]
+        },
+        {
+          "id": "node-00cbe4fe55604505ad59",
+          "module_id": "CP-6",
+          "stage": 10,
+          "dependencies": [
+            "CP-1",
+            "CP-2",
+            "CP-2A",
+            "CP-3",
+            "CP-4C"
+          ]
+        }
+      ],
+      "served_edge_count": 22,
+      "displayed_node_ids": [
+        "node-00cbe4fe55604505ad59",
+        "node-0c5cfb28ea6c4987a24f",
+        "node-24e62946e70b4c2b8eea",
+        "node-5c24837afabc479b84e6",
+        "node-620772f47d4f4d27939b",
+        "node-74a8d9cb19da4e3288c8",
+        "node-aefe84169eb54709b56e",
+        "node-af9af79bdbad4a1c81ba",
+        "node-bda0dcf12a824d20af85",
+        "node-dacf08eb553149989ae6",
+        "node-fc06a215a1a14fe0bb86"
+      ],
+      "displayed_modules": [
+        "CP-0",
+        "CP-1",
+        "CP-2",
+        "CP-2A",
+        "CP-2G",
+        "CP-2H",
+        "CP-3",
+        "CP-4",
+        "CP-4C",
+        "CP-6",
+        "CP-PARSE"
+      ],
+      "displayed_edge_count": 22,
+      "screenshot": "/private/tmp/caos-task10.j0GTQN/evidence/graph-retry-1/task10-graph-matrix/distressed-restructuring-full.png"
+    }
+  ],
+  "source_set_id": "set-291d986ae235497f9669",
+  "source_set_digest": "bd93b2cc04c36a328c73f57d076306bc9d76921a5deab5f86fc4bb82fdbb1515",
+  "status": "failed",
+  "error": "AssertionError [ERR_ASSERTION]: http://127.0.0.1:19273/api/cases/case-1c21b41f0b414c469d88/runs answered 422: {\"detail\":[{\"loc\":[\"body\"],\"msg\":\"Value error, DEEP_RESEARCH requires full depth\",\"type\":\"value_error\"}]}\n\n422 !== 201\n\n    at checkedJson (file:///Users/ericguei/Claude/Projects/CAOS-LangMVP/.claude/worktrees/analyst-workbench-codex/caos/frontend/scripts/task10-graph-matrix.mjs:43:10)\n    at async file:///Users/ericguei/Claude/Projects/CAOS-LangMVP/.claude/worktrees/analyst-workbench-codex/caos/frontend/scripts/task10-graph-matrix.mjs:81:23"
+}

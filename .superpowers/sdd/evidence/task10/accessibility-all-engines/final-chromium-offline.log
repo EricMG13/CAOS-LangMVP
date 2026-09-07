@@ -1,0 +1,2 @@
+{"case_id": "case-1a63f2328b8842b58d2f", "checked": {"audit_events": 19, "frozen_deliverables": 1, "markdown_reconstructed": 1, "model_builds": 1, "objects": 29, "receipts": 1, "runs": 1}, "findings": [], "ok": true, "schema_version": "caos.audit-package.v1"}
+caos/server/.venv314/bin/python caos/server/caos/audit/verify_package.py    0.12s user 0.02s system 95% cpu 0.148 total

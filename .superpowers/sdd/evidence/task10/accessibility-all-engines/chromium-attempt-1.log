@@ -1,0 +1,59 @@
+
+> caos-frontend@0.1.0 a11y
+> node scripts/a11y-axe.mjs
+
+(node:31830) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///Users/ericguei/Claude/Projects/CAOS-LangMVP/.claude/worktrees/analyst-workbench-codex/caos/frontend/src/lib/workbench.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to /Users/ericguei/Claude/Projects/CAOS-LangMVP/.claude/worktrees/analyst-workbench-codex/caos/frontend/package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+node:internal/modules/run_main:107
+    triggerUncaughtException(
+    ^
+
+browserType.launch: Target page, context or browser has been closed
+Browser logs:
+
+<launching> /Users/ericguei/Library/Caches/ms-playwright/chromium_headless_shell-1234/chrome-headless-shell-mac-arm64/chrome-headless-shell --disable-field-trial-config --disable-background-networking --disable-background-timer-throttling --disable-backgrounding-occluded-windows --disable-back-forward-cache --disable-breakpad --disable-client-side-phishing-detection --disable-component-extensions-with-background-pages --disable-component-update --no-default-browser-check --disable-default-apps --disable-dev-shm-usage --disable-edgeupdater --disable-extensions --disable-features=AvoidUnnecessaryBeforeUnloadCheckSync,BoundaryEventDispatchTracksNodeRemoval,DestroyProfileOnBrowserClose,DialMediaRouteProvider,GlobalMediaControls,HttpsUpgrades,LensOverlay,MediaRouter,PaintHolding,ThirdPartyStoragePartitioning,BlockOriginHeaderModificationOnRedirect,Translate,AutoDeElevate,OptimizationHints,msForceBrowserSignIn,msEdgeUpdateLaunchServicesPreferredVersion --enable-features=CDPScreenshotNewSurface --allow-pre-commit-input --disable-hang-monitor --disable-ipc-flooding-protection --disable-popup-blocking --disable-prompt-on-repost --disable-renderer-backgrounding --disable-updater-scheduler --force-color-profile=srgb --metrics-recording-only --no-first-run --password-store=basic --use-mock-keychain --no-service-autorun --export-tagged-pdf --disable-search-engine-choice-screen --unsafely-disable-devtools-self-xss-warnings --edge-skip-compat-layer-relaunch --disable-infobars --disable-search-engine-choice-screen --disable-sync --enable-unsafe-swiftshader --headless --hide-scrollbars --mute-audio --blink-settings=primaryHoverType=2,availableHoverTypes=2,primaryPointerType=4,availablePointerTypes=4 --no-sandbox --user-data-dir=/var/folders/81/bwblpst93lb6wb3lwrk8k6800000gn/T/playwright_chromiumdev_profile-4SgqOS --remote-debugging-pipe --no-startup-window
+<launched> pid=31832
+[pid=31832][err] [0907/225130.605041:ERROR:base/power_monitor/thermal_state_observer_mac.mm:140] ThermalStateObserverMac unable to register to power notifications. Result: 9
+[pid=31832][err] [0907/225130.606993:ERROR:net/dns/dns_config_service_posix.cc:138] DNS config watch failed to start.
+[pid=31832][err] [0907/225130.607783:WARNING:net/dns/dns_config_service_posix.cc:197] Failed to read DnsConfig.
+[pid=31832][err] [0907/225130.607694:FATAL:base/apple/mach_port_rendezvous_mac.cc:159] Check failed: kr == KERN_SUCCESS. bootstrap_check_in org.chromium.Chromium.MachPortRendezvousServer.31832: Permission denied (1100)
+Call log:
+[2m  - <launching> /Users/ericguei/Library/Caches/ms-playwright/chromium_headless_shell-1234/chrome-headless-shell-mac-arm64/chrome-headless-shell --disable-field-trial-config --disable-background-networking --disable-background-timer-throttling --disable-backgrounding-occluded-windows --disable-back-forward-cache --disable-breakpad --disable-client-side-phishing-detection --disable-component-extensions-with-background-pages --disable-component-update --no-default-browser-check --disable-default-apps --disable-dev-shm-usage --disable-edgeupdater --disable-extensions --disable-features=AvoidUnnecessaryBeforeUnloadCheckSync,BoundaryEventDispatchTracksNodeRemoval,DestroyProfileOnBrowserClose,DialMediaRouteProvider,GlobalMediaControls,HttpsUpgrades,LensOverlay,MediaRouter,PaintHolding,ThirdPartyStoragePartitioning,BlockOriginHeaderModificationOnRedirect,Translate,AutoDeElevate,OptimizationHints,msForceBrowserSignIn,msEdgeUpdateLaunchServicesPreferredVersion --enable-features=CDPScreenshotNewSurface --allow-pre-commit-input --disable-hang-monitor --disable-ipc-flooding-protection --disable-popup-blocking --disable-prompt-on-repost --disable-renderer-backgrounding --disable-updater-scheduler --force-color-profile=srgb --metrics-recording-only --no-first-run --password-store=basic --use-mock-keychain --no-service-autorun --export-tagged-pdf --disable-search-engine-choice-screen --unsafely-disable-devtools-self-xss-warnings --edge-skip-compat-layer-relaunch --disable-infobars --disable-search-engine-choice-screen --disable-sync --enable-unsafe-swiftshader --headless --hide-scrollbars --mute-audio --blink-settings=primaryHoverType=2,availableHoverTypes=2,primaryPointerType=4,availablePointerTypes=4 --no-sandbox --user-data-dir=/var/folders/81/bwblpst93lb6wb3lwrk8k6800000gn/T/playwright_chromiumdev_profile-4SgqOS --remote-debugging-pipe --no-startup-window[22m
+[2m  - <launched> pid=31832[22m
+[2m  - [pid=31832][err] [0907/225130.605041:ERROR:base/power_monitor/thermal_state_observer_mac.mm:140] ThermalStateObserverMac unable to register to power notifications. Result: 9[22m
+[2m  - [pid=31832][err] [0907/225130.606993:ERROR:net/dns/dns_config_service_posix.cc:138] DNS config watch failed to start.[22m
+[2m  - [pid=31832][err] [0907/225130.607783:WARNING:net/dns/dns_config_service_posix.cc:197] Failed to read DnsConfig.[22m
+[2m  - [pid=31832][err] [0907/225130.607694:FATAL:base/apple/mach_port_rendezvous_mac.cc:159] Check failed: kr == KERN_SUCCESS. bootstrap_check_in org.chromium.Chromium.MachPortRendezvousServer.31832: Permission denied (1100)[22m
+[2m  - [pid=31832] <gracefully close start>[22m
+[2m  - [pid=31832] <kill>[22m
+[2m  - [pid=31832] <will force kill>[22m
+[2m  - [pid=31832] exception while trying to kill process: Error: kill EPERM[22m
+[2m  - [pid=31832] <process did exit: exitCode=null, signal=SIGTRAP>[22m
+[2m  - [pid=31832] starting temporary directories cleanup[22m
+[2m  - [pid=31832] finished temporary directories cleanup[22m
+[2m  - [pid=31832] <gracefully close end>[22m
+
+    at /Users/ericguei/Claude/Projects/CAOS-LangMVP/.claude/worktrees/analyst-workbench-codex/caos/frontend/scripts/a11y-axe.mjs:36:44
+    at async node:internal/modules/esm/loader:633:26 {
+  log: [
+    '  - <launching> /Users/ericguei/Library/Caches/ms-playwright/chromium_headless_shell-1234/chrome-headless-shell-mac-arm64/chrome-headless-shell --disable-field-trial-config --disable-background-networking --disable-background-timer-throttling --disable-backgrounding-occluded-windows --disable-back-forward-cache --disable-breakpad --disable-client-side-phishing-detection --disable-component-extensions-with-background-pages --disable-component-update --no-default-browser-check --disable-default-apps --disable-dev-shm-usage --disable-edgeupdater --disable-extensions --disable-features=AvoidUnnecessaryBeforeUnloadCheckSync,BoundaryEventDispatchTracksNodeRemoval,DestroyProfileOnBrowserClose,DialMediaRouteProvider,GlobalMediaControls,HttpsUpgrades,LensOverlay,MediaRouter,PaintHolding,ThirdPartyStoragePartitioning,BlockOriginHeaderModificationOnRedirect,Translate,AutoDeElevate,OptimizationHints,msForceBrowserSignIn,msEdgeUpdateLaunchServicesPreferredVersion --enable-features=CDPScreenshotNewSurface --allow-pre-commit-input --disable-hang-monitor --disable-ipc-flooding-protection --disable-popup-blocking --disable-prompt-on-repost --disable-renderer-backgrounding --disable-updater-scheduler --force-color-profile=srgb --metrics-recording-only --no-first-run --password-store=basic --use-mock-keychain --no-service-autorun --export-tagged-pdf --disable-search-engine-choice-screen --unsafely-disable-devtools-self-xss-warnings --edge-skip-compat-layer-relaunch --disable-infobars --disable-search-engine-choice-screen --disable-sync --enable-unsafe-swiftshader --headless --hide-scrollbars --mute-audio --blink-settings=primaryHoverType=2,availableHoverTypes=2,primaryPointerType=4,availablePointerTypes=4 --no-sandbox --user-data-dir=/var/folders/81/bwblpst93lb6wb3lwrk8k6800000gn/T/playwright_chromiumdev_profile-4SgqOS --remote-debugging-pipe --no-startup-window',
+    '  - <launched> pid=31832',
+    '  - [pid=31832][err] [0907/225130.605041:ERROR:base/power_monitor/thermal_state_observer_mac.mm:140] ThermalStateObserverMac unable to register to power notifications. Result: 9',
+    '  - [pid=31832][err] [0907/225130.606993:ERROR:net/dns/dns_config_service_posix.cc:138] DNS config watch failed to start.',
+    '  - [pid=31832][err] [0907/225130.607783:WARNING:net/dns/dns_config_service_posix.cc:197] Failed to read DnsConfig.',
+    '  - [pid=31832][err] [0907/225130.607694:FATAL:base/apple/mach_port_rendezvous_mac.cc:159] Check failed: kr == KERN_SUCCESS. bootstrap_check_in org.chromium.Chromium.MachPortRendezvousServer.31832: Permission denied (1100)',
+    '  - [pid=31832] <gracefully close start>',
+    '  - [pid=31832] <kill>',
+    '  - [pid=31832] <will force kill>',
+    '  - [pid=31832] exception while trying to kill process: Error: kill EPERM',
+    '  - [pid=31832] <process did exit: exitCode=null, signal=SIGTRAP>',
+    '  - [pid=31832] starting temporary directories cleanup',
+    '  - [pid=31832] finished temporary directories cleanup',
+    '  - [pid=31832] <gracefully close end>'
+  ]
+}
+
+Node.js v24.16.0
+env CAOS_URL=http://127.0.0.1:19276  CAOS_BROWSER=chromium npm run a11y  0.39s user 0.07s system 68% cpu 0.678 total

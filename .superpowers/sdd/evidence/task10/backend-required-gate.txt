@@ -1,0 +1,41 @@
+Task 10 required backend gate
+=============================
+
+Provenance
+----------
+
+Working tree: /Users/ericguei/Claude/Projects/CAOS-LangMVP/.claude/worktrees/analyst-workbench-codex
+Commit at execution: 90403c7ce94e6384fd1f4595eff893935e5530f9
+Tracked caos/server tree: b5fa78e0ec6fdc86370fbe418291b20a4a133dea
+Tracked caos/tests tree: 8a361cc3d7bd450c85b2965844a8040985995d63
+Task 10 changed no backend, backend test, or fixture file before or after this run.
+This durable transcription is from the complete tool-returned pytest output; the original command was not piped through tee. The Task 10 brief permits retaining this exact complete run when backend code/tests/fixtures remain unchanged.
+
+Fixture-resolution probe
+------------------------
+
+Command (root workdir):
+caos/server/.venv314/bin/python -m pytest caos/tests/test_audit_regressions.py caos/tests/test_verify_package_bounds.py caos/tests/spec/test_source_complete_modelling_spec.py --fixtures-per-test -q
+
+Result: exit 0. Pytest printed the fixture table and showed that the source-complete tests resolve `settings` from `caos/tests/spec/conftest.py`, proving the required root-first resolution. This probe intentionally did not execute tests.
+
+Complete required gate
+----------------------
+
+Command (root workdir):
+caos/server/.venv314/bin/python -m pytest caos/tests/test_audit_regressions.py caos/tests/test_verify_package_bounds.py caos/tests/spec/test_model_builder_spec.py caos/tests/spec/test_source_complete_modelling_spec.py caos/tests/spec/test_module_presentation_spec.py caos/tests/spec/test_deliverables_spec.py caos/tests/spec/test_publication_spec.py caos/tests/spec/test_publication_charts_spec.py caos/tests/spec/test_publication_goldens_spec.py caos/tests/spec/test_http_contracts_spec.py caos/tests/spec/test_audit_package_spec.py caos/tests/spec/test_distressed_model_overlay.py caos/tests/spec/test_ordinary_distressed_e2e.py -q
+
+Exit status: 0
+Collected/executed: 1001 tests
+Result: 1001 passed, 1 warning in 1611.44s (0:26:51)
+Progress reached: 100%
+
+Warning
+-------
+
+One pre-existing StarletteDeprecationWarning from FastAPI/Starlette TestClient was reported. No test failed or skipped.
+
+Timing note
+-----------
+
+This corrected-fixture run was materially slower than Task 9's earlier broad run. The console output did not include per-test durations because `--durations=25` was not present in the original required command. No causal claim is made. Because backend state stayed byte-identical, the gate was not repeated solely to add timing metadata.

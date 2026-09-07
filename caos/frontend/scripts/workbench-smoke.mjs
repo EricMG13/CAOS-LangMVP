@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { chromium, firefox, request, webkit } from "playwright";
+import AxeBuilder from "@axe-core/playwright";
 
 import { webkitTeardownRejection } from "./webkit-teardown.mjs";
 
@@ -42,6 +43,8 @@ assert.ok(Number.isFinite(maxFirstContentfulPaintMs) && maxFirstContentfulPaintM
 // it. CAOS_ENFORCE_TIMING=1|0 overrides the default for any engine.
 const enforceTimingBudget = process.env.CAOS_ENFORCE_TIMING ? process.env.CAOS_ENFORCE_TIMING === "1" : browserName === "chromium";
 let pageTiming = null;
+let loadedChartAxeChecks = 0;
+let loadedSignedStackCases = 0;
 const identityHeaders = process.env.CAOS_EDGE_SECRET ? {
   "x-edge-authorization": process.env.CAOS_EDGE_SECRET,
   "x-forwarded-user": process.env.CAOS_TEST_USER || "analyst.qa@local.invalid",
@@ -157,6 +160,12 @@ const legacyAcceptedArtifact = {
     sections: [], unavailable: [{ view_id: `${legacySeedArtifact.module_id}.legacy`, code: "MAPPING_UNAVAILABLE" }],
   },
 };
+const task9SignedStackCases = {
+  positive: [["Q1", "A", 1], ["Q1", "B", 2], ["Q2", "B", 2], ["Q2", "A", 1]],
+  negative: [["Q1", "A", -1], ["Q1", "B", -2], ["Q2", "B", -2], ["Q2", "A", -1]],
+  mixed: [["Q1", "A", 1], ["Q1", "B", -2], ["Q1", "C", 0], ["Q2", "C", -3], ["Q2", "B", 2], ["Q2", "A", -1],
+    ["Q3", "B", 0], ["Q3", "C", -4], ["Q3", "A", -2]],
+};
 const chartArtifactFixtures = new Map(actualAcceptedArtifacts.map((item, index) => {
   const task6Origin = { kind: "ARTIFACT", authority_id: item.id, block_ids: [source.blocks[0].block_id] };
   const kind = index === 0 ? "stacked_bar" : index === 1 ? "bar" : "line";
@@ -180,9 +189,24 @@ const chartArtifactFixtures = new Map(actualAcceptedArtifacts.map((item, index) 
     kind: "table", section_id: `task6.detail.${index}`, title: "Accepted observations", page: "Financial performance", editable: false,
     origin: task6Origin, columns: ["Observation", "Value"], rows: [["Authority", item.id], ["State", "Accepted"]], note: null,
   };
+  // Route-controlled presentation only: these are the exact Task 9 native-G2
+  // ordering fixtures, now rendered inside the real accepted-analysis screen
+  // in each supported browser. The accepted artifact identity and source block
+  // remain real; no analytical or provider output is attributed to these rows.
+  const signedStacks = index === 0 ? Object.entries(task9SignedStackCases).map(([name, rows]) => {
+    const signedPoints = rows.map(([x, series, y]) => ({ x, series, y: String(y), display: String(y), source_ids: [source.id] }));
+    const signedRecipeId = `task9.stack.${name}`;
+    return {
+      kind: "chart", section_id: signedRecipeId, title: `Signed stack order: ${name}`, page: "Financial performance", editable: false,
+      origin: task6Origin,
+      recipe: { schema_version: "caos.chart.v1", recipe_id: signedRecipeId, kind: "stacked_bar", unit: "USD millions", points: signedPoints },
+      accessible_columns: ["Category / period", "Series", "Value", "Unit", "Sources"],
+      accessible_rows: signedPoints.map((point) => [point.x, point.series, point.display, "USD millions", point.source_ids.join(", ")]),
+    };
+  }) : [];
   return [item.id, { ...item, presentation: {
     schema_version: "caos.module-presentation.v1", artifact_id: item.id, artifact_digest: item.digest,
-    mapping_version: item.presentation?.mapping_version || "qa-task6-route-controlled", sections: [chart, detail],
+    mapping_version: item.presentation?.mapping_version || "qa-task6-route-controlled", sections: [chart, ...signedStacks, detail],
     unavailable: item.presentation?.unavailable || [],
   } }];
 }));
@@ -724,6 +748,12 @@ try {
   const actualTable = actualChartPage.getByRole("region", { name: `${actualCp1Chart.title} exact data table` });
   await actualTable.getByText(actualCp1Chart.recipe.unit, { exact: true }).first().waitFor();
   await actualTable.getByText(actualCp1Chart.accessible_rows[0][2], { exact: true }).first().waitFor();
+  const actualChartAxe = await new AxeBuilder({ page: actualChartPage })
+    .include(".module-presentation")
+    .withTags(["wcag2a", "wcag2aa", "wcag21aa"])
+    .analyze();
+  assert.deepEqual(actualChartAxe.violations, [], "loaded canonical chart and exact table have axe violations");
+  loadedChartAxeChecks += 1;
   const actualSourceLink = actualChartPage.getByRole("navigation", { name: `${actualCp1Chart.title} chart sources` }).getByRole("link", { name: new RegExp(chartSource.id) }).first();
   assert.equal(new URL(await actualSourceLink.getAttribute("href"), baseURL).searchParams.get("source"), chartSource.id);
   assert.equal(await actualChartPage.locator(".chart-exhibit-failure").count(), 0, "unmodified CP-1 chart fell back to its table");
@@ -783,10 +813,26 @@ try {
   await firstModuleButton.click();
   const finalRecipe = chartArtifactFixtures.get(firstChartArtifact.id).presentation.sections[0].recipe.recipe_id;
   await page.waitForFunction((recipeId) => document.querySelector(`.chart-exhibit-canvas[data-recipe-id="${recipeId}"]`)?.getAttribute("data-chart-lifecycle") === "ready", finalRecipe);
-  assert.equal(await page.locator('.chart-exhibit-canvas[data-chart-kind="stacked_bar"]').count(), 1, "same-id kind/unit replacement kept the stale grouped bar");
-  assert.equal(await page.locator(".chart-exhibit-canvas canvas").count(), 1, "rapid module switching retained a stale chart canvas");
+  assert.equal(await page.locator('.chart-exhibit-canvas[data-recipe-id="task6.shared-replacement"][data-chart-kind="stacked_bar"]').count(), 1, "same-id kind/unit replacement kept the stale grouped bar");
+  assert.equal(await page.locator('.chart-exhibit-canvas[data-recipe-id="task6.shared-replacement"] canvas').count(), 1, "rapid module switching retained a stale chart canvas");
   assert.equal(await firstModuleButton.getAttribute("aria-pressed"), "true", "rapid switching selected the wrong accepted artifact");
   assert.equal(await page.locator(".chart-exhibit-failure").count(), 0, "actual G2 rendering fell back during rapid switching");
+
+  for (const [name, rows] of Object.entries(task9SignedStackCases)) {
+    const recipeId = `task9.stack.${name}`;
+    await page.waitForFunction((id) => document.querySelector(`.chart-exhibit-canvas[data-recipe-id="${id}"]`)?.getAttribute("data-chart-lifecycle") === "ready", recipeId);
+    const table = page.getByRole("region", { name: `Signed stack order: ${name} exact data table` });
+    const displayedRows = await table.locator("tbody tr").evaluateAll((elements) => elements.map((row) =>
+      [...row.querySelectorAll("th, td")].map((cell) => cell.textContent?.trim() ?? "")));
+    assert.deepEqual(displayedRows, rows.map(([x, series, y]) => [x, series, String(y), "USD millions", source.id]),
+      `${name} signed-stack exact table changed category-local series order or values`);
+    assert.equal(await page.locator(`.chart-exhibit-canvas[data-recipe-id="${recipeId}"] canvas`).count(), 1,
+      `${name} signed-stack did not settle to one native G2 canvas`);
+    loadedSignedStackCases += 1;
+  }
+  assert.equal(await page.locator(".chart-exhibit-canvas canvas").count(), 4,
+    "the full-app Task 9 fixture did not retain exactly the base plus three signed-stack canvases");
+  await page.locator(".module-presentation").screenshot({ path: path.join(resultsDir, "analysis-task9-signed-stacks.png") });
 
   const equalFirstArtifact = actualAcceptedArtifacts[2];
   const equalSecondArtifact = actualAcceptedArtifacts[3];
@@ -1752,14 +1798,17 @@ try {
   await page.keyboard.press("Enter");
   await page.locator("#model-cell-lineage").getByText("=A2/276", { exact: true }).waitFor();
   const periodControls = page.getByRole("group", { name: "Period family" });
-  await periodControls.getByRole("button", { name: "Base", exact: true }).click();
+  await periodControls.getByRole("button", { name: "Base", exact: true }).focus();
+  await page.keyboard.press("Enter");
   assert.equal(await periodControls.getByRole("button", { name: "Base", exact: true }).evaluate((element) => element === document.activeElement), true, "period filtering did not leave focus on a visible control");
-  await periodControls.getByRole("button", { name: "All", exact: true }).click();
+  await periodControls.getByRole("button", { name: "All", exact: true }).focus();
+  await page.keyboard.press("Enter");
   const rowGroupControls = page.getByRole("group", { name: "Worksheet row groups" });
-  await rowGroupControls.getByRole("button", { name: "Collapse Cash Flow", exact: true }).click();
+  await rowGroupControls.getByRole("button", { name: "Collapse Cash Flow", exact: true }).focus();
+  await page.keyboard.press("Enter");
   const expandCashFlow = rowGroupControls.getByRole("button", { name: "Expand Cash Flow", exact: true });
   assert.equal(await expandCashFlow.evaluate((element) => element === document.activeElement), true, "row collapse did not leave focus on a visible control");
-  await expandCashFlow.click();
+  await page.keyboard.press("Enter");
   assert.equal(await rowGroupControls.getByRole("button", { name: "Collapse Cash Flow", exact: true }).evaluate((element) => element === document.activeElement), true, "row expansion did not preserve visible keyboard focus");
   await page.getByRole("button", { name: "Hide assumptions", exact: true }).click();
   for (const semanticId of ["ffo", "cfo_calc", "fcf", "ncf", "cash_and_equivalents"]) {
@@ -3088,6 +3137,8 @@ function report(outcome) {
     console_errors: errors,
     beforeunload_prompts: beforeunloadPrompts,
     webkit_teardown_rejections: webkitTeardownRejections,
+    loaded_chart_axe_checks: loadedChartAxeChecks,
+    loaded_signed_stack_cases: loadedSignedStackCases,
     ...outcome,
   };
   if (outcome.status === "passed") {
