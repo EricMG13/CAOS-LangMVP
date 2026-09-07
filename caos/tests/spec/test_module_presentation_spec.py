@@ -463,6 +463,93 @@ def test_full_fixture_null_start_cannot_make_a_flow_period_compatible(missing, p
     assert {"view_id": "cp1.revenue.v1", "code": "PERIOD_BASIS_MISMATCH"} in result["unavailable"]
 
 
+@pytest.mark.parametrize("field", ["currency", "unit"])
+@pytest.mark.parametrize("missing", NULL_CELL_FIXTURES)
+@pytest.mark.parametrize("spelling", ["original", "upper", "padded"])
+def test_full_fixture_null_currency_or_unit_cannot_label_numeric_charts(field, missing, spelling, presentation_bundle):
+    missing = missing.upper() if spelling == "upper" else f" \t{missing.title()}\t " if spelling == "padded" else missing
+    pair = f"{missing} | MILLIONS" if field == "currency" else f"USD | {missing}"
+    markdown = artifact()["markdown"].replace("| USD | MILLIONS |", f"| {pair} |")
+    result = validated_fixture_projection(markdown, presentation_bundle)
+    assert not charts(result)
+    for metric in ("revenue", "segments", "adjustments", "debt_maturity"):
+        assert {"view_id": f"cp1.{metric}.v1", "code": "UNIT_MISMATCH"} in result["unavailable"]
+
+
+@pytest.mark.parametrize("currency,unit", [("USD", "MILLIONS"), ("EUR", "THOUSANDS")])
+def test_full_fixture_disclosed_currency_and_unit_remain_chartable(currency, unit, presentation_bundle):
+    markdown = artifact()["markdown"].replace("| USD |", f"| {currency} |").replace("| MILLIONS |", f"| {unit} |")
+    result = validated_fixture_projection(markdown, presentation_bundle)
+    assert len(charts(result)) == 7
+    assert {s["recipe"]["unit"] for s in charts(result).values()} == {f"{currency} {unit}"}
+
+
+@pytest.mark.parametrize("field", ["Currency", "Unit"])
+@pytest.mark.parametrize("missing", NULL_CELL_FIXTURES)
+def test_named_comparison_cannot_use_missing_currency_or_unit(field, missing):
+    columns = ["Instrument", "Amount", "Currency", "Unit"]
+    rows = [["A", "10", "USD", "MILLIONS"], ["B", "20", "USD", "MILLIONS"]]
+    for row in rows:
+        row[columns.index(field)] = missing
+    result = project(artifact("CP-3", table("T3B.2", columns, rows)))
+    assert not charts(result)
+    assert any(r["view_id"] == "CP-3.T3B.2.v1" and r["code"] in {"UNIT_MISMATCH", "PERIOD_BASIS_MISMATCH"}
+               for r in result["unavailable"])
+
+
+@pytest.mark.parametrize("module,table_id,category,value,basis", [
+    ("CP-1C", "T4.3", "Entity", "EBITDA Margin", "Period"),
+    ("CP-1D", "T1D.4", "Step", "Amount", "Basis"),
+    ("CP-2A", "T2B.6", "Sensitivity", "Result", "Input Basis"),
+])
+@pytest.mark.parametrize("missing", (*NULL_CELL_FIXTURES, None))
+def test_named_comparison_null_basis_is_not_compatibility(module, table_id, category, value, basis, missing, presentation_bundle):
+    from caos.methodology.canonical import validate_model_sources
+    columns = [category, value, basis, "Currency", "Unit", "Calc Status", "Comp Status", "Status"]
+    disclosed = "FY2024" if module == "CP-1C" else "Reported"
+    rows = [[label, number, disclosed if missing is None else missing, "USD", "%" if module == "CP-1C" else "MILLIONS", "Calculated", "Comparable", "Verified"]
+            for label, number in (("A", "10"), ("B", "20"))]
+    extra = table(table_id, columns, rows)
+    # Complete canonical source-bearing scaffold, with a named module comparison.
+    markdown = artifact()["markdown"].replace("module_id: CP-1\n", f"module_id: {module}\n")
+    markdown = markdown.replace("## Analysis\n", "## Analysis\n\n" + extra, 1)
+    presentation_bundle.validate_handoff(markdown, module_id=module, run_id="run-cp-model-fixture", reporting_period="FY2024")
+    validate_model_sources(markdown, returned_source_ids={"SRC-1"})
+    result = project(artifact(module, markdown))
+    if missing is None:
+        assert f"{module}.{table_id}.v1" in charts(result)
+    else:
+        assert {"view_id": f"{module}.{table_id}.v1", "code": "PERIOD_BASIS_MISMATCH"} in result["unavailable"]
+    assert any(s["kind"] == "table" and s["rows"] == rows for s in result["sections"])
+
+
+@pytest.mark.parametrize("missing", NULL_CELL_FIXTURES)
+def test_selected_model_missing_monetary_unit_keeps_only_dimensionless_metrics(missing):
+    from caos.artifacts.presentation import project_model_outputs
+    selection = {"kind": "ANALYST_REVISION", "build_id": "build-1", "revision_id": "revision-1"}
+    outputs = {case: {f"{case}::FY2025": {"cash_and_equivalents": "0", "fcf": "-5", "net_leverage": "2", "interest_coverage": "3"}}
+               for case in ("BASE", "DOWNSIDE")}
+    result = project_model_outputs(selection=selection, outputs=outputs, unit=missing).model_dump()
+    assert result["selection"] == selection
+    assert {s["recipe"]["recipe_id"] for s in result["sections"]} == {"model.net_leverage.v1", "model.interest_coverage.v1"}
+    assert {r["view_id"] for r in result["unavailable"] if r["code"] == "UNIT_MISMATCH"} == {"model.cash_and_equivalents.v1", "model.fcf.v1"}
+
+
+@pytest.mark.parametrize("missing", NULL_CELL_FIXTURES)
+def test_named_comparison_period_axis_cannot_hide_a_missing_period(missing):
+    text = table("T1D.5", ["Period", "Conversion %"], [[missing, "10"], ["FY2024", "20"]])
+    result = project(artifact("CP-1D", text))
+    assert {"view_id": "CP-1D.T1D.5.v1", "code": "PERIOD_BASIS_MISMATCH"} in result["unavailable"]
+
+
+def test_named_comparison_period_axis_allows_distinct_real_periods_not_distinct_nulls():
+    for periods in (("unknown", "not disclosed"), ("FY2023", "FY2024")):
+        text = table("T1D.5", ["Period", "Conversion %"], [[periods[0], "10"], [periods[1], "20"]])
+        result = project(artifact("CP-1D", text))
+        assert bool(charts(result)) == (periods[0] == "FY2023")
+        assert any(s["kind"] == "table" and s["rows"] == [[periods[0], "10"], [periods[1], "20"]] for s in result["sections"])
+
+
 @pytest.mark.parametrize("kind", ["X" * 121, "MONTH", "quarter", "-", ""])
 def test_full_fixture_unsupported_period_kind_cannot_escape_into_public_ids(kind, presentation_bundle):
     markdown = artifact()["markdown"].replace("| QUARTER |", f"| {kind} |", 1)

@@ -143,7 +143,7 @@ def _rows(tables, table_id, required=()):
 
 def _unit(rows, fields=("currency", "unit")):
     values = {tuple(row.get(field, "").strip() for field in fields) for row in rows}
-    if len(values) != 1 or any(v.casefold() in {"", "-", "n/a", "null", "unavailable", "not available"} for v in next(iter(values), ())):
+    if len(values) != 1 or any(v.casefold() in _NULL_TEXT for v in next(iter(values), ())):
         raise PresentationError("UNIT_MISMATCH")
     return " ".join(next(iter(values)))
 
@@ -355,21 +355,25 @@ def _comparison_chart(module, table_id, tables, evidence, origin, page):
         for key in ("Status", "status", "Calc Status", "Comp Status", "Calc/Comp Status", "Evidence Status"):
             if key in row and row[key].casefold() not in {"verified", "calculated", "reported", "derived", "comparable", "ready", "pass"}:
                 raise PresentationError("VALUE_UNAVAILABLE")
-    for field in ("Period", "Currency", "Basis", "scenario", "timing", "Metric Def", "Date", "case", "definition IDs",
+    first = rows[0]
+    for field in ("Period", "Currency", "Basis", "Input Basis", "scenario", "timing", "Metric Def", "Date", "case", "definition IDs",
                   "valuation date", "period", "alignment basis", "Current Basis", "metric", "benchmark"):
-        if field in rows[0] and category != field and (len({r[field] for r in rows}) != 1 or not rows[0][field].strip()):
-            raise PresentationError("PERIOD_BASIS_MISMATCH")
-    unit_field = "unit" if "unit" in rows[0] else "Unit"
+        if field in first:
+            for row in rows:
+                context = row[field]
+                if context.strip().casefold() in _NULL_TEXT or (category != field and context != first[field]):
+                    raise PresentationError("PERIOD_BASIS_MISMATCH")
+    unit_field = "unit" if "unit" in first else "Unit"
     if fixed_unit:
-        if unit_field in rows[0] and _unit(rows, (unit_field,)) != fixed_unit:
+        if unit_field in first and _unit(rows, (unit_field,)) != fixed_unit:
             raise PresentationError("UNIT_MISMATCH")
         unit = fixed_unit
-    elif unit_field not in rows[0] and all(row[value].endswith("%") for row in rows):
+    elif unit_field not in first and all(row[value].endswith("%") for row in rows):
         unit = "%"  # explicit cell notation, never a guess from numeric magnitude
     else:
         unit = _unit(rows, (unit_field,))
         if unit not in {"%", "x", "bps", "score", "decimal", "ratio"}:
-            unit = _unit(rows, ("currency" if "currency" in rows[0] else "Currency", unit_field))
+            unit = _unit(rows, ("currency" if "currency" in first else "Currency", unit_field))
     points = []
     for row in rows:
         raw_value = row[value]
@@ -563,7 +567,7 @@ def project_model_outputs(*, selection: dict[str, Any], outputs: dict[str, Any],
                 if any(b != a + 1 for a, b in zip(years, years[1:])):
                     raise PresentationError("PERIOD_BASIS_MISMATCH")
             result.append(_chart(view_id, metric.replace("_", " ").title(), "Base / Downside model", origin,
-                                 "line", "x" if metric in {"net_leverage", "interest_coverage"} else unit, points))
+                                 "line", "x" if metric in {"net_leverage", "interest_coverage"} else _unit([{"unit": unit}], ("unit",)), points))
         except PresentationError as exc:
             unavailable.append({"view_id": view_id, "code": exc.code})
         except ValidationError:
