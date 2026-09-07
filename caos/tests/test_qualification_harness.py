@@ -36,6 +36,50 @@ HOST_CONTROL_ENV = {**os.environ, "ANTHROPIC_API_KEY": "", "OPENROUTER_API_KEY":
                     "CAOS_CORPUS_EXTERNAL_DIR": ""}
 
 
+@pytest.mark.parametrize("overlay", [False, True])
+def test_golden_journey_separates_case_head_from_publication_model(tmp_path, overlay):
+    import importlib.util
+    from types import SimpleNamespace
+
+    spec = importlib.util.spec_from_file_location("golden_journeys", ROOT / "qa/golden_journeys.py")
+    driver = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(driver)
+    sent = {}
+    selected = {"kind": "ANALYST_REVISION", "build_id": "build-current", "revision_id": "signed-current"}
+
+    class Client:
+        def json(self, method, path, **kwargs):
+            sent[method, path] = kwargs.get("body")
+            responses = {
+                ("POST", "/api/intake"): (201, {"case_id": "case-test", "run": {"id": "run-test"}}),
+                ("GET", "/api/cases/case-test/intake"): (200, {"documents": [{"filename": "annual.txt", "source_id": "source-test", "disposition": "used", "document_type": "annual_report", "reason": "test"}]}),
+                ("POST", "/api/runs/run-test/accept"): (200, {"id": "snapshot-test"}),
+                ("GET", "/api/cases/case-test/model"): (200, {"status": "READY"}),
+                ("POST", "/api/cases/case-test/models"): (202, {"id": "build-current"}),
+                ("GET", "/api/cases/case-test/models/build-current"): (200, {"id": "build-current", "status": "READY"}),
+                ("GET", "/api/cases/case-test/models/assumption-registry?build_id=build-current"): (200, {"version": "v1", "digest": "digest", "defaults": []}),
+                ("GET", "/api/cases/case-test/model-revisions"): (200, {"revisions": [{"id": "prior-head", "state": "STALE"}]}),
+                ("POST", "/api/cases/case-test/models/previews"): (200, {"preview_digest": "preview"}),
+                ("POST", "/api/cases/case-test/model-revisions/sign-off"): (201, {"id": "signed-current"}),
+                ("GET", "/api/cases/case-test/deliverables/FULL_CREDIT/draft"): (200, {
+                    "template": {"template_id": "template", "template_version": "v1", "blocks": []},
+                    "model_eligibility": {"default_model_selection": None if overlay else selected,
+                                          "application_build": {"build_id": "prior-base"}, "fallback_acknowledgement_required": overlay},
+                }),
+                ("PUT", "/api/cases/case-test/deliverables/FULL_CREDIT/draft"): (422, {}),
+            }
+            status, payload = responses[method, path]
+            return status, payload, {}
+
+    journey = driver.Journey(Client(), "FULL_CREDIT", tmp_path, SimpleNamespace(run_budget=1, worker_budget=1))
+    journey.wait_run = lambda *_: {"status": "succeeded", "nodes": []}
+    assert journey.run([])["outcome"] == "draft refused"  # stop after observing the draft request
+    sign = sent["POST", "/api/cases/case-test/model-revisions/sign-off"]
+    assert sign["parent_revision_id"] is None and sign["expected_head_revision_id"] == "prior-head"
+    expected = {"kind": "APPLICATION_BUILD", "build_id": "prior-base", "fallback_acknowledged": True} if overlay else selected
+    assert sent["PUT", "/api/cases/case-test/deliverables/FULL_CREDIT/draft"]["model_selection"] == expected
+
+
 @pytest.mark.parametrize("asynchronous", [False, True])
 async def test_recorder_awaits_real_ports_and_closes_ownership_once(asynchronous):
     from types import SimpleNamespace

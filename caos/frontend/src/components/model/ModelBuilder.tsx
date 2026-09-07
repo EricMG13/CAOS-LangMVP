@@ -33,6 +33,7 @@ import {
   normalizeAssumptions,
   previewMatchesDraft,
   primaryModelAction,
+  queueCalculation,
   scrubberCommitDecision,
   worksheetCellAuthority,
   worksheetColumns,
@@ -117,7 +118,7 @@ type ConflictMetadata = {
   current?: ModelRevision | null;
   current_build?: { id?: string; input_fingerprint?: string; payload_digest?: string } | null;
 };
-type DraftAuthority = { buildId: string; registryDigest: string; parentRevisionId: string | null };
+type DraftAuthority = { buildId: string; registryDigest: string; parentRevisionId: string | null; expectedHeadRevisionId: string | null };
 
 class ModelRequestError extends Error {
   constructor(readonly status: number, readonly detail: unknown) {
@@ -219,7 +220,7 @@ function WorksheetSurface({ payload }: { payload: WorksheetPayload }) {
   if (!tab) return <div className="empty">The saved model has no worksheet tabs.</div>;
   return <>
     <div className="worksheet-tabs" role="tablist" aria-label="Model worksheets">{payload.tabs.map((item, index) => <button id={`model-tab-${item.id}`} key={item.id} className="worksheet-tab" type="button" role="tab" aria-selected={item.id === tab.id} aria-controls="model-worksheet-panel" tabIndex={item.id === tab.id ? 0 : -1} onClick={() => selectTab(item)} onKeyDown={(event) => onTabKeyDown(event, index)}>{item.title}</button>)}</div>
-    <div id="model-worksheet-panel" role="tabpanel" aria-labelledby={`model-tab-${tab.id}`}><WorksheetGrid tab={tab} selected={selectedCell} onSelect={setSelectedCell} /></div>
+    <div id="model-worksheet-panel" role="tabpanel" aria-labelledby={`model-tab-${tab.id}`}><WorksheetGrid key={tab.id} tab={tab} selected={selectedCell} onSelect={setSelectedCell} /></div>
     <section className={styles.lineage} id="model-cell-lineage" aria-labelledby="model-cell-lineage-heading">
       <h3 id="model-cell-lineage-heading">Cell lineage</h3>
       {selectedCell ? <><dl className="state-facts"><dt>Cell</dt><dd className="mono">{tab.title}!{selectedCell.address}</dd><dt>Owner</dt><dd>{selectedCell.owner || "CP-MODEL"}</dd><dt>Period</dt><dd className="mono">{selectedCell.period_id || "—"}</dd></dl>{selectedCell.formula ? <code className="lineage-code">{selectedCell.formula}</code> : null}<p className="mono lineage-source">{selectedCell.source_refs || "Calculated on the server from mapped inputs."}</p></> : <p className="muted">Select a sourced or calculated worksheet value to inspect its lineage.</p>}
@@ -393,7 +394,9 @@ export default function ModelBuilder({
       }
       if (generation !== requestGeneration.current || expectedCaseId !== caseId) return false;
       const nextActive = nextRevisions.find((item) => item.state === "ACTIVE" && item.build_id === nextBuild?.id) || null;
-      const nextAuthorityKey = nextBuild && nextRegistry ? [expectedCaseId, nextBuild.id, nextBuild.input_fingerprint, nextBuild.payload_digest || "", nextRegistry.digest, nextActive?.id || ""].join("|") : `${expectedCaseId}|${nextInventory.readiness.status}`;
+      // The API orders case-wide revision numbers ascending; the head can be STALE on a new build.
+      const nextHead = nextRevisions.at(-1) || null;
+      const nextAuthorityKey = nextBuild && nextRegistry ? [expectedCaseId, nextBuild.id, nextBuild.input_fingerprint, nextBuild.payload_digest || "", nextRegistry.digest, nextHead?.id || ""].join("|") : `${expectedCaseId}|${nextInventory.readiness.status}`;
       if (nextAuthorityKey !== authorityKey.current) {
         actionGeneration.current += 1;
         previewGeneration.current += 1;
@@ -401,12 +404,12 @@ export default function ModelBuilder({
         const preserveDirtyDraft = draftCaseIdRef.current === expectedCaseId && dirtyRef.current;
         authorityKey.current = nextAuthorityKey;
         if (preserveDirtyDraft) {
-          setConflict((current) => current || { current: nextActive, current_build: nextBuild });
+          setConflict((current) => current || { current: nextHead, current_build: nextBuild });
           setMessage("Authority changed. Your local forecast is preserved; review and rebase before saving it.");
         } else {
           draftGenerationRef.current = 0;
           const nextBaseline = nextRegistry ? normalizeAssumptions(nextActive?.effective_assumptions || nextRegistry.defaults) : [];
-          const nextDraftAuthority = nextBuild && nextRegistry ? { buildId: nextBuild.id, registryDigest: nextRegistry.digest, parentRevisionId: nextActive?.id || null } : null;
+          const nextDraftAuthority = nextBuild && nextRegistry ? { buildId: nextBuild.id, registryDigest: nextRegistry.digest, parentRevisionId: nextActive?.id || null, expectedHeadRevisionId: nextHead?.id || null } : null;
           draftCaseIdRef.current = expectedCaseId;
           baselineRef.current = nextBaseline;
           draftRef.current = nextBaseline;
@@ -464,16 +467,16 @@ export default function ModelBuilder({
     authorityKey.current = "";
     const controller = new AbortController();
     queueMicrotask(() => { if (!controller.signal.aborted) void refresh(controller.signal); });
-    return () => { controller.abort(); window.clearTimeout(previewTimer.current); requestGeneration.current += 1; };
+    return () => { controller.abort(); window.clearTimeout(previewTimer.current); requestGeneration.current += 1; previewGeneration.current += 1; tornadoGeneration.current += 1; actionGeneration.current += 1; };
   }, [refresh]);
 
   const status = inventory?.readiness.status;
   const build = inventory?.readiness.build || inventory?.builds[0] || null;
   const activeRevision = revisions.find((item) => item.state === "ACTIVE" && item.build_id === build?.id) || null;
-  const currentHeadRevisionId = activeRevision?.id || null;
+  const currentHeadRevisionId = revisions.at(-1)?.id || null;
   const dirtyCount = assumptionChangeCount(baseline, draft);
   const dirty = dirtyCount > 0;
-  const authorityMismatch = Boolean(build && registry && draftAuthority && (draftAuthority.buildId !== build.id || draftAuthority.registryDigest !== registry.digest || draftAuthority.parentRevisionId !== currentHeadRevisionId));
+  const authorityMismatch = Boolean(build && registry && draftAuthority && (draftAuthority.buildId !== build.id || draftAuthority.registryDigest !== registry.digest || draftAuthority.expectedHeadRevisionId !== currentHeadRevisionId));
   const previewCurrent = Boolean(build && registry && previewMatchesDraft(preview, {
     buildId: build.id,
     buildInputFingerprint: build.input_fingerprint,
@@ -481,7 +484,7 @@ export default function ModelBuilder({
     registryVersion: registry.version,
     registryDigest: registry.digest,
     parentRevisionId: draftAuthority?.parentRevisionId || null,
-    expectedHeadRevisionId: draftAuthority?.parentRevisionId || null,
+    expectedHeadRevisionId: draftAuthority?.expectedHeadRevisionId || null,
     currentHeadRevisionId,
     draftGeneration,
   }));
@@ -521,18 +524,19 @@ export default function ModelBuilder({
     const authority = draftAuthorityRef.current;
     if (!canWrite || !build || !registry || !authority
       || authority.buildId !== build.id || authority.registryDigest !== registry.digest
-      || authority.parentRevisionId !== currentHeadRevisionId
+      || authority.expectedHeadRevisionId !== currentHeadRevisionId
       || assumptionChangeCount(baselineRef.current, nextDraft) === 0) return;
     const generation = ++previewGeneration.current;
     const expectedAuthority = authorityKey.current;
+    const isCurrent = () => generation === previewGeneration.current && expectedAuthority === authorityKey.current && nextGeneration === draftGenerationRef.current;
     setPending("preview");
     setMessage("");
     try {
-      const next = await modelRequest<ModelPreview>(`/api/cases/${caseId}/models/previews`, {
+      const next = await queueCalculation(() => modelRequest<ModelPreview>(`/api/cases/${caseId}/models/previews`, {
         method: "POST",
         body: JSON.stringify({ build_id: build.id, parent_revision_id: authority.parentRevisionId, registry_version: registry.version, registry_digest: registry.digest, assumptions: nextDraft, draft_generation: nextGeneration }),
-      });
-      if (generation !== previewGeneration.current || expectedAuthority !== authorityKey.current || nextGeneration !== draftGenerationRef.current || next.draft_generation !== nextGeneration) return;
+      }), isCurrent);
+      if (!next || !isCurrent() || next.draft_generation !== nextGeneration) return;
       setPreview(next);
       setMessage("Forecast recalculated. Historical accounts remain locked; review the model and tornado before saving this version.");
     } catch (caught) {
@@ -585,11 +589,11 @@ export default function ModelBuilder({
     setTornadoLoading(true);
     setTornadoError("");
     try {
-      const next = await modelRequest<TornadoResult>(`/api/cases/${caseId}/models/tornado`, {
+      const next = await queueCalculation(() => modelRequest<TornadoResult>(`/api/cases/${caseId}/models/tornado`, {
         method: "POST",
         body: JSON.stringify({ build_id: build.id, parent_revision_id: draftAuthority.parentRevisionId, registry_version: registry.version, registry_digest: registry.digest, assumptions: draftRows, draft_generation: nextGeneration, case: selectedCase, output_period_id: outputPeriodId, output_id: tornadoOutputId, intensity: tornadoIntensity }),
-      });
-      if (!isCurrent()
+      }), isCurrent);
+      if (!next || !isCurrent()
         || next.build_id !== build.id
         || next.draft_generation !== nextGeneration
         || next.case !== selectedCase
@@ -607,10 +611,10 @@ export default function ModelBuilder({
   }, [build, canWrite, caseId, draftAuthority, registry, selectedCase, tornadoIntensity, tornadoOutputId]);
 
   useEffect(() => {
-    if (!canWrite || !build || !registry || !draft.length || authorityMismatch || unavailable.tornado) return;
+    if (!canWrite || !build || !registry || !draft.length || authorityMismatch || unavailable.tornado || dirty && !previewCurrent) return;
     const timer = window.setTimeout(() => { void runTornado(draft, draftGeneration); }, 150);
     return () => window.clearTimeout(timer);
-  }, [authorityMismatch, build, canWrite, draft, draftGeneration, registry, runTornado, unavailable.tornado]);
+  }, [authorityMismatch, build, canWrite, dirty, draft, draftGeneration, previewCurrent, registry, runTornado, unavailable.tornado]);
 
   const buildModel = async () => {
     const action = ++actionGeneration.current;
@@ -628,7 +632,7 @@ export default function ModelBuilder({
     try {
       await modelRequest<ModelRevision>(`/api/cases/${caseId}/model-revisions/sign-off`, {
         method: "POST",
-        body: JSON.stringify({ build_id: build.id, parent_revision_id: draftAuthority.parentRevisionId, registry_version: registry.version, registry_digest: registry.digest, assumptions: draft, draft_generation: draftGeneration, preview_digest: preview.preview_digest, expected_head_revision_id: draftAuthority.parentRevisionId, note: signOffNote.trim() }),
+        body: JSON.stringify({ build_id: build.id, parent_revision_id: draftAuthority.parentRevisionId, registry_version: registry.version, registry_digest: registry.digest, assumptions: draft, draft_generation: draftGeneration, preview_digest: preview.preview_digest, expected_head_revision_id: draftAuthority.expectedHeadRevisionId, note: signOffNote.trim() }),
       });
       if (action !== actionGeneration.current || expectedAuthority !== authorityKey.current || draftGeneration !== draftGenerationRef.current) return;
       dirtyRef.current = false;
@@ -649,8 +653,8 @@ export default function ModelBuilder({
     const action = ++actionGeneration.current;
     setPending(`rebase:${revision.id}`); setMessage("");
     try {
-      const next = await modelRequest<RebasePreview>(`/api/cases/${caseId}/model-revisions/rebase-preview`, { method: "POST", body: JSON.stringify({ revision_id: revision.id, build_id: build.id, draft_generation: draftGeneration + 1 }) });
-      if (action !== actionGeneration.current || next.build_id !== build.id) return;
+      const next = await queueCalculation(() => modelRequest<RebasePreview>(`/api/cases/${caseId}/model-revisions/rebase-preview`, { method: "POST", body: JSON.stringify({ revision_id: revision.id, build_id: build.id, draft_generation: draftGeneration + 1 }) }), () => action === actionGeneration.current);
+      if (!next || action !== actionGeneration.current || next.build_id !== build.id) return;
       setRebase(next); setMessage("Rebase candidate calculated. Nothing has been stored.");
     } catch (caught) {
       if (action !== actionGeneration.current) return;
@@ -665,7 +669,7 @@ export default function ModelBuilder({
       const nextBaseline = normalizeAssumptions(activeRevision?.effective_assumptions || rebase.candidate_assumptions);
       const nextDraft = mergeRebasedAssumptions(baselineRef.current, draftRef.current, nextBaseline);
       baselineRef.current = nextBaseline;
-      draftAuthorityRef.current = { buildId: build.id, registryDigest: registry.digest, parentRevisionId: activeRevision?.id || null };
+      draftAuthorityRef.current = { buildId: build.id, registryDigest: registry.digest, parentRevisionId: activeRevision?.id || null, expectedHeadRevisionId: currentHeadRevisionId };
       setBaseline(nextBaseline);
       setDraftAuthority(draftAuthorityRef.current);
       setConflict(null);

@@ -1,7 +1,8 @@
 import type { DeliverableBlock, EvidenceCitation } from "./DeliverableDocument";
 
 export type RecoveryModelSelection = { kind: "ANALYST_REVISION"; build_id: string; revision_id: string } | { kind: "APPLICATION_BUILD"; build_id: string; fallback_acknowledged: true };
-export type ReportRecovery = { subject: string; caseId: string; pathway: string; savedAt: number; expectedVersion: number; templateId: string; templateVersion: string; modelSelection: RecoveryModelSelection | null; blocks: DeliverableBlock[] };
+export type OpinionForm = { opinion: string; limitations: string; material_overrides: string; rationale: string };
+export type ReportRecovery = { subject: string; caseId: string; pathway: string; savedAt: number; expectedVersion: number; templateId: string; templateVersion: string; modelSelection: RecoveryModelSelection | null; blocks: DeliverableBlock[]; opinionForm?: OpinionForm };
 
 const MAX_RECOVERY_LENGTH = 5_000_000;
 const MAX_JSON_DEPTH = 32;
@@ -90,16 +91,30 @@ export function reportRecoveryKey(caseId: string, pathway: string, subject: stri
 }
 
 const TAB_ID_KEY = "caos:tab-id";
+let ownedTabId = "";
+let tabClaim: Promise<void> | undefined;
+
+export function claimBrowserTabId(): Promise<void> {
+  // sessionStorage is copied into new windows. A native, document-owned lock
+  // distinguishes a reload from a second live tab with that copied identity.
+  return tabClaim ??= new Promise<void>((resolve, reject) => {
+    const claim = (id: string) => {
+      void navigator.locks.request(`caos:report-tab:${id}`, { ifAvailable: true }, (lock) => {
+        if (!lock) { claim(window.crypto.randomUUID()); return; }
+        window.sessionStorage.setItem(TAB_ID_KEY, id);
+        ownedTabId = id;
+        resolve();
+        // The browser releases this lock when the document goes away.
+        return new Promise<void>(() => {});
+      }).catch(reject);
+    };
+    claim(window.sessionStorage.getItem(TAB_ID_KEY) || window.crypto.randomUUID());
+  });
+}
+
 export function browserTabId(): string {
-  try {
-    const existing = window.sessionStorage.getItem(TAB_ID_KEY);
-    if (existing) return existing;
-    const created = typeof window.crypto?.randomUUID === "function" ? window.crypto.randomUUID() : `tab-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-    window.sessionStorage.setItem(TAB_ID_KEY, created);
-    return created;
-  } catch {
-    return "";
-  }
+  if (!ownedTabId) throw new Error("Browser recovery identity is unavailable");
+  return ownedTabId;
 }
 
 export function parseReportRecovery(raw: string | null, caseId: string, pathway: string, subject: string): ReportRecovery | null {
@@ -111,6 +126,9 @@ export function parseReportRecovery(raw: string | null, caseId: string, pathway:
       !validTimestamp(value.savedAt) || !safeInteger(value.expectedVersion) ||
       !boundedString(value.templateId, 160) || !boundedString(value.templateVersion, 160) ||
       !recoverySelection(value.modelSelection) ||
+      (value.opinionForm !== undefined && (!record(value.opinionForm) ||
+        !boundedString(value.opinionForm.opinion, 4000, true) || !boundedString(value.opinionForm.limitations, 4000, true) ||
+        !boundedString(value.opinionForm.material_overrides, 4000, true) || !boundedString(value.opinionForm.rationale, 8000, true))) ||
       !Array.isArray(value.blocks) || value.blocks.length < 1 || value.blocks.length > 120 || !value.blocks.every((block) => recoveryBlock(block, caseId))
     ) return null;
     return value as ReportRecovery;

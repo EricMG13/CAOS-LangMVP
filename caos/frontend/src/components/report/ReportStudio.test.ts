@@ -220,7 +220,7 @@ test("separation of duties and the detached receipt are explicit in the frozen r
   assert.match(studio, /canFileFrozen\(role, subject, \{ signed_by: selectedFrozen\.signed_by, frozen_by: selectedFrozen\.frozen_by \}, selectedCase\?\.members\)/);
   assert.match(studio, /data-separation-of-duties/);
   assert.match(studio, /selectedFrozen\.status === "FROZEN" && canFileSelected \? <div className="approval-panel">/);
-  assert.match(studio, /deliverables\/by-id\/\$\{frozen\.id\}\/receipt/);
+  assert.match(studio, /deliverables\/by-id\/\$\{selectedFrozen\.id\}\/receipt/);
   assert.match(studio, /data-filing-receipt/);
   assert.match(studio, /the frozen bytes never name an approver/);
   assert.match(studio, /publication=\{selectedFrozen\?\.payload\.publication \?\? null\}/);

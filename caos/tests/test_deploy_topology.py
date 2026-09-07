@@ -137,7 +137,8 @@ case "$1" in
       *) echo "Error: No such volume: $3" >&2; exit 1 ;;
     esac ;;
   inspect) printf '%s\n' "${FAKE_VAULT_VOLUME:-}"; exit 0 ;;
-  pause|unpause) exit 0 ;;
+  pause) [ -z "${FAKE_PARTIAL_PAUSE_FAIL:-}" ]; exit $? ;;
+  unpause) exit 0 ;;
   run) printf 'fake-tar-bytes'; exit 0 ;;
 esac
 exit 1
@@ -162,6 +163,17 @@ def fake_bin(tmp_path: Path) -> Path:
         path.write_text(body)
         path.chmod(path.stat().st_mode | stat.S_IXUSR)
     return bin_dir
+
+
+def test_backup_recovers_every_writer_after_partial_pause_failure(fake_bin, tmp_path):
+    result, calls, _out = _run_backup(
+        fake_bin, tmp_path, FAKE_APP_ID="app-1", FAKE_WORKER_ID="worker-1",
+        FAKE_VAULT_VOLUME="vault", FAKE_PARTIAL_PAUSE_FAIL="1",
+    )
+    assert result.returncode != 0
+    assert "pause app-1 worker-1" in calls
+    assert "unpause app-1 worker-1" in calls
+    assert not any("pg_dump" in call for call in calls)
 
 
 def _run_backup(fake_bin: Path, tmp_path: Path, **scenario: str) -> tuple[subprocess.CompletedProcess, list[str], Path]:

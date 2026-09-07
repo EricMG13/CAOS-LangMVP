@@ -52,7 +52,16 @@ def opened(monkeypatch) -> list[str]:
     return names
 
 
-HONEST = {"README.txt": b"review notes\n", "case/case.json": b'{"id": "case-verify"}\n'}
+HONEST = {
+    **{name: b"[]" for name in (
+        "case/sources.json", "case/source_sets.json", "case/intakes.json", "runs/index.json",
+        "models/builds.json", "models/revisions.json", "models/exports.json", "deliverables/revisions.json",
+        "deliverables/opinions.json", "deliverables/freeze_jobs.json", "deliverables/frozen.json",
+        "deliverables/receipts.json", "deliverables/exports.json",
+    )},
+    "README.txt": b"review notes\n", "case/case.json": b'{"id": "case-verify"}\n',
+    "audit/events.jsonl": b"", "audit/head.json": b"null", "methodology.json": b"{}", "environment.json": b"{}",
+}
 
 
 def test_an_honest_package_still_verifies(tmp_path: Path, opened: list[str]):
@@ -61,6 +70,14 @@ def test_an_honest_package_still_verifies(tmp_path: Path, opened: list[str]):
     report = verify_package.verify(str(path))
     assert report["ok"] is True and report["findings"] == [], report
     assert set(opened) >= {"manifest.json", "README.txt", "case/case.json"}
+
+
+def test_deeply_nested_json_is_a_typed_refusal(tmp_path: Path):
+    path = tmp_path / "nested.zip"
+    path.write_bytes(_package({**HONEST, "environment.json": b"[" * 10_000 + b"0" + b"]" * 10_000}))
+    report = verify_package.verify(str(path))
+    assert not report["ok"]
+    assert {item["code"] for item in report["findings"]} == {"PACKAGE_STRUCTURE_INVALID"}
 
 
 def test_a_member_that_inflates_past_its_declared_size_is_refused_before_it_is_read(tmp_path: Path, opened: list[str]):
@@ -104,8 +121,8 @@ def test_a_member_the_later_steps_need_is_refused_without_a_crash(tmp_path: Path
 def test_a_manifest_size_that_is_not_a_number_falls_back_to_the_hard_ceiling(tmp_path: Path, opened: list[str], monkeypatch):
     """A crafted manifest cannot widen the read by declaring a non-numeric size:
     the ceiling applies, and a member above it is refused unread."""
-    monkeypatch.setattr(verify_package, "MAX_MEMBER_BYTES", 1024)
-    package = _package(HONEST, replace={"README.txt": b"\0" * 4096})
+    monkeypatch.setattr(verify_package, "MAX_MEMBER_BYTES", 8192)
+    package = _package(HONEST, replace={"README.txt": b"\0" * 32768})
     with zipfile.ZipFile(io.BytesIO(package)) as source:
         manifest = json.loads(source.read("manifest.json"))
         manifest["objects"]["README.txt"]["size"] = "13"
@@ -122,7 +139,7 @@ def test_a_manifest_size_that_is_not_a_number_falls_back_to_the_hard_ceiling(tmp
     report = verify_package.verify(str(path))
 
     refused = [item for item in report["findings"] if item["code"] == "OBJECT_SIZE_EXCEEDED"]
-    assert refused and refused[0]["path"] == "README.txt" and refused[0]["limit"] == 1024
+    assert refused and refused[0]["path"] == "README.txt" and refused[0]["limit"] == 8192
     assert "README.txt" not in opened
 
 

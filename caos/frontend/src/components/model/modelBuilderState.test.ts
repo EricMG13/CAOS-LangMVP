@@ -10,6 +10,7 @@ import {
   normalizeAssumptions,
   previewMatchesDraft,
   primaryModelAction,
+  queueCalculation,
   scrubberCommitDecision,
   sensitivityPeriodRows,
   worksheetCellAuthority,
@@ -147,6 +148,26 @@ test("preview eligibility binds draft generation, build, registry, parent, and a
   assert.equal(previewMatchesDraft(preview, { ...identity, draftGeneration: 8 }), false);
   assert.equal(previewMatchesDraft(preview, { ...identity, currentHeadRevisionId: "revision_2" }), false);
   assert.equal(previewMatchesDraft(preview, { ...identity, buildPayloadDigest: "f".repeat(64) }), false);
+  assert.equal(previewMatchesDraft({ ...preview, parent_revision_id: null }, { ...identity, parentRevisionId: null }), true,
+    "a new build has no compatible parent but still compares against the case's previous head");
+});
+
+test("calculations finish serially, skip obsolete drafts, and recover after rejection", async () => {
+  const events: string[] = [];
+  let release!: () => void;
+  const blocked = new Promise<void>((resolve) => { release = resolve; });
+  const first = queueCalculation(async () => { events.push("start"); await blocked; events.push("finish"); }, () => true);
+  const obsolete = queueCalculation(async () => { events.push("obsolete"); }, () => false);
+  const latest = queueCalculation(async () => { events.push("latest"); return 3; }, () => true);
+  await Promise.resolve();
+  assert.deepEqual(events, ["start"]);
+  release();
+  await first;
+  assert.equal(await obsolete, null);
+  assert.equal(await latest, 3);
+  assert.deepEqual(events, ["start", "finish", "latest"]);
+  await assert.rejects(queueCalculation(async () => { throw new Error("refused"); }, () => true));
+  assert.equal(await queueCalculation(async () => 4, () => true), 4);
 });
 
 test("the workflow exposes only the primary action appropriate to current state", () => {

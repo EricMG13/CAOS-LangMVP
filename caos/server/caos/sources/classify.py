@@ -95,7 +95,7 @@ _QUARTER_PERIOD = re.compile(
     r"(?:quarterly period ended|(?:three|six|nine) months ended)\s+(?P<month>[A-Z][a-z]+)\s+\d{1,2},?\s+(?P<year>(?:19|20)\d{2})",
     re.IGNORECASE,
 )
-_QUARTER_WORD = re.compile(r"\b(?P<word>first|second|third|fourth)\s+quarter\b(?:\s+(?:of\s+)?(?:fiscal\s+)?(?P<year>(?:19|20)\d{2}))?", re.IGNORECASE)
+_QUARTER_WORD = re.compile(r"\b(?P<word>first|second|third|fourth)\s+quarter\b(?:\s+(?:of\s+)?(?:(?:fiscal(?:\s+year)?|FY)\s*)?(?P<year>(?:19|20)\d{2}))?", re.IGNORECASE)
 _MONTHS = {name: index for index, name in enumerate(
     ("january", "february", "march", "april", "may", "june", "july", "august",
      "september", "october", "november", "december"), start=1)}
@@ -156,7 +156,7 @@ def _period(text: str, document_type: str) -> tuple[dict[str, Any] | None, list[
             fiscal_year = int(quarter_match.group("year"))
             signals.append("interim_period_end")
     word_match = _QUARTER_WORD.search(text)
-    if word_match and quarter is None:
+    if word_match:
         quarter = _QUARTER_WORDS[word_match.group("word").casefold()]
         signals.append("quarter_word")
         if word_match.group("year"):

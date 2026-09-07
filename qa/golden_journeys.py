@@ -17,10 +17,11 @@ The script changes nothing in the repository and holds no secret: it reads the
 dev-trusted ``x-caos-role``/``x-forwarded-user`` headers the candidate stack
 serves under ``ENVIRONMENT=development``.
 
-No HTTP route grants the first case membership (qa/INVENTORY.md), so the
-distinct approver is provisioned by an operator action against the store with
-``--database-url`` (recorded in the journey record as ``operator_bootstrap``)
-or is assumed to exist when ``--approver-preprovisioned`` is given.
+This legacy development driver provisions the distinct approver through an
+explicit operator store action with ``--database-url`` (recorded as
+``operator_bootstrap``), or assumes it exists with ``--approver-preprovisioned``.
+The current operator HTTP bootstrap and trusted-edge workflow are exercised by
+``caos/frontend/scripts/production-browser-journey.mjs``.
 
 It lives in qa/ beside probe.py and seed.py because, like them, it is a client
 of the development stack that sends the dev-trusted role header; the recorded
@@ -315,10 +316,14 @@ class Journey:
                 time.sleep(3)
             self.record("model_build", status, build, build_status=(build or {}).get("status"),
                         error=(build or {}).get("error"))
-        model_selection = None
         if build and build.get("status") == "READY":
             status, registry, _ = c.json("GET", f"/api/cases/{self.case_id}/models/assumption-registry?build_id={build['id']}")
             self.record("assumption_registry", status, registry)
+            status, revisions, _ = c.json("GET", f"/api/cases/{self.case_id}/model-revisions")
+            self.record("model_revision_head", status, revisions)
+            if status != 200:
+                return self.finish("model revision head unavailable")
+            head = next(reversed(revisions["revisions"]), None)
             preview_request = {"build_id": build["id"], "parent_revision_id": None,
                                "registry_version": registry["version"], "registry_digest": registry["digest"],
                                "assumptions": registry["defaults"], "draft_generation": 0}
@@ -327,11 +332,10 @@ class Journey:
             if status == 200:
                 status, signed, _ = c.json("POST", f"/api/cases/{self.case_id}/model-revisions/sign-off", body={
                     **preview_request, "preview_digest": preview["preview_digest"],
-                    "expected_head_revision_id": None, "note": "Golden journey: signed on the registry defaults.",
+                    "expected_head_revision_id": head["id"] if head else None,
+                    "note": "Golden journey: signed on the registry defaults.",
                 })
                 self.record("model_sign_off", status, signed, revision_id=(signed or {}).get("id"))
-                if status == 201:
-                    model_selection = {"kind": "ANALYST_REVISION", "build_id": build["id"], "revision_id": signed["id"]}
         # 6. deliverable draft
         url = f"/api/cases/{self.case_id}/deliverables/{self.pathway}"
         status, workspace, _ = c.json("GET", f"{url}/draft")
@@ -340,6 +344,15 @@ class Journey:
                     model_eligibility=(workspace or {}).get("model_eligibility"))
         if status != 200:
             return self.finish("deliverable workspace unavailable")
+        # The published model can be the prior Full Credit base, not the new
+        # pathway overlay just signed. Use the server's eligibility contract.
+        eligibility = workspace["model_eligibility"]
+        model_selection = eligibility["default_model_selection"]
+        if model_selection is None and eligibility["fallback_acknowledgement_required"]:
+            model_selection = {"kind": "APPLICATION_BUILD", "build_id": eligibility["application_build"]["build_id"],
+                               "fallback_acknowledged": True}
+            self.record("publication_fallback_acknowledged", None, model_selection, model_selection=model_selection,
+                        note="Golden-journey actor explicitly acknowledges the eligible application build.")
         template = workspace["template"]
         source_id = next(d["source_id"] for d in review["documents"] if d["disposition"] == "used")
         blocks = []
@@ -438,7 +451,7 @@ class Journey:
         return self.finish("complete")
 
     def provision_approver(self) -> None:
-        """No HTTP route grants the first case membership; the operator does it."""
+        """Legacy development bootstrap through the explicitly supplied store."""
         if self.args.approver_preprovisioned:
             self.record("operator_bootstrap", None, None, note="approver assumed pre-provisioned by the operator")
             return
@@ -454,7 +467,7 @@ class Journey:
         finally:
             store.close()
         self.record("operator_bootstrap", None, None, granted=granted, member=APPROVER_SUBJECT, role="APPROVER",
-                    note="operator action against the store (no HTTP route grants the first case membership)")
+                    note="explicit legacy development operator action against the store")
 
     def finish(self, outcome: str) -> dict[str, Any]:
         record = {"pathway": self.pathway, "case_id": self.case_id, "outcome": outcome, "steps": self.steps}

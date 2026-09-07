@@ -762,6 +762,10 @@ class DomainStore:
 
     # -- sources / source sets --------------------------------------------
 
+    def referenced_source_digests(self, digests: list[str]) -> set[str]:
+        with self.engine.connect() as conn:
+            return set(conn.execute(sa.select(sources.c.sha256).where(sources.c.sha256.in_(digests))).scalars())
+
     def _current_set_locked(self, conn: sa.Connection, case_id: str) -> dict[str, Any] | None:
         row = conn.execute(
             sa.select(source_sets).where(source_sets.c.case_id == case_id)
@@ -860,6 +864,7 @@ class DomainStore:
                     ))
                     conn.execute(case_members.insert().values(case_id=case_id, subject=actor, role="ANALYST"))
                     self._audit(conn, "case.created", actor, case_id=case_id)
+                self.require_standing(conn, case_id, actor, {"ANALYST", "APPROVER", "ADMIN"})
                 admitted_ids: list[str] = []
                 for source in prepared:
                     saved = {

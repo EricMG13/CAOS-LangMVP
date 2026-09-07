@@ -374,17 +374,55 @@ OPINION_KEYS = (
     "signed_by", "signed_at", "opinion_digest",
 )
 
+REQUIRED_JSON_SECTIONS = {
+    "case/case.json": dict,
+    "case/sources.json": list,
+    "case/source_sets.json": list,
+    "case/intakes.json": list,
+    "runs/index.json": list,
+    "models/builds.json": list,
+    "models/revisions.json": list,
+    "models/exports.json": list,
+    "deliverables/revisions.json": list,
+    "deliverables/opinions.json": list,
+    "deliverables/freeze_jobs.json": list,
+    "deliverables/frozen.json": list,
+    "deliverables/receipts.json": list,
+    "deliverables/exports.json": list,
+    "audit/head.json": (dict, type(None)),
+    "methodology.json": dict,
+    "environment.json": dict,
+}
+
 
 def verify(path: str) -> dict[str, Any]:
+    package = Package(path)
+    with package.archive:
+        try:
+            return _verify(package)
+        except (KeyError, TypeError, ValueError, AttributeError, IndexError, RecursionError) as exc:
+            return {"ok": False, "case_id": None, "schema_version": None, "checked": {},
+                    "findings": [{"code": "PACKAGE_STRUCTURE_INVALID", "detail": type(exc).__name__},
+                                 *package.oversized.values()]}
+
+
+def _verify(package: Package) -> dict[str, Any]:
     findings: list[dict[str, Any]] = []
     checked: dict[str, int] = {}
 
     def finding(code: str, **detail: Any) -> None:
         findings.append({"code": code, **detail})
 
-    package = Package(path)
-    manifest = package.json("manifest.json") or {}
-    objects = manifest.get("objects") or {}
+    manifest = package.json("manifest.json")
+    if not isinstance(manifest, dict) or not isinstance(manifest.get("objects"), dict):
+        raise ValueError("invalid manifest")
+    if manifest.get("schema_version") != "caos.audit-package.v1":
+        finding("PACKAGE_SCHEMA_UNSUPPORTED")
+    if not isinstance(manifest.get("case_id"), str) or not manifest["case_id"]:
+        finding("CASE_ID_MISSING")
+    objects = manifest["objects"]
+    if not all(isinstance(meta, dict) for meta in objects.values()):
+        raise ValueError("invalid object metadata")
     package.limits = {
         name: meta.get("size") for name, meta in objects.items() if isinstance(meta, dict)
     }
@@ -403,6 +441,19 @@ def verify(path: str) -> dict[str, Any]:
     if manifest.get("package_digest") != digest(objects):
         finding("PACKAGE_DIGEST_MISMATCH")
     checked["objects"] = len(objects)
+    if len(package.archive.namelist()) != len(package.names):
+        finding("OBJECT_DUPLICATED")
+    for name in (*REQUIRED_JSON_SECTIONS, "audit/events.jsonl", "README.txt"):
+        if name not in package.names or name not in objects:
+            finding("REQUIRED_SECTION_MISSING", path=name)
+        elif name in REQUIRED_JSON_SECTIONS and name not in package.oversized:
+            value = package.json(name)
+            if not isinstance(value, REQUIRED_JSON_SECTIONS[name]):
+                raise ValueError("invalid section type")
+            if isinstance(value, list) and not all(isinstance(row, dict) for row in value):
+                raise ValueError("invalid section row")
+    if "case/case.json" in package.names and package.json("case/case.json").get("id") != manifest.get("case_id"):
+        finding("CASE_ID_MISMATCH")
 
     # 2. the audit chain.
     chain = package.jsonl("audit/events.jsonl") if "audit/events.jsonl" in package.names else []
@@ -422,6 +473,10 @@ def verify(path: str) -> dict[str, Any]:
     # 3. runs: plan and snapshot digests.
     for entry in (package.json("runs/index.json") or []) if "runs/index.json" in package.names else []:
         run_id = entry["run_id"]
+        for section in ("run", "nodes", "artifacts", "events", "budget", "snapshot"):
+            name = f"runs/{run_id}/{section}.json"
+            if name not in package.names or name not in objects:
+                finding("REQUIRED_SECTION_MISSING", path=name)
         run = package.json(f"runs/{run_id}/run.json") or {}
         if run.get("plan_digest") and digest(run.get("plan")) != run.get("plan_digest"):
             finding("RUN_PLAN_DIGEST_MISMATCH", run_id=run_id)
@@ -449,6 +504,12 @@ def verify(path: str) -> dict[str, Any]:
     receipts = {row["deliverable_id"]: row for row in ((package.json("deliverables/receipts.json") or []) if "deliverables/receipts.json" in package.names else [])}
     exports = (package.json("deliverables/exports.json") or []) if "deliverables/exports.json" in package.names else []
     sources = {row["id"]: row for row in ((package.json("case/sources.json") or []) if "case/sources.json" in package.names else [])}
+    frozen_ids = {record["deliverable_id"] for record in frozen_records}
+    referenced_ids = set(receipts) | {entry["deliverable_id"] for entry in exports}
+    for action in ("deliverable.frozen", "deliverable.filed"):
+        referenced_ids.update(row["data"]["deliverable_id"] for row in actions.get(action, []))
+    for deliverable_id in sorted(referenced_ids - frozen_ids):
+        finding("FROZEN_RECORD_MISSING", deliverable_id=deliverable_id)
     for row in opinions.values():
         if digest({key: row.get(key) for key in OPINION_KEYS if key != "opinion_digest"}) != row.get("opinion_digest"):
             finding("OPINION_DIGEST_MISMATCH", opinion_id=row.get("opinion_id"))

@@ -1373,7 +1373,8 @@ try {
     await route.fulfill({ status: 202, contentType: "application/json", body: JSON.stringify({ build: modelBuild(), queued: true }) });
   });
   await page.route(registryPath, (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(assumptionRegistry()) }));
-  await page.route(revisionsPath, (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ revisions: modelRevisions }) }));
+  // The store's list contract is ascending, even though this fixture prepends new revisions.
+  await page.route(revisionsPath, (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ revisions: modelRevisions.toSorted((a, b) => a.revision_number - b.revision_number) }) }));
   await page.route(revisionExportStatusesPath, (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ exports: modelRevisions.map((revision) => ({ revision_id: revision.id, export: revision.export })) }) }));
   await page.route(previewPath, async (route) => {
     previewPosts += 1;
@@ -1388,6 +1389,7 @@ try {
   await page.route(signOffPath, async (route) => {
     signOffPosts += 1;
     const requestBody = route.request().postDataJSON();
+    assert.equal(requestBody.expected_head_revision_id, modelRevisions[0]?.id ?? null, "sign-off did not name the case-wide revision head");
     if (signOffConflicts) {
       expectedSignOffConflicts += 1;
       const intervening = { id: `revision_intervening_${fixtureSuffix}`, case_id: caseRecord.id, build_id: modelBuildId, accepted_snapshot_id: accepted.id, build_input_fingerprint: "b".repeat(64), build_payload_digest: "c".repeat(64), registry_version: registryVersion, registry_digest: registryDigest, calculation_contract_version: "cp-model-calculation.v1", effective_assumptions: assumptionDefaults, assumptions_digest: "6".repeat(64), outputs: { total_leverage: 4.2, revenue: { FY2025: 1180 } }, outputs_digest: "7".repeat(64), worksheet: modelWorksheet.payload, preview_digest: "8".repeat(64), parent_revision_id: null, note: "Intervening committee update.", revision_number: 1, created_by: "approver@example.com", created_at: "2026-08-24T13:01:00Z", export: { status: "READY", error: null, filename: "northstar-r1.xlsx", sha256: "5".repeat(64), size: 4096 }, state: "ACTIVE" };

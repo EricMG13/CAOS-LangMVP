@@ -88,9 +88,10 @@ Standing rules that back them:
 - `engine/graphs.py` — the static route shape: `compiled_route(pathway, depth)`
   compiles the vendored catalog into a `RouteGraph` (nodes, edges, stages).
 - `engine/runtime.py` — `Engine`: builds one LangGraph `StateGraph` per
-  (pathway, depth), drives it with durable checkpoints (SQLite dev, Postgres
-  prod), owns the gate node (source-set pinning), module nodes, budget
-  metering, finalization, recovery, snapshot acceptance.
+  (pathway, depth), drives it with durable SQLite checkpoints in development
+  and production (PostgreSQL owns production domain rows), owns the gate node
+  (source-set pinning), module nodes, budget metering, finalization, recovery,
+  snapshot acceptance.
 - `storage/runs.py` — the run store: runs, nodes, artifacts, snapshots, budget
   ledger, and the append-only `run_events` log (per-run monotonic `seq`).
 - Execution model: `start_run`/`resume` drive **through the plan gate only**

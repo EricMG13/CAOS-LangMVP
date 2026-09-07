@@ -101,9 +101,10 @@ fi
 # --- one snapshot point: pause every writer for the whole capture --------------
 writers=$(compose ps -q app worker || true)
 if [ -n "$writers" ]; then
+    # Docker may pause some targets before another fails; cleanup owns all attempts.
+    paused_containers="$writers"
     # shellcheck disable=SC2086 — a space-separated list of container ids.
     docker pause $writers >/dev/null
-    paused_containers="$writers"
 fi
 
 dump_tmp=$(mktemp "$out/.caos.dump.age.XXXXXX")

@@ -647,8 +647,9 @@ class DeliverableStore:
         "change_request", "created_by", "created_at", "opinion_id", "signed_by",
     )
 
-    def _frozen(self, row: dict[str, Any]) -> dict[str, Any]:
-        return {key: row.get(key) for key in self._FROZEN_KEYS}
+    @classmethod
+    def _frozen(cls, row: dict[str, Any]) -> dict[str, Any]:
+        return {key: row.get(key) for key in cls._FROZEN_KEYS}
 
     def frozen_record(self, case_id: str, deliverable_id: str) -> dict[str, Any] | None:
         with self.engine.connect() as conn:
