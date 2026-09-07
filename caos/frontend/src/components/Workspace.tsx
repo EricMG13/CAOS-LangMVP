@@ -9,13 +9,14 @@ import OperatorControls from "./OperatorControls";
 import { useEvidenceSearch } from "../lib/useEvidenceSearch";
 import ModelBuilder from "./model/ModelBuilder";
 import ReportStudio from "./report/ReportStudio";
+import RunGraph from "./run/RunGraphView";
 import { EmptyBlock, EmptyPanel, IdentityValue, LoadState, MutationReceipt, StateBlock, StateNote, Unavailable } from "./states";
 import { ApiRequestError, api as request, firstErrorMessage, isIntakeRefusal, isUnavailableRoute, networkFetch, type ArtifactRecord, type CaseRecord, type IntakeRecord, type IntakeRefusal, type LoanFinding, type LoanRow, type LoanUniverseResponse, type ResearchPlan, type RunRecord, type SourceRecord, type SourceSummaryPage, type OperatorCapabilities } from "../lib/api";
 import { displayValue, flattenValue, markdownBlocks, normalizeEvidenceRefs, type NormalizedEvidenceRef } from "../lib/artifactReader";
 import { initialAuthorityState, matchesAuthority, requestContext, workspaceAuthorityReducer, type AuthorityEvent, type AuthorityStatus } from "../lib/workspaceAuthority";
 
 import WorkbenchShell, { type DrawerState } from "./WorkbenchShell";
-import { BRIEF_LIMITS, type Destination, type DraftHistoryTraversal, type Snapshot, type SnapshotView, acceptanceSlotSummary, acceptedAuthorityMatch, canApproveCase, beginDraftHistoryTraversal, destinationFromSlug, draftHistoryEntryId, draftHistoryNeedsRearm, finishDraftHistoryTraversal, formatBlockLocator, formatDate, historyStateForExternalReplace, humanizeCode, isSameTabPrimaryGesture, moduleLabel, nodeStatusTone, observeDraftHistoryPop, protectDirtyDraftUnload, researchBriefListsWithinBounds, resolveDraftDiscard, runErrorDetail, selectConclusionArtifact, supersededAcceptance, withQuery } from "../lib/workbench";
+import { BRIEF_LIMITS, type Destination, type DraftHistoryTraversal, type Snapshot, type SnapshotView, acceptanceSlotSummary, acceptedAuthorityMatch, canApproveCase, beginDraftHistoryTraversal, destinationFromSlug, draftHistoryEntryId, draftHistoryNeedsRearm, finishDraftHistoryTraversal, formatBlockLocator, formatDate, historyStateForExternalReplace, humanizeCode, isSameTabPrimaryGesture, moduleLabel, observeDraftHistoryPop, protectDirtyDraftUnload, researchBriefListsWithinBounds, resolveDraftDiscard, runErrorDetail, selectConclusionArtifact, supersededAcceptance, withQuery } from "../lib/workbench";
 
 // Client display ceilings, named so no surface carries a bare literal: the Sources
 // reader reveals this many additional blocks at a time, and an artifact table
@@ -24,6 +25,7 @@ const SOURCE_READER_BLOCK_PREVIEW = 40;
 const ARTIFACT_TABLE_MAX_ROWS = 80;
 
 type WriteAccess = "yes" | "no" | "unknown";
+type RunConnectionStatus = "idle" | "connecting" | "live" | "stale" | "settled";
 type DraftDiscardRequest = { detail: string; confirm: () => void; cancel?: () => void; trigger: HTMLElement | null };
 type RequestDraftDiscard = (detail: string, confirm: () => void, cancel?: () => void, trigger?: HTMLElement | null) => boolean;
 type DraftHistoryState = {
@@ -76,8 +78,12 @@ export default function Workspace({ destination, children }: { destination?: Des
   const [cases, setCases] = useState<CaseRecord[]>([]);
   const [authorityState, reducerDispatch] = useReducer(workspaceAuthorityReducer, initialAuthorityState);
   const authorityRef = useRef(initialAuthorityState);
+  const [runConnection, setRunConnection] = useState<{ caseId: string; runId: string; status: RunConnectionStatus }>({ caseId: "", runId: "", status: "idle" });
   const dispatchAuthority = useCallback((event: AuthorityEvent) => {
     const next = workspaceAuthorityReducer(authorityRef.current, event);
+    if (next.caseId !== authorityRef.current.caseId || next.runId !== authorityRef.current.runId) {
+      setRunConnection({ caseId: next.caseId || "", runId: next.runId || "", status: next.runId ? "connecting" : "idle" });
+    }
     authorityRef.current = next;
     reducerDispatch(event);
     return next;
@@ -770,15 +776,31 @@ export default function Workspace({ destination, children }: { destination?: Des
 
   useEffect(() => {
     if (!runId || !run || run.id !== runId || run.case_id !== caseId || runSettled) return;
+    const context = requestContext(authorityRef.current);
+    let disposed = false;
     const source = new EventSource(`/api/runs/${runId}/events`);
-    const refresh = () => void refreshRun();
+    // Request generations reject stale fetch completions, but they are not the
+    // lifetime of this stream: a same-case register refresh may advance one while
+    // this exact run remains authoritative. Disposal plus both served identities
+    // keeps old case/run callbacks inert without silencing the current stream.
+    const current = () => !disposed
+      && authorityRef.current.caseId === context.caseId
+      && authorityRef.current.runId === context.runId;
+    const refresh = () => { if (current()) void refreshRun(runId); };
     // Progress is driven by the persisted graph events: each named event triggers
     // a RunRecord refetch, and `onopen` resyncs whatever a reconnect gap missed.
-    source.onopen = refresh;
+    source.onopen = () => {
+      if (!current()) return;
+      setRunConnection({ caseId, runId, status: "live" });
+      refresh();
+    };
+    source.onerror = () => {
+      if (current()) setRunConnection({ caseId, runId, status: "stale" });
+    };
     // Exactly the names storage/runs.py emits; a name the log never carries is a
     // dead subscription, never a refetch.
     ["run.created", "run.running", "node.running", "node.succeeded", "run.succeeded", "run.failed", "run.paused", "research.plan_ready", "research.plan_approved"].forEach((name) => source.addEventListener(name, refresh));
-    return () => source.close();
+    return () => { disposed = true; source.close(); };
     // Event updates only begin after the run has passed its case authority check.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [caseId, run?.case_id, run?.id, runId, runSettled]);
@@ -1159,7 +1181,7 @@ export default function Workspace({ destination, children }: { destination?: Des
     switch (active) {
       case "Portfolio": return <CasesView writeAccess={writeAccess} cases={cases} casesLoading={casesLoading} selectedCase={selectedCase} caseId={caseId} createCase={createCase} pendingAction={pendingAction} intake={intake} intakeRefusal={intakeRefusal} run={run} submitIntake={submitIntake} />;
       case "Sources": return <SourcesView key={caseId} writeAccess={writeAccess} selectedCase={selectedCase} artifactId={routeArtifactId} sourceId={routeSourceId} blockId={routeBlockId} upload={upload} pendingAction={pendingAction} onOpenEvidence={(evidenceId, source, opener, blockId, blockIds) => replaceDrawer({ kind: "evidence", evidenceId, source, opener, blockId, blockIds })} />;
-      case "Run": return <RunConsole fromIntake={Boolean(run && intake?.case_id === caseId && intake.run?.id === run.id)} writeAccess={writeAccess} caseId={caseId} selectedCase={selectedCase} run={run} runLoading={runLoading} runError={runError} startRun={startRun} acceptRun={acceptRun} acceptedSnapshotId={acceptedRunSnapshotId} supersededSnapshotId={supersededRunSnapshotId} visibleSnapshotId={authority?.accepted?.id || ""} switchRequired={authority?.switch_required === true} approveResearchPlan={approveResearchPlan} approvalUnavailable={approvalUnavailable === runId} pendingAction={pendingAction} resumeSlot={resumeSlot} />;
+      case "Run": return <RunConsole fromIntake={Boolean(run && intake?.case_id === caseId && intake.run?.id === run.id)} writeAccess={writeAccess} caseId={caseId} selectedCase={selectedCase} run={run} runLoading={runLoading} runError={runError} connectionStatus={!run ? "idle" : runSettled ? "settled" : runConnection.caseId === caseId && runConnection.runId === runId ? runConnection.status : "connecting"} startRun={startRun} acceptRun={acceptRun} acceptedSnapshotId={acceptedRunSnapshotId} supersededSnapshotId={supersededRunSnapshotId} visibleSnapshotId={authority?.accepted?.id || ""} switchRequired={authority?.switch_required === true} approveResearchPlan={approveResearchPlan} approvalUnavailable={approvalUnavailable === runId} pendingAction={pendingAction} resumeSlot={resumeSlot} />;
       case "Analysis": return <DeepDive writeAccess={writeAccess} selectedCase={selectedCase} question={routeQuestion} caseId={caseId} run={run} authority={authority} authorityStatus={authorityStatus} onSwitchSnapshot={switchSnapshot} />;
       case "Market": return <RVView key={caseId} writeAccess={writeAccess} caseId={caseId} />;
       case "Credit": return <CommandView caseId={caseId} question={routeQuestion} authority={authority} authorityStatus={authorityStatus} />;
@@ -1476,6 +1498,12 @@ function RunStatusBadge({ run }: { run: RunRecord | null }) {
   return <span role="status" aria-live="polite" aria-atomic="true" className={run ? `status ${run.status === "succeeded" ? "success" : run.status === "failed" ? "critical" : "warning"}` : "sr-only"}>{run ? <span className="sr-only">Run status: </span> : null}{run?.error?.code === "PLAN_APPROVAL_REQUIRED" ? "Pending approval" : run?.status || ""}</span>;
 }
 
+function RunFreshnessBadge({ run, status }: { run: RunRecord | null; status: RunConnectionStatus }) {
+  const label = status === "live" ? "Updates live" : status === "stale" ? "Updates reconnecting" : status === "connecting" ? "Updates connecting" : status === "settled" ? "Updates ended" : "";
+  const tone = status === "live" ? "success" : status === "stale" ? "warning" : status === "connecting" ? "running" : "idle";
+  return <span role="status" aria-live="polite" className={run ? `status ${tone}` : "sr-only"}>{run ? label : null}</span>;
+}
+
 // Module progress is what actually changes while a run executes, and it lives in the
 // DAG tiles and the module list — neither of which is a live region, so a screen
 // reader learned only that the DOM had changed (WCAG 4.1.3). This carries the same
@@ -1595,14 +1623,6 @@ function DraftDiscardDialog({ open, detail, trigger, onConfirm, onClose }: { ope
   </dialog>;
 }
 
-// A route node names its module and keeps its id: the name is what an analyst
-// reads, the id is what the run event, the artifact and the audit row are keyed by.
-// An id the registry carries no name for shows once, as itself.
-function ModuleIdentity({ moduleId }: { moduleId: string }) {
-  const name = moduleLabel(moduleId);
-  return <><strong>{name}</strong>{name === moduleId ? null : <div className="mono muted">{moduleId}</div>}</>;
-}
-
 // Shared by Run and the inline panels on Portfolio and Analysis. `approvalSlot` is
 // how Run injects the full ResearchPlanView; inline surfaces route to it instead,
 // since plan approval is a Run responsibility (one home for every human gate).
@@ -1660,7 +1680,7 @@ function RunStatus({ writeAccess, caseId, run, runLoading, runError, acceptRun, 
   return <div className="flow">
     <RunProgressAnnouncer run={run} />
     <div className="run-progress" role="progressbar" aria-label="Execution progress" aria-valuemin={0} aria-valuemax={run.nodes.length} aria-valuenow={complete} aria-valuetext={`${complete} of ${run.nodes.length} modules complete${current ? `; ${moduleLabel(current.module_id)} ${current.status}` : ""}`}><div><span>{progressLabel}</span><span className="mono">{complete}/{run.nodes.length}</span></div><span className="run-progress-track" aria-hidden="true"><span style={{ width: `${progress}%` }} /></span></div>
-    <div className="dag">{run.nodes.map((node, index) => <div className="dag-step" key={node.id}>{index > 0 && <span className="dag-edge" aria-hidden="true">→</span>}{node.artifact_id ? <Link className="dag-node" href={withQuery("/sources/", { case: caseId, artifact: node.artifact_id })}><ModuleIdentity moduleId={node.module_id} /><div className={`status ${nodeStatusTone(node.status)}`}>{node.status}</div><span className="dag-node-open">Open output</span></Link> : <div className="dag-node"><ModuleIdentity moduleId={node.module_id} /><div className={`status ${nodeStatusTone(node.status)}`}>{node.status}</div><span className="dag-node-open dag-node-placeholder" aria-hidden="true">Open output</span></div>}</div>)}</div>
+    <RunGraph key={run.id} caseId={caseId} run={run} />
     <div className="approval-panel run-acceptance" data-run-acceptance>{acceptance}</div>
     {/* The typed failure: the humanized code, the blamed module by its registry
         name, and the host's sentence only when it sent one (RunErrorResponse). */}
@@ -1670,7 +1690,7 @@ function RunStatus({ writeAccess, caseId, run, runLoading, runError, acceptRun, 
   </div>;
 }
 
-function RunConsole({ fromIntake, writeAccess, caseId, selectedCase, run, runLoading, runError, startRun, acceptRun, acceptedSnapshotId, supersededSnapshotId, visibleSnapshotId, switchRequired, approveResearchPlan, approvalUnavailable, pendingAction, resumeSlot }: { fromIntake: boolean; writeAccess: WriteAccess; caseId: string; selectedCase: CaseRecord | null; run: RunRecord | null; runLoading: boolean; runError: string; startRun: (event: FormEvent<HTMLFormElement>) => void; acceptRun: (event: ReactMouseEvent<HTMLButtonElement>) => void; acceptedSnapshotId: string; supersededSnapshotId: string; visibleSnapshotId: string; switchRequired: boolean; approveResearchPlan: (planHash: string) => void; approvalUnavailable: boolean; pendingAction: string; resumeSlot: ReactNode }) {
+function RunConsole({ fromIntake, writeAccess, caseId, selectedCase, run, runLoading, runError, connectionStatus, startRun, acceptRun, acceptedSnapshotId, supersededSnapshotId, visibleSnapshotId, switchRequired, approveResearchPlan, approvalUnavailable, pendingAction, resumeSlot }: { fromIntake: boolean; writeAccess: WriteAccess; caseId: string; selectedCase: CaseRecord | null; run: RunRecord | null; runLoading: boolean; runError: string; connectionStatus: RunConnectionStatus; startRun: (event: FormEvent<HTMLFormElement>) => void; acceptRun: (event: ReactMouseEvent<HTMLButtonElement>) => void; acceptedSnapshotId: string; supersededSnapshotId: string; visibleSnapshotId: string; switchRequired: boolean; approveResearchPlan: (planHash: string) => void; approvalUnavailable: boolean; pendingAction: string; resumeSlot: ReactNode }) {
   const [pathway, setPathway] = useState("EARNINGS_UPDATE");
   const [depth, setDepth] = useState("screen");
   const deepResearchAvailable = selectedCase?.deep_research_available === true;
@@ -1732,7 +1752,7 @@ function RunConsole({ fromIntake, writeAccess, caseId, selectedCase, run, runLoa
       <div className="panel-body flow">{compileForm}</div>
     </section> : null}
     <section className={`panel ${fromIntake ? "span-12" : "span-8"}`}>
-      <div className="panel-header"><h2>Execution route</h2><RunStatusBadge run={run} /></div>
+      <div className="panel-header"><h2>Execution route</h2><div className="run-summary-actions"><RunFreshnessBadge run={run} status={connectionStatus} /><RunStatusBadge run={run} /></div></div>
       <div className="panel-body flow">{run ? <p className="muted" data-run-provider>Recorded provider: {run.provider_identity ? `${run.provider_identity.provider_name} / ${run.provider_identity.model}` : "Unavailable on this historical run"}</p> : null}<RunStatus writeAccess={writeAccess} caseId={caseId} run={run} runLoading={runLoading} runError={runError} acceptRun={acceptRun} acceptedSnapshotId={acceptedSnapshotId} supersededSnapshotId={supersededSnapshotId} visibleSnapshotId={visibleSnapshotId} switchRequired={switchRequired} pendingAction={pendingAction} resumeSlot={resumeSlot} approvalSlot={approvalPlan && approvalHash ? <ResearchPlanView plan={approvalPlan} planHash={approvalHash} approving={pendingAction === "approve-research-plan"} approvalUnavailable={approvalUnavailable} writeAccess={writeAccess} onApprove={approveResearchPlan} /> :<StateBlock tone="warning" live="status" code="PLAN_APPROVAL_REQUIRED" body="The persisted approval plan is unavailable; approval remains blocked." />} /></div>
     </section>
     {fromIntake ? <details className="panel run-advanced span-12">

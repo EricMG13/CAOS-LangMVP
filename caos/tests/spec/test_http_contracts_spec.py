@@ -935,6 +935,37 @@ def test_provider_identity_wire_contract_verifies_the_self_digest_and_exact_keys
         ProviderIdentityResponse.model_validate({**identity, "unexpected": True})
 
 
+@pytest.mark.parametrize("depth", ["screen", "full"])
+@pytest.mark.parametrize("pathway", [
+    "FULL_CREDIT",
+    "EARNINGS_UPDATE",
+    "COVENANT_REFINANCING",
+    "RELATIVE_VALUE",
+    "DISTRESSED_RESTRUCTURING",
+    "DEEP_RESEARCH",
+])
+def test_run_http_nodes_serve_the_compiled_route_edges_exactly(client, engine, pathway, depth):
+    from caos.contracts import Depth, digest
+    from caos.engine.graphs import compiled_route
+
+    case = client.post(
+        "/api/cases", json={"name": f"{pathway} {depth}", "issuer": "Issuer", "sector": "Services"}
+    ).json()
+    run = engine.runs.create_run(case["id"], pathway, depth, "analyst")
+    plan = engine.bundle.compile(pathway, Depth(depth), None)
+    engine.runs.pin_plan(run["id"], plan, digest(plan))
+
+    response = client.get(f"/api/runs/{run['id']}")
+    assert response.status_code == 200
+    nodes = response.json()["nodes"]
+    served_edges = {
+        (dependency, node["module_id"])
+        for node in nodes
+        for dependency in node["dependencies"]
+    }
+    assert served_edges == set(compiled_route(pathway, depth).edges)
+
+
 def test_generation_attempt_identity_is_never_synthesized_or_open_ended(client, engine, store):
     from caos.engine.provider import host_control_identity
 

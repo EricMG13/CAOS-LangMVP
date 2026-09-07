@@ -993,9 +993,11 @@ try {
   await page.keyboard.press("Enter");
   // The badge's accessible text now carries its subject: a polite live region that
   // announced a bare "queued" left a screen reader with a status and nothing to
-  // attach it to. The visible chip is still the single word.
+  // attach it to. The visible chip is still the single word; the adjacent update
+  // freshness chip is deliberately a separate status and must not be mistaken for it.
   await page.getByRole("status").getByText("Run status: queued", { exact: true }).waitFor();
-  assert.equal(await page.locator(".panel-header .status").first().evaluate((element) => element.lastChild?.textContent), "queued", "the visible run status chip is no longer the bare status word");
+  const queuedRunStatus = page.locator(".panel-header .status").filter({ hasText: "Run status: queued" });
+  assert.equal(await queuedRunStatus.evaluate((element) => element.lastChild?.textContent), "queued", "the visible run status chip is no longer the bare status word");
   await page.getByRole("status").getByText("Research plan approved. Execution resumes against the approved plan hash.", { exact: true }).waitFor();
   await page.waitForFunction(() => document.activeElement?.id === "main-content");
   assert.equal(await page.evaluate(() => document.activeElement?.id), "main-content", "approving the research plan did not restore focus to the main landmark");

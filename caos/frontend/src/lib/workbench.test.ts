@@ -9,6 +9,8 @@ const states = readFileSync(new URL("../components/states.tsx", import.meta.url)
 const modelBuilder = readFileSync(new URL("../components/model/ModelBuilder.tsx", import.meta.url), "utf8");
 const deliverableDocument = readFileSync(new URL("../components/report/DeliverableDocument.tsx", import.meta.url), "utf8");
 const reportStudio = readFileSync(new URL("../components/report/ReportStudio.tsx", import.meta.url), "utf8");
+const runGraphView = readFileSync(new URL("../components/run/RunGraphView.tsx", import.meta.url), "utf8");
+const runGraphStyles = readFileSync(new URL("../components/run/RunGraph.module.css", import.meta.url), "utf8");
 const styles = readFileSync(new URL("../../app/globals.css", import.meta.url), "utf8");
 const smoke = readFileSync(new URL("../../scripts/workbench-smoke.mjs", import.meta.url), "utf8");
 const destinationPage = readFileSync(new URL("../../app/[destination]/page.tsx", import.meta.url), "utf8");
@@ -375,7 +377,7 @@ test("Workspace settles history moves only at their tagged destination entry", (
   assert.doesNotMatch(workspace, /historyGuardRetiringRef|historyGuardRearmRef|suppressNextModelHistoryPopRef|confirmedHistoryPopRef/);
 });
 
-test("DAG nodes use neutral containers and shape-coded visible statuses", async () => {
+test("run graph nodes use neutral containers and shape-coded visible statuses", async () => {
   const workbench = await import("./workbench.ts") as unknown as { nodeStatusTone?: (status: string) => string };
   for (const [status, tone] of [
     ["pending", "idle"],
@@ -386,10 +388,9 @@ test("DAG nodes use neutral containers and shape-coded visible statuses", async 
     ["failed", "critical"],
     ["succeeded", "success"],
   ]) assert.equal(workbench.nodeStatusTone?.(status), tone, status);
-  assert.doesNotMatch(styles, /\.dag-node\.(?:succeeded|running|failed)\s*\{/);
-  assert.doesNotMatch(workspace, /className=\{`dag-node \$\{node\.status\}`\}/);
-  assert.match(workspace, /className=\{`status \$\{nodeStatusTone\(node\.status\)\}`\}>\{node\.status\}<\/div>/);
-  assert.match(workspace, /dag-node-open dag-node-placeholder" aria-hidden="true">Open output/, "unfinished DAG nodes must reserve the completed-output row");
+  assert.doesNotMatch(runGraphStyles, /\.node\.(?:succeeded|running|failed)\s*\{/);
+  assert.match(runGraphView, /className=\{`status \$\{nodeStatusTone\(node\.status\)\}`\}>\{status\}<\/span>/);
+  assert.match(runGraphStyles, /\.node\s*\{[^}]*height:\s*96px/, "every status keeps one stable node height");
   // Severity is shape plus hue, never hue alone: every tone's glyph rule draws a
   // distinct shape, so removing one (colour-only status) fails here rather than
   // passing on the presence of a selector (FE-A0 §4, M8).

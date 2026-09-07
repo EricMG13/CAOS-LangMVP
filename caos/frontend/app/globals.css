@@ -182,11 +182,6 @@ caption { color: var(--caos-muted); font-size: 10px; font-weight: 600; letter-sp
 .status.idle { color: var(--caos-muted); }
 .callout { border: 1px solid color-mix(in srgb, var(--caos-accent) 55%, var(--caos-border)); border-radius: var(--radius-lg); padding: var(--space-md); background: color-mix(in srgb, var(--caos-accent) 6%, var(--caos-elevated)); }
 .callout.warning { border-color: color-mix(in srgb, var(--caos-warning) 55%, var(--caos-border)); background: color-mix(in srgb, var(--caos-warning) 6%, var(--caos-elevated)); }
-/* Tiles stretch to a common height so a module whose registry carries no name —
-   its tile renders one line shorter — does not leave the row ragged. */
-.dag { display: flex; flex-wrap: wrap; gap: 8px; align-items: stretch; }
-.dag-node { border: 1px solid var(--caos-border); border-radius: var(--radius-md); padding: var(--space-sm); min-width: 120px; max-width: 200px; background: var(--caos-bg); }
-.dag-node .status { vertical-align: top; }
 .chart { min-height: 160px; display: grid; align-content: end; gap: 9px; }
 .chart-bars { height: 118px; display: flex; align-items: end; gap: 16px; border-bottom: 1px solid var(--caos-border); padding: 0 16px; }
 .bar { width: 36px; background: var(--caos-accent); min-height: 4px; }
@@ -269,11 +264,6 @@ dialog:not(.context-drawer) { width: min(680px, calc(100% - 32px)); max-width: 6
 .artifact-markdown p { margin: 0; white-space: pre-wrap; }
 .artifact-digest-list { margin: 0; padding-left: var(--space-lg); display: grid; gap: var(--space-xs); }
 .evidence-ref { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--space-xs); max-width: 100%; }
-a.dag-node { display: block; text-decoration: none; color: inherit; }
-a.dag-node:hover { background: var(--caos-elevated); }
-a.dag-node:hover strong, a.dag-node:focus-visible strong { text-decoration: underline; text-underline-offset: 2px; }
-.dag-node-open { display: block; margin-top: var(--space-xs); color: var(--caos-accent); font-size: 10px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
-.dag-node-placeholder { visibility: hidden; }
 .evidence-match { background: color-mix(in srgb, var(--caos-accent) 9%, transparent); }
 .source-blocks { display: grid; gap: var(--space-sm); margin-top: var(--space-md); }
 .source-block { border: 1px solid var(--caos-border); border-radius: var(--radius-md); padding: var(--space-sm); background: var(--caos-bg); }
@@ -657,8 +647,6 @@ a.dag-node:hover strong, a.dag-node:focus-visible strong { text-decoration: unde
 .evidence-rail-list li:first-child { border-top: 0; padding-top: 0; }
 .worklist-toolbar { display: flex; flex-wrap: wrap; gap: var(--space-md); border-bottom: 1px solid var(--caos-border); padding: var(--space-sm) var(--space-md); }
 .worklist-toolbar .field { margin: 0; flex: 1 1 180px; }
-.dag-step { display: flex; align-items: stretch; gap: var(--space-sm); }
-.dag-edge { align-self: center; color: var(--caos-muted); font: 12px/1 var(--font-mono), ui-monospace, monospace; }
 .research-brief { min-width: 0; margin: 0 0 var(--space-md); border: 1px solid var(--caos-border); border-radius: var(--radius-lg); padding: var(--space-md); }
 .research-brief legend { color: var(--caos-muted); font-weight: 700; letter-spacing: .06em; }
 .research-plan { min-width: 0; display: grid; gap: var(--space-md); overflow-wrap: anywhere; }
