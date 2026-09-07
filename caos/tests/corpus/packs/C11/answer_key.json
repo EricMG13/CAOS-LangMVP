@@ -1,9 +1,9 @@
 {
   "schema_version": "caos.answer-key.v1",
   "pack_id": "C11",
-  "version": "1.0.0",
-  "authored_by": "Claude Fable 5.1 (ER-G6 implementer)",
-  "status": "draft-host-control",
+  "version": "1.1.0",
+  "authored_by": "Codex (GPT-6 Astra); machine author, self-reviewed against pinned source bytes",
+  "status": "draft-machine-authored-source-grounded",
   "intake": {
     "status": "started",
     "route": [
@@ -19,7 +19,7 @@
   "expected_facts": [
     {
       "id": "F1",
-      "statement": "Maximum leverage covenant",
+      "statement": "Original maximum leverage covenant before the supplied Amendment 2 reset",
       "value": "5.00",
       "unit": "x",
       "period": null,
@@ -28,7 +28,17 @@
         "5.00 to 1.00"
       ],
       "required": true,
-      "cells": null
+      "cells": null,
+      "source_evidence": {
+        "sha256": "27ede25a37bc0e7836e0a79137f50d6ac0d1fdc4b22ec5a1cb3285c4bbec2dfa",
+        "normalization": "NFC",
+        "locator": {
+          "kind": "text_lines",
+          "start_line": 4,
+          "end_line": 8
+        },
+        "quote": "the Lenders party hereto and the Administrative Agent.\nSection 6.10 Financial Covenants. Term Loan B. Revolving Credit Facility.\nMaximum Consolidated Total Leverage Ratio of 5.00 to 1.00.\nMinimum Interest Coverage Ratio of 2.50 to 1.00.\nMaturity date: March 15, 2030."
+      }
     },
     {
       "id": "F2",
@@ -41,7 +51,40 @@
         "2.50 to 1.00"
       ],
       "required": true,
-      "cells": null
+      "cells": null,
+      "source_evidence": {
+        "sha256": "27ede25a37bc0e7836e0a79137f50d6ac0d1fdc4b22ec5a1cb3285c4bbec2dfa",
+        "normalization": "NFC",
+        "locator": {
+          "kind": "text_lines",
+          "start_line": 5,
+          "end_line": 8
+        },
+        "quote": "Section 6.10 Financial Covenants. Term Loan B. Revolving Credit Facility.\nMaximum Consolidated Total Leverage Ratio of 5.00 to 1.00.\nMinimum Interest Coverage Ratio of 2.50 to 1.00.\nMaturity date: March 15, 2030."
+      }
+    },
+    {
+      "id": "F3",
+      "statement": "Amendment 2 resets maximum leverage through November 30, 2026",
+      "value": "5.50",
+      "unit": "x",
+      "period": "through FY2026",
+      "source": "northstar-amendment-2.txt",
+      "match": [
+        "5.50 to 1.00"
+      ],
+      "required": true,
+      "cells": null,
+      "source_evidence": {
+        "sha256": "b5fec57dc2735ead08f4a6668b012bd956077165c2af0cea1930ca26238934b9",
+        "normalization": "NFC",
+        "locator": {
+          "kind": "text_lines",
+          "start_line": 3,
+          "end_line": 5
+        },
+        "quote": "among Northstar Cruise Holdings Inc, as Borrower, and the Lenders.\nAmended and Restated Section 6.10.\nMaximum Consolidated Total Leverage Ratio reset to 5.50 to 1.00 through November 30, 2026."
+      }
     }
   ],
   "conflicts": [
@@ -85,6 +128,21 @@
         "note": "covenant_headroom is called with the only inputs the pack supports (no test can be evaluated without financials); the host returns METHODOLOGY_CALCULATION_INCOMPLETE and records it as a limitation on the artifact."
       },
       "after_run": null
+    }
+  },
+  "revision": {
+    "date": "2026-09-06",
+    "previous_key_sha256": "42b41ff474ca7c52d2ca6d84dcc3eeae8079d1329e41d4f6b4178dd83eee3242",
+    "method": "Source-first review of pinned document bytes, before evaluation outputs; route and ingest expectations retained.",
+    "review_status": "Self-review only; independent analyst approval pending.",
+    "limitations": [
+      "Literal-match diagnostic scoring is not a semantic correctness proof.",
+      "Synthetic documents test host behaviour; they do not establish issuer economics.",
+      "Machine-authored benchmark prose is not independently approved or automatically scored."
+    ],
+    "documents": {
+      "northstar-credit-agreement-no-definitions.txt": "27ede25a37bc0e7836e0a79137f50d6ac0d1fdc4b22ec5a1cb3285c4bbec2dfa",
+      "northstar-amendment-2.txt": "b5fec57dc2735ead08f4a6668b012bd956077165c2af0cea1930ca26238934b9"
     }
   }
 }

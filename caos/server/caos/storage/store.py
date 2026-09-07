@@ -11,6 +11,8 @@ from the legacy contracts:
 
 from __future__ import annotations
 
+import base64
+import binascii
 import json
 import logging
 import os
@@ -64,6 +66,22 @@ case_members = sa.Table(
     sa.Column("case_id", sa.String, sa.ForeignKey("cases.id"), primary_key=True),
     sa.Column("subject", sa.String, primary_key=True),
     sa.Column("role", sa.String, nullable=False),
+)
+
+case_approver_bootstraps = sa.Table(
+    "case_approver_bootstraps", metadata,
+    sa.Column("case_id", sa.String, sa.ForeignKey("cases.id"), primary_key=True),
+    sa.Column("subject", sa.String, nullable=False),
+    sa.Column("actor", sa.String, nullable=False),
+    sa.Column("rationale", sa.String, nullable=False),
+    sa.Column("at", sa.String, nullable=False),
+)
+
+provider_policy = sa.Table(
+    "provider_policy", metadata,
+    sa.Column("id", sa.String, primary_key=True),
+    sa.Column("binding_id", sa.String, nullable=False),
+    sa.Column("version", sa.Integer, nullable=False),
 )
 
 sources = sa.Table(
@@ -614,7 +632,8 @@ class DomainStore:
             raise ValueError("CASE_STANDING_REVOKED: the actor's case standing changed before the write committed")
 
     def add_member(self, case_id: str, actor: str, member: str, role: str, actor_role: str | None = None) -> bool:
-        with self.engine.begin() as conn:
+        with _AUTHORITY_MUTATION_LOCK, self.engine.begin() as conn:
+            lock_case(conn, case_id)
             case = conn.execute(sa.select(cases.c.id).where(cases.c.id == case_id)).first()
             actor_case_role = conn.execute(
                 sa.select(case_members.c.role).where(
@@ -655,6 +674,74 @@ class DomainStore:
                 conn.execute(case_members.insert().values(case_id=case_id, subject=member, role=role))
             self._audit(conn, "case.member_added", actor, case_id=case_id, member=member, role=role)
         return True
+
+    def bootstrap_approver(self, case_id: str, actor: str, subject: str, rationale: str) -> dict[str, Any]:
+        """One operator-authorized grant, permanently recorded with its audit.
+
+        The API authenticates the operator independently of case membership.
+        The durable receipt prevents revocation from reopening this operation.
+        """
+        with _AUTHORITY_MUTATION_LOCK, self.engine.begin() as conn:
+            lock_case(conn, case_id)
+            creator = conn.execute(sa.select(cases.c.created_by).where(cases.c.id == case_id)).scalar()
+            if creator is None:
+                raise ValueError("CASE_NOT_FOUND")
+            previous = conn.execute(sa.select(case_approver_bootstraps).where(
+                case_approver_bootstraps.c.case_id == case_id
+            )).mappings().first()
+            if previous is not None:
+                if (previous["actor"], previous["subject"], previous["rationale"]) != (actor, subject, rationale):
+                    raise ValueError("APPROVER_ALREADY_BOOTSTRAPPED")
+                return {key: previous[key] for key in ("case_id", "subject", "actor", "at")} | {"role": "APPROVER"}
+            if subject in {actor, creator} or actor == creator:
+                raise ValueError("BOOTSTRAP_NOT_INDEPENDENT")
+            has_approver = conn.execute(sa.select(case_members.c.subject).where(
+                case_members.c.case_id == case_id, case_members.c.role.in_(("APPROVER", "ADMIN"))
+            ).limit(1)).first()
+            if has_approver is not None:
+                raise ValueError("CASE_ALREADY_HAS_APPROVER")
+            existing = conn.execute(sa.select(case_members.c.subject).where(
+                case_members.c.case_id == case_id, case_members.c.subject == subject
+            )).first()
+            if existing is None:
+                conn.execute(case_members.insert().values(case_id=case_id, subject=subject, role="APPROVER"))
+            else:
+                conn.execute(case_members.update().where(
+                    case_members.c.case_id == case_id, case_members.c.subject == subject
+                ).values(role="APPROVER"))
+            receipt = {"case_id": case_id, "subject": subject, "actor": actor, "at": now_iso()}
+            conn.execute(case_approver_bootstraps.insert().values(**receipt, rationale=rationale))
+            self._audit(conn, "case.approver_bootstrapped", actor,
+                        case_id=case_id, subject=subject, role="APPROVER", rationale=rationale)
+            return receipt | {"role": "APPROVER"}
+
+    def get_provider_policy(self, default_binding_id: str) -> dict[str, Any]:
+        with self.engine.connect() as conn:
+            row = conn.execute(sa.select(provider_policy).where(provider_policy.c.id == "default")).mappings().first()
+        return {"binding_id": row["binding_id"], "version": row["version"]} if row else {
+            "binding_id": default_binding_id, "version": 0,
+        }
+
+    def set_provider_default(self, binding_id: str, actor: str, expected_version: int,
+                             default_binding_id: str) -> dict[str, Any]:
+        """CAS the deployment policy and audit it without changing run identity."""
+        with _AUTHORITY_MUTATION_LOCK, self.engine.begin() as conn:
+            lock_case(conn, "__provider_policy__")
+            row = conn.execute(sa.select(provider_policy).where(provider_policy.c.id == "default")).mappings().first()
+            version = row["version"] if row else 0
+            if version != expected_version:
+                raise ValueError("PROVIDER_POLICY_STALE")
+            previous = row["binding_id"] if row else default_binding_id
+            if previous == binding_id:
+                return {"binding_id": binding_id, "version": version}
+            record = {"binding_id": binding_id, "version": version + 1}
+            if row is None:
+                conn.execute(provider_policy.insert().values(id="default", **record))
+            else:
+                conn.execute(provider_policy.update().where(provider_policy.c.id == "default").values(**record))
+            self._audit(conn, "provider.default_changed", actor,
+                        previous_binding_id=previous, **record)
+            return record
 
     def update_case(self, case_id: str, **changes: Any) -> None:
         allowed = {"accepted_snapshot_id", "visible_snapshot_id", "current_execution_id"}
@@ -920,6 +1007,103 @@ class DomainStore:
                 sources.c.case_id == case_id, sources.c.withdrawn.is_(False)
             ).order_by(sources.c.created_at)).mappings().all()
         return [_public_source(dict(row)) for row in rows]
+
+    def source_summaries(self, case_id: str, *, cursor: str = "", limit: int = 50) -> dict[str, Any]:
+        """Project metadata in SQL; never deserialize the source's block array."""
+        if not 1 <= limit <= 100 or len(cursor) > 200:
+            raise ValueError("SOURCE_PAGE_INVALID")
+        columns = ("id", "case_id", "filename", "media_type", "bytes", "sha256",
+                   "created_by", "created_at", "withdrawn", "source_kind")
+        statement = sa.select(*(sources.c[name] for name in columns),
+                              sa.func.json_array_length(sources.c.blocks).label("block_count")).where(
+            sources.c.case_id == case_id, sources.c.withdrawn.is_(False), sources.c.id > cursor
+        ).order_by(sources.c.id).limit(limit + 1)
+        with self.engine.connect() as conn:
+            rows = [dict(row) for row in conn.execute(statement).mappings()]
+        return {"sources": rows[:limit], "next_cursor": rows[limit - 1]["id"] if len(rows) > limit else None}
+
+    def search_evidence(self, case_id: str, query: str, *, cursor: str = "", limit: int = 25) -> dict[str, Any]:
+        """Search active evidence in SQL and return bounded single-block excerpts.
+
+        ponytail: scan the case's JSON blocks at current document ceilings;
+        introduce an indexed block table only if measured search load needs it.
+        """
+        if not 1 <= limit <= 100 or len(query) > 200 or len(cursor) > 512:
+            raise ValueError("EVIDENCE_PAGE_INVALID")
+        after_source, after_block = "", -1
+        if cursor:
+            try:
+                value = json.loads(base64.b64decode(cursor + "=" * (-len(cursor) % 4), altchars=b"-_", validate=True))
+                if (not isinstance(value, list) or len(value) != 3 or value[0] != case_id
+                        or not isinstance(value[1], str) or not 1 <= len(value[1]) <= 200
+                        or type(value[2]) is not int or not 0 <= value[2] <= 100000):
+                    raise ValueError
+                after_source, after_block = value[1:]
+            except (ValueError, UnicodeError, binascii.Error):
+                raise ValueError("EVIDENCE_PAGE_INVALID") from None
+        if self.engine.dialect.name == "postgresql":
+            blocks = sa.func.json_array_elements(sources.c.blocks).table_valued(
+                sa.column("value", sa.JSON), with_ordinality="ordinality"
+            ).alias("evidence_block")
+            ordinal = blocks.c.ordinality - 1
+        else:
+            blocks = sa.func.json_each(sources.c.blocks).table_valued(
+                "key", sa.column("value", sa.JSON)
+            ).alias("evidence_block")
+            ordinal = sa.cast(blocks.c.key, sa.Integer)
+        statement = sa.select(sources.c.id, sources.c.filename, blocks.c.value.label("block"),
+                              ordinal.label("ordinal")).select_from(sources.join(blocks, sa.true())).where(
+            sources.c.case_id == case_id, sources.c.withdrawn.is_(False),
+            sa.or_(sources.c.id > after_source,
+                   sa.and_(sources.c.id == after_source, ordinal > after_block)),
+        )
+        needle = query.strip().lower()
+        if needle:
+            locator = sa.cast(blocks.c.value["locator"], sa.String)
+            if self.engine.dialect.name == "sqlite":
+                locator = sa.func.caos_locator(locator)
+            elif self.engine.dialect.name == "postgresql":
+                from sqlalchemy.dialects.postgresql import JSONB
+
+                # Match JSON.stringify's compact, Unicode locator representation.
+                # Retain quoted strings verbatim while removing only outer whitespace.
+                locator = sa.func.regexp_replace(
+                    sa.cast(sa.cast(blocks.c.value["locator"], JSONB), sa.String),
+                    r'("(?:[^"\\]|\\.)*")|[[:space:]]+', r'\1', "g",
+                )
+            fields = (sources.c.filename, sources.c.id, blocks.c.value["block_id"].as_string(),
+                      blocks.c.value["text"].as_string(), locator)
+            lower = sa.func.caos_lower if self.engine.dialect.name == "sqlite" else sa.func.lower
+            statement = statement.where(sa.or_(*(lower(field).contains(needle, autoescape=True) for field in fields)))
+        with self.engine.connect() as conn:
+            if self.engine.dialect.name == "sqlite":
+                # SQLite's built-in lower is ASCII-only; preserve browser Unicode search.
+                conn.connection.driver_connection.create_function(
+                    "caos_lower", 1, lambda value: value.lower() if isinstance(value, str) else value,
+                    deterministic=True,
+                )
+                conn.connection.driver_connection.create_function(
+                    "caos_locator", 1, lambda value: json.dumps(
+                        json.loads(value) if value is not None else None,
+                        ensure_ascii=False, separators=(",", ":"),
+                    ), deterministic=True,
+                )
+            rows = conn.execute(statement.order_by(sources.c.id, ordinal).limit(limit + 1)).mappings().all()
+        matches = []
+        for row in rows[:limit]:
+            block = row["block"]
+            text = block.get("text") or ""
+            start = max(0, text.lower().find(needle) - 240) if needle else 0
+            excerpt = text[start:start + 1200]
+            matches.append({"source_id": row["id"], "block_id": block["block_id"],
+                            "filename": row["filename"], "locator": block.get("locator"), "text": excerpt})
+        next_cursor = None
+        if len(rows) > limit:
+            last = rows[limit - 1]
+            next_cursor = base64.urlsafe_b64encode(json.dumps(
+                [case_id, last["id"], last["ordinal"]], separators=(",", ":")
+            ).encode()).decode().rstrip("=")
+        return {"matches": matches, "next_cursor": next_cursor}
 
     def get_source(self, source_id: str) -> dict[str, Any] | None:
         with self.engine.connect() as conn:

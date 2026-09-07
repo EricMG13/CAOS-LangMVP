@@ -12,8 +12,14 @@ export type ResearchPlan = { methodology_build_id: string; brief_digest: string;
 // declaration only surfaces it to the client. `error` is the named RunErrorResponse on
 // both the run and each node: `code` always, `module_id` when a node is blamed, and a
 // host-owned `message` only for the paused PLAN_APPROVAL_REQUIRED state.
-export type RunRecord = { id: string; case_id: string; status: string; plan: { pathway: string; depth: string; profile_id: string; selection_id: string; source_set_id?: string; source_set_version?: number; source_set_digest?: string }; nodes: { id: string; module_id: string; status: string; artifact_id?: string | null; error?: RunError | null }[]; accepted_snapshot_id?: string | null; error?: RunError | null; research?: { phase?: string; proposed_plan_hash?: string | null; approved_plan_hash?: string | null; proposed_plan?: ResearchPlan | null } | null };
-export type SourceRecord = { id: string; filename: string; sha256: string; blocks: { block_id: string; locator: Record<string, unknown>; text?: string }[] };
+export type RunRecord = { id: string; case_id: string; status: string; provider_identity?: { provider_name: string; model: string; binding_id?: string } | null; plan: { pathway: string; depth: string; profile_id: string; selection_id: string; source_set_id?: string; source_set_version?: number; source_set_digest?: string }; nodes: { id: string; module_id: string; status: string; artifact_id?: string | null; error?: RunError | null }[]; accepted_snapshot_id?: string | null; error?: RunError | null; research?: { phase?: string; proposed_plan_hash?: string | null; approved_plan_hash?: string | null; proposed_plan?: ResearchPlan | null } | null };
+export type SourceRecord = { id: string; filename: string; sha256: string; withdrawn?: boolean; blocks: { block_id: string; locator: Record<string, unknown>; text?: string }[] };
+export type SourceSummary = Omit<SourceRecord, "blocks"> & { block_count: number };
+export type SourceSummaryPage = { sources: SourceSummary[]; next_cursor: string | null };
+export type EvidenceMatch = { source_id: string; block_id: string; filename: string; locator: Record<string, unknown>; text: string };
+export type EvidenceSearchPage = { matches: EvidenceMatch[]; next_cursor: string | null };
+export type OperatorCapabilities = { can_bootstrap_approver: boolean; can_manage_providers: boolean };
+export type ProviderCatalog = { bindings: { id: string; provider_name: string; model: string; available: boolean; status: string; unavailable_code?: string | null }[]; default_binding_id: string | null; version: number };
 // Document-first intake (POST /api/intake, GET /api/cases/{case_id}/intake; IntakeResponse in
 // caos/server/caos/responses.py). Every analytical value here is a labelled machine suggestion
 // derived server-side from the documents; the browser sends files and nothing else.

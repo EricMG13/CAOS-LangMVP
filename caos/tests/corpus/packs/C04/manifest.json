@@ -1,7 +1,7 @@
 {
   "schema_version": "caos.corpus-pack.v1",
   "pack_id": "C04",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "title": "Restated accounts and superseded prior-period documents",
   "purpose": "C04: the restated annual report supersedes the original for the same period; the original stays admitted and linked but never binds the model.",
   "kind": "negative",
@@ -112,14 +112,14 @@
   ],
   "answer_key": {
     "file": "answer_key.json",
-    "version": "1.0.0",
-    "sha256": "a12302526fbf22cb027545bb8b732cf86a60ca9ff69f68aea5e67460a242b530",
+    "version": "1.1.0",
+    "sha256": "f9a788b6d1a15323cd6a4fc0b0c4dfb1f93350e2d1935fb7f01ebba5e7384a1a",
     "approvals": [
       {
         "scope": "host_control",
-        "reviewer": "Claude Fable 5.1 (ER-G6 implementer)",
-        "approved_at": "2026-09-03",
-        "note": "host-control attestation of the draft key: orchestration proof only, never analysis"
+        "reviewer": "Codex (GPT-6 Astra); machine author, self-reviewed against pinned source bytes",
+        "approved_at": "2026-09-06",
+        "note": "Machine self-check and digest pin for host control or explicit live_evaluation only; no independent analyst approval or qualification."
       }
     ]
   }

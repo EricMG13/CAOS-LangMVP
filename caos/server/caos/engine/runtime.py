@@ -25,6 +25,7 @@ from ..config import Settings
 from ..contracts import Depth, digest
 from ..methodology.bundle import DeployVBundle
 from ..methodology.canonical import (
+    MAX_EVIDENCE_REFS_PER_MODULE,
     CanonicalModuleOutput,
     canonicalize_for_tests,
     recompute_confidence,
@@ -58,12 +59,14 @@ from .budget import (
     route_envelope,
 )
 from .deterministic import build_deterministic_payload
+from .catalog import ProviderCatalog, require_production_qualification
 from .evidence import EvidenceReader
 from .loop import ProviderSlots, reject_duplicate_keys, run_agent_module
 from .research import RESEARCH_HANDOFF_FIELDS, build_research_plan, research_handoff_fields, research_plan_hash, validate_brief
 from .research import brief_digest as research_brief_digest
 from .provider import (
     READ_EVIDENCE_TOOL,
+    READ_EVIDENCE_BATCH_TOOL,
     AgentError,
     ProviderIdentity,
     ProviderRequest,
@@ -249,14 +252,13 @@ class Engine:
     def __init__(self, settings: Settings, store: DomainStore, checkpoint_path: Path, provider: Any) -> None:
         self.settings = settings
         self.store = store
-        self.provider = provider
-        self._provider_identity = self._capture_provider_identity(provider)
+        self._provider_catalog = provider if isinstance(provider, ProviderCatalog) else None
+        self.provider = (provider.bindings.get(provider.default_binding_id) if self._provider_catalog else provider)
+        self._provider_identity = (provider.identities.get(provider.default_binding_id) if self._provider_catalog
+                                   else self._capture_provider_identity(self.provider))
         if settings.environment == "production" and self._provider_identity is not None:
-            identity = self._provider_identity
-            if identity.provider_name != "anthropic" or identity.qualification_status != "qualified":
-                raise EngineError("AGENT_PROVIDER_UNQUALIFIED", "production requires qualified Anthropic")
             try:
-                identity.ensure_current()
+                require_production_qualification(self.provider, settings, identity=self._provider_identity)
             except AgentError as exc:
                 raise EngineError(exc.code, "production provider identity is not current") from exc
         self.checkpoint_path = Path(checkpoint_path)
@@ -391,12 +393,58 @@ class Engine:
         identity = ProviderIdentity.from_dict(raw) if raw is not None else None
         if not self._route_requires_agent(run["pathway"], run["depth"]):
             return identity
-        if identity is None or self._provider_identity is None:
+        if identity is None:
             raise AgentError("AGENT_IDENTITY_MISMATCH", "agent run has no current provider identity")
-        self._provider_identity.ensure_current()
-        if identity != self._provider_identity:
-            raise AgentError("AGENT_IDENTITY_MISMATCH", "stored provider identity differs from current binding")
+        self._provider_for_identity(identity)
         return identity
+
+    def _provider_for_identity(self, identity: ProviderIdentity) -> Any:
+        if self._provider_catalog is not None:
+            return self._provider_catalog.for_identity(identity)
+        if self._provider_identity is None or self.provider is None or identity != self._provider_identity:
+            raise AgentError("AGENT_IDENTITY_MISMATCH", "stored provider identity differs from current binding")
+        require_production_qualification(self.provider, self.settings, identity=self._provider_identity)
+        return self.provider
+
+    def _provider_policy(self) -> dict[str, Any]:
+        default = self._provider_catalog.default_binding_id if self._provider_catalog else "default"
+        reader = getattr(self.store, "get_provider_policy", None)
+        return reader(default) if callable(reader) else {"binding_id": default, "version": 0}
+
+    def _default_provider(self) -> Any:
+        if self._provider_catalog is not None:
+            return self._provider_catalog.resolve(self._provider_policy()["binding_id"])
+        if self.provider is None or self._provider_identity is None:
+            raise AgentError("AGENT_PROVIDER_UNAVAILABLE", "no provider identity is configured")
+        require_production_qualification(self.provider, self.settings, identity=self._provider_identity)
+        return self.provider
+
+    def provider_catalog(self) -> dict[str, Any]:
+        policy = self._provider_policy()
+        if self._provider_catalog is not None:
+            rows = self._provider_catalog.view()
+        elif self._provider_identity is not None:
+            identity = self._provider_identity
+            code = None
+            try:
+                self._default_provider()
+                if not self.settings.agent_execution_enabled:
+                    code = "AGENT_EXECUTION_DISABLED"
+            except AgentError as exc:
+                code = exc.code
+            rows = [{"id": "default", "provider_name": identity.provider_name, "model": identity.model,
+                     "available": code is None, "status": identity.qualification_status, "unavailable_code": code}]
+        else:
+            rows = []
+        return {"bindings": rows, "default_binding_id": policy["binding_id"], "version": policy["version"]}
+
+    def validate_provider_binding(self, binding_id: str) -> dict[str, Any]:
+        for row in self.provider_catalog()["bindings"]:
+            if row["id"] == binding_id:
+                if not row["available"]:
+                    raise EngineError(row["unavailable_code"], "provider binding is unavailable")
+                return row
+        raise EngineError("AGENT_PROVIDER_UNAVAILABLE", "unknown provider binding")
 
     async def _finalize_identity_failure(self, run_id: str, exc: AgentError) -> dict[str, Any]:
         self.runs.finalize_failure(run_id, exc.code, None)
@@ -1400,8 +1448,6 @@ class Engine:
     ) -> dict[str, Any]:
         from ..modules.registry import MODULES
 
-        if self.provider is None:
-            raise AgentError("AGENT_PROVIDER_UNAVAILABLE", "no provider is configured")
         lock = self._agent_locks.setdefault((self._loop_key(), run_id), asyncio.Lock())
         async with lock:  # §10.2: agent execution serialises per run
             run = self.runs.get_run(run_id)
@@ -1431,6 +1477,11 @@ class Engine:
                     "sha256": source["sha256"],
                     "filename": source.get("filename", source["id"]),
                     "media_type": source.get("media_type", "application/octet-stream"),
+                    "preparation": {
+                        "representation": "pinned_blocks",
+                        "block_count": len(source.get("blocks") or []),
+                        "content_digest": digest(source.get("blocks") or []),
+                    },
                     "blocks": [
                         {"block_id": block.get("block_id"), "locator": block.get("locator"),
                          "extractor_version": block.get("extractor_version"), "confidence": block.get("confidence")}
@@ -1471,6 +1522,11 @@ class Engine:
                 [{"module_id": a["module_id"], "digest": a["digest"], "markdown": a["markdown"] or ""} for a in upstream],
                 root=self.settings.deploy_v_root,
                 pinned_manifest=self.bundle.integrity,
+                evidence_budget={
+                    "reads": min(EVIDENCE_READS_PER_MODULE, limits["evidence_reads"] - budget["used"].get("evidence_reads", 0)),
+                    "bytes": min(EVIDENCE_BYTES_PER_MODULE, limits["evidence_bytes"] - budget["used"].get("evidence_bytes", 0)),
+                    "references": MAX_EVIDENCE_REFS_PER_MODULE,
+                },
             )
 
             used = budget["used"]
@@ -1484,7 +1540,7 @@ class Engine:
                     EVIDENCE_BYTES_PER_MODULE,
                     limits["evidence_bytes"] - used.get("evidence_bytes", 0),
                 ),
-                on_read=lambda source_id, block_ids, returned_bytes: (
+                on_read=lambda returned_bytes: (
                     self.runs.charge_budget(run_id, "evidence_reads", 1),
                     self.runs.charge_budget(run_id, "evidence_bytes", returned_bytes),
                 ),
@@ -1492,7 +1548,7 @@ class Engine:
             calculation_records: list[dict[str, Any]] = []
             incomplete_calculators: dict[str, int] = {}
             repair_state = {"used": False}
-            tools = (READ_EVIDENCE_TOOL,)
+            tools = (READ_EVIDENCE_TOOL, READ_EVIDENCE_BATCH_TOOL)
             if spec.calculators:
                 tools += (methodology_calculation_tool(spec.calculators),)
 
@@ -1547,7 +1603,11 @@ class Engine:
                     raise AgentError("AGENT_BUDGET_EXCEEDED", "active worker time exhausted")
                 return remaining
 
-            async def call_tool(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
+            async def call_tool(name: str, arguments: dict[str, Any]) -> dict[str, Any] | list[dict[str, Any]]:
+                if name == "read_evidence_batch":
+                    if set(arguments) != {"references"}:
+                        raise AgentError("AGENT_OUTPUT_INVALID", "batch read requires only references")
+                    return reader.read_batch(arguments["references"])
                 if name != "run_methodology_calculation":
                     raise AgentError("AGENT_OUTPUT_INVALID", "unknown host tool")
                 calculator_id, inputs = _parse_calculation_input(arguments)
@@ -1743,7 +1803,7 @@ class Engine:
 
             try:
                 return await run_agent_module(
-                    provider=self.provider,
+                    provider=self._provider_for_identity(identity),
                     system=system,
                     user=user,
                     schema=CanonicalModuleOutput.model_json_schema(),
@@ -2034,6 +2094,7 @@ class Engine:
         allow_placeholder_deterministic: bool,
         scripted: bool,
         research_brief: dict[str, Any] | None = None,
+        pinned_provider_identity: ProviderIdentity | None = None,
     ) -> dict[str, Any]:
         if pathway not in MVP_PATHWAYS:
             raise EngineError("PATHWAY_NOT_AVAILABLE", f"{pathway} is outside the MVP cut")
@@ -2060,19 +2121,26 @@ class Engine:
             raise EngineError("ADMISSION_BUSY", "active job ceiling reached")
         for question in focus_questions or []:
             state_mod.validate_boundary_text(question)
+        admitted_identity = self._provider_identity
         if self._route_requires_agent(pathway, depth):
             if not self.settings.agent_execution_enabled:
                 raise EngineError("AGENT_EXECUTION_DISABLED", "agent execution is disabled")
-            if self.provider is None or self._provider_identity is None:
-                raise EngineError("AGENT_PROVIDER_UNAVAILABLE", "no provider identity is configured")
             try:
-                self._provider_identity.ensure_current()
+                if pinned_provider_identity is not None:
+                    self._provider_for_identity(pinned_provider_identity)
+                    admitted_identity = pinned_provider_identity
+                elif self._provider_catalog is not None:
+                    binding_id = self._provider_policy()["binding_id"]
+                    self._provider_catalog.resolve(binding_id)
+                    admitted_identity = self._provider_catalog.identities[binding_id]
+                else:
+                    self._default_provider()
             except AgentError as exc:
                 raise EngineError(exc.code, "provider identity is not current") from exc
         run = self.runs.create_run(case_id, pathway, depth, actor,
                                    focus_questions=focus_questions,
                                    upgraded_from_run_id=upgraded_from_run_id,
-                                   provider_identity=self._provider_identity,
+                                   provider_identity=admitted_identity,
                                    schema_version=state_mod.SCHEMA_VERSION,
                                    research_brief=research["brief"] if research else None,
                                    research_brief_digest=research["brief_digest"] if research else None)
@@ -2174,10 +2242,8 @@ class Engine:
             return False, f"Deep Research route nodes are not registered: {', '.join(missing)}."
         if not self.settings.agent_execution_enabled:
             return False, "Deep Research requires agent execution, which is disabled for this deployment."
-        if self.provider is None or self._provider_identity is None:
-            return False, "Deep Research requires a qualified provider binding, which is not configured."
         try:
-            self._provider_identity.ensure_current()
+            self._default_provider()
         except AgentError as exc:
             return False, f"Deep Research requires a current provider qualification ({exc.code})."
         return True, None
@@ -2403,9 +2469,14 @@ class Engine:
         run = self.runs.get_run(run_id)
         if run is None:
             raise EngineError("RUN_NOT_FOUND", run_id)
-        upgraded = await self.start_run(
+        try:
+            identity = self._assert_run_provider_identity(run)
+        except AgentError as exc:
+            raise EngineError(exc.code, "the original provider binding is unavailable") from exc
+        upgraded = await self._start_run(
             case_id=run["case_id"], pathway=run["pathway"], depth="full", actor=actor,
-            upgraded_from_run_id=run_id,
+            upgraded_from_run_id=run_id, focus_questions=None,
+            allow_placeholder_deterministic=False, scripted=False, pinned_provider_identity=identity,
         )
         return upgraded
 
@@ -2670,7 +2741,7 @@ class Engine:
             messages=[{"role": "user", "content": user}],
             schema=CanonicalModuleOutput.model_json_schema(),
             tools_enabled=True,
-            tools=(READ_EVIDENCE_TOOL,) + (
+            tools=(READ_EVIDENCE_TOOL, READ_EVIDENCE_BATCH_TOOL) + (
                 (methodology_calculation_tool(spec.calculators),) if spec.calculators else ()
             ),
             max_tokens=spec.max_output_tokens,

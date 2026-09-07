@@ -1921,23 +1921,28 @@ async def test_sign_off_and_acceptance_serialize_on_snapshot_authority(
     accept_started = threading.Event()
     original_validate = models._validate_build_identity
 
+    async def wait_for(event: threading.Event) -> None:
+        async with asyncio.timeout(30):
+            while not event.is_set():
+                await asyncio.sleep(0.01)
+
     def pause_inside_authority_guard(*args, **kwargs):
         original_validate(*args, **kwargs)
         entered_validation.set()
-        assert release_validation.wait(5), "test failed to release sign-off"
+        assert release_validation.wait(30), "test failed to release sign-off"
 
     monkeypatch.setattr(models, "_validate_build_identity", pause_inside_authority_guard)
     sign_task = asyncio.create_task(
         asyncio.to_thread(models.sign_off, case["id"], request)
     )
-    assert await asyncio.to_thread(entered_validation.wait, 5)
+    await wait_for(entered_validation)
 
     def accept_in_thread():
         accept_started.set()
         return asyncio.run(engine.accept(next_run["id"], actor="analyst"))
 
     accept_task = asyncio.create_task(asyncio.to_thread(accept_in_thread))
-    assert await asyncio.to_thread(accept_started.wait, 5)
+    await wait_for(accept_started)
     await asyncio.sleep(0.05)
     assert store.get_case(case["id"])["accepted_snapshot_id"] == build["snapshot_id"]
 
@@ -2051,6 +2056,51 @@ async def test_two_concurrent_sign_offs_have_one_atomic_winner(models, engine, s
     assert losers[0].current["id"] == winners[0]["id"], "the conflict names the winner"
     assert [r["id"] for r in models.revisions(case["id"])] == [winners[0]["id"]]
     assert len([e for e in store.audit_trail() if e["action"] == "model.revision.signed"]) == 1
+
+
+def test_signed_workbook_semantics_match_xlsx_number_encoding_and_refuse_changes(tmp_path):
+    from openpyxl import Workbook
+    from caos.models.engine import ModelInputError
+    from caos.models.service import _assert_workbook_semantics
+
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "Assumptions"
+    path = tmp_path / "signed.xlsx"
+    expected = {"tabs": [{"title": sheet.title, "cells": [
+        {"row": 1, "column": 1, "value": 0.07 - 0.01, "formula": None},
+    ]}]}
+    try:
+        sheet.cell(1, 1).value = 0.07 - 0.01
+        workbook.save(path)
+        _assert_workbook_semantics(path, expected)
+        for changed in (0.06000000000001, "0.06", "=0.06"):
+            sheet.cell(1, 1).value = changed
+            workbook.save(path)
+            with pytest.raises(ModelInputError, match="signed worksheet changed"):
+                _assert_workbook_semantics(path, expected)
+        expected["tabs"][0]["cells"][0]["value"] = 0
+        sheet.cell(1, 1).value = False
+        workbook.save(path)
+        with pytest.raises(ModelInputError, match="signed worksheet changed"):
+            _assert_workbook_semantics(path, expected)
+        signed_cell = expected["tabs"][0]["cells"][0]
+        signed_cell.update(value=None, formula="=1+1")
+        sheet.cell(1, 1).value = "=1+1"
+        workbook.save(path)
+        _assert_workbook_semantics(path, expected)
+        sheet.cell(1, 1).data_type = "s"
+        workbook.save(path)
+        with pytest.raises(ModelInputError, match="signed worksheet changed"):
+            _assert_workbook_semantics(path, expected)
+        signed_cell.update(value="=1+1", formula=None)
+        _assert_workbook_semantics(path, expected)
+        sheet.cell(1, 1).value = "=1+1"
+        workbook.save(path)
+        with pytest.raises(ModelInputError, match="signed worksheet changed"):
+            _assert_workbook_semantics(path, expected)
+    finally:
+        workbook.close()
 
 
 async def test_signed_export_is_runtime_pinned_hash_verified_and_never_demotes(models, engine, store, settings):

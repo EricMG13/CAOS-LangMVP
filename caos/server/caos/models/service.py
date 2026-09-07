@@ -435,9 +435,19 @@ def _materialize_workbook_tabs(path: Path, tabs: list[dict[str, Any]]) -> None:
 
 def _assert_workbook_semantics(path: Path, expected: dict[str, Any]) -> None:
     from openpyxl import load_workbook
+    from openpyxl.compat.strings import safe_string
 
-    def normalized(value: Any) -> Any:
-        return None if value in (None, "") else json_value(value)
+    def normalized(value: Any, *, formula: bool = False) -> Any:
+        if value in (None, ""):
+            return None
+        value = json_value(value)
+        if formula:
+            return ("formula", value)
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            # Compare the writer's exact numeric encoding, not a tolerance.
+            # Signed assumptions can retain float tails that XLSX cannot store.
+            return ("number", Decimal(safe_string(value)))
+        return value
 
     workbook = load_workbook(path, data_only=False)
     try:
@@ -447,13 +457,14 @@ def _assert_workbook_semantics(path: Path, expected: dict[str, Any]) -> None:
         for tab in expected["tabs"]:
             expected_cells = {
                 (item["row"], item["column"]): normalized(
-                    item["formula"] if isinstance(item.get("formula"), str) else item.get("value")
+                    item["formula"] if isinstance(item.get("formula"), str) else item.get("value"),
+                    formula=isinstance(item.get("formula"), str),
                 )
                 for item in tab["cells"]
                 if item.get("formula") not in (None, "") or item.get("value") not in (None, "")
             }
             actual_cells = {
-                (cell.row, cell.column): normalized(cell.value)
+                (cell.row, cell.column): normalized(cell.value, formula=cell.data_type == "f")
                 for row in workbook[tab["title"]].iter_rows()
                 for cell in row
                 if cell.value not in (None, "")

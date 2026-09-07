@@ -41,12 +41,14 @@ test("freeze polling continues only while the worker owes a render", () => {
   assert.equal(freezeJobIsPending("FAILED"), false);
 });
 
-test("the opinion signer and the freeze actor never see a File control for their own output", () => {
+test("filing requires both current writer identity and stored approver standing, then independence", () => {
   const frozen = { signed_by: "signer", frozen_by: "freezer" };
-  assert.equal(canFileFrozen("APPROVER", "independent", frozen), true);
-  assert.equal(canFileFrozen("ADMIN", "independent", frozen), true);
-  assert.equal(canFileFrozen("APPROVER", "signer", frozen), false);
-  assert.equal(canFileFrozen("APPROVER", "freezer", frozen), false);
-  assert.equal(canFileFrozen("ANALYST", "independent", frozen), false);
-  assert.equal(canFileFrozen("APPROVER", "", frozen), false, "an unresolved identity never files");
+  for (const role of ["ANALYST", "APPROVER", "ADMIN"]) {
+    for (const standing of ["APPROVER", "ADMIN"]) assert.equal(canFileFrozen(role, "independent", frozen, { independent: standing }), true);
+    for (const standing of ["READER", "ANALYST"]) assert.equal(canFileFrozen(role, "independent", frozen, { independent: standing }), false);
+    assert.equal(canFileFrozen(role, "independent", frozen), false);
+    for (const subject of ["signer", "freezer"]) assert.equal(canFileFrozen(role, subject, frozen, { [subject]: "APPROVER" }), false);
+  }
+  assert.equal(canFileFrozen("READER", "independent", frozen, { independent: "APPROVER" }), false);
+  assert.equal(canFileFrozen("APPROVER", "", frozen, { "": "APPROVER" }), false);
 });

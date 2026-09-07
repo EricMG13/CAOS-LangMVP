@@ -1,7 +1,7 @@
 {
   "schema_version": "caos.corpus-pack.v1",
   "pack_id": "C18",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "title": "Real-issuer Earnings Update pack with prior accepted analysis and changed-period evidence",
   "purpose": "C18: the Carnival pack for the Earnings Update route — the accepted Full Credit run is the prior analysis and the FY2025 quarterly and Q4 release material is the changed-period evidence (actual versus guidance).",
   "kind": "positive",
@@ -33,14 +33,14 @@
   ],
   "answer_key": {
     "file": "answer_key.json",
-    "version": "1.0.0",
-    "sha256": "08e130f3a952102d1c4b4c40eae44b2f1364cf79489a7bb5b67c9dc35ba0599a",
+    "version": "1.1.0",
+    "sha256": "1f613a95b8188ba288e0da47223eb5ecf6586bee590617ceb0ce98d102f75628",
     "approvals": [
       {
         "scope": "host_control",
-        "reviewer": "Claude Fable 5.1 (ER-G6 implementer)",
-        "approved_at": "2026-09-03",
-        "note": "host-control attestation of the draft key: orchestration proof only, never analysis"
+        "reviewer": "Codex (GPT-6 Astra); machine author, self-reviewed against pinned source bytes",
+        "approved_at": "2026-09-06",
+        "note": "Machine self-check and digest pin for host control or explicit live_evaluation only; no independent analyst approval or qualification."
       }
     ]
   }

@@ -11,6 +11,9 @@ name: Enterprise qualification
 on:
   workflow_dispatch:
     inputs:
+      provider_id:
+        description: "Binding ID in the protected environment's qualification catalog"
+        required: true
       packs:
         description: "Comma-separated pack ids to run (empty = every required cell)"
         required: false
@@ -35,11 +38,18 @@ jobs:
     name: Live matrix — qualified provider binding
     runs-on: ubuntu-latest
     timeout-minutes: 360
-    # The protected environment carries ANTHROPIC_API_KEY and the external
+    # The protected environment carries explicit provider keys/catalog and the external
     # corpus location; required reviewers on the environment gate the run.
     environment: enterprise-qualification
     env:
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      PROVIDER_CATALOG_JSON: ${{ vars.CAOS_QUALIFICATION_CATALOG_JSON }}
+      CAOS_DEFAULT_PROVIDER_BINDING: ${{ inputs.provider_id }}
+      QUALIFICATION_REPETITIONS: ${{ inputs.repetitions }}
+      QUALIFICATION_PACKS: ${{ inputs.packs }}
+      CAOS_IMAGE_SET_DIGEST: ${{ vars.CAOS_IMAGE_SET_DIGEST }}
+      CAOS_CORPUS_DIGEST: ${{ vars.CAOS_CORPUS_DIGEST }}
       OPENROUTER_API_KEY: ""
       CAOS_PROVIDER: ""
       AGENT_EXECUTION_ENABLED: "true"
@@ -54,6 +64,17 @@ jobs:
           cache-dependency-path: caos/server/requirements-dev.txt
       - name: Install dependencies
         run: pip install --require-hashes -r caos/server/requirements-dev.txt
+      - name: Stage the explicit evaluation catalog
+        run: |
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          catalog = json.loads(os.environ["PROVIDER_CATALOG_JSON"])
+          path = Path(os.environ["RUNNER_TEMP"]) / "qualification-catalog.json"
+          path.write_text(json.dumps(catalog))
+          with open(os.environ["GITHUB_ENV"], "a") as output:
+              output.write(f"CAOS_PROVIDER_CATALOG_PATH={path}\n")
+          PY
       - name: Install the PDF text shaper
         run: |
           sudo apt-get update
@@ -95,13 +116,14 @@ jobs:
             echo "no external pack archive configured: C20, C21 and C22 will report BLOCKED EXTERNAL"
           fi
       - name: Plan
-        run: python caos/tests/corpus/qualify.py plan --binding live
+        run: python caos/tests/corpus/qualify.py plan --binding live --provider-id "$CAOS_DEFAULT_PROVIDER_BINDING"
       - name: Run the matrix
         run: >-
           python caos/tests/corpus/qualify.py matrix --binding live
-          --repetitions "${{ inputs.repetitions }}"
-          --packs "${{ inputs.packs }}"
-          --reviewer "${{ inputs.reviewer }}"
+          --provider-id "$CAOS_DEFAULT_PROVIDER_BINDING"
+          --repetitions "$QUALIFICATION_REPETITIONS"
+          --packs "$QUALIFICATION_PACKS"
+          --reviewer "$CAOS_QUALIFICATION_REVIEWER"
           --out "$RUNNER_TEMP/qualification-evidence"
       - name: Retain the evidence
         # The evidence is retained whether the verdict is green or red; a red

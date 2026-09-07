@@ -33,6 +33,31 @@ class IdentityResponse(WireModel):
     subject: str
     email: str | None
     role: str
+    can_bootstrap_approver: bool
+    can_manage_providers: bool
+
+
+class BootstrapApproverResponse(WireModel):
+    case_id: str
+    subject: str
+    role: Literal["APPROVER"]
+    actor: str
+    at: str
+
+
+class ProviderBindingResponse(WireModel):
+    id: str
+    provider_name: str
+    model: str
+    available: bool
+    status: str
+    unavailable_code: str | None = None
+
+
+class ProviderCatalogResponse(WireModel):
+    bindings: list[ProviderBindingResponse]
+    default_binding_id: str
+    version: int
 
 
 class ProviderIdentityResponse(WireModel):
@@ -67,6 +92,7 @@ class HealthResponse(WireModel):
     store: bool
     bundle: bool
     checkpointer: bool
+    scanner: Literal["ready", "unavailable", "not_required"]
 
 
 class CasePathwayFitResponse(WireModel):
@@ -148,6 +174,38 @@ class SourceResponse(WireModel):
     withdrawn: bool
     source_kind: str | None = None
     source_set: SourceSetResponse | None = None
+
+
+class SourceSummaryResponse(WireModel):
+    id: str
+    case_id: str
+    filename: str
+    media_type: str
+    bytes: int
+    sha256: str
+    created_by: str
+    created_at: str
+    withdrawn: bool
+    source_kind: str | None
+    block_count: int
+
+
+class SourceSummaryPageResponse(WireModel):
+    sources: list[SourceSummaryResponse]
+    next_cursor: str | None
+
+
+class EvidenceSearchMatchResponse(WireModel):
+    source_id: str
+    block_id: str
+    filename: str
+    locator: Any
+    text: str
+
+
+class EvidenceSearchResponse(WireModel):
+    matches: list[EvidenceSearchMatchResponse]
+    next_cursor: str | None
 
 
 class RunErrorResponse(WireModel):

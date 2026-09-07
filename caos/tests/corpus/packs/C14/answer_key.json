@@ -1,9 +1,9 @@
 {
   "schema_version": "caos.answer-key.v1",
   "pack_id": "C14",
-  "version": "1.0.0",
-  "authored_by": "Claude Fable 5.1 (ER-G6 implementer)",
-  "status": "draft-host-control",
+  "version": "1.1.0",
+  "authored_by": "Codex (GPT-6 Astra); machine author, self-reviewed against pinned source bytes",
+  "status": "draft-machine-authored-source-grounded",
   "intake": {
     "status": "started",
     "route": [
@@ -23,14 +23,24 @@
       "id": "F1",
       "statement": "FY2024 revenue",
       "value": "2,310",
-      "unit": "USD millions",
+      "unit": "not specified in synthetic source",
       "period": "FY2024",
       "source": "sgc-10k-fy2024.txt",
       "match": [
         "Revenue 2,310"
       ],
       "required": true,
-      "cells": null
+      "cells": null,
+      "source_evidence": {
+        "sha256": "9c045bb4b528215b9ccfa5318b851204e73a3121db3c7bf5cdfc9e9cf8dcfacc",
+        "normalization": "NFC",
+        "locator": {
+          "kind": "text_lines",
+          "start_line": 4,
+          "end_line": 8
+        },
+        "quote": "For the fiscal year ended December 31, 2024\nSociété Générale Croisières S.A. reports consolidated results for fiscal 2024.\nRevenue 2,310\nEBITDA 480\nTotal debt 4,900"
+      }
     },
     {
       "id": "F2",
@@ -43,7 +53,17 @@
         "Société Générale Croisières"
       ],
       "required": true,
-      "cells": null
+      "cells": null,
+      "source_evidence": {
+        "sha256": "9c045bb4b528215b9ccfa5318b851204e73a3121db3c7bf5cdfc9e9cf8dcfacc",
+        "normalization": "NFC",
+        "locator": {
+          "kind": "text_lines",
+          "start_line": 1,
+          "end_line": 3
+        },
+        "quote": "Société Générale Croisières S.A.\nFORM 10-K\nANNUAL REPORT"
+      }
     },
     {
       "id": "F3",
@@ -56,7 +76,17 @@
         "Société Générale Croisières"
       ],
       "required": true,
-      "cells": null
+      "cells": null,
+      "source_evidence": {
+        "sha256": "9848dd84e84c4bbb9526ee011921165511ba69171c34b173e40f73195a4f51f4",
+        "normalization": "NFC",
+        "locator": {
+          "kind": "text_lines",
+          "start_line": 1,
+          "end_line": 3
+        },
+        "quote": "Société Générale Croisières S.A.\nFORM 10-Q\nQUARTERLY REPORT"
+      }
     }
   ],
   "conflicts": [],
@@ -95,6 +125,23 @@
         "gaps": []
       },
       "after_run": null
+    }
+  },
+  "revision": {
+    "date": "2026-09-06",
+    "previous_key_sha256": "6da2991f6be0699aac5012d17f1fa9abf4177acacba0785ad07dbdb3d79454b2",
+    "method": "Source-first review of pinned document bytes, before evaluation outputs; route and ingest expectations retained.",
+    "review_status": "Self-review only; independent analyst approval pending.",
+    "limitations": [
+      "Literal-match diagnostic scoring is not a semantic correctness proof.",
+      "Synthetic documents test host behaviour; they do not establish issuer economics.",
+      "Machine-authored benchmark prose is not independently approved or automatically scored."
+    ],
+    "documents": {
+      "sgc-10k-fy2024.txt": "9c045bb4b528215b9ccfa5318b851204e73a3121db3c7bf5cdfc9e9cf8dcfacc",
+      "sgc-10q-q3-2025.txt": "9848dd84e84c4bbb9526ee011921165511ba69171c34b173e40f73195a4f51f4",
+      "sgc-bidi-note.txt": "8a24e7db4bfd4c3c25192ccf7db8e5f409c256a2acf62b240651e0cd47a15e6f",
+      "sgc-control-note.txt": "da47daa3e70f988b5028462a470bea76745775a0beaf3911a6689c2474783f1a"
     }
   }
 }

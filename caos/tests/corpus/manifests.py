@@ -19,7 +19,9 @@ An answer key is signed by attestation: the manifest carries the key file's
 SHA-256 and one or more approvals ``{scope, reviewer, approved_at}``. A
 host-control binding accepts ``host_control`` or ``analyst`` scope; a live
 binding accepts ``analyst`` only. No approval, a stale digest, or a scope
-below the binding's is a typed refusal, never a skip.
+below the binding's is a typed refusal, never a skip. The separate
+live_evaluation binding accepts these draft scopes for development scoring
+with a real provider; it never grants analytical qualification.
 """
 
 from __future__ import annotations
@@ -341,6 +343,8 @@ def resolve_documents(manifest: dict[str, Any]) -> list[ResolvedDocument]:
 
 def attest_answer_key(manifest: dict[str, Any], raw_key: bytes, binding_kind: str) -> dict[str, Any]:
     """The approval that licenses this binding kind to score against the key."""
+    _require(binding_kind in ("host_control", "live", "live_evaluation"), "BINDING_INVALID",
+             f"unknown harness binding {binding_kind!r}")
     pack_id = manifest["pack_id"]
     record = manifest["answer_key"]
     if record["sha256"] is None or not record["approvals"]:

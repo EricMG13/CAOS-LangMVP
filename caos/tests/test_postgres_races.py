@@ -99,6 +99,52 @@ def _backend_pid(store: DomainStore) -> int:
         return conn.execute(sa.text("SELECT pg_backend_pid()")).scalar_one()
 
 
+def test_postgres_evidence_query_contract(stores, settings):
+    from test_source_queries import test_inventory_search_pagination_privacy_and_historical_detail
+
+    test_inventory_search_pagination_privacy_and_historical_detail(stores[0], settings)
+
+
+def test_postgres_bootstrap_serializes_across_processes(stores, pg_url):
+    import json
+    import subprocess
+
+    first, second = stores
+    case = first.create_case("Bootstrap", "Issuer", "Services", "creator")["id"]
+    script = """
+import json, sys, time
+import sqlalchemy as sa
+from caos.storage.store import DomainStore
+store = DomainStore.from_url(sys.argv[1])
+def pause(conn, cursor, statement, parameters, context, executemany):
+    if statement.startswith('SELECT cases.created_by'):
+        print('locked', flush=True)
+        time.sleep(1)
+sa.event.listen(store.engine, 'before_cursor_execute', pause)
+try:
+    print(json.dumps(store.bootstrap_approver(sys.argv[2], 'operator', 'first', 'review')), flush=True)
+finally:
+    store.close()
+"""
+    env = {**os.environ, "PYTHONPATH": str(SERVER)}
+    process = subprocess.Popen([sys.executable, "-c", script, pg_url, case], env=env,
+                               stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    try:
+        assert process.stdout.readline().strip() == "locked"
+        with pytest.raises(ValueError, match="APPROVER_ALREADY_BOOTSTRAPPED"):
+            second.bootstrap_approver(case, "operator", "second", "review")
+        out, error = process.communicate(timeout=15)
+        assert process.returncode == 0, error
+        assert json.loads(out)["subject"] == "first"
+        assert first.is_member(case, "first", {"APPROVER"})
+        assert not first.is_member(case, "second")
+        assert len([e for e in first.audit_trail() if e["action"] == "case.approver_bootstrapped"]) == 1
+    finally:
+        if process.poll() is None:
+            process.kill()
+            process.communicate(timeout=5)
+
+
 # --- interleaving control -----------------------------------------------------
 
 

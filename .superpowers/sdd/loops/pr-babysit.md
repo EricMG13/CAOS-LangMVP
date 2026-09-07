@@ -135,3 +135,16 @@
 - Note: `uv run --python 3.12` **replaces** `caos/server/.venv` in place. Restored
   it to 3.14.6 afterwards. No `uv.lock` was left behind.
 
+
+## 2026-09-05 tick 9 — PR #61 @ d51ebb4 — DONE
+Found: all 11 checks pass; PR already MERGED at 11:49:31Z by EricMG13 (squash afb93ab) outside this session — I did not merge it.
+Did: removed worktree frontend-ia-audit-84c3b6, deleted the local branch, stopped the loop.
+
+## 2026-09-05 tick 10 — PR #62 @ 314e73b -> 037641a
+Found: Server 3.12 and 3.14 both fail, same step: "Quality ledger covers every route and product file". Real failure, not flaky — FE-D1's sixteen docs/design/canvas/ records match no FILE_MAP prefix in docs/quality_ledger_coverage.py.
+Did: reproduced locally in a scratch worktree at the PR head (16 FAIL lines), added one named FILE_MAP entry for ^docs/design/canvas/ (named, not a docs/ blanket exclusion), re-ran the check green (54 routes, 373 files), pushed 037641a. Ruff on that file reports two PRE-EXISTING F601 duplicate-key warnings (lines 77-78) outside CI's caos/server+caos/tests scope; left alone.
+
+## 2026-09-05 tick 12 — PR #62 @ 037641a -> 7590ad2
+Found: the quality-ledger fix worked (both server jobs got past it), but both then failed on caos/tests/test_recorded_review.py::test_the_script_reviews_this_repository_head_without_a_block — AssertionError: 36 == 62. Real failure, not flaky.
+Diagnosis: FE-D1 is the first commit with spaces in filenames. Two latent defects. (1) git appends "\t<timestamp>" to the "+++ b/<path>" header when the path has a space, so parse_diff registered every such file twice — once from "diff --git", once as "<path>\t" (23 real + 13 dupes = 36). (2) The test built its expected list with .stdout.split(), splitting --name-only output on every space (23 files -> 62 tokens).
+Did: reproduced directly against origin/main...037641a (files_examined 36 vs 23 real paths), cut the +++ header at the first tab, switched the test to .splitlines(); re-verified parse_diff yields exactly the 23 paths git reports (sets identical). test_recorded_review 8 passed, test_workflow_security + test_scan_floors 27 passed, ruff clean on both files. Pushed 7590ad2.

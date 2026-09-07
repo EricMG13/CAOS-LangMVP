@@ -1,9 +1,9 @@
 {
   "schema_version": "caos.answer-key.v1",
   "pack_id": "C05",
-  "version": "1.0.0",
-  "authored_by": "Claude Fable 5.1 (ER-G6 implementer)",
-  "status": "draft-host-control",
+  "version": "1.1.0",
+  "authored_by": "Codex (GPT-6 Astra); machine author, self-reviewed against pinned source bytes",
+  "status": "draft-machine-authored-source-grounded",
   "intake": {
     "status": "started",
     "route": [
@@ -29,7 +29,17 @@
         "Revenue EUR 1,050 million"
       ],
       "required": true,
-      "cells": null
+      "cells": null,
+      "source_evidence": {
+        "sha256": "954fbe9c2d6650a35fc89946d1e34ce3b376bbe712738c6ae9d6740c1d86800c",
+        "normalization": "NFC",
+        "locator": {
+          "kind": "text_lines",
+          "start_line": 4,
+          "end_line": 8
+        },
+        "quote": "For the fiscal year ended November 30, 2024\nReporting currency: euro.\nRevenue EUR 1,050 million\nEBITDA EUR 205 million\nTotal debt EUR 3,100 million"
+      }
     },
     {
       "id": "F2",
@@ -42,7 +52,40 @@
         "1.08"
       ],
       "required": true,
-      "cells": null
+      "cells": null,
+      "source_evidence": {
+        "sha256": "954fbe9c2d6650a35fc89946d1e34ce3b376bbe712738c6ae9d6740c1d86800c",
+        "normalization": "NFC",
+        "locator": {
+          "kind": "text_lines",
+          "start_line": 7,
+          "end_line": 10
+        },
+        "quote": "EBITDA EUR 205 million\nTotal debt EUR 3,100 million\nEUR/USD closing rate 1.08 at November 30, 2024\nSterling facility GBP 200 million drawn; no GBP/USD rate is disclosed."
+      }
+    },
+    {
+      "id": "F3",
+      "statement": "Sterling facility drawn; no GBP/USD conversion rate is supplied",
+      "value": "200",
+      "unit": "GBP millions",
+      "period": "FY2024",
+      "source": "northstar-10k-fy2024-eur.txt",
+      "match": [
+        "GBP 200 million"
+      ],
+      "required": true,
+      "cells": null,
+      "source_evidence": {
+        "sha256": "954fbe9c2d6650a35fc89946d1e34ce3b376bbe712738c6ae9d6740c1d86800c",
+        "normalization": "NFC",
+        "locator": {
+          "kind": "text_lines",
+          "start_line": 8,
+          "end_line": 10
+        },
+        "quote": "Total debt EUR 3,100 million\nEUR/USD closing rate 1.08 at November 30, 2024\nSterling facility GBP 200 million drawn; no GBP/USD rate is disclosed."
+      }
     }
   ],
   "conflicts": [
@@ -83,6 +126,22 @@
         ]
       },
       "after_run": null
+    }
+  },
+  "revision": {
+    "date": "2026-09-06",
+    "previous_key_sha256": "29438b30f8ec7202f7e9ffda8b05409a647f51d75c7fbf9c56c0d22c44fbb62d",
+    "method": "Source-first review of pinned document bytes, before evaluation outputs; route and ingest expectations retained.",
+    "review_status": "Self-review only; independent analyst approval pending.",
+    "limitations": [
+      "Literal-match diagnostic scoring is not a semantic correctness proof.",
+      "Synthetic documents test host behaviour; they do not establish issuer economics.",
+      "Machine-authored benchmark prose is not independently approved or automatically scored."
+    ],
+    "documents": {
+      "northstar-10k-fy2024-eur.txt": "954fbe9c2d6650a35fc89946d1e34ce3b376bbe712738c6ae9d6740c1d86800c",
+      "northstar-10q-q3-2025.txt": "7458166d6519ec586964abf904c640de7eb7fe4e29d6b91d87fc1381782f7f6a",
+      "northstar-credit-agreement.txt": "d8e07f5fee49f0ea46df09beed10d8493e315476bdbca273c573862bf5e81223"
     }
   }
 }

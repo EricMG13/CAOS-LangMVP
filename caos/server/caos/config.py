@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -8,8 +9,8 @@ from urllib.parse import unquote, urlsplit
 
 
 def _provider_binding(value: str) -> str:
-    if value not in {"", "host_control"}:
-        raise RuntimeError("CAOS_PROVIDER must be unset or host_control")
+    if value not in {"", "host_control", "anthropic", "openai", "codex"}:
+        raise RuntimeError("CAOS_PROVIDER must name a supported adapter")
     return value
 
 
@@ -50,16 +51,25 @@ class Settings:
     deploy_v_root: Path = Path(__file__).parent / "methodology" / "vendor" / "deploy_v"
     anthropic_api_key: str = ""
     anthropic_model: str = "claude-sonnet-4-6"
+    openai_api_key: str = ""
+    openai_model: str = ""
+    provider_catalog_path: Path | None = None
+    provider_account_policy: str = ""
+    default_provider_binding: str = ""
+    candidate_commit: str = ""
+    image_set_digest: str = ""
+    corpus_digest: str = ""
+    enterprise_operator_subjects: tuple[str, ...] = ()
     # OpenRouter is a development-only binding for the same provider port. It
-    # estimates tokens locally; startup rejects multiple credentials rather
-    # than applying provider precedence. Production accepts qualified Anthropic.
+    # estimates tokens locally. Multiple credentials require an explicit binding
+    # or catalog; production accepts qualified direct Anthropic and OpenAI APIs.
     openrouter_api_key: str = ""
     openrouter_model: str = "z-ai/glm-5.3-flash"
     provider_qualification_path: Path | None = None
     provider_qualification_digest: str = ""
     # `host_control` binds the development-only answer-keyed provider so the
     # keyless browser gates can drive an ordinary run (DECISIONS §14 D8). It is
-    # refused outside development; production knows only qualified Anthropic.
+    # refused outside development.
     provider_binding: str = ""
     # Fail-closed posture: agent (LLM) execution stays off without explicit opt-in.
     agent_execution_enabled: bool = False
@@ -72,6 +82,9 @@ class Settings:
         "MAX_CONCURRENT_PREVIEWS", "CLAMAV_HOST", "CLAMAV_PORT", "ANTHROPIC_API_KEY", "ANTHROPIC_MODEL",
         "OPENROUTER_API_KEY", "OPENROUTER_MODEL", "CAOS_PROVIDER_QUALIFICATION_PATH",
         "CAOS_PROVIDER_QUALIFICATION_DIGEST", "CAOS_PROVIDER", "AGENT_EXECUTION_ENABLED",
+        "OPENAI_API_KEY", "OPENAI_MODEL", "CAOS_PROVIDER_CATALOG_PATH", "CAOS_PROVIDER_ACCOUNT_POLICY",
+        "CAOS_DEFAULT_PROVIDER_BINDING", "CAOS_BUILD_COMMIT", "CAOS_IMAGE_SET_DIGEST",
+        "CAOS_CORPUS_DIGEST", "CAOS_ENTERPRISE_OPERATOR_SUBJECTS",
     )
 
     @classmethod
@@ -105,6 +118,17 @@ class Settings:
         when_set("CLAMAV_PORT", "clamav_port", int)
         when_set("ANTHROPIC_API_KEY", "anthropic_api_key")
         when_set("ANTHROPIC_MODEL", "anthropic_model")
+        when_set("OPENAI_API_KEY", "openai_api_key")
+        when_set("OPENAI_MODEL", "openai_model")
+        when_set("CAOS_PROVIDER_ACCOUNT_POLICY", "provider_account_policy")
+        when_set("CAOS_DEFAULT_PROVIDER_BINDING", "default_provider_binding")
+        when_set("CAOS_BUILD_COMMIT", "candidate_commit")
+        when_set("CAOS_IMAGE_SET_DIGEST", "image_set_digest")
+        when_set("CAOS_CORPUS_DIGEST", "corpus_digest")
+        when_set("CAOS_ENTERPRISE_OPERATOR_SUBJECTS", "enterprise_operator_subjects",
+                 lambda subjects: tuple(value.strip() for value in subjects.split(",") if value.strip()))
+        if raw["CAOS_PROVIDER_CATALOG_PATH"]:
+            chosen["provider_catalog_path"] = Path(raw["CAOS_PROVIDER_CATALOG_PATH"])
         when_set("OPENROUTER_API_KEY", "openrouter_api_key")
         when_set("OPENROUTER_MODEL", "openrouter_model")
         when_set("CAOS_PROVIDER_QUALIFICATION_DIGEST", "provider_qualification_digest")
@@ -136,6 +160,9 @@ class Settings:
                             ("MAX_CONCURRENT_PREVIEWS", self.max_concurrent_previews)):
             if value <= 0:
                 raise ValueError(f"{name} must be greater than 0")
+        operators = self.enterprise_operator_subjects
+        if len(operators) > 100 or any(not re.fullmatch(r"[^\s\x00-\x1f\x7f]{1,160}", value) for value in operators):
+            raise ValueError("CAOS_ENTERPRISE_OPERATOR_SUBJECTS contains an invalid subject")
 
     # Values that exist to be replaced. `.env.example` ships every required
     # secret empty so Compose's `${VAR:?}` fails closed on an uncopied file;
@@ -162,8 +189,8 @@ class Settings:
         if self.environment not in {"development", "production"}:
             raise RuntimeError("ENVIRONMENT must be development or production")
         _provider_binding(self.provider_binding)
-        if self.environment == "production" and self.provider_binding:
-            raise RuntimeError("CAOS_PROVIDER=host_control is development-only; production binds qualified Anthropic")
+        if self.environment == "production" and self.provider_binding in {"host_control", "codex"}:
+            raise RuntimeError("the selected CAOS_PROVIDER binding is development-only")
         if self.environment == "production":
             if not self.database_url.startswith(("postgresql://", "postgresql+psycopg://")):
                 raise RuntimeError("production requires a PostgreSQL DATABASE_URL")

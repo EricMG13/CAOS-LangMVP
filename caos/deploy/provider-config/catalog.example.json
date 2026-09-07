@@ -1,0 +1,26 @@
+{
+  "schema_version": "caos.provider-catalog.v1",
+  "default_binding_id": "openai-enterprise",
+  "bindings": [
+    {
+      "id": "openai-enterprise",
+      "provider": "openai",
+      "model": "your-openai-model-id",
+      "credential_env": "OPENAI_API_KEY",
+      "account_policy": "your-approved-account-policy-id",
+      "parameters": {},
+      "qualification_path": "/etc/caos/providers/openai.qualification.json",
+      "qualification_digest": "replace-with-qualified-record-sha256"
+    },
+    {
+      "id": "claude-enterprise",
+      "provider": "anthropic",
+      "model": "your-claude-model-id",
+      "credential_env": "ANTHROPIC_API_KEY",
+      "account_policy": "your-approved-account-policy-id",
+      "parameters": {},
+      "qualification_path": "/etc/caos/providers/claude.qualification.json",
+      "qualification_digest": "replace-with-qualified-record-sha256"
+    }
+  ]
+}

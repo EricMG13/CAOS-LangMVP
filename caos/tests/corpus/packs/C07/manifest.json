@@ -1,7 +1,7 @@
 {
   "schema_version": "caos.corpus-pack.v1",
   "pack_id": "C07",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "title": "Textless scanned PDF, poor OCR, tables and footnotes",
   "purpose": "C07: a scan with no text layer and an OCR-degraded note alongside real evidence; the scan is dispositioned insufficient and never cited, the run still completes.",
   "kind": "negative",
@@ -76,14 +76,14 @@
   ],
   "answer_key": {
     "file": "answer_key.json",
-    "version": "1.0.0",
-    "sha256": "1685a3b71cd5b69cbc205065b4daf0b99e7653d8d258c76a95dad748122983c5",
+    "version": "1.1.0",
+    "sha256": "1f21a2b89a8c026e6fadd7a2873c62f21be2674b240326c6db0c4912cf8d8dff",
     "approvals": [
       {
         "scope": "host_control",
-        "reviewer": "Claude Fable 5.1 (ER-G6 implementer)",
-        "approved_at": "2026-09-03",
-        "note": "host-control attestation of the draft key: orchestration proof only, never analysis"
+        "reviewer": "Codex (GPT-6 Astra); machine author, self-reviewed against pinned source bytes",
+        "approved_at": "2026-09-06",
+        "note": "Machine self-check and digest pin for host control or explicit live_evaluation only; no independent analyst approval or qualification."
       }
     ]
   }

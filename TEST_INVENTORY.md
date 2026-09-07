@@ -393,3 +393,20 @@ Out of MVP scope — all CP-DR (pathway schema, planner content, pilot gating, f
 ## UNCLEAR (0)
 
 None. The single UNCLEAR (`test_loan_universe_findings_are_strict`) was resolved to CONTRACTUAL on 2026-08-26 by the ruling that the RV (relative value) loan-universe importer is in MVP scope.
+
+## Enterprise workflow additions — 2026-09-06
+
+- `test_enterprise_governance.py`: production trusted operator policy, independent
+  first-approver bootstrap, retry after revocation, concurrent grant, audit
+  rollback, and versioned provider-default policy.
+- `test_source_queries.py`: metadata projection, unopened evidence search,
+  literal wildcard and Unicode matching, bounded pagination, case privacy,
+  and historical withdrawn detail. Also exercised against isolated PostgreSQL.
+- `test_scanner_readiness.py`, `test_clamav_supervision.py`: bounded readiness,
+  scanner process supervision and failure behavior.
+- `test_provider_catalog.py`, `test_openai_provider.py`: configured identities,
+  qualification, switching, provider wire contract and strict output schemas.
+- `qa/measure_source_reads.py`: repeatable local source read comparison; not a
+  concurrent production capacity result.
+
+The signed-workbook export regression `test_signed_workbook_semantics_match_xlsx_number_encoding_and_refuse_changes` covers a valid floating-point assumption round trip through the XLSX writer, while refusing changed numeric values, text/formula substitution and booleans.

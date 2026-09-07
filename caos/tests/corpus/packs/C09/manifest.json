@@ -1,7 +1,7 @@
 {
   "schema_version": "caos.corpus-pack.v1",
   "pack_id": "C09",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "title": "Duplicates, renamed duplicates, amendments, waivers and a later withdrawal",
   "purpose": "C09: an exact duplicate under a new name, an amendment and a waiver, an irrelevant file, and an active source withdrawn after acceptance; the next run must pin a set without it.",
   "kind": "negative",
@@ -136,14 +136,14 @@
   ],
   "answer_key": {
     "file": "answer_key.json",
-    "version": "1.0.0",
-    "sha256": "9c1fe57fc68d16cd0dccdb195e02c7af82965365b61d3aef5a7cac68d65d84ae",
+    "version": "1.1.0",
+    "sha256": "9d02ab5861e31c72ea0123eb942e88b310d9e3844660d227e827f8e035742b73",
     "approvals": [
       {
         "scope": "host_control",
-        "reviewer": "Claude Fable 5.1 (ER-G6 implementer)",
-        "approved_at": "2026-09-03",
-        "note": "host-control attestation of the draft key: orchestration proof only, never analysis"
+        "reviewer": "Codex (GPT-6 Astra); machine author, self-reviewed against pinned source bytes",
+        "approved_at": "2026-09-06",
+        "note": "Machine self-check and digest pin for host control or explicit live_evaluation only; no independent analyst approval or qualification."
       }
     ]
   }

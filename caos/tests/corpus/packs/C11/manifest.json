@@ -1,7 +1,7 @@
 {
   "schema_version": "caos.corpus-pack.v1",
   "pack_id": "C11",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "title": "Covenant and refinancing pack with insufficient inputs for exact capacity",
   "purpose": "C11: thresholds are documented but no financials or definitions support an exact headroom; the run completes with the calculators declared not computable.",
   "kind": "negative",
@@ -52,14 +52,14 @@
   ],
   "answer_key": {
     "file": "answer_key.json",
-    "version": "1.0.0",
-    "sha256": "42b41ff474ca7c52d2ca6d84dcc3eeae8079d1329e41d4f6b4178dd83eee3242",
+    "version": "1.1.0",
+    "sha256": "bc08a27ceca9437158c46fcfb1ca1c47fa6d355cef83715099d3d9d86483539a",
     "approvals": [
       {
         "scope": "host_control",
-        "reviewer": "Claude Fable 5.1 (ER-G6 implementer)",
-        "approved_at": "2026-09-03",
-        "note": "host-control attestation of the draft key: orchestration proof only, never analysis"
+        "reviewer": "Codex (GPT-6 Astra); machine author, self-reviewed against pinned source bytes",
+        "approved_at": "2026-09-06",
+        "note": "Machine self-check and digest pin for host control or explicit live_evaluation only; no independent analyst approval or qualification."
       }
     ]
   }

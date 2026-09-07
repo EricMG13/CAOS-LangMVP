@@ -1,9 +1,9 @@
 {
   "schema_version": "caos.answer-key.v1",
   "pack_id": "C10",
-  "version": "1.0.0",
-  "authored_by": "Claude Fable 5.1 (ER-G6 implementer)",
-  "status": "draft-host-control",
+  "version": "1.1.0",
+  "authored_by": "Codex (GPT-6 Astra); machine author, self-reviewed against pinned source bytes",
+  "status": "draft-machine-authored-source-grounded",
   "intake": null,
   "expected_facts": [],
   "conflicts": [],
@@ -69,5 +69,23 @@
         "status": 201
       }
     }
-  ]
+  ],
+  "revision": {
+    "date": "2026-09-06",
+    "previous_key_sha256": "b6b58ff0040d8c371cdcd8c70fd88529b8d9c8ba53026a99dd293a3e2e975020",
+    "method": "Source-first review of pinned document bytes, before evaluation outputs; route and ingest expectations retained.",
+    "review_status": "Self-review only; independent analyst approval pending.",
+    "limitations": [
+      "Literal-match diagnostic scoring is not a semantic correctness proof.",
+      "Synthetic documents test host behaviour; they do not establish issuer economics.",
+      "Machine-authored benchmark prose is not independently approved or automatically scored."
+    ],
+    "documents": {
+      "marks-valid.xlsx": "a66cbf28c3b4cc33f466cce7d68a68daeac7b010eb76e7e8bf8b202d7f7c930d",
+      "marks-duplicate-conflict.xlsx": "214e8960e2e78227eb32652534d729870a380b888332cccd39340745b5b35856",
+      "marks-alias-conflict.xlsx": "18f6ca7946ede5e65c0580a83e22a0489ea1af1156636f8edcabb0e25f1e7b0a",
+      "marks-date-conflict.xlsx": "59b9d54d32b7a86475f6f3722cba8b5803036b5807c2d8b5fb37b7d8ba765499",
+      "marks-blank-optional.xlsx": "d59bd7f04f5f0d624f33d3052b30e336f76e3d55d6ced915fa839e710bf7308d"
+    }
+  }
 }

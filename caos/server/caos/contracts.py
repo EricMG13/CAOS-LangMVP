@@ -162,6 +162,16 @@ class MemberRequest(StrictModel):
     role: Role = Role.READER
 
 
+class BootstrapApproverRequest(StrictModel):
+    subject: NonBlankBoundaryText = Field(min_length=1, max_length=200)
+    rationale: NonBlankBoundaryText = Field(min_length=1, max_length=2000)
+
+
+class ProviderDefaultRequest(StrictModel):
+    binding_id: NonBlankBoundaryText = Field(min_length=1, max_length=160)
+    expected_version: int = Field(ge=0, strict=True)
+
+
 class MethodologyDraftRequest(StrictModel):
     expected_build_id: str = Field(min_length=64, max_length=64)
     module_id: str = Field(min_length=3, max_length=40)

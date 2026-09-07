@@ -163,12 +163,12 @@ test("Admin draws the two served governance contracts and Report no longer provi
   assert.match(admin, /response\.headers\.get\("x-caos-sha256"\)/);
   assert.match(admin, /if \(response\.status === 404\) \{ if \(action === downloadGeneration\.current\) setDownload\(\{ state: "unavailable" \}\); return; \}/);
   // Provisioning keeps the filing rule: current APPROVER/ADMIN role and stored case standing.
-  assert.match(admin, /const canProvision = \(role === "APPROVER" \|\| role === "ADMIN"\) && \["APPROVER", "ADMIN"\]\.includes\(selectedCase\?\.members\?\.\[subject\] \?\? ""\);/);
+  assert.match(admin, /const canProvision = canApproveCase\(role, subject, selectedCase\?\.members\);/);
   assert.match(admin, /: canProvision \? <form className="opinion-form" data-member-form/);
   assert.match(admin, /<option value="APPROVER">APPROVER<\/option><option value="ADMIN">ADMIN<\/option>/);
   // A reader sees the reason, never the control (UX-015); a writer without standing sees the rule.
   assert.match(admin, /\{writeAccess !== "yes" \? <WriteBlocked access=\{writeAccess\} action="member provisioning" \/>/);
-  assert.match(admin, /Provisioning a member needs a current APPROVER or ADMIN role and stored APPROVER or ADMIN standing on this case\./);
+  assert.match(admin, /Provisioning a member needs a current writer role and stored APPROVER or ADMIN standing on this case\./);
   // The mutation is the workspace's governed write with its receipt and a case re-read.
   assert.match(workspace, /const provisionMember = async \(member: \{ subject: string; role: string \}\) => \{/);
   assert.match(workspace, /await request\(`\/api\/cases\/\$\{expectedCaseId\}\/members`, \{ method: "POST", body: JSON\.stringify\(\{ subject: memberSubject, role: member\.role \}\) \}\);/);

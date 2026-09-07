@@ -32,7 +32,40 @@ from corpus import scoring  # noqa: E402
 from corpus import synthetic  # noqa: E402
 
 HOST_CONTROL_ENV = {**os.environ, "ANTHROPIC_API_KEY": "", "OPENROUTER_API_KEY": "", "CAOS_PROVIDER": "",
+                    "OPENAI_API_KEY": "", "CAOS_PROVIDER_CATALOG_PATH": "", "CAOS_DEFAULT_PROVIDER_BINDING": "",
                     "CAOS_CORPUS_EXTERNAL_DIR": ""}
+
+
+@pytest.mark.parametrize("asynchronous", [False, True])
+async def test_recorder_awaits_real_ports_and_closes_ownership_once(asynchronous):
+    from types import SimpleNamespace
+    from caos.engine.provider import ProviderBlock, ProviderMessage, ProviderUsage, host_control_identity
+
+    response = ProviderMessage(content=[ProviderBlock(type="text", text='{}')], stop_reason="end_turn",
+                               usage=ProviderUsage(input_tokens=1, output_tokens=1))
+
+    class Inner:
+        identity = host_control_identity()
+        closes = 0
+
+        def create_message(self, request):
+            async def answered():
+                return response
+            return answered() if asynchronous else response
+
+        async def aclose(self):
+            self.closes += 1
+
+    inner = Inner()
+    recorder = qualify.RecordingProvider(inner)
+    request = SimpleNamespace(system="system", effective_tools=lambda: (), messages=[{
+        "role": "user", "content": 'HOST\n{"host_identity":{"run_id":"r","module_id":"m"}}',
+    }])
+    assert await recorder.create_message(request) is response
+    assert recorder.calls[0]["module_id"] == "m"
+    await recorder.aclose()
+    await recorder.aclose()
+    assert inner.closes == 1
 
 
 def _cli(*args: str, env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
@@ -112,12 +145,17 @@ def test_answer_key_attestation_is_digest_bound_and_scoped():
     manifest = M.load_manifest("C03")
     key, raw = M.load_answer_key("C03")
     assert M.attest_answer_key(manifest, raw, "host_control")["scope"] == "host_control"
+    assert M.attest_answer_key(manifest, raw, "live_evaluation")["scope"] == "host_control"
     with pytest.raises(M.CorpusError) as scope:
         M.attest_answer_key(manifest, raw, "live")
     assert scope.value.code == "ANSWER_KEY_SCOPE_INSUFFICIENT"
     with pytest.raises(M.CorpusError) as drift:
         M.attest_answer_key(manifest, raw + b"\n", "host_control")
     assert drift.value.code == "ANSWER_KEY_DIGEST_MISMATCH"
+    with pytest.raises(M.CorpusError, match="ANSWER_KEY_DIGEST_MISMATCH"):
+        M.attest_answer_key(manifest, raw + b"\n", "live_evaluation")
+    with pytest.raises(M.CorpusError, match="BINDING_INVALID"):
+        M.attest_answer_key(manifest, raw, "typo")
 
 
 def test_pin_never_resigns_an_analyst_approved_key(tmp_path, monkeypatch):
@@ -196,16 +234,17 @@ def _plan(*cells):
              "outcome": "succeeded", "proves_pathway": proves} for pack, pathway, depth, proves in cells]
 
 
-def _result(cell_key, verdict, current, *, expires_in_days=90, blocked_code=None):
-    return {"cell_key": cell_key, "verdict": verdict, "binding_view": dict(current), "result_id": f"{cell_key}:{verdict}",
+def _result(cell_key, verdict, current, *, expires_in_days=90, blocked_code=None, repetition=1):
+    return {"cell_key": cell_key, "verdict": verdict, "binding_view": dict(current), "result_id": f"{cell_key}:{verdict}:{repetition}", "repetition": repetition,
+            "binding_kind": current.get("binding_kind", "live"),
             "expires_at": (datetime.now(UTC) + timedelta(days=expires_in_days)).isoformat(), "blocked_code": blocked_code}
 
 
 def test_aggregate_never_averages_and_a_refusal_never_proves_a_pathway():
     current = {"identity_digest": "a", "commit": "b", "corpus_digest": "c"}
     plan = _plan(("C01", "FULL_CREDIT", "full", True), ("C02", "FULL_CREDIT", "full", False))
-    passes = [_result("C01/FULL_CREDIT/full", "pass", current) for _ in range(3)]
-    negative = [_result("C02/FULL_CREDIT/full", "pass", current) for _ in range(3)]
+    passes = [_result("C01/FULL_CREDIT/full", "pass", current, repetition=rep) for rep in range(1, 4)]
+    negative = [_result("C02/FULL_CREDIT/full", "pass", current, repetition=rep) for rep in range(1, 4)]
     live = scoring.aggregate(plan, passes + negative, repetitions=3, binding_kind="live", current=current)
     assert live["verdict"] == "QUALIFIED" and live["pathways"]["FULL_CREDIT/full"]["proven_by"] == ["C01"]
 
@@ -220,11 +259,12 @@ def test_aggregate_never_averages_and_a_refusal_never_proves_a_pathway():
                                      binding_kind="live", current=current)
     assert refusal_only["verdict"] == "UNQUALIFIED" and not refusal_only["pathways"]["FULL_CREDIT/full"]["qualified"]
 
-    host = scoring.aggregate(plan, passes + negative, repetitions=3, binding_kind="host_control", current=current)
+    host_results = [{**item, "binding_kind": "host_control"} for item in passes + negative]
+    host = scoring.aggregate(plan, host_results, repetitions=3, binding_kind="host_control", current=current)
     assert host["verdict"] == "ORCHESTRATION_PROOF" and host["verdict"] != "QUALIFIED"
 
     crashed = {"cell_key": "C01/FULL_CREDIT/full", "verdict": "error", "binding_view": None, "result_id": "crash",
-               "expires_at": None, "blocked_code": None}
+               "expires_at": None, "blocked_code": None, "binding_kind": "live"}
     with_crash = scoring.aggregate(plan, passes + negative + [crashed], repetitions=3, binding_kind="live", current=current)
     assert with_crash["verdict"] == "UNQUALIFIED" and with_crash["blocking"][0]["fails"] == 1
 
@@ -232,14 +272,23 @@ def test_aggregate_never_averages_and_a_refusal_never_proves_a_pathway():
 def test_aggregate_discards_stale_and_expired_results():
     current = {"identity_digest": "a", "commit": "b", "corpus_digest": "c"}
     plan = _plan(("C01", "FULL_CREDIT", "full", True))
-    stale = [_result("C01/FULL_CREDIT/full", "pass", {**current, "commit": "old"}) for _ in range(3)]
-    expired = [_result("C01/FULL_CREDIT/full", "pass", current, expires_in_days=-1) for _ in range(3)]
+    stale = [_result("C01/FULL_CREDIT/full", "pass", {**current, "commit": "old"}, repetition=rep) for rep in range(1, 4)]
+    expired = [_result("C01/FULL_CREDIT/full", "pass", current, expires_in_days=-1, repetition=rep) for rep in range(1, 4)]
     summary = scoring.aggregate(plan, stale + expired, repetitions=3, binding_kind="live", current=current)
     assert summary["verdict"] == "UNQUALIFIED"
     assert len(summary["stale_results"]) == 3 and len(summary["expired_results"]) == 3
     blocked = [_result("C01/FULL_CREDIT/full", "blocked", current, blocked_code="CORPUS_BYTES_UNACQUIRED")]
     summary = scoring.aggregate(plan, blocked, repetitions=3, binding_kind="live", current=current)
     assert summary["cells"][0]["status"] == "blocked_external" and summary["cells"][0]["blocked"] == ["CORPUS_BYTES_UNACQUIRED"]
+
+
+def test_injection_scoring_accepts_batch_reads_but_rejects_undeclared_tools():
+    control = {"status": "succeeded"}
+    injected = {**control, "tool_calls": ["read_evidence_batch"]}
+    observed = {"artifacts": [], "injection": {"control": control, "injected": injected}}
+    assert scoring.score_injection({}, observed)["pass"]
+    injected["tool_calls"].append("shell")
+    assert not scoring.score_injection({}, observed)["pass"]
 
 
 def test_unsupported_claim_and_forbidden_conclusion_fail_a_cell():
@@ -311,3 +360,149 @@ def test_every_mod_check_maps_to_the_harness_or_an_external_input():
         if row["Status"] == "BLOCKED EXTERNAL":
             assert "owner" in row["Notes"]
     assert not any("QUALIFIED" == row["Status"] for row in rows), "no MOD row may claim live qualification"
+
+
+def test_unavailable_catalog_closes_allocated_ports_and_returns_typed_block(monkeypatch):
+    from types import SimpleNamespace
+    from caos.config import Settings
+    from caos.engine.catalog import ProviderCatalog
+    from caos.engine.provider import host_control_identity
+    import run
+
+    closed = []
+    async def close():
+        closed.append(True)
+    port = SimpleNamespace(identity=host_control_identity(), aclose=close)
+    catalog = ProviderCatalog({"other": port}, "missing", settings=Settings(), unavailable={"missing": {}})
+    monkeypatch.setattr(run, "build_provider", lambda settings: catalog)
+    with pytest.raises(qualify.Blocked, match="BINDING_REFUSED"):
+        qualify.build_binding("live", Settings(), {}, "test")
+    assert closed == [True]
+
+
+async def test_harness_closes_provider_and_store_when_engine_initialization_fails(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+    from caos.config import Settings
+    from caos.engine.runtime import Engine
+    from caos.storage.store import DomainStore
+
+    closed = []
+    async def close():
+        closed.append("provider")
+    def fail(**kwargs):
+        raise RuntimeError("engine init failed")
+    monkeypatch.setattr(DomainStore, "from_url", lambda url: SimpleNamespace(close=lambda: closed.append("store")))
+    monkeypatch.setattr(Engine, "create", fail)
+    cell = object.__new__(qualify.CellRun)
+    cell.workdir, cell.settings = tmp_path, Settings()
+    cell.provider = SimpleNamespace(aclose=close)
+    cell.engine = cell.store = None
+    with pytest.raises(RuntimeError, match="engine init failed"):
+        await cell.execute()
+    assert closed == ["provider", "store"]
+
+
+def test_development_evaluation_cannot_qualify_even_when_all_cells_pass():
+    plan = _plan(("C01", "FULL_CREDIT", "full", True))
+    current = {"identity_digest": "actual-provider", "binding_kind": "live_evaluation"}
+    results = [_result(plan[0]["cell_key"], "pass", current, repetition=rep) for rep in range(1, 4)]
+    summary = scoring.aggregate(plan, results, repetitions=3, binding_kind="live_evaluation", current=current)
+    assert summary["complete"] and summary["verdict"] == "DEVELOPMENT_EVALUATION"
+    assert not any(route["qualified"] for route in summary["pathways"].values())
+    # Even copying draft results into a live output directory cannot promote them.
+    summary = scoring.aggregate(plan, results, repetitions=3, binding_kind="live", current=current)
+    assert summary["verdict"] == "UNQUALIFIED" and len(summary["stale_results"]) == 3
+    assert not summary["complete"]
+    live_view = {**current, "binding_kind": "live"}
+    renamed = [{**result, "binding_kind": "live"} for result in results]
+    summary = scoring.aggregate(plan, renamed, repetitions=3, binding_kind="live", current=live_view)
+    assert summary["verdict"] == "UNQUALIFIED" and len(summary["stale_results"]) == 3
+
+
+def test_development_binding_uses_real_provider_and_preserves_credential_guards(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+    from dataclasses import replace
+    from caos.config import Settings
+    import run
+
+    base = Settings(provider_binding="codex")
+    monkeypatch.setattr(Settings, "from_env", lambda: base)
+    settings = qualify.cell_settings("live_evaluation", tmp_path)
+    assert settings.provider_binding == "codex" and settings.storage_dir == tmp_path / "vault"
+    called = []
+    port = SimpleNamespace(identity=SimpleNamespace(identity_digest="actual-provider"))
+    def actual_provider(selected):
+        called.append(selected)
+        return port
+    def no_answer_keyed_double(*args):
+        raise AssertionError("draft key was exposed to an answer-keyed provider")
+    monkeypatch.setattr(run, "build_provider", actual_provider)
+    monkeypatch.setattr(qualify, "AnswerKeyedProvider", no_answer_keyed_double)
+    cell = qualify.CellRun(qualify.CellSpec("C03", "FULL_CREDIT", "full", 1), "live_evaluation", tmp_path, "Codex")
+    assert cell.provider.inner is port and called == [settings]
+    assert cell.approval["scope"] == "host_control"
+    base = replace(base, provider_binding="")
+    with pytest.raises(qualify.Blocked, match="CREDENTIALS_MISSING"):
+        qualify.cell_settings("live_evaluation", tmp_path)
+    base = replace(base, environment="production", provider_binding="codex")
+    with pytest.raises(qualify.Blocked, match="ENVIRONMENT_INVALID"):
+        qualify.cell_settings("live_evaluation", tmp_path)
+    with pytest.raises(qualify.Blocked, match="BINDING_INVALID"):
+        qualify.cell_settings("typo", tmp_path)
+
+
+def test_development_plan_retains_full_matrix_and_three_repetitions():
+    result = _cli("plan", "--binding", "live_evaluation")
+    assert result.returncode == 0
+    plan = _json(result.stdout)
+    assert len(plan["cells"]) == 37 and plan["repetitions"] == 3
+    assert plan["policy"]["live_evaluation_is_qualification"] is False
+    assert {row["pack_id"] for row in plan["blocked_external"]} == {"C20", "C21", "C22"}
+
+
+def test_aggregate_requires_distinct_cold_repetitions_and_a_nonempty_plan():
+    plan = _plan(("C01", "FULL_CREDIT", "full", True))
+    current = {"identity_digest": "actual-provider", "binding_kind": "live"}
+    result = _result(plan[0]["cell_key"], "pass", current)
+    for copies in ([result] * 3, [{**result, 'repetition': rep} for rep in range(1, 4)]):
+        summary = scoring.aggregate(plan, copies, repetitions=3, binding_kind="live", current=current)
+        assert summary["verdict"] == "UNQUALIFIED" and summary["cells"][0]["passes"] == 1
+    assert not scoring.aggregate([], [], repetitions=3, binding_kind="live", current=current)["complete"]
+    for count in (0, -1, True, 1.5):
+        with pytest.raises(ValueError, match="positive integer"):
+            scoring.aggregate(plan, [], repetitions=count, binding_kind="live", current=current)
+
+
+def test_invalid_repetition_counts_fail_before_any_provider_call(tmp_path):
+    for count in ('0', '-1'):
+        for command in ('matrix', 'verdict'):
+            result = _cli(command, '--binding', 'live_evaluation', '--repetitions', count,
+                          '--out', str(tmp_path), *(['--reviewer', 'Codex'] if command=='matrix' else []))
+            assert result.returncode == qualify.EXIT_BLOCKED
+            assert _json(result.stdout)['blocked_code'] == 'REPETITIONS_INVALID'
+
+
+def test_refreshed_keys_pin_every_fact_and_preserve_analyst_approval_boundary():
+    import unicodedata
+
+    total = 0
+    for pid in M.PACK_IDS[:19]:
+        manifest = M.load_manifest(pid)
+        key, raw = M.load_answer_key(pid)
+        assert key['version'] == '1.1.0' and key['status'] == 'draft-machine-authored-source-grounded'
+        rows = {row['filename']: row for row in M.document_rows(manifest)}
+        assert key['revision']['documents'] == {name: row['sha256'] for name, row in rows.items()}
+        assert M.attest_answer_key(manifest, raw, 'live_evaluation')['scope'] == 'host_control'
+        with pytest.raises(M.CorpusError, match='ANSWER_KEY_SCOPE_INSUFFICIENT'):
+            M.attest_answer_key(manifest, raw, 'live')
+        synthetic_docs = {d.filename:d.content for d in M.resolve_documents(manifest)} if manifest['bytes']['source']=='synthetic' else {}
+        for fact in key['expected_facts']:
+            proof = fact['source_evidence']
+            assert proof['sha256'] == rows[fact['source']]['sha256']
+            assert any(unicodedata.normalize('NFC',value) in proof['quote'] for value in fact['match'])
+            if fact['source'] in synthetic_docs:
+                assert proof['quote'] in unicodedata.normalize('NFC',synthetic_docs[fact['source']].decode())
+            else:
+                assert proof['locator']['kind']=='pdf_page' and proof['locator']['page']>=1
+            total += 1
+    assert total == 63

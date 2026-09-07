@@ -1,7 +1,7 @@
 {
   "schema_version": "caos.corpus-pack.v1",
   "pack_id": "C15",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "title": "Malformed files, polyglots, archive bombs, traversal paths, duplicate members, corrupted packages, malware signature",
   "purpose": "C15: every file is refused with a typed reason at the source boundary, and the whole pack is refused at intake with nothing admitted.",
   "kind": "negative",
@@ -112,14 +112,14 @@
   ],
   "answer_key": {
     "file": "answer_key.json",
-    "version": "1.0.0",
-    "sha256": "ed4f6ed43382dae0f83e5ed1e85aec02b6fa18e5625e449b5f22b87c52c68f3c",
+    "version": "1.1.0",
+    "sha256": "2855192aa2ffd23b42867ace98b458a582c3f18fd4b70bc1f38fb748b2bdf14c",
     "approvals": [
       {
         "scope": "host_control",
-        "reviewer": "Claude Fable 5.1 (ER-G6 implementer)",
-        "approved_at": "2026-09-03",
-        "note": "host-control attestation of the draft key: orchestration proof only, never analysis"
+        "reviewer": "Codex (GPT-6 Astra); machine author, self-reviewed against pinned source bytes",
+        "approved_at": "2026-09-06",
+        "note": "Machine self-check and digest pin for host control or explicit live_evaluation only; no independent analyst approval or qualification."
       }
     ]
   }

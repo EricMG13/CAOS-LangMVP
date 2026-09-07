@@ -255,14 +255,16 @@ jobs:
             -e CAOS_STORAGE_DIR=/vault caos-app:ci
           ok=""
           for _ in $(seq 1 30); do
+            # This connectivity check has no scanner. Require honest degraded
+            # readiness while proving every booted application subsystem works.
             if docker exec caos-ci-app python -c \
-              "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8000/api/health')" >/dev/null 2>&1; then
+              "import http.client,json;c=http.client.HTTPConnection('127.0.0.1',8000,timeout=2);c.request('GET','/api/health');r=c.getresponse();d=json.load(r);assert r.status==503 and d==dict(status='degraded',store=True,bundle=True,checkpointer=True,scanner='unavailable'),(r.status,d)" >/dev/null 2>&1; then
               ok=1; break
             fi
             sleep 2
           done
           if [ -z "$ok" ]; then
-            echo "::error::the app never served /api/health against PostgreSQL"
+            echo "::error::the app never reported healthy boot subsystems and the absent scanner against PostgreSQL"
             docker logs --tail 40 caos-ci-app
             exit 1
           fi
@@ -272,7 +274,7 @@ jobs:
           # under the same table set as a used one; test_deploy_topology.py
           # pins this list to the store's startup schema.
           missing=$(docker exec caos-ci-db psql -Atq -U caos -d caos -c \
-            "SELECT t FROM unnest(ARRAY['cases','sources','source_sets','audit_events','audit_chain_heads','runs','run_nodes','run_artifacts','run_events','run_budgets','model_builds','model_revisions','model_revision_heads','deliverable_revisions','deliverable_frozen','deliverable_opinions','deliverable_freeze_jobs','deliverable_filing_receipts','deliverable_threads']) t WHERE to_regclass('public.'||t) IS NULL")
+            "SELECT t FROM unnest(ARRAY['cases','sources','source_sets','case_approver_bootstraps','provider_policy','audit_events','audit_chain_heads','runs','run_nodes','run_artifacts','run_events','run_budgets','model_builds','model_revisions','model_revision_heads','deliverable_revisions','deliverable_frozen','deliverable_opinions','deliverable_freeze_jobs','deliverable_filing_receipts','deliverable_threads']) t WHERE to_regclass('public.'||t) IS NULL")
           if [ -n "$missing" ]; then
             echo "::error::the app did not create its schema in PostgreSQL; missing: $missing"
             exit 1

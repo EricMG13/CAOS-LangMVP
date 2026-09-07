@@ -771,6 +771,21 @@ Consolidation note: where §6 conflicts with §10/§11/§12 (output Σ vs Σ+max
     approvals and the external packs are external inputs recorded in
     `.superpowers/sdd/enterprise-task-11-report.md`.
 
+    **Development reruns (2026-09-06).** The explicit `--binding
+    live_evaluation` mode uses the ordinary provider path with digest-pinned
+    host-control-scoped draft keys. It defaults to three cold repetitions,
+    retains every scoring dimension, and never feeds answer-key fixtures to
+    the provider. Its verdict is `DEVELOPMENT_EVALUATION` or
+    `DEVELOPMENT_EVALUATION_INCOMPLETE`; no pathway receives `qualified=true`.
+    Binding kind is included in result identity and checked when aggregating,
+    so these results cannot be reused as live qualification. Repetition counts
+    must be positive integers, and a passing cell needs distinct result IDs
+    across distinct cold repetition indices. C01–C19 answer keys v1.1.0 add
+    machine-authored source excerpts, page/line locators and source digests;
+    their self-review is not independent analyst approval. C20–C22 remain
+    unacquired and unsigned. The normal `live` mode still requires analyst
+    approval. Signed-in Codex remains a development-only provider.
+
 21. **Database truth, retained simulations, the single-instance lock and the
     backup snapshot point (2026-09-03, Task 12a, ETR-B07, ETR-B10, G6).**
     Serialisation of every governed race is a property of the database, proven
@@ -914,3 +929,96 @@ Consolidation note: where §6 conflicts with §10/§11/§12 (output Σ vs Σ+max
     `next_action` now reads "open Run and retry execution" (folded into the
     same pull request at the decision owner's instruction, 2026-09-06). The
     surfaces' interiors are FE-G3's; this entry binds structure only.
+
+24. **Enterprise workflow completion and provider switching (2026-09-06).**
+    The user's approved execution plan supersedes §14.5's Anthropic-only,
+    one-binding/no-picker restriction and UX-012's prohibition on an operator
+    selector. A server-configured catalog supports OpenAI and Anthropic model
+    identifiers. Each enabled enterprise binding is independently qualified;
+    adding an adapter does not qualify every model it can address. Admin's
+    default selector changes new runs only. Existing runs, research approvals,
+    upgrades, recovery and acceptance resolve their immutable recorded binding.
+    There is no implicit vendor fallback. Historical bytes and identities remain
+    readable without calling a provider. The aggregate two-call/twenty-job limits
+    do not multiply with the number of adapters.
+
+    Deployment operators are current trusted global ADMIN subjects explicitly
+    included in CAOS_ENTERPRISE_OPERATOR_SUBJECTS. Their two narrow powers are
+    changing the versioned provider default and bootstrapping one independent
+    case approver. Bootstrap is a dedicated operation for a known case ID:
+    creator, operator and target must be distinct; target standing is APPROVER;
+    the grant, permanent receipt and audit event share one transaction. Exact
+    retries do not grant twice and revocation does not reopen bootstrap. This
+    authority does not confer ordinary case visibility or relax filing's stored
+    standing and signer/freezer independence. Production identity still comes
+    from the trusted edge; client role headers confer no authority.
+
+    Scanner status extends health with ready/unavailable/not_required; only the
+    development bypass may be not_required. Production admission still scans
+    every upload. Daemon death must cause container restart while preserving
+    signature initialization/updates. Readiness probes never trigger application
+    restart loops. Source summary/search routes preserve complete evidence and
+    case privacy; exact citations and Report defaults resolve authoritative
+    source/block and latest accepted run identities.
+
+    The user additionally authorized the signed-in Codex runtime for qualification.
+    Its evidence must identify that runtime separately: Codex execution is not
+    automatically proof of the direct OpenAI or Anthropic API adapters. Corpus
+    answer-key attestation, model-specific qualification and production-image
+    acceptance remain separate gates. The implementation plan and dated execution
+    report record any unavailable external inputs and measured limitations.
+
+25. **Live parsing failure remediation (2026-09-07).** The signed-in Codex
+    evaluation exposed transport and execution-contract mismatches at CP-PARSE.
+    Its authority assembly now selects only the requested runnable profile from
+    the verified shared CP-0/CP-PARSE skill, retaining its common core and QA
+    rules. All canonical authority wrappers state the six required H2 headings,
+    exact delivered citation-set requirement, and exact source-ID table contract.
+    Golden authority digests move with these reviewed wrapper changes; vendored
+    bytes remain unchanged. CP-PARSE assesses preparation and fidelity; missing
+    underwriting inputs remain CP-0 readiness findings, never preparation gaps.
+
+    The host's already-extracted, immutable blocks are CP-PARSE's prepared
+    representation. Source metadata records their count and content digest.
+    In this hosted runtime the managed evidence store is the package, and the
+    P1–P8 handoff is its preparation/triage index, not a second transcription of
+    the entire corpus or a claim that an uncreated ZIP exists. Extraction does
+    not attest visual/OCR/table fidelity; required unusable representations
+    still block, and observed limitations remain explicit. This maps the
+    standalone packaging instructions onto the existing host evidence store.
+
+    `read_evidence_batch` accepts at most 50 distinct source/block pairs across
+    pinned sources. A batch is one read operation; the 10-read, 873,814-byte and
+    200-reference module ceilings are unchanged. Every source is reauthorized
+    before any block lookup. Validation/authority/byte failure returns no text
+    and adds no delivered citation. The same reader and ledger cover single-
+    source and batched calls. The tool-set digest changes, invalidating earlier
+    qualifications. The host supplies the evidence ceilings in the initial
+    prompt so the provider can plan bounded retrieval. These ceilings are request
+    metadata, not artifact identity; adding them to the immutable identity would
+    invalidate persisted canonical artifacts.
+
+    Codex CLI adapter v2 constrains the canonical result as a JSON object,
+    reusing the direct OpenAI strict-schema projection, instead of constraining
+    only a wrapper containing an unconstrained JSON string. Host tool arguments
+    are also native schema-constrained objects, and repairs remove tool choices.
+    OpenAI adapter v2 applies the same strict projection to its tool schemas.
+    The provider wire projection removes unsupported array `uniqueItems`;
+    host uniqueness and size validation remain authoritative and unchanged.
+    Signed-in Codex reasoning effort and verbosity are pinned to low and included
+    in its identity. Token reservations
+    use installed `tiktoken` (`o200k_base`, 1.25 margin plus 32,768 CLI allowance)
+    over the serialized prompt and output schema, replacing byte-as-token
+    reservations. This is an estimate, checked against returned usage and
+    recorded in provider identity; exact counting and a hard CLI output-token
+    cap remain unavailable, so Codex stays development-only. Request deadlines,
+    host usage reconciliation, source authority, schema validation, and analyst
+    qualification gates remain enforced. Diagnostic probes are not frozen
+    candidate qualification evidence.
+
+    Live verification reached CP-0 after a Passed CP-PARSE in C02. C03 returned
+    schema-valid preparation with a passing source gate and full field coverage,
+    but a material QA finding still restricted execution. Neither is a passing
+    full-pathway evaluation. The old sealed matrix and machine-authored keys
+    remain unchanged; provider compliance, source sufficiency/fidelity and
+    independent analyst qualification are not inferred from transport fixes.

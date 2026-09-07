@@ -25,7 +25,7 @@ The MVP must satisfy this operating promise:
 
 > Annual reports, quarterly/interim reports, forecasts, and every other relevant supplied source enter a controlled evidence room. A governed process dispositions and reconciles them, runs any of the six pathways, produces the source-grounded financial model and institutional deliverables, and presents the interpretation for review. A human analyst owns the opinion. A separate authorized approver publishes exact files plus an approval receipt for external stakeholders. Every machine-produced input, inclusion/exclusion decision, calculation, transformation, and output remains auditable.
 
-Providing documents is the only required analytical input. Analyst review, opinion sign-off, and publish approval remain deliberate governance actions. The enterprise MVP exposes one qualified machine-generation binding and no LLM/provider picker. Signed financial-model selection, revisions, assumptions, scenarios, and sign-off remain governed analyst controls.
+Providing documents is the only required analytical input. Analyst review, opinion sign-off, and publish approval remain deliberate governance actions. An explicitly authorized enterprise operator selects the default from the qualified provider catalog in Admin. The default applies to new runs; existing runs retain their pinned binding. Signed financial-model selection, revisions, assumptions, scenarios, and sign-off remain governed analyst controls.
 
 The following outcomes count as correct:
 
@@ -151,7 +151,7 @@ These tests prove that documents are the only required analytical input:
 - **UX-009**: Resume automatically after the missing document arrives, without recreating the case or route
 - **UX-010**: Open the completed analytical review when the run succeeds
 - **UX-011**: Present facts, machine analysis, analyst edits, analyst opinion, limitations, and approval state as distinct content
-- **UX-012**: Expose no LLM/provider picker in the enterprise MVP; preserve signed financial-model selection, scenario, revision, and sign-off controls
+- **UX-012**: Let an authorized enterprise operator select a qualified provider/model default in Admin; apply it only to newly admitted runs, preserve existing run bindings, and retain signed financial-model selection, scenario, revision, and sign-off controls (DECISIONS §14.24)
 - **UX-013**: Preserve the same workflow and controls for every qualified model choice
 - **UX-014**: Protect unsaved analyst edits during navigation, refresh, reconnect, and browser history changes
 - **UX-015**: Let a reader inspect evidence and run history without exposing write controls

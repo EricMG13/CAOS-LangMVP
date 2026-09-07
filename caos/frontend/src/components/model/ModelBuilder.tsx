@@ -721,6 +721,7 @@ export default function ModelBuilder({
   };
 
   return <div className="grid model-builder analyst-model-builder">
+    {!canWrite ? <p className="callout span-12">Reader mode: the model and forecast assumptions remain readable. Changes, recalculation, tornado refresh, and saving are unavailable.</p> : null}
     <section className="panel span-12 model-builder-command">
       <div className="panel-header"><h2>Model</h2><span className={`status ${modelStatusTone(status)}`} role="status" aria-live="polite">{status ? humanizeCode(status) : ""}</span></div>
       <div className="panel-body model-builder-command-body"><div><strong>Application model · {activeRevision ? `R${activeRevision.revision_number}` : "Application version"}</strong><p className="muted">{activeRevision ? `${activeRevision.created_by} · ${formatDate(activeRevision.created_at)} · ${activeRevision.note}` : status === "READY" ? "Built from the accepted application and saved as the starting version. Forecast assumptions create the next version." : "Build the application model from accepted credit analysis."}</p></div><div className="model-primary-action">{renderPrimaryAction()}<button className="button small" type="button" disabled={loading} onClick={() => void refresh()}>{loading ? "Refreshing…" : "Refresh"}</button></div></div>
@@ -749,7 +750,7 @@ export default function ModelBuilder({
           const step = Number(definition.sensitivity_default.step);
           return <fieldset className={styles.driver} key={`${definition.assumption_id}:${selectedCase}`}><legend><span>{definition.label}</span><small>{definition.unit}</small></legend><div className={styles.forecastValues}><label><span>All forecast years</span><ForecastScrubber key={`${definition.assumption_id}:${selectedCase}:ALL:${scope.value}`} value={scope.value} mixed={scope.mixed} label={`${definition.label}, all forecast years, ${selectedCase}`} minimum={Number(definition.hard_min)} maximum={Number(definition.hard_max)} step={step} disabled={!canWrite || !scope.editable} onCommit={(value) => editAssumption(definition, selectedCase, "ALL", value)} /></label>{rows.map((row) => <label key={assumptionKey(row)}><span>{row.period_id}</span><ForecastScrubber key={`${assumptionKey(row)}:${row.value ?? ""}`} value={row.value === null ? "" : String(row.value)} label={`${definition.label}, ${row.period_id}, ${selectedCase}`} minimum={Number(definition.hard_min)} maximum={Number(definition.hard_max)} step={step} disabled={!canWrite || row.status !== "READY"} onCommit={(value) => editAssumption(definition, selectedCase, row.period_id, value)} />{row.status !== "READY" ? <small>{humanizeCode(row.gap_code || row.status)}</small> : <small>App {formatModelValue(row.default_value)}</small>}</label>)}</div></fieldset>;
         })}</div>
-        {!canWrite ? <p className="callout">Reader mode: the model and forecast assumptions remain readable. Changes, recalculation, tornado refresh, and saving are unavailable.</p> : null}
+
       </aside>
 
       <section className={styles.model} aria-labelledby="application-model-heading">

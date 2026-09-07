@@ -1,9 +1,9 @@
 {
   "schema_version": "caos.answer-key.v1",
   "pack_id": "C16",
-  "version": "1.0.0",
-  "authored_by": "Claude Fable 5.1 (ER-G6 implementer)",
-  "status": "draft-host-control",
+  "version": "1.1.0",
+  "authored_by": "Codex (GPT-6 Astra); machine author, self-reviewed against pinned source bytes",
+  "status": "draft-machine-authored-source-grounded",
   "intake": {
     "status": "started",
     "route": [
@@ -33,7 +33,17 @@
         "March 15, 2032"
       ],
       "required": true,
-      "cells": null
+      "cells": null,
+      "source_evidence": {
+        "sha256": "923130567855c952eda5a54293c1d1d2ecc38126e0d660d9bc4d39f8bcbc5be5",
+        "normalization": "NFC",
+        "locator": {
+          "kind": "text_lines",
+          "start_line": 2,
+          "end_line": 5
+        },
+        "quote": "Press release\nJanuary 20, 2025\nNorthstar completed the refinancing of its Term Loan B after the fiscal year end, extending the maturity to March 15, 2032 and reducing the margin by 50 basis points.\nThe board also approved the disposal of the river-cruise division for 180."
+      }
     },
     {
       "id": "F2",
@@ -46,7 +56,40 @@
         "March 15, 2030"
       ],
       "required": true,
-      "cells": null
+      "cells": null,
+      "source_evidence": {
+        "sha256": "7e3da1da91e6959fb7ef339d78c20df171b467016b68c2bf7a65ba4f8b6641ef",
+        "normalization": "NFC",
+        "locator": {
+          "kind": "text_lines",
+          "start_line": 8,
+          "end_line": 12
+        },
+        "quote": "Total debt 3,400\nCash and cash equivalents 410\nTerm Loan B 2,400 maturing March 15, 2030\nSenior notes 1,000 due June 1, 2028\nItem 7. Management's discussion and analysis of financial condition."
+      }
+    },
+    {
+      "id": "F3",
+      "statement": "Subsequent refinancing reduced the Term Loan B margin",
+      "value": "50",
+      "unit": "basis points",
+      "period": "January 20, 2025",
+      "source": "northstar-subsequent-event-release.txt",
+      "match": [
+        "50 basis points"
+      ],
+      "required": true,
+      "cells": null,
+      "source_evidence": {
+        "sha256": "923130567855c952eda5a54293c1d1d2ecc38126e0d660d9bc4d39f8bcbc5be5",
+        "normalization": "NFC",
+        "locator": {
+          "kind": "text_lines",
+          "start_line": 2,
+          "end_line": 5
+        },
+        "quote": "Press release\nJanuary 20, 2025\nNorthstar completed the refinancing of its Term Loan B after the fiscal year end, extending the maturity to March 15, 2032 and reducing the margin by 50 basis points.\nThe board also approved the disposal of the river-cruise division for 180."
+      }
     }
   ],
   "conflicts": [
@@ -86,6 +129,26 @@
         ]
       },
       "after_run": null
+    }
+  },
+  "revision": {
+    "date": "2026-09-06",
+    "previous_key_sha256": "ae02bc976e3c644c8d3d04ccea762dab54d9186381f5c418a3ceca521e58fb7e",
+    "method": "Source-first review of pinned document bytes, before evaluation outputs; route and ingest expectations retained.",
+    "review_status": "Self-review only; independent analyst approval pending.",
+    "limitations": [
+      "Literal-match diagnostic scoring is not a semantic correctness proof.",
+      "Synthetic documents test host behaviour; they do not establish issuer economics.",
+      "Machine-authored benchmark prose is not independently approved or automatically scored."
+    ],
+    "documents": {
+      "northstar-10k-fy2024.txt": "7e3da1da91e6959fb7ef339d78c20df171b467016b68c2bf7a65ba4f8b6641ef",
+      "northstar-10q-q3-2025.txt": "9693c5af5106a7477ae6d9be04b03fc124e74fda8f0f51f68f9a4f383f789966",
+      "northstar-q3-2025-earnings.txt": "5a2a0a4f70eb8b6c890af3813ed8fea83aa45191ae8851e0074ee13c56ce4d01",
+      "northstar-fy2025-guidance.txt": "9ad163c93e15f9380428fab411358ff2c05067982e3903e6ff769a4aabbbae9b",
+      "northstar-credit-agreement.txt": "d8e07f5fee49f0ea46df09beed10d8493e315476bdbca273c573862bf5e81223",
+      "northstar-amendment-2.txt": "b5fec57dc2735ead08f4a6668b012bd956077165c2af0cea1930ca26238934b9",
+      "northstar-subsequent-event-release.txt": "923130567855c952eda5a54293c1d1d2ecc38126e0d660d9bc4d39f8bcbc5be5"
     }
   }
 }

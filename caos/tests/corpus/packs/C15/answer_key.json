@@ -1,9 +1,9 @@
 {
   "schema_version": "caos.answer-key.v1",
   "pack_id": "C15",
-  "version": "1.0.0",
-  "authored_by": "Claude Fable 5.1 (ER-G6 implementer)",
-  "status": "draft-host-control",
+  "version": "1.1.0",
+  "authored_by": "Codex (GPT-6 Astra); machine author, self-reviewed against pinned source bytes",
+  "status": "draft-machine-authored-source-grounded",
   "intake": null,
   "expected_facts": [],
   "conflicts": [],
@@ -93,5 +93,25 @@
         "code": "INTAKE_ADMISSION_REFUSED"
       }
     }
-  ]
+  ],
+  "revision": {
+    "date": "2026-09-06",
+    "previous_key_sha256": "ed4f6ed43382dae0f83e5ed1e85aec02b6fa18e5625e449b5f22b87c52c68f3c",
+    "method": "Source-first review of pinned document bytes, before evaluation outputs; route and ingest expectations retained.",
+    "review_status": "Self-review only; independent analyst approval pending.",
+    "limitations": [
+      "Literal-match diagnostic scoring is not a semantic correctness proof.",
+      "Synthetic documents test host behaviour; they do not establish issuer economics.",
+      "Machine-authored benchmark prose is not independently approved or automatically scored."
+    ],
+    "documents": {
+      "polyglot.pdf": "30cdefe4e3eed62117c43c368a7c16e32b2db5e0548acc94b075c901944f415e",
+      "bomb.xlsx": "af5427081266c54e6ce1f3431f4153de73580172ba09dab791a4dbd3349970fc",
+      "traversal.xlsx": "73a487cd425ec62125bd3e8bd2387571051982a73369250d130000792d03e064",
+      "duplicate-members.xlsx": "97dddcb43a6464f7a3c2b1643960b1b89e1b2eeb869c084e56d1bcada1f2dadc",
+      "archive.zip": "73a487cd425ec62125bd3e8bd2387571051982a73369250d130000792d03e064",
+      "corrupt.xlsx": "a613d00477e28751a19d0387a16e13659880826182dd634b4c72306c1642305f",
+      "eicar.txt": "275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f"
+    }
+  }
 }

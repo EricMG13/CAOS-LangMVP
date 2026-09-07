@@ -22,7 +22,9 @@ them.
 | Credit | Issuer lens (issuer, sector, accepted snapshot, source set) | `GET /api/cases/{case_id}/lens` | Served; degrades to its own unavailable block |
 | Credit | Accepted module conclusions and evidence counts | Snapshot artifact ids plus `GET /api/cases/{case_id}/artifacts/{artifact_id}` | Served as exact module output |
 | Credit | Normalized binding metric, threshold, tolerance and gap summary | No normalized credit-summary route is served | Unavailable; no inferred values |
-| Sources | List and upload source objects; the immutable source reader renders the listed source's blocks | `GET`/`POST /api/cases/{case_id}/sources` (`GET …/sources/{source_id}` is served and not called) | Served; the upload form is the one write |
+| Sources | Upload source objects | `POST /api/cases/{case_id}/sources` | Served; the upload form versions the supplied source |
+| Sources | Paged metadata inventory and selected source detail | `GET …/source-summaries`, `GET …/sources/{source_id}` | Summary pages exclude block text; detail loads on selection; every block is reachable |
+| Sources / Report | Complete active-case evidence search | `GET …/evidence-search?q=…&cursor=…` | Bounded server results search unopened sources; exact source/block links preserve context |
 | Sources | Withdraw a source | `POST /api/cases/{case_id}/sources/{source_id}/withdraw` | Served, not drawn (D-G; no approved artboard draws it) |
 | Sources | Analyst notes | `GET`/`POST /api/cases/{case_id}/notes`, `POST …/notes/{note_id}/promote` | Served, not drawn (D-G) |
 | Sources | Claim-to-source coverage matrix | No normalized claim-map route is served | Unavailable |
@@ -39,13 +41,13 @@ them.
 | Model | Export and download | `POST …/model-revisions/{revision_id}/export`, `GET …/model-revisions/export-statuses`, `GET …/model-revisions/{revision_id}/download`, `GET …/models/{build_id}/download` (`POST …/models/{build_id}/export` is served and not called) | Served and drawn |
 | Model | Tornado (four legacy drivers against the complete current forecast) | `POST /api/cases/{case_id}/models/tornado` | Served and drawn; the sensitivity control |
 | Model | One-way sensitivity | `POST /api/cases/{case_id}/models/sensitivities/one-way` | Served, not drawn (D-F): the tornado is the sensitivity control and covers the same drivers |
-| Report | Draft, autosave, scenario, freeze, filing and export | `GET`/`PUT …/deliverables/{pathway}/draft`, `POST …/deliverables/{pathway}/freeze`, `POST …/deliverables/by-id/{id}/approve`, `GET …/deliverables/by-id/{id}/export/{format}` (md, pdf, xlsx links unlock after filing) | Served; client gates global role and server enforces case approver standing |
+| Report | Draft, autosave, scenario, freeze, filing and export | `GET`/`PUT …/deliverables/{pathway}/draft`, `POST …/deliverables/{pathway}/freeze`, `POST …/deliverables/by-id/{id}/approve`, `GET …/deliverables/by-id/{id}/export/{format}` (md, pdf, xlsx links unlock after filing) | Served; client and server require a current global writer plus stored case approver/admin standing; signer and freezer cannot file |
 | Report | Opinion sign-off on the exact saved revision | `POST /api/cases/{case_id}/deliverables/{pathway}/opinion` | Served |
 | Report | Freeze as a worker job, tracked to the frozen record | `POST …/freeze`, `GET …/deliverables/freeze-jobs/{job_id}` | Served |
 | Report | Filing receipt and request-changes | `GET …/deliverables/by-id/{id}/receipt`, `POST …/by-id/{id}/request-changes` | Served |
 | Report | Saved revision read by id | `GET …/deliverables/revisions/{revision_id}` | Served, not drawn |
 | Report | Browser recovery copy | Browser `localStorage`, one slot per subject, case, pathway and browser tab | Served as recovery only; never authority; never offered to another subject |
-| Admin | Member provisioning (a distinct APPROVER or ADMIN) | `POST /api/cases/{case_id}/members` | Served and drawn on Admin (FE-G3, D7); the control renders only for a current APPROVER/ADMIN role with stored APPROVER/ADMIN case standing, a reader sees the reason, and the filing gate stays on Report |
+| Admin | Member provisioning (a distinct APPROVER or ADMIN) | `POST /api/cases/{case_id}/members` | Served and drawn on Admin (FE-G3, D7); the control renders only for a current global writer role with stored APPROVER/ADMIN case standing, a reader sees the reason, and the filing gate stays on Report |
 | Admin | Case audit package | `GET /api/cases/{case_id}/audit-package` | Served and drawn on Admin (FE-G3, D7): a download whose receipt names the `x-caos-sha256` digest; a 404 renders the unavailable state |
 | Admin | Audit rows, bundle integrity, step-up operations | Routes absent in this deployment (the page probes `GET /api/admin/bundle` and renders its 404) | Unavailable; requirements only |
 
@@ -58,3 +60,14 @@ unauthorized run.
 No mobile control, layout, breakpoint, fixture, snapshot or acceptance target is
 part of this implementation. The narrow reflow is solely for desktop browser
 zoom at 200%.
+
+Enterprise workflow update (2026-09-06):
+
+| Surface | Control or data | Production source | Treatment |
+|---|---|---|---|
+| Admin | First independent approver for a known case ID | `POST /api/admin/cases/{case_id}/bootstrap-approver`; `/api/me.can_bootstrap_approver` | Operator-only one-shot grant; no case read access or membership is inferred |
+| Admin | Default provider/model for new runs | `GET /api/admin/providers`, `POST /api/admin/provider-default`; `/api/me.can_manage_providers` | Safe qualified catalog IDs, policy-version CAS, change receipt; no browser credentials |
+| Run | Pinned provider/model | `RunResponse.provider_identity` | Actual recorded binding; historical missing identity remains unavailable |
+| Analysis / Sources | Accessible Markdown tables | Canonical artifact Markdown | Native table markup, escaped text, malformed-table fallback |
+| Report | Initial pathway | Latest accepted snapshot `run_id`, then `GET /api/runs/{id}` | Initialized once from accepted authority; explicit template choices and dirty drafts are preserved |
+| Sources | Withdrawn-source status | Selected source `withdrawn` field | Historical review only; never offered as current citation support |

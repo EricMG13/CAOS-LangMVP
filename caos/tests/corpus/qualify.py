@@ -15,8 +15,10 @@ Fail-closed by construction: a missing byte, credential, answer key,
 attestation or cell is a typed non-zero exit, never a skip; a refusal passes
 only where the pack's answer key declares it; a host-control result is
 labelled ORCHESTRATION_PROOF and can never read QUALIFIED.
+The explicit live_evaluation binding uses the ordinary live provider with
+host-control-scoped draft keys and reports DEVELOPMENT_EVALUATION only.
 
-    qualify.py plan    --binding host_control|live
+    qualify.py plan    --binding host_control|live|live_evaluation
     qualify.py cell    --binding … --pack C01 --pathway FULL_CREDIT --depth full --repetition 1 --reviewer NAME
     qualify.py matrix  --binding … --reviewer NAME [--repetitions 3] [--packs C01,C03]
     qualify.py verdict --binding …
@@ -29,6 +31,7 @@ import argparse
 import dataclasses
 import hashlib
 import json
+import inspect
 import os
 import platform
 import subprocess
@@ -57,12 +60,13 @@ POLICY = {
     "refusal_proves_pathway": False,
     "averaging": False,
     "host_control_is_qualification": False,
+    "live_evaluation_is_qualification": False,
 }
 POLICY_DIGEST = hashlib.sha256(M.canonical(POLICY)).hexdigest()
 RESULT_SCHEMA = "caos.qualification-result.v1"
 DEFAULT_OUT = HERE / "evidence"
 ANALYST = {"x-forwarded-user": "qualification-analyst"}
-BINDINGS = ("host_control", "live")
+BINDINGS = ("host_control", "live", "live_evaluation")
 EXIT_PASS, EXIT_FAIL, EXIT_BLOCKED = 0, 1, 2
 Blocked = M.CorpusError
 
@@ -92,6 +96,7 @@ def build_view() -> dict[str, Any]:
         "methodology_build_id": build_id,
         "methodology_manifest_digest": manifest_digest,
         "image_digest": os.environ.get("CAOS_IMAGE_DIGEST") or None,
+        "image_set_digest": os.environ.get("CAOS_IMAGE_SET_DIGEST") or None,
         "python": platform.python_version(),
     }
 
@@ -102,18 +107,22 @@ def build_view() -> dict[str, Any]:
 def cell_settings(kind: str, workdir: Path):
     from caos.config import Settings
 
+    if kind not in BINDINGS:
+        raise Blocked("BINDING_INVALID", f"unknown harness binding {kind!r}")
     base = Settings.from_env()
-    if kind == "live":
+    if kind != "host_control":
         if base.environment == "production":
             raise Blocked("ENVIRONMENT_INVALID", "the harness produces qualification evidence; it does not run in production")
-        if base.provider_binding:
+        if base.provider_binding == "host_control":
             raise Blocked("BINDING_CONFLICT", "CAOS_PROVIDER must be unset for a live binding")
-        if not base.anthropic_api_key.strip():
-            raise Blocked("CREDENTIALS_MISSING", "ANTHROPIC_API_KEY is not set; the live binding cannot be built")
-    elif base.anthropic_api_key.strip() or base.openrouter_api_key.strip():
+        if (base.provider_catalog_path is None and base.provider_binding != "codex"
+                and not any((base.anthropic_api_key.strip(), base.openai_api_key.strip(), base.openrouter_api_key.strip()))):
+            raise Blocked("CREDENTIALS_MISSING", "the selected live provider credential is not configured")
+    elif base.anthropic_api_key.strip() or base.openrouter_api_key.strip() or base.openai_api_key.strip() or base.provider_catalog_path:
         raise Blocked("CREDENTIALS_PRESENT", "host control excludes provider credentials; unset them")
     return dataclasses.replace(
-        base, storage_dir=workdir / "vault", database_url="", agent_execution_enabled=True, provider_binding="",
+        base, storage_dir=workdir / "vault", database_url="", agent_execution_enabled=True,
+        provider_binding=base.provider_binding if kind != "host_control" else "",
     )
 
 
@@ -132,8 +141,10 @@ class RecordingProvider:
     was delivered — the scorer's independent view of tools, prompts, evidence
     and calculation outputs. It changes nothing on the way through."""
 
-    def __init__(self, inner: Any) -> None:
+    def __init__(self, inner: Any, *, owner: Any = None) -> None:
         self.inner = inner
+        self.owner = owner or inner
+        self._closed = False
         self.identity = inner.identity
         self.calls: list[dict[str, Any]] = []
         self.delivered: dict[str, str] = {}
@@ -152,7 +163,7 @@ class RecordingProvider:
     def count_tokens(self, request: Any) -> int:
         return self.inner.count_tokens(request)
 
-    def create_message(self, request: Any) -> Any:
+    async def create_message(self, request: Any) -> Any:
         prompt = json.loads(str(request.messages[0]["content"]).split("\n", 1)[1])
         identity = prompt["host_identity"]
         for result in _tool_results(request.messages):
@@ -162,6 +173,8 @@ class RecordingProvider:
             elif isinstance(result, dict) and "output_digest" in result:
                 self.calculation_outputs.append(json.dumps(result, sort_keys=True))
         response = self.inner.create_message(request)
+        if inspect.isawaitable(response):
+            response = await response
         self.calls.append({
             "run_id": identity["run_id"],
             "module_id": identity["module_id"],
@@ -171,6 +184,15 @@ class RecordingProvider:
             "host_identity": {field: identity.get(field) for field in ("issuer_name", "profile_id", "selection_id")},
         })
         return response
+
+    async def aclose(self) -> None:
+        if not self._closed:
+            close = getattr(self.owner, "aclose", None)
+            if close is not None:
+                result = close()
+                if inspect.isawaitable(result):
+                    await result
+            self._closed = True
 
     def view(self, run_id: str) -> dict[str, Any]:
         calls = [call for call in self.calls if call["run_id"] == run_id]
@@ -193,9 +215,18 @@ def build_binding(kind: str, settings: Any, key: dict[str, Any], cell_id: str) -
     from caos.engine.provider import AgentError
     from run import build_provider
 
+    provider = None
     try:
         provider = build_provider(settings)
+        from caos.engine.catalog import ProviderCatalog
+
+        if isinstance(provider, ProviderCatalog):
+            return RecordingProvider(provider.resolve(provider.default_binding_id), owner=provider)
     except AgentError as refused:
+        if provider is not None:
+            import asyncio
+
+            asyncio.run(provider.aclose())
         # The one binding builder refused (dual credentials, development-only
         # adapter, qualification record problems): a typed block, never a crash.
         raise Blocked("BINDING_REFUSED", refused.code) from refused
@@ -206,17 +237,29 @@ def build_binding(kind: str, settings: Any, key: dict[str, Any], cell_id: str) -
 
 def binding_identity_digest(kind: str) -> str:
     """The identity digest the current environment binds to, without a run."""
-    from caos.engine.provider import host_control_identity
+    from caos.engine.provider import AgentError, host_control_identity
 
     if kind == "host_control":
         return host_control_identity(adapter_version=ADAPTER_VERSION).identity_digest
     from run import build_provider
 
     settings = cell_settings(kind, Path(os.environ.get("TMPDIR", "/tmp")) / "caos-qualification-identity")
-    provider = build_provider(settings)
-    if provider is None:
-        raise Blocked("CREDENTIALS_MISSING", "no provider could be built from the environment")
-    return provider.identity.identity_digest
+    import asyncio
+    from caos.engine.catalog import ProviderCatalog
+
+    provider = None
+    try:
+        provider = build_provider(settings)
+        if provider is None:
+            raise Blocked("CREDENTIALS_MISSING", "no provider could be built from the environment")
+        selected = provider.resolve(provider.default_binding_id) if isinstance(provider, ProviderCatalog) else provider
+        return selected.identity.identity_digest
+    except AgentError as refused:
+        raise Blocked("BINDING_REFUSED", refused.code) from refused
+    finally:
+        close = getattr(provider, "aclose", None)
+        if close is not None:
+            asyncio.run(close())
 
 
 # --- the plan --------------------------------------------------------------------------
@@ -239,7 +282,7 @@ def plan_cells() -> list[dict[str, Any]]:
     return cells
 
 
-def blocked_external() -> list[dict[str, Any]]:
+def blocked_external(kind: str = "live") -> list[dict[str, Any]]:
     rows = []
     for pack_id in M.PACK_IDS:
         manifest = M.load_manifest(pack_id)
@@ -247,13 +290,15 @@ def blocked_external() -> list[dict[str, Any]]:
             else M.load_manifest(manifest["documents_from"])
         unpinned = [row["filename"] for row in M.document_rows(manifest) if row["sha256"] is None]
         scopes = sorted({approval["scope"] for approval in manifest["answer_key"]["approvals"]})
-        if unpinned or "analyst" not in scopes:
+        accepted = {"analyst"} if kind == "live" else set(M.SCOPES)
+        approval_missing = not accepted.intersection(scopes)
+        if unpinned or approval_missing:
             rows.append({
                 "pack_id": pack_id, "bytes": owner["bytes"], "unpinned_documents": unpinned,
                 "answer_key_scopes": scopes,
                 "needs": ([f"{len(unpinned)} document(s) acquired, digest-pinned and placed under "
                            f"${M.EXTERNAL_ENV}/{owner['pack_id']}/"] if unpinned else [])
-                + ([] if "analyst" in scopes else ["an analyst-scope approval on the answer key (reviewer, date, digest)"]),
+                + ([f"an answer-key approval in {sorted(accepted)} (reviewer, date, digest)"] if approval_missing else []),
             })
     return rows
 
@@ -310,12 +355,12 @@ class CellRun:
         from caos.models.service import ModelService
         from caos.storage.store import DomainStore
 
-        self.workdir.mkdir(parents=True, exist_ok=True)
-        self.store = DomainStore.from_url(f"sqlite:///{self.workdir / 'caos.db'}")
-        self.engine = Engine.create(settings=self.settings, store=self.store,
-                                    checkpoint_path=self.workdir / "checkpoints.db", provider=self.provider)
-        self.models = ModelService(store=self.store, vault_dir=self.settings.storage_dir, engine=self.engine)
         try:
+            self.workdir.mkdir(parents=True, exist_ok=True)
+            self.store = DomainStore.from_url(f"sqlite:///{self.workdir / 'caos.db'}")
+            self.engine = Engine.create(settings=self.settings, store=self.store,
+                                        checkpoint_path=self.workdir / "checkpoints.db", provider=self.provider)
+            self.models = ModelService(store=self.store, vault_dir=self.settings.storage_dir, engine=self.engine)
             with TestClient(create_app(settings=self.settings, store=self.store, engine=self.engine)) as client:
                 self.client = client
                 if self.manifest["stage"] == "ingest":
@@ -325,8 +370,15 @@ class CellRun:
                 else:
                     observed = await self._run_stage()
         finally:
-            await self.engine.aclose()
-            self.store.close()
+            try:
+                if self.engine is not None:
+                    await self.engine.aclose()
+            finally:
+                try:
+                    await self.provider.aclose()
+                finally:
+                    if self.store is not None:
+                        self.store.close()
         return observed
 
     # -- admission --------------------------------------------------------------------
@@ -656,12 +708,14 @@ def _result_path(out: Path, kind: str, spec: CellSpec) -> Path:
     return directory / f"rep-{spec.repetition}-{stamp}.json"
 
 
-def _binding_view(identity_digest: str, build: dict[str, Any], corpus: str) -> dict[str, str]:
+def _binding_view(identity_digest: str, build: dict[str, Any], corpus: str, kind: str) -> dict[str, str]:
     return {
+        "binding_kind": kind,
         "identity_digest": identity_digest, "commit": build["commit"],
         "methodology_build_id": build["methodology_build_id"],
         "methodology_manifest_digest": build["methodology_manifest_digest"],
         "corpus_digest": corpus, "policy_digest": POLICY_DIGEST,
+        "image_set_digest": build.get("image_set_digest"),
     }
 
 
@@ -671,6 +725,7 @@ def run_cell(spec: CellSpec, kind: str, out: Path, reviewer: str, workdir: Path 
 
     if not reviewer.strip():
         raise Blocked("REVIEWER_MISSING", "every result binds a reviewer; pass --reviewer or set CAOS_QUALIFICATION_REVIEWER")
+    repetition_count(kind, spec.repetition)
     started = _now()
     build = build_view()
     corpus = M.corpus_digest()
@@ -691,7 +746,7 @@ def run_cell(spec: CellSpec, kind: str, out: Path, reviewer: str, workdir: Path 
         except Blocked:
             pass
         result = {**base, "verdict": "blocked", "blocked_code": blocked.code, "blocked_detail": blocked.detail,
-                  "binding": None, "binding_view": _binding_view(identity or "unbound", build, corpus),
+                  "binding": None, "binding_view": _binding_view(identity or "unbound", build, corpus, kind),
                   "result_id": None, "scores": None, "run": None}
         return EXIT_BLOCKED, result
     manifest = cell_run.manifest
@@ -704,7 +759,7 @@ def run_cell(spec: CellSpec, kind: str, out: Path, reviewer: str, workdir: Path 
         "verdict": "pass" if scores["pass"] else "fail",
         "blocked_code": None, "blocked_detail": None,
         "binding": identity,
-        "binding_view": _binding_view(identity["identity_digest"], build, corpus),
+        "binding_view": _binding_view(identity["identity_digest"], build, corpus, kind),
         "corpus": {
             "corpus_digest": corpus, "pack_version": manifest["version"],
             "manifest_digest": M.manifest_digest(spec.pack_id),
@@ -741,13 +796,20 @@ def load_results(out: Path, kind: str) -> list[dict[str, Any]]:
     return results
 
 
+def repetition_count(kind: str, requested: int | None) -> int:
+    count = (1 if kind == "host_control" else POLICY["live_repetitions"]) if requested is None else requested
+    if type(count) is not int or count < 1:
+        raise Blocked("REPETITIONS_INVALID", "repetitions must be a positive integer")
+    return count
+
+
 def verdict(out: Path, kind: str, repetitions: int | None = None) -> dict[str, Any]:
-    repetitions = repetitions or (POLICY["live_repetitions"] if kind == "live" else 1)
-    current = _binding_view(binding_identity_digest(kind), build_view(), M.corpus_digest())
+    repetitions = repetition_count(kind, repetitions)
+    current = _binding_view(binding_identity_digest(kind), build_view(), M.corpus_digest(), kind)
     summary = aggregate(plan_cells(), load_results(out, kind), repetitions=repetitions, binding_kind=kind,
                         current=current)
     summary["current"] = current
-    summary["blocked_external"] = blocked_external()
+    summary["blocked_external"] = blocked_external(kind)
     return summary
 
 
@@ -765,6 +827,7 @@ def main(argv: list[str] | None = None) -> int:
     def common(command: argparse.ArgumentParser, *, binding: bool = True) -> None:
         if binding:
             command.add_argument("--binding", choices=BINDINGS, required=True)
+            command.add_argument("--provider-id", default="", help="Explicit ID in CAOS_PROVIDER_CATALOG_PATH")
         command.add_argument("--out", type=Path, default=DEFAULT_OUT)
 
     common(sub.add_parser("plan"))
@@ -789,13 +852,23 @@ def main(argv: list[str] | None = None) -> int:
     pin.add_argument("--reviewer", default=os.environ.get("CAOS_QUALIFICATION_REVIEWER", ""))
     pin.add_argument("--date", default=_now().date().isoformat())
     args = parser.parse_args(argv)
+    if getattr(args, "provider_id", ""):
+        from caos.engine.catalog import _ID
+
+        if not _ID.fullmatch(args.provider_id):
+            parser.error("--provider-id must be a safe catalog ID")
+        if args.binding == "host_control" or not os.getenv("CAOS_PROVIDER_CATALOG_PATH"):
+            parser.error("--provider-id requires a live binding and CAOS_PROVIDER_CATALOG_PATH")
+        os.environ["CAOS_DEFAULT_PROVIDER_BINDING"] = args.provider_id
+        # Every binding retains its own cold-repetition evidence and verdict input.
+        args.out = args.out / args.provider_id
 
     try:
         if args.command == "plan":
             _print({"binding": args.binding, "policy": POLICY, "policy_digest": POLICY_DIGEST,
-                    "repetitions": POLICY["live_repetitions"] if args.binding == "live" else 1,
+                    "repetitions": 1 if args.binding == "host_control" else POLICY["live_repetitions"],
                     "corpus_digest": M.corpus_digest(), "build": build_view(),
-                    "cells": plan_cells(), "blocked_external": blocked_external()})
+                    "cells": plan_cells(), "blocked_external": blocked_external(args.binding)})
             return EXIT_PASS
         if args.command == "cell":
             spec = CellSpec(args.pack, args.pathway, args.depth, args.repetition)
@@ -821,7 +894,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "matrix":
             if not args.reviewer.strip():
                 raise Blocked("REVIEWER_MISSING", "pass --reviewer or set CAOS_QUALIFICATION_REVIEWER")
-            repetitions = args.repetitions or (POLICY["live_repetitions"] if args.binding == "live" else 1)
+            repetitions = repetition_count(args.binding, args.repetitions)
             selected = {pack for pack in args.packs.split(",") if pack}
             cells = [cell for cell in plan_cells() if not selected or cell["pack_id"] in selected]
             codes: dict[str, int] = {}

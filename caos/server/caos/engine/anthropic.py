@@ -36,17 +36,23 @@ class AnthropicProvider:
         *,
         qualification: ProviderQualification | None = None,
         methodology_root: Path | None = None,
+        account_policy: str = "",
+        parameters: dict[str, Any] | None = None,
     ) -> None:
         if not api_key:
             raise AgentError("AGENT_PROVIDER_UNAVAILABLE", "ANTHROPIC_API_KEY is not configured")
         self.model = model
+        self.account_policy = account_policy
+        if parameters:
+            raise AgentError("AGENT_PROVIDER_UNQUALIFIED", "unsupported Anthropic execution parameters")
+        self.qualification = qualification
         context_digest = parameter_context_digest(
             provider_name="anthropic",
             model=model,
             provider_version=None,
             adapter_version=ADAPTER_VERSION,
             runtime_dependencies=installed_dependencies("langchain-anthropic", "anthropic"),
-            transport={"mode": "anthropic-messages"},
+            transport={"mode": "anthropic-messages", **({"account_policy": account_policy} if account_policy else {})},
             counting={"mode": "provider-count-tokens"},
         )
         qualification_fields: dict[str, str | None] = {

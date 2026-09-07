@@ -1,9 +1,9 @@
 {
   "schema_version": "caos.answer-key.v1",
   "pack_id": "C07",
-  "version": "1.0.0",
-  "authored_by": "Claude Fable 5.1 (ER-G6 implementer)",
-  "status": "draft-host-control",
+  "version": "1.1.0",
+  "authored_by": "Codex (GPT-6 Astra); machine author, self-reviewed against pinned source bytes",
+  "status": "draft-machine-authored-source-grounded",
   "intake": {
     "status": "started",
     "route": [
@@ -23,14 +23,24 @@
       "id": "F1",
       "statement": "FY2024 revenue",
       "value": "1,160",
-      "unit": "USD millions",
+      "unit": "not specified in synthetic source",
       "period": "FY2024",
       "source": "northstar-10k-fy2024.txt",
       "match": [
         "Revenue 1,160"
       ],
       "required": true,
-      "cells": null
+      "cells": null,
+      "source_evidence": {
+        "sha256": "7e3da1da91e6959fb7ef339d78c20df171b467016b68c2bf7a65ba4f8b6641ef",
+        "normalization": "NFC",
+        "locator": {
+          "kind": "text_lines",
+          "start_line": 4,
+          "end_line": 8
+        },
+        "quote": "For the fiscal year ended November 30, 2024\nNorthstar Cruise Holdings Inc reports consolidated results for fiscal 2024.\nRevenue 1,160\nEBITDA 222\nTotal debt 3,400"
+      }
     }
   ],
   "conflicts": [],
@@ -60,6 +70,23 @@
         "gaps": []
       },
       "after_run": null
+    }
+  },
+  "revision": {
+    "date": "2026-09-06",
+    "previous_key_sha256": "1685a3b71cd5b69cbc205065b4daf0b99e7653d8d258c76a95dad748122983c5",
+    "method": "Source-first review of pinned document bytes, before evaluation outputs; route and ingest expectations retained.",
+    "review_status": "Self-review only; independent analyst approval pending.",
+    "limitations": [
+      "Literal-match diagnostic scoring is not a semantic correctness proof.",
+      "Synthetic documents test host behaviour; they do not establish issuer economics.",
+      "Machine-authored benchmark prose is not independently approved or automatically scored."
+    ],
+    "documents": {
+      "northstar-scan.pdf": "3663f01c6363484a876579f2b593bde6e6fbc59aea891fe95c6fdc8841a8edf4",
+      "northstar-ocr-note.txt": "9afd00bff791d3a81aad932ded36c12a7799c56808e86bce552d977e9bf67304",
+      "northstar-10k-fy2024.txt": "7e3da1da91e6959fb7ef339d78c20df171b467016b68c2bf7a65ba4f8b6641ef",
+      "northstar-credit-agreement.txt": "d8e07f5fee49f0ea46df09beed10d8493e315476bdbca273c573862bf5e81223"
     }
   }
 }

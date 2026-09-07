@@ -1,8 +1,8 @@
 """Provider port: the legacy transport shape survives; the gateway does not.
 
-The engine talks to this port only. Production binds it to an adapter built on
-langchain-anthropic's pinned client (see anthropic.AnthropicProvider); tests
-bind a scripted double. Nothing here is copied from LEGACY workflows/provider.py — the
+The engine talks to this port only. Production binds it to an explicitly
+qualified direct provider adapter; tests bind a scripted double. Nothing here
+is copied from LEGACY workflows/provider.py — the
 dataclass port shape is the recorded surviving contract (DECISIONS §5).
 """
 
@@ -45,6 +45,23 @@ READ_EVIDENCE_TOOL = {
         },
         "required": ["source_id", "block_ids"],
         "additionalProperties": False,
+    },
+}
+
+READ_EVIDENCE_BATCH_TOOL = {
+    "name": "read_evidence_batch",
+    "description": "Read up to 50 exact blocks across pinned sources in one bounded evidence read. Use for pack inventory and cross-document comparisons.",
+    "strict": True,
+    "input_schema": {
+        "type": "object", "additionalProperties": False,
+        "properties": {"references": {
+            "type": "array", "minItems": 1, "maxItems": MAX_EVIDENCE_BLOCKS_PER_READ,
+            "items": {"type": "object", "additionalProperties": False,
+                      "properties": {key: {"type": "string", "minLength": 1, "maxLength": MAX_EVIDENCE_ID_CHARS}
+                                     for key in ("source_id", "block_id")},
+                      "required": ["source_id", "block_id"]},
+        }},
+        "required": ["references"],
     },
 }
 
@@ -97,6 +114,8 @@ class AgentError(RuntimeError):
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _IDENTIFIER = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,159}$")
 QUALIFICATION_SCHEMA_VERSION = "caos.provider-qualification.v1"
+QUALIFICATION_SCHEMA_V2 = "caos.provider-qualification.v2"
+_CANDIDATE_FIELDS = frozenset({"candidate_commit", "image_set_digest", "corpus_digest"})
 _QUALIFICATION_FIELDS = frozenset({
     "schema_version", "record_id", "status", "provider_name", "model",
     "provider_version", "adapter_version", "parameter_context_digest",
@@ -221,7 +240,7 @@ class ProviderIdentity:
 
 @dataclass(frozen=True)
 class ProviderQualification:
-    """The strict, read-only v1 qualification record. It never stores its body."""
+    """Digest-bound evidence. V1 remains readable; enterprise execution requires v2."""
 
     record_id: str
     provider_name: str
@@ -235,10 +254,14 @@ class ProviderQualification:
     expires_at: str
     evidence_digest: str
     record_digest: str
+    schema_version: str = QUALIFICATION_SCHEMA_VERSION
+    candidate_commit: str | None = None
+    image_set_digest: str | None = None
+    corpus_digest: str | None = None
 
     def _preimage(self) -> dict[str, Any]:
-        return {
-            "schema_version": QUALIFICATION_SCHEMA_VERSION,
+        result = {
+            "schema_version": self.schema_version,
             "record_id": self.record_id,
             "status": "qualified",
             "provider_name": self.provider_name,
@@ -252,6 +275,9 @@ class ProviderQualification:
             "expires_at": self.expires_at,
             "evidence_digest": self.evidence_digest,
         }
+        if self.schema_version == QUALIFICATION_SCHEMA_V2:
+            result.update({key: getattr(self, key) for key in _CANDIDATE_FIELDS})
+        return result
 
     def verify(self) -> None:
         if self.record_digest != digest(self._preimage()):
@@ -259,10 +285,22 @@ class ProviderQualification:
 
     @classmethod
     def from_record(cls, record: Mapping[str, Any]) -> "ProviderQualification":
-        if not isinstance(record, dict) or set(record) != _QUALIFICATION_FIELDS:
+        if not isinstance(record, dict):
             raise AgentError("AGENT_PROVIDER_UNQUALIFIED", "qualification record fields are not exact")
-        if record["schema_version"] != QUALIFICATION_SCHEMA_VERSION or record["status"] != "qualified":
-            raise AgentError("AGENT_PROVIDER_UNQUALIFIED", "qualification record is not v1 qualified")
+        schema = record.get("schema_version")
+        fields = _QUALIFICATION_FIELDS | (_CANDIDATE_FIELDS if schema == QUALIFICATION_SCHEMA_V2 else frozenset())
+        if set(record) != fields or not isinstance(schema, str) or schema not in {QUALIFICATION_SCHEMA_VERSION, QUALIFICATION_SCHEMA_V2}:
+            raise AgentError("AGENT_PROVIDER_UNQUALIFIED", "qualification record fields are not exact")
+        if record["status"] != "qualified":
+            raise AgentError("AGENT_PROVIDER_UNQUALIFIED", "qualification record is not qualified")
+        candidate = {}
+        if schema == QUALIFICATION_SCHEMA_V2:
+            commit = record["candidate_commit"]
+            if not isinstance(commit, str) or not re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", commit):
+                raise AgentError("AGENT_PROVIDER_UNQUALIFIED", "malformed candidate commit")
+            candidate = {"candidate_commit": commit,
+                         "image_set_digest": _sha256(record["image_set_digest"], "image_set_digest"),
+                         "corpus_digest": _sha256(record["corpus_digest"], "corpus_digest")}
         qualified_at = _timestamp(record["qualified_at"], "qualified_at")
         expires_at = _timestamp(record["expires_at"], "expires_at")
         if expires_at <= qualified_at:
@@ -280,7 +318,20 @@ class ProviderQualification:
             expires_at=record["expires_at"],
             evidence_digest=_sha256(record["evidence_digest"], "evidence_digest"),
             record_digest=digest(record),
+            schema_version=schema,
+            **candidate,
         )
+
+    def validate_candidate(self, *, candidate_commit: str, image_set_digest: str, corpus_digest: str) -> None:
+        self.verify()
+        if self.schema_version != QUALIFICATION_SCHEMA_V2:
+            raise AgentError("AGENT_PROVIDER_UNQUALIFIED", "production requires candidate-bound v2 qualification")
+        expected = {"candidate_commit": candidate_commit, "image_set_digest": image_set_digest,
+                    "corpus_digest": corpus_digest}
+        if any(not value for value in expected.values()) or any(
+            getattr(self, key) != value for key, value in expected.items()
+        ):
+            raise AgentError("AGENT_PROVIDER_UNQUALIFIED", "qualification does not bind the deployed candidate")
 
     @classmethod
     def from_path(cls, path: Path, expected_digest: str) -> "ProviderQualification":
@@ -393,7 +444,7 @@ def parameter_context_metadata(
             "max_input_bytes": MAX_CALCULATION_INPUT_BYTES,
             "max_recovery_waterfall_work_units": MAX_RECOVERY_WATERFALL_WORK_UNITS,
         },
-        "tool": {"digest": digest([READ_EVIDENCE_TOOL, RUN_METHODOLOGY_CALCULATION_TOOL])},
+        "tool": {"digest": digest([READ_EVIDENCE_TOOL, READ_EVIDENCE_BATCH_TOOL, RUN_METHODOLOGY_CALCULATION_TOOL])},
         "schema": {"canonical_output_digest": digest(CanonicalModuleOutput.model_json_schema())},
         "modules": {
             module_id: {
@@ -465,6 +516,8 @@ class ProviderMessage:
     request_id: str | None = None
     observed_model: str | None = None
     observed_provider_version: str | None = None
+    # Adapter continuation is invocation-local transport data, never evidence or audit text.
+    continuation: tuple[dict[str, Any], ...] = field(default=(), repr=False)
 
 
 @dataclass(frozen=True)

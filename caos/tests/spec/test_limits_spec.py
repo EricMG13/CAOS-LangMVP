@@ -87,6 +87,36 @@ def test_from_env_reads_exactly_the_declared_variables(monkeypatch):
     assert set(read) == set(Settings.ENV_NAMES) and len(Settings.ENV_NAMES) == len(set(Settings.ENV_NAMES))
 
 
+def test_enterprise_provider_settings_survive_environment_projection(monkeypatch, tmp_path):
+    from caos.config import Settings
+
+    for name in Settings.ENV_NAMES:
+        monkeypatch.delenv(name, raising=False)
+    values = {
+        "OPENAI_API_KEY": ("openai_api_key", "test-key"),
+        "OPENAI_MODEL": ("openai_model", "configured-model"),
+        "CAOS_PROVIDER_ACCOUNT_POLICY": ("provider_account_policy", "enterprise-policy"),
+        "CAOS_DEFAULT_PROVIDER_BINDING": ("default_provider_binding", "chatgpt"),
+        "CAOS_BUILD_COMMIT": ("candidate_commit", "a" * 40),
+        "CAOS_IMAGE_SET_DIGEST": ("image_set_digest", "b" * 64),
+        "CAOS_CORPUS_DIGEST": ("corpus_digest", "c" * 64),
+    }
+    for name, (_field, value) in values.items():
+        monkeypatch.setenv(name, value)
+    monkeypatch.setenv("CAOS_PROVIDER_CATALOG_PATH", str(tmp_path / "catalog.json"))
+    monkeypatch.setenv("CAOS_ENTERPRISE_OPERATOR_SUBJECTS", " operator-a, ,operator-b ")
+    settings = Settings.from_env()
+    assert all(getattr(settings, field) == value for field, value in values.values())
+    assert settings.provider_catalog_path == tmp_path / "catalog.json"
+    assert settings.enterprise_operator_subjects == ("operator-a", "operator-b")
+    monkeypatch.setenv("CAOS_PROVIDER_CATALOG_PATH", "")
+    assert Settings.from_env().provider_catalog_path is None
+    monkeypatch.setenv("PORT", "70000")
+    monkeypatch.setenv("CAOS_ENTERPRISE_OPERATOR_SUBJECTS", "invalid subject")
+    with pytest.raises(ValueError, match="^PORT must be between 0 and 65535$"):
+        Settings.from_env()
+
+
 def test_range_checks_apply_to_the_effective_values(monkeypatch):
     """The checks the old from_env made on its own literals now run on whatever
     value is effective — set or default — with the same messages."""
@@ -102,6 +132,8 @@ def test_range_checks_apply_to_the_effective_values(monkeypatch):
         ("RATE_LIMIT_PER_MINUTE", "0", "RATE_LIMIT_PER_MINUTE must be greater than 0"),
         ("MAX_CONCURRENT_STREAMS", "0", "MAX_CONCURRENT_STREAMS must be greater than 0"),
         ("MAX_CONCURRENT_PREVIEWS", "-1", "MAX_CONCURRENT_PREVIEWS must be greater than 0"),
+        ("CAOS_ENTERPRISE_OPERATOR_SUBJECTS", "invalid subject", "CAOS_ENTERPRISE_OPERATOR_SUBJECTS contains an invalid subject"),
+        ("CAOS_ENTERPRISE_OPERATOR_SUBJECTS", ",".join(["operator"] * 101), "CAOS_ENTERPRISE_OPERATOR_SUBJECTS contains an invalid subject"),
     ):
         monkeypatch.setenv(name, value)
         with pytest.raises(ValueError) as refused:

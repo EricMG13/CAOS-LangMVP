@@ -60,6 +60,7 @@ _HEALTH_KEYS = {
     "store": None,
     "bundle": None,
     "checkpointer": None,
+    "scanner": None,
 }
 
 _PROVIDER_IDENTITY_KEYS = {

@@ -1,9 +1,9 @@
 {
   "schema_version": "caos.answer-key.v1",
   "pack_id": "C17",
-  "version": "1.0.0",
-  "authored_by": "Claude Fable 5.1 (ER-G6 implementer)",
-  "status": "draft-host-control",
+  "version": "1.1.0",
+  "authored_by": "Codex (GPT-6 Astra); machine author, self-reviewed against pinned source bytes",
+  "status": "draft-machine-authored-source-grounded",
   "intake": {
     "status": "refused",
     "route": null,
@@ -23,7 +23,16 @@
         "26,622"
       ],
       "required": true,
-      "cells": null
+      "cells": null,
+      "source_evidence": {
+        "sha256": "dce18829919d84ca999d80a5a5f23492008bafbb6799a5362a17395d9485350d",
+        "normalization": "NFC",
+        "locator": {
+          "kind": "pdf_page",
+          "page": 47
+        },
+        "quote": "in millions, except per share\n data)\n Years Ended November 30,\n 2025 2024 2023\nPassenger ticket $ 17,419 $ 16,463 $ 14,067 \nOnboard and other  9,202  8,558  7,526 \nTotal Revenues  26,622  25,021  21,593 \nCruise and tour operating expenses:\nCommissions, transportation and other  3,331  3,232  2,761 \nOnboard and other  2,816  2,678  2,375 \nPayroll and related  2,589  2,464  2,373 \nFuel  1,808  2,007  2,047 \nFood  1,499  1,457  1,335 \nOther operating  3,904  3,801 "
+      }
     },
     {
       "id": "F2",
@@ -36,7 +45,16 @@
         "25,021"
       ],
       "required": true,
-      "cells": null
+      "cells": null,
+      "source_evidence": {
+        "sha256": "dce18829919d84ca999d80a5a5f23492008bafbb6799a5362a17395d9485350d",
+        "normalization": "NFC",
+        "locator": {
+          "kind": "pdf_page",
+          "page": 47
+        },
+        "quote": "ons, except per share\n data)\n Years Ended November 30,\n 2025 2024 2023\nPassenger ticket $ 17,419 $ 16,463 $ 14,067 \nOnboard and other  9,202  8,558  7,526 \nTotal Revenues  26,622  25,021  21,593 \nCruise and tour operating expenses:\nCommissions, transportation and other  3,331  3,232  2,761 \nOnboard and other  2,816  2,678  2,375 \nPayroll and related  2,589  2,464  2,373 \nFuel  1,808  2,007  2,047 \nFood  1,499  1,457  1,335 \nOther operating  3,904  3,801  3,426 \n"
+      }
     },
     {
       "id": "F3",
@@ -49,7 +67,16 @@
         "2,760"
       ],
       "required": true,
-      "cells": null
+      "cells": null,
+      "source_evidence": {
+        "sha256": "dce18829919d84ca999d80a5a5f23492008bafbb6799a5362a17395d9485350d",
+        "normalization": "NFC",
+        "locator": {
+          "kind": "pdf_page",
+          "page": 47
+        },
+        "quote": "9)  (111) \nOther income (expense), net  (4)  83  (75) \nIncome (Loss) Before Income Taxes  2,772  1,915  (62) \nIncome tax benefit (expense), net  (12)  1  (13) \nNet Income (Loss) $ 2,760 $ 1,916 $ (74) \nEarnings Per Share\nBasic $ 2.10 $ 1.50 $ (0.06) \nDiluted $ 2.02 $ 1.44 $ (0.06) \nThe accompanying notes are an integral part of these consolidated financial statements.\n45"
+      }
     },
     {
       "id": "F4",
@@ -62,7 +89,16 @@
         "27,383"
       ],
       "required": true,
-      "cells": null
+      "cells": null,
+      "source_evidence": {
+        "sha256": "dce18829919d84ca999d80a5a5f23492008bafbb6799a5362a17395d9485350d",
+        "normalization": "NFC",
+        "locator": {
+          "kind": "pdf_page",
+          "page": 60
+        },
+        "quote": "200 \nEUR Notes Oct 2029 1.00%  696  633 \nLoans\nEUR floating rate (e) Apr 2029 EURIBOR + 1.95%  348  — \n          Total Unsecured (No Subsidiary Guarantee)  1,244  833 \nTotal Debt  27,383  28,213 \nLess: unamortized debt issuance costs \nand discounts  (744)  (738) \n58"
+      }
     },
     {
       "id": "F5",
@@ -75,11 +111,20 @@
         "1,928"
       ],
       "required": true,
-      "cells": null
+      "cells": null,
+      "source_evidence": {
+        "sha256": "dce18829919d84ca999d80a5a5f23492008bafbb6799a5362a17395d9485350d",
+        "normalization": "NFC",
+        "locator": {
+          "kind": "pdf_page",
+          "page": 49
+        },
+        "quote": "CARNIVAL CORPORATION & PLC\nCONSOLIDATED BALANCE SHEETS\n(in millions, except par values)\n November 30,\n 2025 2024\nASSETS\nCurr\nent Assets\nC\nash and cash equivalents $ 1,928 $ 1,210 \nTrade and other receivables, net  678  590 \nInventories  505  507 \nPrepaid expenses and other  1,108  1,070 \n  Total current assets  4,219  3,378 \nProperty and Equipment, Net  43,494  41,795 \nOperating Lease Right-of-Use Assets, Net  1,328  1,368 \nGoodwill  579  579 \nOt"
+      }
     },
     {
       "id": "F6",
-      "statement": "Scheduled principal payments due in 2026",
+      "statement": "2026 principal payments in the November 30, 2025 maturity schedule, including subsequently settled convertible notes",
       "value": "2,615",
       "unit": "USD millions",
       "period": "FY2026",
@@ -88,11 +133,20 @@
         "2,615"
       ],
       "required": true,
-      "cells": null
+      "cells": null,
+      "source_evidence": {
+        "sha256": "dce18829919d84ca999d80a5a5f23492008bafbb6799a5362a17395d9485350d",
+        "normalization": "NFC",
+        "locator": {
+          "kind": "pdf_page",
+          "page": 61
+        },
+        "quote": " which do not \nguarantee our other outstanding debt.\nAs of November 30, 2025, the scheduled maturities of our debt are as follows:\n(in millions)\nYear Principal Payments\n2026 (a) $ 2,615 \n2027  2,518 \n2028  3,962 \n2029  4,133 \n2030  2,886 \nThereafter  11,268 \nTotal $ 27,383 \n(a) Includes $1.1 billion of our 5.75% convertible senior notes due 2027 (“2027 Convertible Notes”) which were settled in \nDecember 2025. See “Convertible Notes” below.\nRevolving Facility\nDu"
+      }
     },
     {
       "id": "F7",
-      "statement": "FY2025 interest expense net of capitalized interest",
+      "statement": "FY2025 interest expense net of capitalized interest (expense magnitude; shown in parentheses)",
       "value": "1,349",
       "unit": "USD millions",
       "period": "FY2025",
@@ -101,7 +155,60 @@
         "1,349"
       ],
       "required": true,
-      "cells": null
+      "cells": null,
+      "source_evidence": {
+        "sha256": "dce18829919d84ca999d80a5a5f23492008bafbb6799a5362a17395d9485350d",
+        "normalization": "NFC",
+        "locator": {
+          "kind": "pdf_page",
+          "page": 47
+        },
+        "quote": "0 \nDepreciation and amortization expense  2,790  2,557  2,370 \nOperating Income  4,483  3,574  1,956 \nInterest income  51  93  233 \nInterest expense, net of capitalized interest  (1,349)  (1,755)  (2,066) \nDebt extinguishment and modification costs  (409)  (79)  (111) \nOther income (expense), net  (4)  83  (75) \nIncome (Loss) Before Income Taxes  2,772  1,915  (62) \nIncome tax benefit (expense), net  (12)  1  (13) \nNet Income (Loss) $ 2,760 $ 1,916 $ (74) \nEarn"
+      }
+    },
+    {
+      "id": "F8",
+      "statement": "The reported 2026 maturity bucket includes $1.1 billion of 2027 Convertible Notes settled in December 2025",
+      "value": "1.1",
+      "unit": "USD billions",
+      "period": "December 2025 subsequent event",
+      "source": "CCL_2025_form_10K.pdf",
+      "match": [
+        "$1.1 billion"
+      ],
+      "required": true,
+      "cells": null,
+      "source_evidence": {
+        "sha256": "dce18829919d84ca999d80a5a5f23492008bafbb6799a5362a17395d9485350d",
+        "normalization": "NFC",
+        "locator": {
+          "kind": "pdf_page",
+          "page": 61
+        },
+        "quote": "r debt are as follows:\n(in millions)\nYear Principal Payments\n2026 (a) $ 2,615 \n2027  2,518 \n2028  3,962 \n2029  4,133 \n2030  2,886 \nThereafter  11,268 \nTotal $ 27,383 \n(a) Includes $1.1 billion of our 5.75% convertible senior notes due 2027 (“2027 Convertible Notes”) which were settled in \nDecember 2025. See “Convertible Notes” below.\nRevolving Facility\nDuring 2025, Carnival Corporation and Carnival plc entered into a $4.5 billion unsecured multi-currency revolving cre"
+      }
+    },
+    {
+      "id": "F9",
+      "statement": "Available borrowing under the revolving facility at November 30, 2025",
+      "value": "4.5",
+      "unit": "USD billions",
+      "period": "FY2025",
+      "source": "CCL_2025_form_10K.pdf",
+      "match": [
+        "$4.5 billion available for borrowing"
+      ],
+      "required": true,
+      "cells": null,
+      "source_evidence": {
+        "sha256": "dce18829919d84ca999d80a5a5f23492008bafbb6799a5362a17395d9485350d",
+        "normalization": "NFC",
+        "locator": {
+          "kind": "pdf_page",
+          "page": 61
+        },
+        "quote": "redit ratings of Carnival Corporation. In addition, we are required to pay certain fees on \nthe aggregate commitments under the Revolving Facility.\nAs of November 30, 2025, we had $4.5 billion available for borrowing under the Revolving Facility.\nNotes and Term Loans\nRepricing of Senior Secured Term Loans\nDuring 2025, we entered into amendments to reprice the outstanding principal amounts of our first-priority senior secured term \nloan facility maturing in 2027 and our first-priority senior "
+      }
     }
   ],
   "conflicts": [],
@@ -150,9 +257,65 @@
     }
   },
   "benchmark_conclusion": {
-    "status": "BLOCKED EXTERNAL",
-    "owner": "independent credit analyst",
-    "artifact": "a signed benchmark conclusion (view, key drivers, downside trigger) for FY2025",
-    "location": "caos/tests/corpus/packs/C17/answer_key.json::benchmark_conclusion"
+    "status": "draft-machine-authored",
+    "authored_by": "Codex (GPT-6 Astra); machine author, self-reviewed against pinned source bytes",
+    "independent_analyst_approval": null,
+    "view": "FY2025 revenue and net income show improved operating performance, alongside a material debt burden. Available revolving borrowing provides additional liquidity; cash alone is not the liquidity measure. The November maturity schedule must be read with the December convertible settlement.",
+    "key_drivers": [
+      "F1",
+      "F2",
+      "F3",
+      "F4",
+      "F5",
+      "F6",
+      "F7",
+      "F8",
+      "F9"
+    ],
+    "downside_trigger": "A deterioration in earnings or access to the revolving facility would weaken debt-service capacity. This is a conditional machine-authored inference, not a forecast or investment recommendation.",
+    "scoring": "Narrative retained for later independent analyst review; existing automatic dimensions do not score this conclusion."
+  },
+  "revision": {
+    "date": "2026-09-06",
+    "previous_key_sha256": "85665d3e507dcacc24019f8f3663e632f258e4ddfefe4bcbbd3b8dc11086b416",
+    "method": "Source-first review of pinned document bytes, before evaluation outputs; route and ingest expectations retained.",
+    "review_status": "Self-review only; independent analyst approval pending.",
+    "limitations": [
+      "Literal-match diagnostic scoring is not a semantic correctness proof.",
+      "Synthetic documents test host behaviour; they do not establish issuer economics.",
+      "Machine-authored benchmark prose is not independently approved or automatically scored."
+    ],
+    "documents": {
+      "CCL_2025_annual_report.pdf": "e698de2d9fd6356a5c4cc0b2abc50b903669aca166ddc17dcebb46109a35d19d",
+      "CCL_2025_form_10K.pdf": "dce18829919d84ca999d80a5a5f23492008bafbb6799a5362a17395d9485350d",
+      "CCL_2025_Q1_10Q.pdf": "0588eca5daf04345884d97e3e3ca065d24bccca4187d842d312375ede81f7e71",
+      "CCL_2025_Q1_earnings_guidance.pdf": "a5eee95387dd3e0b3310d493f1bb4abd2de84984b66b48a7b3816e8132b63133",
+      "CCL_2025_Q2_half_year_report.pdf": "18db2b94dfccbe18f593bd4e7290af0d835702eb979dadb7a9907b9ff71627f3",
+      "CCL_2025_Q2_10Q.pdf": "a60ed004e8a7d30006ba59b3c0976b8176c2a8bc9cbd19b7a250b794267eab87",
+      "CCL_2025_Q2_earnings_guidance.pdf": "07efd33ddb4a7a29fdf146f42d590bdf12a31552d8b402951aa4e7e746e1831d",
+      "CCL_2025_Q3_10Q.pdf": "1e909085deea9a22cc6f95beabd6642131308c282b26ad0a4ae2c98c33f65778",
+      "CCL_2025_Q3_earnings_guidance.pdf": "34b931aec5b83f6db71d5c3a4114665271cc0d8c3c9c34d55a247dbf33e0b145",
+      "CCL_2025_Q4_earnings_guidance.pdf": "fd73bd9f5715c80f05df51f37b92bd1f8260f0c6e6bedb6af77c97b57e08a213",
+      "CCL_2025_Q4_earnings_presentation_forecast.pdf": "ef538837b00c4561a8889fed8e0ff41f54fef6ea278e67e88889bbe3788426aa",
+      "CCL_2024_annual_report.pdf": "d743e57e74e6043a7c1c3b01d1bc5f97b134ea36ec17b9933cabaaf577d7b35e",
+      "CCL_2024_form_10K.pdf": "e15747a877c8bd84a5478855ad1da956d8488119a99abc6dd913fa29950e3cbf",
+      "CCL_2024_Q1_10Q.pdf": "7ed70859fb038d5b1b21b24872b47f987611d6dd8bfac71c4d0ed44fc234a31e",
+      "CCL_2024_Q1_earnings_guidance.pdf": "03c702d5e0baabd32e907b2c3074b9f6456cdfd31043eafe436b3a0fc8972698",
+      "CCL_2024_Q2_10Q_term_loan_agreements.pdf": "cfa615d35c661d5e80787fbab9d6b03f84fd72a40a637cd0ba80ff8c511eae8c",
+      "CCL_2024_Q2_earnings_guidance.pdf": "71f5fbf3984dc205b7856b2352ebcd892cd2a5562725893dedae4e1fab1b3919",
+      "CCL_2024_Q3_10Q.pdf": "00c52081038ccab1f664aeaf9c751af0ff1ca279b143636391f0880db4609b95",
+      "CCL_2024_Q3_earnings_guidance.pdf": "39435afb7977881e2da531b35cb0a8f38717eb3ae14c25150f686c97ca86890b",
+      "CCL_2024_Q4_earnings_guidance.pdf": "a77f39f1899d3c3e3a8bde69297028da4a312c5f6927b20a532297e4a80e47f8",
+      "CCL_2023_annual_report.pdf": "98686a468ec743faab4ff1fdfa93d37978a827a5d2e4f667623662bd7bcea834",
+      "CCL_2023_form_10K.pdf": "e8eda87fed73e5e31fa89ca21b73befec4329f66f48390e6eb6d788d12aa7ded",
+      "CCL_2023_investor_day_forecast.pdf": "a2498633cda45fe99de5dd7ac13fb12cdbb63b684da0991c54ffa11e0c8f4641",
+      "CCL_2023_Q1_10Q.pdf": "80ae7f9b4a43eed41be5ff349057f3cf0dbb4eeea0fba4fa76bf351cd229c6db",
+      "CCL_2023_Q1_business_update_guidance.pdf": "b754fbfdba908de0c424c197920bf37d96907f7b2015ea67fff566cbfa42948f",
+      "CCL_2023_Q2_10Q.pdf": "ee8ffa50b6540dad589f77f80cfc8f022914ea1e437a04742db338d47d03cf43",
+      "CCL_2023_Q2_earnings_guidance.pdf": "b11f7a33261273aa0a5ee4ef71ba2b07003177b4ec5661b5fcb5681f22ea8bc5",
+      "CCL_2023_Q3_10Q.pdf": "2a5374b744994a5ff896a451b440db59df7096034ba439c8696f7a0fd950a9d6",
+      "CCL_2023_Q3_earnings_guidance.pdf": "da56f324e8d633a1536e4a63a077f297bdcaa346c78d0bc409b010a19e07c7db",
+      "CCL_2023_Q4_earnings_guidance.pdf": "e0f8a235dd982e450c310250369278c0e0d88a4a3578efb8ea91c4016516d981"
+    }
   }
 }

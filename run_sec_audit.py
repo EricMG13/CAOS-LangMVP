@@ -75,6 +75,10 @@ MASS_ASSIGNMENT = {
     "version": 99, "role_override": "ADMIN",
 }
 BODY_PROBES = {
+    ("POST", "/api/admin/cases/{case_id}/bootstrap-approver"): {
+        "subject": "audit-first-approver", "rationale": "Independent review",
+    },
+    ("POST", "/api/admin/provider-default"): {"binding_id": "audit-binding", "expected_version": 0},
     ("POST", "/api/cases"): {"name": "Audit", "issuer": "Audit", "sector": "Audit"},
     ("POST", "/api/cases/{case_id}/notes"): {"body": "audit"},
     ("POST", "/api/cases/{case_id}/rv"): {
@@ -447,6 +451,10 @@ def main() -> int:
             if parameter.get("in") == "query"
         }
         expected_queries = {("GET", "/api/cases/{case_id}/models/assumption-registry", "build_id")}
+        expected_queries.update(("GET", f"/api/cases/{{case_id}}/{route}", field)
+                                for route, fields in (("source-summaries", ("cursor", "limit")),
+                                                      ("evidence-search", ("q", "cursor", "limit")))
+                                for field in fields)
         if openapi_queries != expected_queries:
             failures.append(
                 f"query probe drift: missing={sorted(openapi_queries - expected_queries)} "
@@ -494,6 +502,16 @@ def main() -> int:
             scope = _route_key(path)
             is_write = method != "GET"
             approver_only = APPROVER_ONLY.search(path) is not None
+            if path.startswith("/api/admin/"):
+                # Dedicated operator powers do not grant case membership.
+                # The positive independent-operator grant, retry/revocation,
+                # forged-role and rollback checks live in test_enterprise_governance.
+                for actor in ACTORS:
+                    seen = _request(client, method, path, headers[actor], case_id=case_a["id"])
+                    matrix_cells += 1
+                    if seen.status_code != 403:
+                        failures.append(f"{method} {path}: non-operator {actor} -> {seen.status_code} (expected 403)")
+                continue
             if scope == "global":
                 # /api/me, /api/cases, /api/intake: the writer gate and the outsider's empty world.
                 if path == "/api/cases" and method == "GET":

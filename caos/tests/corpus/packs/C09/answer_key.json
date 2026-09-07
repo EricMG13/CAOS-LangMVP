@@ -1,9 +1,9 @@
 {
   "schema_version": "caos.answer-key.v1",
   "pack_id": "C09",
-  "version": "1.0.0",
-  "authored_by": "Claude Fable 5.1 (ER-G6 implementer)",
-  "status": "draft-host-control",
+  "version": "1.1.0",
+  "authored_by": "Codex (GPT-6 Astra); machine author, self-reviewed against pinned source bytes",
+  "status": "draft-machine-authored-source-grounded",
   "intake": {
     "status": "started",
     "route": [
@@ -35,7 +35,17 @@
         "5.50 to 1.00"
       ],
       "required": true,
-      "cells": null
+      "cells": null,
+      "source_evidence": {
+        "sha256": "b5fec57dc2735ead08f4a6668b012bd956077165c2af0cea1930ca26238934b9",
+        "normalization": "NFC",
+        "locator": {
+          "kind": "text_lines",
+          "start_line": 3,
+          "end_line": 5
+        },
+        "quote": "among Northstar Cruise Holdings Inc, as Borrower, and the Lenders.\nAmended and Restated Section 6.10.\nMaximum Consolidated Total Leverage Ratio reset to 5.50 to 1.00 through November 30, 2026."
+      }
     },
     {
       "id": "F2",
@@ -48,7 +58,17 @@
         "Waiver of the Interest Coverage Ratio"
       ],
       "required": true,
-      "cells": null
+      "cells": null,
+      "source_evidence": {
+        "sha256": "3974ade579b085999699fd630f9d480008fa8fe345118da0e3a0f29794a3bf99",
+        "normalization": "NFC",
+        "locator": {
+          "kind": "text_lines",
+          "start_line": 4,
+          "end_line": 6
+        },
+        "quote": "Amended and Restated Section 6.10.\nMaximum Consolidated Total Leverage Ratio reset to 5.50 to 1.00 through November 30, 2026.\nWaiver of the Interest Coverage Ratio test for the quarter ended August 31, 2025."
+      }
     }
   ],
   "conflicts": [],
@@ -89,6 +109,28 @@
           "depth": "full"
         }
       ]
+    }
+  },
+  "revision": {
+    "date": "2026-09-06",
+    "previous_key_sha256": "9c1fe57fc68d16cd0dccdb195e02c7af82965365b61d3aef5a7cac68d65d84ae",
+    "method": "Source-first review of pinned document bytes, before evaluation outputs; route and ingest expectations retained.",
+    "review_status": "Self-review only; independent analyst approval pending.",
+    "limitations": [
+      "Literal-match diagnostic scoring is not a semantic correctness proof.",
+      "Synthetic documents test host behaviour; they do not establish issuer economics.",
+      "Machine-authored benchmark prose is not independently approved or automatically scored."
+    ],
+    "documents": {
+      "northstar-10k-fy2024.txt": "7e3da1da91e6959fb7ef339d78c20df171b467016b68c2bf7a65ba4f8b6641ef",
+      "northstar-10q-q3-2025.txt": "9693c5af5106a7477ae6d9be04b03fc124e74fda8f0f51f68f9a4f383f789966",
+      "northstar-q3-2025-earnings.txt": "5a2a0a4f70eb8b6c890af3813ed8fea83aa45191ae8851e0074ee13c56ce4d01",
+      "northstar-fy2025-guidance.txt": "9ad163c93e15f9380428fab411358ff2c05067982e3903e6ff769a4aabbbae9b",
+      "northstar-credit-agreement.txt": "d8e07f5fee49f0ea46df09beed10d8493e315476bdbca273c573862bf5e81223",
+      "northstar-amendment-2.txt": "b5fec57dc2735ead08f4a6668b012bd956077165c2af0cea1930ca26238934b9",
+      "northstar-10k-fy2024-copy.txt": "7e3da1da91e6959fb7ef339d78c20df171b467016b68c2bf7a65ba4f8b6641ef",
+      "northstar-amendment-3-waiver.txt": "3974ade579b085999699fd630f9d480008fa8fe345118da0e3a0f29794a3bf99",
+      "northstar-holiday-menu.txt": "282079ce9e99bad03b0bb77dbf1a2573503b292779d70606afee6c49f132c6d5"
     }
   }
 }

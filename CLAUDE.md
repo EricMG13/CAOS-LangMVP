@@ -226,13 +226,14 @@ engine, the bundle, or the routes.
   bind, startup recovery, serves `caos/frontend/out` when built). Every route
   is provider-backed at both depths (`docs/DECISIONS.md` §14.3, §14.12), so no
   route runs without a provider: development agent execution requires
-  `AGENT_EXECUTION_ENABLED=true` and exactly one provider key, or
+  `AGENT_EXECUTION_ENABLED=true` and a configured provider binding (an explicit
+  catalog is required when keys coexist), or
   `CAOS_PROVIDER=host_control` for the development-only answer-keyed binding
   the keyless browser gates use (orchestration proof, never analysis; refused
   in production). The placeholder deterministic executor is test-only and
   returns `DETERMINISTIC_EXECUTOR_UNAVAILABLE` on any ordinary path.
 - Production entrypoints: `caos/server/run.py` (combined app — validated env,
-  qualified Anthropic-only provider assembly, auto-continue, recovery; the
+  qualified OpenAI/Anthropic provider catalog, auto-continue, recovery; the
   Docker `app` target's CMD) and
   `caos/server/worker.py` (polls the store for QUEUED model builds/exports and
   executes them through the current Python workbook renderer; its image includes

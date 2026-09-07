@@ -28,9 +28,15 @@ services:
     image: clamav/clamav:1.5@sha256:0e85467cb0d6e7d860a45035707741cd5ffc032ffefc6002a3510c75b6d07027
     platform: linux/amd64
     restart: unless-stopped
+    entrypoint: ["/sbin/tini", "-g", "--", "/bin/sh", "/etc/clamav/caos-supervise.sh"]
+    # Allow the active engine, concurrent signature reload and FreshClam's
+    # database validation to coexist. The deployment host must budget this RAM.
+    mem_limit: ${CLAMAV_MEMORY_LIMIT:-4g}
+    mem_reservation: ${CLAMAV_MEMORY_RESERVATION:-2g}
     volumes:
       - clamav-data:/var/lib/clamav
       - ./clamd.conf:/etc/clamav/clamd.conf:ro
+      - ./clamav-supervise.sh:/etc/clamav/caos-supervise.sh:ro
     healthcheck:
       test: ["CMD-SHELL", "clamdscan --ping 1:1"]
       interval: 30s
@@ -64,11 +70,24 @@ services:
       PORT: "8000"
       ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-claude-sonnet-4-6}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      CAOS_PROVIDER_CATALOG_PATH: ${CAOS_PROVIDER_CATALOG_PATH:-}
+      CAOS_DEFAULT_PROVIDER_BINDING: ${CAOS_DEFAULT_PROVIDER_BINDING:-}
+      CAOS_PROVIDER_ACCOUNT_POLICY: ${CAOS_PROVIDER_ACCOUNT_POLICY:-}
+      CAOS_ENTERPRISE_OPERATOR_SUBJECTS: ${CAOS_ENTERPRISE_OPERATOR_SUBJECTS:-}
+      CAOS_BUILD_COMMIT: ${CAOS_BUILD_COMMIT:-}
+      CAOS_IMAGE_SET_DIGEST: ${CAOS_IMAGE_SET_DIGEST:-}
+      CAOS_CORPUS_DIGEST: ${CAOS_CORPUS_DIGEST:-}
       AGENT_EXECUTION_ENABLED: ${AGENT_EXECUTION_ENABLED:-false}
       CAOS_PROVIDER_QUALIFICATION_PATH: ${CAOS_PROVIDER_QUALIFICATION_PATH:-}
       CAOS_PROVIDER_QUALIFICATION_DIGEST: ${CAOS_PROVIDER_QUALIFICATION_DIGEST:-}
     volumes:
       - vault-data:/vault
+      - type: bind
+        source: ${CAOS_PROVIDER_CONFIG_DIR:-./provider-config}
+        target: /etc/caos/providers
+        read_only: true
     security_opt: ["no-new-privileges:true"]
     cap_drop: ["ALL"]
     read_only: true

@@ -387,7 +387,9 @@ def test_unauthenticated_requests_are_refused_before_request_shape_validation(tm
         assert client.post(url, json={}).status_code == 401, "no body"
         assert client.post(url, json={"preview_digest": "a" * 64,
                                       "input_fingerprint": "b" * 64}).status_code == 401, "valid body"
-        assert client.get("/api/health").status_code == 200, "the public health check stays public"
+        health = client.get("/api/health")
+        assert health.status_code == 503, "public readiness reports the absent required scanner"
+        assert health.json()["scanner"] == "unavailable"
 
 
 def test_production_serves_no_framework_documentation_surface(tmp_path, store, engine):

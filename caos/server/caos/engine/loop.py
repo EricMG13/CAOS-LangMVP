@@ -110,6 +110,7 @@ def provider_response_digest(response: ProviderMessage, usage: dict[str, int]) -
         "request_id": response.request_id,
         "observed_model": response.observed_model,
         "observed_provider_version": response.observed_provider_version,
+        **({"continuation_digest": digest(_digest_value(response.continuation))} if response.continuation else {}),
     }))
 
 
@@ -384,7 +385,8 @@ async def run_agent_module(
                     raise AgentError("AGENT_OUTPUT_INVALID", "host tool has no dispatcher")
             finally:
                 timed(started)
-            messages.append({"role": "assistant", "content": content})
+            messages.append({"role": "assistant", "content": content,
+                             **({"continuation": response.continuation} if response.continuation else {})})
             messages.append(
                 {
                     "role": "user",
@@ -412,7 +414,8 @@ async def run_agent_module(
             tools_enabled = False
             record("repair_reserve")
             errors = str(exc).replace("\n", " ")[:REPAIR_TEXT_LIMIT]
-            messages.append({"role": "assistant", "content": content})
+            messages.append({"role": "assistant", "content": content,
+                             **({"continuation": response.continuation} if response.continuation else {})})
             messages.append(
                 {
                     "role": "user",
