@@ -10,7 +10,7 @@ from __future__ import annotations
 import math
 from typing import Any
 
-from ..contracts import canonical_json
+from ..contracts import canonical_json, digest
 from .provider import AgentError
 
 
@@ -71,35 +71,6 @@ def route_envelope(agent_module_ids: list[str], registry: dict[str, Any]) -> dic
     }
 
 
-class BudgetLedger:
-    """In-memory ledger arithmetic; the store-backed run ledger mirrors it."""
-
-    def __init__(self, limits: dict[str, int | float]) -> None:
-        self._limits = {key: limits.get(key, 10**12) for key in DIMENSIONS}
-        self._used: dict[str, int | float] = {key: 0 for key in DIMENSIONS}
-
-    @classmethod
-    def for_tests(cls, **limits: int | float) -> "BudgetLedger":
-        return cls(limits)
-
-    def limit(self, dimension: str) -> int | float:
-        return self._limits[dimension]
-
-    def used(self, dimension: str) -> int | float:
-        return self._used[dimension]
-
-    def note_count_tokens(self) -> None:
-        """Turns charge on create only (legacy provider.py:326 vs :344)."""
-
-    def exhaust_for_tests(self, dimension: str) -> None:
-        self._used[dimension] = self._limits[dimension]
-
-    def reserve_next_operation(self, dimension: str, amount: int | float = 1) -> None:
-        if self._used[dimension] + amount > self._limits[dimension]:
-            raise AgentError("AGENT_BUDGET_EXCEEDED", f"{dimension} budget exhausted")
-        self._used[dimension] += amount
-
-
 def locator_is_bounded(value: Any) -> bool:
     """Structural bomb guard for evidence locators (Appendix A: depth <= 8,
     <= 100 items per container, <= 500-char strings, <= 500 total nodes,
@@ -142,11 +113,11 @@ def _bounded_text(value: Any, limit: int) -> bool:
 
 def bound_manifest(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Fail closed before provider contact. Rows = sources + blocks against the
-    block ceiling; the byte ceiling is the canonical-JSON measure of the block
-    rows (the part that grows without bound).
+    block ceiling; bytes include the entire canonical JSON array, source and
+    preparation metadata, block rows, separators and brackets.
     Ceilings are inclusive."""
     rows = 0
-    payload_bytes = 0
+    payload_bytes = 2
     for entry in entries:
         rows += 1
         if rows > MAX_MANIFEST_BLOCKS:
@@ -172,12 +143,30 @@ def bound_manifest(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 or not _bounded_text(str(block.get("confidence")), MAX_MANIFEST_FIELD_CHARS)
             ):
                 raise AgentError("AGENT_BUDGET_EXCEEDED", "source manifest field ceiling exceeded")
-            payload_bytes += len(canonical_json(
-                {key: block.get(key) for key in ("block_id", "locator", "extractor_version", "confidence")}
-            ).encode("utf-8"))
-            if payload_bytes > MAX_MANIFEST_BYTES:
-                raise AgentError("AGENT_BUDGET_EXCEEDED", "source manifest byte ceiling exceeded")
+        payload_bytes += len(canonical_json(entry).encode("utf-8")) + (1 if payload_bytes > 2 else 0)
+        if payload_bytes > MAX_MANIFEST_BYTES:
+            raise AgentError("AGENT_BUDGET_EXCEEDED", "source manifest byte ceiling exceeded")
     return entries
+
+
+def source_manifest(sources: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """The exact provider manifest, shared by admission, gate and execution."""
+    rows = len(sources)
+    for source in sources:
+        rows += len(source.get("blocks") or [])
+        if rows > MAX_MANIFEST_BLOCKS:
+            raise AgentError("AGENT_BUDGET_EXCEEDED", "source manifest block ceiling exceeded")
+    return bound_manifest([{
+        "source_id": source["id"], "sha256": source["sha256"],
+        "filename": source.get("filename", source["id"]),
+        "media_type": source.get("media_type", "application/octet-stream"),
+        "preparation": {
+            "representation": "pinned_blocks", "block_count": len(source.get("blocks") or []),
+            "content_digest": digest(source.get("blocks") or []),
+        },
+        "blocks": [{key: block.get(key) for key in ("block_id", "locator", "extractor_version", "confidence")}
+                   for block in source.get("blocks") or []],
+    } for source in sources])
 
 
 class AttemptRecorder:

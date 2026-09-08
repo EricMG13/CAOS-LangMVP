@@ -46,6 +46,7 @@ try {
   await page.locator('[data-module-id="CP-3"]').waitFor();
   const graph = page.getByRole("region", { name: "Run dependency graph" });
   assert.equal(await graph.locator("svg path[marker-end]").count(), run.nodes.reduce((count, node) => count + node.dependencies.length, 0));
+  assert.ok(await page.locator("[data-run-node-id]").count() > 0, "the live run rendered no graph nodes");
   assert.equal(await page.locator("[data-run-node-id]").evaluateAll((buttons) => buttons.every((button) => button.scrollHeight <= button.clientHeight)), true, "an actual module label overflows its fixed-height node");
   const longest = page.locator('[data-module-id="CP-3"]');
   await longest.scrollIntoViewIfNeeded();

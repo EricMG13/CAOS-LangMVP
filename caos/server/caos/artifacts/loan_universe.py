@@ -13,7 +13,7 @@ import copy  # noqa: F401 — kept from the ported module surface
 import xml.parsers.expat
 from datetime import date, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, BinaryIO
 
 from openpyxl import load_workbook
 from openpyxl.utils import get_column_letter
@@ -179,18 +179,16 @@ class _ForbiddenDoctype(ValueError):
     pass
 
 
-def _has_external_relationship(part: bytes) -> bool:
+def _has_external_relationship(part: bytes | BinaryIO) -> bool:
     """Does this .rels part declare an external target?
 
     Parsed with expat directly and a DOCTYPE refusal rather than
     `ElementTree.fromstring`: the stdlib tree parser expands internal entities,
     so a crafted relationships part turns a few hundred bytes of upload into
     tens of megabytes of allocation inside the screen whose whole job is
-    refusing hostile packages. (openpyxl, parsing the same archive a moment
-    later, routes through defusedxml; this screen did not.) libexpat's default
-    amplification guard happens to cap the blow-up today — that is the
-    runtime's choice, not this screen's. An OOXML part never carries a DTD, so
-    refusing the declaration costs nothing and makes the bound ours.
+    refusing hostile packages. Openpyxl's backend depends on installed optional
+    dependencies; admission screens every XML part here before invoking it.
+    An OOXML part never carries a DTD, so refusing it costs no valid workbook.
     """
     external = False
 
@@ -204,7 +202,10 @@ def _has_external_relationship(part: bytes) -> bool:
     parser = xml.parsers.expat.ParserCreate()
     parser.StartElementHandler = start_element
     parser.StartDoctypeDeclHandler = refuse_doctype
-    parser.Parse(part, True)
+    stream = io.BytesIO(part) if isinstance(part, bytes) else part
+    for chunk in iter(lambda: stream.read(64 * 1024), b""):
+        parser.Parse(chunk, False)
+    parser.Parse(b"", True)
     return external
 
 
@@ -228,9 +229,11 @@ def _validate_package(content: bytes, findings: _Findings) -> None:
                         f"Unsupported active package content: {name}",
                     )
             for info in archive.infolist():
-                if not info.filename.lower().endswith(".rels"):
+                if not info.filename.lower().endswith((".xml", ".rels")):
                     continue
-                if _has_external_relationship(archive.read(info)):
+                with archive.open(info) as part:
+                    external = _has_external_relationship(part)
+                if external and info.filename.lower().endswith(".rels"):
                     findings.add(
                         "RV_PACKAGE_EXTERNAL_LINK",
                         "External package relationships are not allowed.",
@@ -767,5 +770,3 @@ def import_loan_source(store: Any, case_id: str, source_id: str, actor: str) -> 
         "rows": parsed["rows"],
     }, actor)
     return record, True
-
-

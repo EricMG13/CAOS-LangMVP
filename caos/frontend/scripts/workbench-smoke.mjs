@@ -279,6 +279,8 @@ browser.newContext = async (options) => {
 const errors = [];
 const unexpectedDialogs = [];
 let beforeunloadPrompts = 0;
+let expectedReaderIdentityFailure = false;
+let readerIdentityFailureSeen = false;
 // The workspace restores focus on the animation frame AFTER an action settles
 // (Workspace.tsx: useEffect → requestAnimationFrame), so a check that reads
 // document.activeElement the instant the settled UI renders races that frame
@@ -313,22 +315,72 @@ const watchExternalGoogleFonts = (context) => {
   });
   return context;
 };
+const installCspProvenance = (page) => page.addInitScript(() => {
+  window.__caosCspViolations = [];
+  document.addEventListener("securitypolicyviolation", (event) => {
+    window.__caosCspViolations.push({ directive: event.effectiveDirective, blocked: event.blockedURI, file: event.sourceFile, line: event.lineNumber, column: event.columnNumber, sample: (event.sample || "").slice(0, 200) });
+  });
+  new MutationObserver((records) => {
+    for (const record of records) for (const node of record.addedNodes) {
+      if (node.nodeName === "STYLE") window.__caosCspViolations.push({ inserted: "style", attrs: [...node.attributes].map((a) => `${a.name}=${a.value.slice(0, 40)}`).join(" "), text: (node.textContent || "").slice(0, 120), parent: record.target.nodeName, stack: new Error().stack.split("\n").slice(1, 5).join(" | ") });
+    }
+  }).observe(document, { childList: true, subtree: true });
+});
+const pageErrorAttributions = new WeakMap();
+const recordPageConsoleError = (page, targetErrors, message) => {
+  const entry = `${message.text()} (${message.location().url}:${message.location().lineNumber})`;
+  targetErrors.push(entry);
+  if (!message.text().startsWith("Refused to apply")) return;
+  const pending = pageErrorAttributions.get(page) || new Set();
+  pageErrorAttributions.set(page, pending);
+  const attribution = page.evaluate(() => {
+    const details = window.__caosCspViolations || [];
+    window.__caosCspViolations = [];
+    return details;
+  }).then((details) => {
+    // Playwright's WebKit screenshot synchronization inserts exactly
+    // <style>body {}</style> with no script stack. Keep every other CSP error.
+    const inserted = details.filter((item) => item.inserted === "style");
+    const automationOnly = browserName === "webkit" && inserted.length > 0 && inserted.every((item) => item.text.trim() === "body {}" && !item.stack);
+    const position = targetErrors.indexOf(entry);
+    if (position === -1) return;
+    if (automationOnly) targetErrors.splice(position, 1);
+    else targetErrors[position] += ` csp=${JSON.stringify(details)}`;
+  }).catch(() => {});
+  pending.add(attribution);
+  void attribution.finally(() => pending.delete(attribution));
+};
+const settlePageErrorAttribution = async (page) => {
+  const pending = pageErrorAttributions.get(page);
+  while (pending?.size) await Promise.all([...pending]);
+};
+const watchPageErrors = async (page, targetErrors = errors) => {
+  await installCspProvenance(page);
+  page.on("console", (message) => {
+    if (message.type() !== "error") return;
+    if (expectedReaderIdentityFailure && message.location().url.endsWith("/api/me")) {
+      readerIdentityFailureSeen = true;
+      return;
+    }
+    recordPageConsoleError(page, targetErrors, message);
+  });
+  page.on("pageerror", (error) => targetErrors.push(error.message));
+  page.on("requestfailed", (requestValue) => {
+    if (expectedReaderIdentityFailure && new URL(requestValue.url()).pathname === "/api/me") readerIdentityFailureSeen = true;
+  });
+  return page;
+};
 try {
   const context = watchExternalGoogleFonts(await browser.newContext({ viewport: { width: 1440, height: 1000 }, extraHTTPHeaders: identityHeaders }));
   const page = await context.newPage();
+  page.setDefaultTimeout(30_000);
+  page.on("dialog", (dialog) => {
+    if (dialog.type() === "beforeunload") { beforeunloadPrompts += 1; void dialog.accept(); return; }
+    unexpectedDialogs.push(`${dialog.type()}: ${dialog.message()}`);
+    void dialog.dismiss();
+  });
+  await installCspProvenance(page);
   await page.addInitScript(() => {
-    // A CSP console line names only the document; the violation event carries
-    // the directive, the blocked URI and a sample of the offending text.
-    window.__caosCspViolations = [];
-    document.addEventListener("securitypolicyviolation", (event) => {
-      window.__caosCspViolations.push({ directive: event.effectiveDirective, blocked: event.blockedURI, file: event.sourceFile, line: event.lineNumber, column: event.columnNumber, sample: (event.sample || "").slice(0, 200) });
-    });
-    // The export ships no inline <style>; if one appears, record who inserted it.
-    new MutationObserver((records) => {
-      for (const record of records) for (const node of record.addedNodes) {
-        if (node.nodeName === "STYLE") window.__caosCspViolations.push({ inserted: "style", attrs: [...node.attributes].map((a) => `${a.name}=${a.value.slice(0, 40)}`).join(" "), text: (node.textContent || "").slice(0, 120), parent: record.target.nodeName, stack: new Error().stack.split("\n").slice(1, 5).join(" | ") });
-      }
-    }).observe(document, { childList: true, subtree: true });
     window.__caosUrlWrites = [];
     for (const method of ["pushState", "replaceState"]) {
       const original = history[method].bind(history);
@@ -349,6 +401,8 @@ try {
   let expectedSignOffConflicts = 0;
   let expectedReportConflicts = 0;
   let expectedIntakeRefusals = 0;
+  const expectedHttpFailures = [];
+  const observedHttpFailures = [];
   page.on("console", (message) => {
     if (message.type() !== "error") return;
     if (expectedIntakeRefusals > 0
@@ -385,22 +439,7 @@ try {
       expectedReportConflicts -= 1;
       return;
     }
-    const entry = `${message.text()} (${message.location().url}:${message.location().lineNumber})`;
-    errors.push(entry);
-    if (message.text().startsWith("Refused to apply")) {
-      void page.evaluate(() => window.__caosCspViolations || []).then((details) => {
-        // WebKit under Playwright inserts <style>body {}</style> into <head> with no
-        // script on the stack (an automation-side style recalc), and the policy
-        // refuses it. That is the CSP working on the harness, not the product:
-        // drop the line only when every recorded insertion is exactly that.
-        const inserted = details.filter((item) => item.inserted === "style");
-        const automationOnly = browserName === "webkit" && inserted.length > 0 && inserted.every((item) => item.text.trim() === "body {}" && !item.stack);
-        const position = errors.indexOf(entry);
-        if (position === -1) return;
-        if (automationOnly) errors.splice(position, 1);
-        else errors[position] += ` csp=${JSON.stringify(details)}`;
-      }).catch(() => {});
-    }
+    recordPageConsoleError(page, errors, message);
   });
   // Every non-document response the page saw, by exact URL: the evidence the
   // WebKit teardown filter below demands before it drops a page error.
@@ -412,6 +451,10 @@ try {
   const responded = new Map();
   page.on("response", (response) => {
     if (response.request().resourceType() !== "document") responded.set(response.url(), response.status());
+    // HTTP responses prove refusals in every engine; Firefox emits no console
+    // message for these responses. Console allowances above remain separate.
+    const failure = `${response.status()} ${response.url()}`;
+    if (expectedHttpFailures.includes(failure)) observedHttpFailures.push(failure);
   });
   page.on("pageerror", (error) => {
     const teardown = webkitTeardownRejection(error.message, { browserName, baseURL, responded });
@@ -498,7 +541,7 @@ try {
   await page.getByRole("combobox", { name: "Select case" }).selectOption(failedCase.id);
   await visibleAuthority.getByText(/Visible snapshot:\s*Authority unavailable/).waitFor();
   await visibleAuthority.getByText(/Source set:\s*Authority unavailable/).waitFor();
-  assert.equal(expectedAuthorityFailureSeen, true, "controlled authority 503 did not emit the expected console error");
+  assert.equal(expectedAuthorityFailureSeen, true, "controlled authority 503 response was not observed");
   await page.unroute(failedAuthorityDetail, failAuthorityDetail);
   expectedAuthorityFailureURL = "";
   await page.getByRole("combobox", { name: "Select case" }).selectOption(caseRecord.id);
@@ -654,6 +697,7 @@ try {
   await page.waitForFunction(() => document.getElementById("member-subject")?.value === "", null, { timeout: 5_000 }).catch(() => { throw new Error("the form kept the provisioned subject after the receipt"); });
   await page.unroute(adminIdentityPath); await page.unroute(adminCasePath); await page.unroute(adminMembersPath);
   expectedNotFoundURL = `${baseURL}/missing-${fixtureSuffix}`;
+  expectedHttpFailures.push(`404 ${expectedNotFoundURL}`);
   await page.goto(expectedNotFoundURL, { waitUntil: "networkidle" });
   await page.getByRole("heading", { name: "Page not found" }).waitFor();
   assert.equal(await page.getByRole("heading", { name: "Monitored credits" }).count(), 0, "unknown route rendered the default Portfolio page");
@@ -738,9 +782,8 @@ try {
   assert.ok(actualCp1Chart, "unmodified CP-1 presentation has no chart section");
   assert.ok(actualCp1Chart.recipe.points.some((point) => point.source_ids.includes(chartSource.id)), "CP-1 chart lost the actual fixture source identity");
   const actualChartContext = watchExternalGoogleFonts(await browser.newContext({ viewport: { width: 1440, height: 1000 }, extraHTTPHeaders: identityHeaders }));
-  const actualChartPage = await actualChartContext.newPage();
   const actualChartErrors = [];
-  actualChartPage.on("console", (message) => { if (message.type() === "error") actualChartErrors.push(message.text()); });
+  const actualChartPage = await watchPageErrors(await actualChartContext.newPage(), actualChartErrors);
   await actualChartPage.goto(`${baseURL}/analysis/?case=${chartCase.id}`, { waitUntil: "networkidle" });
   await actualChartPage.getByRole("navigation", { name: "Accepted analysis modules" }).getByRole("button").filter({ hasText: "CP-1" }).first().click();
   await actualChartPage.getByRole("heading", { name: actualCp1Chart.title, exact: true }).waitFor();
@@ -757,10 +800,11 @@ try {
   const actualSourceLink = actualChartPage.getByRole("navigation", { name: `${actualCp1Chart.title} chart sources` }).getByRole("link", { name: new RegExp(chartSource.id) }).first();
   assert.equal(new URL(await actualSourceLink.getAttribute("href"), baseURL).searchParams.get("source"), chartSource.id);
   assert.equal(await actualChartPage.locator(".chart-exhibit-failure").count(), 0, "unmodified CP-1 chart fell back to its table");
-  assert.deepEqual(actualChartErrors, [], "unmodified CP-1 chart emitted a browser console error");
   await actualChartPage.setViewportSize({ width: 1024, height: 768 });
   assert.equal(await actualChartPage.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth), false, "actual CP-1 chart overflows at 1024px");
   await actualChartPage.screenshot({ path: path.join(resultsDir, "analysis-chart-actual-cp1.png"), fullPage: false });
+  await settlePageErrorAttribution(actualChartPage);
+  assert.deepEqual(actualChartErrors, [], "unmodified CP-1 chart emitted a browser console or page error");
   await actualChartContext.close();
 
   // The route-controlled browser proofs run only after the unchanged first-page
@@ -950,10 +994,20 @@ try {
     { pathway: "DEEP_RESEARCH", issuer: `Researchpack-${fixtureSuffix} Holdings`, docs: (issuer) => [intakeDoc("annual", issuer), intakeDoc("quarterly", issuer), intakeDoc("brief", issuer)] },
   ];
   const listCases = async () => {
-    const response = await api.get("/api/cases");
-    const body = await response.json();
-    assert.ok(Array.isArray(body), `GET /api/cases answered ${response.status()}: ${JSON.stringify(body).slice(0, 200)}`);
-    return body;
+    const cases = [];
+    let cursor = "";
+    while (true) {
+      const params = new URLSearchParams({ limit: "100" });
+      if (cursor) params.set("cursor", cursor);
+      const response = await api.get(`/api/cases?${params}`);
+      const page = await response.json();
+      assert.ok(Array.isArray(page), `GET /api/cases answered ${response.status()}: ${JSON.stringify(page).slice(0, 200)}`);
+      cases.push(...page);
+      if (page.length < 100) return cases;
+      const nextCursor = page[page.length - 1]?.id;
+      assert.ok(typeof nextCursor === "string" && nextCursor > cursor, "GET /api/cases did not advance its cursor");
+      cursor = nextCursor;
+    }
   };
   const casesBefore = (await listCases()).length;
   // The six route selections are data cases of the one server journey: every pack
@@ -1065,6 +1119,7 @@ try {
     { name: "scan.pdf", mimeType: "application/pdf", buffer: Buffer.from("%PDF-1.4\nnot a pdf object stream") },
   ]);
   expectedIntakeRefusals = 1;
+  expectedHttpFailures.push(`422 ${baseURL}/api/intake`);
   await refusedPanel.getByRole("button", { name: /^Analyze 2 documents$/ }).click();
   const refusalBlock = page.getByRole("alert").filter({ hasText: "Documents not admitted" });
   await refusalBlock.waitFor();
@@ -1078,6 +1133,7 @@ try {
     intakeDoc("quarterly", `Otherissuer-${fixtureSuffix} Holdings`),
   ]);
   expectedIntakeRefusals = 1;
+  expectedHttpFailures.push(`422 ${baseURL}/api/intake`);
   await refusedPanel.getByRole("button", { name: /^Analyze 2 documents$/ }).click();
   const ambiguousBlock = page.getByRole("alert").filter({ hasText: "INTAKE_ISSUER_AMBIGUOUS" });
   await ambiguousBlock.waitFor();
@@ -1170,15 +1226,16 @@ try {
   await page.route(goneEventsPath, (route) => route.fulfill({ status: 200, contentType: "text/event-stream", body: "retry: 60000\n\n" }));
   await page.route(goneApprovePath, (route) => route.fulfill({ status: 404, contentType: "application/json", body: JSON.stringify({ detail: "Not Found" }) }));
   expectedNotFoundURL = `${baseURL}/api/runs/${goneResearchRun.id}/research-plan/approve`;
+  expectedHttpFailures.push(`404 ${expectedNotFoundURL}`);
   await page.goto(`${baseURL}/run/?case=${caseRecord.id}&run=${goneResearchRun.id}`, { waitUntil: "networkidle" });
   await page.getByRole("heading", { name: "Proposed research plan" }).waitFor();
   await page.getByRole("button", { name: "Approve research plan" }).click();
-  await page.getByText("Not available in this deployment.", { exact: true }).waitFor();
+  await page.getByText("Unavailable or not permitted.", { exact: true }).waitFor();
   assert.equal(await page.getByRole("button", { name: "Approve research plan" }).count(), 0, "a 404 on approval left the action live on the same run");
   await page.evaluate(({ caseId, runId }) => { window.history.pushState(null, "", `/run/?case=${caseId}&run=${runId}`); }, { caseId: caseRecord.id, runId: pendingResearchRun.id });
   await page.waitForURL((url) => url.searchParams.get("run") === pendingResearchRun.id);
   await page.getByRole("button", { name: "Approve research plan" }).waitFor();
-  assert.equal(await page.getByText("Not available in this deployment.", { exact: true }).count(), 0, "a run-scoped 404 marked plan approval unavailable for every run");
+  assert.equal(await page.getByText("Unavailable or not permitted.", { exact: true }).count(), 0, "a run-scoped 404 marked plan approval unavailable for every run");
   await page.unroute(goneRunPath);
   await page.unroute(goneEventsPath);
   await page.unroute(goneApprovePath);
@@ -1714,6 +1771,7 @@ try {
     const requestBody = route.request().postDataJSON();
     if (previewFails) {
       expectedPreviewValidationFailures += 1;
+      expectedHttpFailures.push(`422 ${route.request().url()}`);
       await route.fulfill({ status: 422, contentType: "application/json", body: JSON.stringify({ detail: "MODEL_PREVIEW_CALCULATION_FAILED" }) });
       return;
     }
@@ -1725,13 +1783,16 @@ try {
     assert.equal(requestBody.expected_head_revision_id, modelRevisions[0]?.id ?? null, "sign-off did not name the case-wide revision head");
     if (signOffConflicts) {
       expectedSignOffConflicts += 1;
+      expectedHttpFailures.push(`409 ${route.request().url()}`);
       const intervening = { id: `revision_intervening_${fixtureSuffix}`, case_id: caseRecord.id, build_id: modelBuildId, accepted_snapshot_id: accepted.id, build_input_fingerprint: "b".repeat(64), build_payload_digest: "c".repeat(64), registry_version: registryVersion, registry_digest: registryDigest, calculation_contract_version: "cp-model-calculation.v1", effective_assumptions: assumptionDefaults, assumptions_digest: "6".repeat(64), outputs: { total_leverage: 4.2, revenue: { FY2025: 1180 } }, outputs_digest: "7".repeat(64), worksheet: modelWorksheet.payload, preview_digest: "8".repeat(64), parent_revision_id: null, note: "Intervening committee update.", revision_number: 1, created_by: "approver@example.com", created_at: "2026-08-24T13:01:00Z", export: { status: "READY", error: null, filename: "northstar-r1.xlsx", sha256: "5".repeat(64), size: 4096 }, state: "ACTIVE" };
       modelRevisions = [intervening];
       signOffConflicts = false;
       await route.fulfill({ status: 409, contentType: "application/json", body: JSON.stringify({ detail: { current: intervening, current_build: modelBuild() } }) });
       return;
     }
-    const revision = { id: `revision_${fixtureSuffix}`, case_id: caseRecord.id, build_id: modelBuildId, accepted_snapshot_id: accepted.id, build_input_fingerprint: "b".repeat(64), build_payload_digest: "c".repeat(64), registry_version: registryVersion, registry_digest: registryDigest, calculation_contract_version: "cp-model-calculation.v1", effective_assumptions: requestBody.assumptions, assumptions_digest: "1".repeat(64), outputs: { total_leverage: 4.1, revenue: { FY2025: 1194.8 } }, outputs_digest: "2".repeat(64), worksheet: modelWorksheet.payload, preview_digest: requestBody.preview_digest, parent_revision_id: requestBody.parent_revision_id, note: requestBody.note, revision_number: modelRevisions.length + 1, created_by: "analyst@example.com", created_at: "2026-08-24T13:02:00Z", export: { status: "READY", error: null, filename: "northstar-r2.xlsx", sha256: "5".repeat(64), size: 4096 }, state: "ACTIVE" };
+    const signedGrowth = Number(requestBody.assumptions.find((row) => row.assumption_id === assumptionDefinition.assumption_id && row.case === "BASE" && row.period_id === "FY2025")?.value);
+    assert.ok(Number.isFinite(signedGrowth), "sign-off omitted the edited revenue-growth assumption");
+    const revision = { id: `revision_${fixtureSuffix}`, case_id: caseRecord.id, build_id: modelBuildId, accepted_snapshot_id: accepted.id, build_input_fingerprint: "b".repeat(64), build_payload_digest: "c".repeat(64), registry_version: registryVersion, registry_digest: registryDigest, calculation_contract_version: "cp-model-calculation.v1", effective_assumptions: requestBody.assumptions, assumptions_digest: "1".repeat(64), outputs: { total_leverage: Number((4.2 - signedGrowth * 2.5).toFixed(2)), revenue: { FY2025: 1194.8 } }, outputs_digest: "2".repeat(64), worksheet: modelWorksheet.payload, preview_digest: requestBody.preview_digest, parent_revision_id: requestBody.parent_revision_id, note: requestBody.note, revision_number: modelRevisions.length + 1, created_by: "analyst@example.com", created_at: "2026-08-24T13:02:00Z", export: { status: "READY", error: null, filename: "northstar-r2.xlsx", sha256: "5".repeat(64), size: 4096 }, state: "ACTIVE" };
     modelRevisions = [revision, ...modelRevisions.map((item) => ({ ...item, state: "SUPERSEDED" }))];
     await route.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify(revision) });
   });
@@ -2002,7 +2063,8 @@ try {
   await page.getByRole("button", { name: "Save model version" }).click();
   await page.getByText("Application model · R2").waitFor();
   assert.equal(signOffPosts, 2, "conflict and recovered sign-off requests did not both reach the server seam");
-  assert.notEqual(modelRevisions[0].outputs.total_leverage, 4.2, "forecast assumption did not change the signed forward output");
+  assert.equal(modelRevisions[0].outputs.total_leverage, 4.1,
+    "forecast assumption did not change the signed forward output");
   assert.equal(await historicalWorksheetCell.innerText(), historicalWorksheetValue, "forecast assumption changed a historical source cell");
   assert.equal(await calculatedWorksheetCell.innerText(), calculatedWorksheetValue, "forecast assumption changed a calculated historical cell");
   await page.evaluate(() => {
@@ -2137,17 +2199,6 @@ try {
     if (readOnly) modelRevisions = modelRevisions.map((item) => ({ ...item, export: { ...item.export, status: "READY", error: null } }));
   }
   modelRole = "ANALYST";
-  // The only native dialog that belongs to this journey is the browser's own
-  // beforeunload prompt, raised by the dirty-draft guard when the next goto
-  // leaves an edited Model Builder: it is accepted and counted (native proof of
-  // the guard, beside the synthetic dispatch above). Every other native dialog —
-  // a reintroduced window.confirm/alert/prompt — is recorded and fails the run
-  // instead of being auto-accepted and forgotten (FE-A0 §4).
-  page.on("dialog", (dialog) => {
-    if (dialog.type() === "beforeunload") { beforeunloadPrompts += 1; void dialog.accept(); return; }
-    unexpectedDialogs.push(`${dialog.type()}: ${dialog.message()}`);
-    void dialog.dismiss();
-  });
   for (const [state, text] of [["FAILED", "MODEL CALCULATION FAILED"], ["NOT_READY", "ACCEPTED FULL CREDIT REQUIRED"]]) {
     modelState = state; modelExportState = "NOT_REQUESTED";
     await page.goto(`${baseURL}/model/?case=${caseRecord.id}&state=${state}`, { waitUntil: "networkidle" });
@@ -2435,6 +2486,7 @@ try {
       if (reportConflict) {
         reportConflict = false;
         expectedReportConflicts += 1;
+        expectedHttpFailures.push(`409 ${route.request().url()}`);
         const current = { ...workspace.current, id: `deliverable_conflict_${pathway.toLowerCase()}`, version: workspace.current.version + 1, author: "second-writer", created_at: "2026-08-26T10:30:00Z" };
         workspace.current = current; workspace.history.push(current);
         return route.fulfill({ status: 409, contentType: "application/json", body: JSON.stringify({ detail: { code: "DELIVERABLE_VERSION_CONFLICT", current } }) });
@@ -2476,7 +2528,7 @@ try {
             debt: { BASE: { FY2027: { total_debt_reported: 630, net_debt: 590 } }, DOWNSIDE: { FY2027: { total_debt_reported: 630, net_debt: 605 } } },
             warnings: { limitation_flags: ["COVENANT_DATA_UNAVAILABLE"], validation_warnings: ["Covenant headroom cannot be calculated."] },
           },
-          content: workspace.current.content,
+          content: structuredClone(workspace.current.content),
           evidence: [{ source_id: source.id, sha256: source.sha256, block_ids: [source.blocks[0].block_id], withdrawn: false }],
           methodology: { build_id: "deploy-v-workbench" }, renderer: { version: "caos.deliverable-renderer.v3", contract_digest: "3".repeat(64) }, input_fingerprint: inputFingerprint, preview_digest: previewDigest,
           opinion: { opinion_id: signedOpinion.opinion_id, opinion_digest: signedOpinion.opinion_digest, signed_by: signedOpinion.signed_by, signed_at: signedOpinion.signed_at, opinion: signedOpinion.opinion, limitations: signedOpinion.limitations, material_overrides: signedOpinion.material_overrides, rationale: signedOpinion.rationale, binding: {}, supersedes_opinion_id: signedOpinion.supersedes_opinion_id },
@@ -2524,7 +2576,6 @@ try {
   await page.getByRole("heading", { name: "Compose", exact: true }).waitFor();
   await page.getByRole("heading", { name: `${caseRecord.issuer} — ${caseRecord.name}` }).waitFor();
   await page.getByText(signedReportRevision.id, { exact: true }).first().waitFor();
-  assert.equal(await page.evaluate(() => Object.keys(sessionStorage).some((key) => key.startsWith("caos-report-draft:"))), false, "Report Studio retained browser-persistent drafts");
 
   const recoveryPathway = "DEEP_RESEARCH";
   const recoveryTemplate = reportTemplate(recoveryPathway);
@@ -2775,6 +2826,7 @@ try {
   assert.equal(firstFrozen.payload.publication.masthead.approval_state, "PENDING APPROVAL");
   assert.equal(firstFrozen.payload.draft.version, 7, "freeze did not bind the exact saved version");
   assert.equal(firstFrozen.payload.model.revision_id, signedReportRevision.id, "freeze changed the signed model authority");
+  assert.notStrictEqual(firstFrozen.payload.content, reportWorkspaces.get("FULL_CREDIT").current.content, "freeze retained a mutable draft reference");
   assert.deepEqual(firstFrozen.payload.content.document_sections, reportWorkspaces.get("FULL_CREDIT").current.content.document_sections, "freeze changed the canonical document");
   assert.equal(await page.getByRole("link", { name: "PDF" }).count(), 0, "Frozen Deliverable exposed unfiled bytes");
   const frozenPaper = page.getByRole("article", { name: "Frozen Deliverable preview" });
@@ -2968,8 +3020,6 @@ try {
   await page.setViewportSize({ width: 720, height: 900 });
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth);
   assert.equal(overflow, false, "workbench causes page-level horizontal overflow at reflow width");
-  assert.deepEqual(errors, []);
-
   await page.goto(`${baseURL}/portfolio/?case=${caseRecord.id}`, { waitUntil: "networkidle" });
   const registerMeta = page.locator(".cases-register .panel-meta");
   const caseSearch = page.getByRole("searchbox", { name: "Search credits" });
@@ -2997,6 +3047,7 @@ try {
     "page overflows horizontally at 200% desktop zoom width",
   );
   await page.setViewportSize({ width: 1280, height: 720 });
+  await settlePageErrorAttribution(page);
   await context.close();
 
   const reduced = watchExternalGoogleFonts(await browser.newContext({
@@ -3004,7 +3055,7 @@ try {
     reducedMotion: "reduce",
     extraHTTPHeaders: identityHeaders,
   }));
-  const reducedPage = await reduced.newPage();
+  const reducedPage = await watchPageErrors(await reduced.newPage());
   await reducedPage.goto(`${baseURL}/analysis/?case=${chartCase.id}`, { waitUntil: "networkidle" });
   await reducedPage.getByRole("navigation", { name: "Accepted analysis modules" }).getByRole("button").filter({ hasText: "CP-1" }).first().click();
   await reducedPage.waitForFunction((recipeId) => document.querySelector(`.chart-exhibit-canvas[data-recipe-id="${recipeId}"]`)?.getAttribute("data-chart-lifecycle") === "ready", actualCp1Chart.recipe.recipe_id);
@@ -3016,13 +3067,14 @@ try {
   });
   assert.equal(reducedStyle.iterationCount, "1");
   assert.equal(reducedStyle.playState, "paused");
+  await settlePageErrorAttribution(reducedPage);
   await reduced.close();
 
   const zoomed = watchExternalGoogleFonts(await browser.newContext({
     viewport: { width: 720, height: 900 },
     extraHTTPHeaders: identityHeaders,
   }));
-  const zoomedPage = await zoomed.newPage();
+  const zoomedPage = await watchPageErrors(await zoomed.newPage());
   await zoomedPage.goto(`${baseURL}/analysis/?case=${caseRecord.id}`, { waitUntil: "networkidle" });
   // A palette route whose client payload 404s degrades into a full document load, but only
   // after the router has pushed the destination URL. `waitForURL` then resolves on that
@@ -3046,6 +3098,7 @@ try {
   await zoomedPage.goto(`${baseURL}/report/?case=${caseRecord.id}`, { waitUntil: "networkidle" });
   assert.equal(await zoomedPage.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth), false, "Report Studio causes page-level horizontal overflow at 200% desktop zoom width");
 
+  await settlePageErrorAttribution(zoomedPage);
   await zoomed.close();
 
   // Reader mode: same subject, same case standing, READER role. Every shared
@@ -3054,7 +3107,7 @@ try {
     ? { ...identityHeaders, "x-forwarded-groups": "caos-reader" }
     : { "x-caos-role": "READER" };
   const reader = watchExternalGoogleFonts(await browser.newContext({ viewport: { width: 1440, height: 1000 }, extraHTTPHeaders: readerHeaders }));
-  const readerPage = await reader.newPage();
+  const readerPage = await watchPageErrors(await reader.newPage());
   const absent = async (page, name) => assert.equal(
     await page.getByRole("button", { name }).count(), 0, `READER was offered "${name}"`);
 
@@ -3066,6 +3119,7 @@ try {
   assert.ok(await readerPage.getByRole("row").count() > 1, "READER lost read access to the case register");
 
   await readerPage.goto(`${baseURL}/sources/?case=${caseRecord.id}`, { waitUntil: "networkidle" });
+  await readerPage.getByRole("heading", { name: "Documents, extraction and coverage", level: 1 }).waitFor();
   await absent(readerPage, "Upload and version");
   assert.equal(await readerPage.locator("main input[type=file]").count(), 0, "READER was offered a source file input");
 
@@ -3076,15 +3130,18 @@ try {
   assert.equal(await readerPage.locator("#pathway").count(), 0, "READER was offered the compile form");
 
   await readerPage.goto(`${baseURL}/market/?case=${caseRecord.id}`, { waitUntil: "networkidle" });
+  await readerPage.getByRole("heading", { name: "Governed loan universe", level: 1 }).waitFor();
   await absent(readerPage, "Upload CP-3 workbook");
   await readerPage.goto(`${baseURL}/admin/?case=${caseRecord.id}`, { waitUntil: "networkidle" });
-  await absent(readerPage, "Provision member");
+  await readerPage.getByRole("heading", { name: "Deployment capability", level: 1 }).waitFor();
   assert.equal(await readerPage.evaluate(() => document.querySelector("main")?.textContent?.includes("Reader access: member provisioning is an analyst action.")), true,
     "Admin did not say why provisioning is absent");
+  await absent(readerPage, "Provision member");
   await readerPage.getByRole("button", { name: "Download audit package" }).waitFor();
 
   // The gate must fail closed even when /api/me never answers successfully.
   await readerPage.route((url) => url.pathname === "/api/me", (route) => route.abort("failed"));
+  expectedReaderIdentityFailure = true;
   await readerPage.goto(`${baseURL}/portfolio/?case=${caseRecord.id}`, { waitUntil: "networkidle" });
   await readerPage.waitForTimeout(500);
   await absent(readerPage, "Create case");
@@ -3102,6 +3159,11 @@ try {
   for (const engineText of ["Failed to fetch", "NetworkError when attempting to fetch resource.", "Load failed"]) {
     assert.equal(alertText.some((text) => text.includes(engineText)), false, `the page-level alert carried engine text: ${engineText}`);
   }
+  assert.equal(readerIdentityFailureSeen, true, "the controlled reader identity failure was not observed");
+  assert.ok(expectedHttpFailures.length > 0, "the journey exercised no controlled HTTP refusals");
+  assert.deepEqual(observedHttpFailures.sort(), expectedHttpFailures.sort(), "a controlled HTTP refusal was missing or duplicated");
+  await settlePageErrorAttribution(readerPage);
+  assert.deepEqual(errors, [], "a console or page error appeared during the journey");
   assert.deepEqual(unexpectedDialogs, [], "a native dialog appeared during the journey");
   await reader.close();
   assert.deepEqual(externalGoogleFontRequests, [], "workbench requested an external Google font");

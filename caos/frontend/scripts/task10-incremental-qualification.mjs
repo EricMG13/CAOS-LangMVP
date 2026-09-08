@@ -109,6 +109,7 @@ try {
   const overlayBuild = await readyModel(api, caseId);
   assert.equal(overlayBuild.accepted_snapshot_id, incrementalSnapshot.id);
   assert.notEqual(overlayBuild.id, baseBuild.id);
+  assert.notEqual(overlayBuild.payload_digest, baseBuild.payload_digest, "incremental evidence did not change the governed model payload");
   evidence.incremental = {
     pathway: "EARNINGS_UPDATE",
     run_id: incrementalRun.id,

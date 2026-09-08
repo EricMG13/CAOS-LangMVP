@@ -18,6 +18,7 @@ import logging
 import sqlite3
 import threading
 import time
+from weakref import WeakValueDictionary
 from pathlib import Path
 from typing import Any
 
@@ -55,7 +56,7 @@ from .budget import (
     EVIDENCE_READS_PER_MODULE,
     MAX_ACTIVE_JOBS,
     PROVIDER_CONCURRENCY_SLOTS,
-    bound_manifest,
+    source_manifest,
     route_envelope,
 )
 from .deterministic import build_deterministic_payload
@@ -212,10 +213,11 @@ CLOSE_DRAIN_TIMEOUT_SECONDS = 5.0
 
 # /api/health is unauthenticated (oauth2-proxy `skip_auth_routes`) AND exempt
 # from the per-subject rate ceiling, so its cost is an anonymous caller's to
-# spend. Verifying the bundle hashes 307 files (~12 ms); this bounds that to
+# spend. Verifying the bundle hashes 310 files; this bounds that to
 # once per window while still re-probing continuously — a readiness answer that
 # is at most five seconds stale is still a readiness answer.
 READINESS_TTL_SECONDS = 5.0
+READINESS_TIMEOUT_SECONDS = 1.0
 
 
 class EngineError(RuntimeError):
@@ -278,8 +280,8 @@ class Engine:
         self._build_override: str | None = None
         self._crash_gap: dict[str, str] = {}
         self._crash_before_create: set[str] = set()
-        self._agent_locks: dict[tuple[int, str], asyncio.Lock] = {}
-        self._thread_locks: dict[tuple[int, str], asyncio.Lock] = {}
+        self._agent_locks: WeakValueDictionary[tuple[int, str], asyncio.Lock] = WeakValueDictionary()
+        self._thread_locks: WeakValueDictionary[tuple[int, str], asyncio.Lock] = WeakValueDictionary()
         self._auto_continue = False
         self._continuations: set[asyncio.Task[Any]] = set()
         self._slots = ProviderSlots(PROVIDER_CONCURRENCY_SLOTS)
@@ -288,6 +290,7 @@ class Engine:
         self._placeholder_deterministic_runs: set[str] = set()
         self._readiness: tuple[float, dict[str, bool]] | None = None
         self._readiness_lock = threading.Lock()
+        self._readiness_pending: concurrent.futures.Future[dict[str, bool]] | None = None
         self._lifecycle_lock = threading.Lock()
         self._saver_initializations: set[asyncio.Task[Any]] = set()
         self._close_in_progress = False
@@ -811,6 +814,8 @@ class Engine:
         if live_sources is None:
             raise AgentError("AGENT_AUTHORITY_MISMATCH", "source authority changed at the gate")
         self._verify_source_vault(live_sources)
+        if self._route_requires_agent(run["pathway"], run["depth"]):
+            source_manifest(live_sources)
         if run["status"] == "paused":
             # The node re-runs from the top on resume, so a run that entered
             # this invocation paused is a run whose gate has just cleared.
@@ -1470,25 +1475,7 @@ class Engine:
             if budget["inflight_request_digest"]:
                 raise AgentError("AGENT_BUDGET_EXCEEDED", "unresolved provider request from a prior execution")
 
-            manifest = []
-            for source in live_sources:  # validated live in _run_module, before reuse or mode dispatch
-                manifest.append({
-                    "source_id": source["id"],
-                    "sha256": source["sha256"],
-                    "filename": source.get("filename", source["id"]),
-                    "media_type": source.get("media_type", "application/octet-stream"),
-                    "preparation": {
-                        "representation": "pinned_blocks",
-                        "block_count": len(source.get("blocks") or []),
-                        "content_digest": digest(source.get("blocks") or []),
-                    },
-                    "blocks": [
-                        {"block_id": block.get("block_id"), "locator": block.get("locator"),
-                         "extractor_version": block.get("extractor_version"), "confidence": block.get("confidence")}
-                        for block in source.get("blocks") or []
-                    ],
-                })
-            bound_manifest(manifest)
+            manifest = source_manifest(live_sources)
 
             case = self.store.get_case(run["case_id"])
             if case is None:
@@ -2116,9 +2103,6 @@ class Engine:
             raise EngineError("RESEARCH_BRIEF_NOT_APPLICABLE", "research_brief is only valid for DEEP_RESEARCH")
         if self.store.get_case(case_id) is None:
             raise EngineError("CASE_NOT_FOUND", case_id)
-        model_jobs = self._model_service.active_job_count() if self._model_service is not None else 0
-        if self.runs.active_admission_count() + self._admission_offset + model_jobs >= MAX_ACTIVE_JOBS:
-            raise EngineError("ADMISSION_BUSY", "active job ceiling reached")
         for question in focus_questions or []:
             state_mod.validate_boundary_text(question)
         admitted_identity = self._provider_identity
@@ -2137,6 +2121,20 @@ class Engine:
                     self._default_provider()
             except AgentError as exc:
                 raise EngineError(exc.code, "provider identity is not current") from exc
+            current = self.store.current_source_set(case_id)
+            if current:
+                live = self.store.sources_for_live_set(case_id, current["id"], current["version"])
+                if live is None:
+                    raise EngineError("AGENT_AUTHORITY_MISMATCH", "source authority changed before admission")
+                try:
+                    await asyncio.to_thread(source_manifest, live)
+                except AgentError as exc:
+                    raise EngineError(exc.code, "source manifest exceeds execution limits") from exc
+        # No await between this count and create: manifest preflight above can
+        # yield, and every concurrent admission must see the preceding row.
+        model_jobs = self._model_service.active_job_count() if self._model_service is not None else 0
+        if self.runs.active_admission_count() + self._admission_offset + model_jobs >= MAX_ACTIVE_JOBS:
+            raise EngineError("ADMISSION_BUSY", "active job ceiling reached")
         run = self.runs.create_run(case_id, pathway, depth, actor,
                                    focus_questions=focus_questions,
                                    upgraded_from_run_id=upgraded_from_run_id,
@@ -2340,13 +2338,32 @@ class Engine:
             now = self._clock()
             if self._readiness is not None and now - self._readiness[0] < READINESS_TTL_SECONDS:
                 return dict(self._readiness[1])
-            checks = {
-                "store": _probe(self._probe_store),
-                "bundle": _probe(self.bundle.verify),
-                "checkpointer": _probe(self._probe_checkpointer),
-            }
-            self._readiness = (now, checks)
-            return dict(checks)
+            if self._readiness_pending is None:
+                future: concurrent.futures.Future[dict[str, bool]] = concurrent.futures.Future()
+                self._readiness_pending = future
+
+                def probe() -> None:
+                    checks = {
+                        "store": _probe(self._probe_store), "bundle": _probe(self.bundle.verify),
+                        "checkpointer": _probe(self._probe_checkpointer),
+                    }
+                    with self._readiness_lock:
+                        self._readiness = (self._clock(), checks)
+                        self._readiness_pending = None
+                    future.set_result(checks)
+
+                threading.Thread(target=probe, name="caos-readiness", daemon=True).start()
+            pending = self._readiness_pending
+        # A hung database holds one daemon probe, never the shared HTTP pool or
+        # this lock. Overlapping callers share its result and bounded wait.
+        try:
+            checks = pending.result(timeout=READINESS_TIMEOUT_SECONDS)
+        except concurrent.futures.TimeoutError:
+            checks = {"store": False, "bundle": False, "checkpointer": False}
+            with self._readiness_lock:
+                if self._readiness_pending is pending:
+                    self._readiness = (self._clock(), checks)
+        return dict(checks)
 
     def _probe_store(self) -> None:
         with self.store.engine.connect() as conn:
@@ -2457,8 +2474,10 @@ class Engine:
         if self._model_service is not None:
             # Acceptance is durable first; a queue/dispatch failure never rolls
             # it back (§10.6 hook — accepted FULL_CREDIT auto-queues a build).
-            with contextlib.suppress(Exception):
+            try:
                 self._model_service.on_accepted(self.runs.get_run(run_id), actor)
+            except Exception as exc:
+                log_event("model.auto_queue_failed", run_id=run_id, error_type=type(exc).__name__)
         self._placeholder_deterministic_runs.discard(run_id)
         return self._snapshot_view(snapshot)
 

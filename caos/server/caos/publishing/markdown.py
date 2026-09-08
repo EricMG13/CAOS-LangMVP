@@ -165,14 +165,24 @@ def _md_cell(value: Any) -> str:
     return str(value).replace("|", r"\|").replace("\n", " ")
 
 
-def _md_section(section: dict[str, Any], depth: int, lines: list[str], *, charts: bool = False) -> None:
+def _md_text(value: Any) -> str:
+    text = re.sub(r"[\r\n\t]", " ", str(value))
+    text = re.sub(r"([\\`*{}\[\]<>()#|&])", r"\\\1", text)
+    # Metadata is always inline: decimal points and hyphens cannot start a
+    # block, and CommonMark leaves underscores inside words literal.
+    return re.sub(r"(?<!\w)_|_(?!\w)", r"\_", text)
+
+
+def _md_section(section: dict[str, Any], depth: int, lines: list[str], *, charts: bool = False, plain_metadata: bool = False) -> None:
+    plain = _md_text if plain_metadata else str
+    cell_text = _md_text if plain_metadata else _md_cell
     level = "#" * min(3 + depth, 6)
-    lines.append(f"{level} {section['title']} · {_origin_label(section)}")
+    lines.append(f"{level} {plain(section['title'])} · {plain(_origin_label(section))}")
     kind = section["kind"]
     if kind == "columns":
         for column in section["items"]:
             for item in column:
-                _md_section(item, depth + 1, lines, charts=charts)
+                _md_section(item, depth + 1, lines, charts=charts, plain_metadata=plain_metadata)
         return
     rows = _section_rows(section)
     if kind in {"table", "chart"}:
@@ -183,43 +193,47 @@ def _md_section(section: dict[str, Any], depth: int, lines: list[str], *, charts
             else:
                 lines.append(f"Chart exhibit · {recipe.get('chart_kind', 'chart')} · authoritative data table follows")
         header = rows[0]
-        lines.append("| " + " | ".join(_md_cell(cell) for cell in header) + " |")
+        lines.append("| " + " | ".join(cell_text(cell) for cell in header) + " |")
         lines.append("| " + " | ".join("---:" if all(_is_numeric(row[index]) for row in rows[1:] if index < len(row)) and len(rows) > 1 else "---" for index, _ in enumerate(header)) + " |")
-        lines.extend("| " + " | ".join(_md_cell(cell) for cell in row) + " |" for row in rows[1:])
+        lines.extend("| " + " | ".join(cell_text(cell) for cell in row) + " |" for row in rows[1:])
         if not rows[1:]:
             lines.append("_No rows._")
     elif kind == "profile":
-        lines.extend(f"- **{_md_cell(label)}:** {_md_cell(value)}" for label, value in rows)
+        lines.extend(f"- **{cell_text(label)}:** {cell_text(value)}" for label, value in rows)
     elif kind == "list":
-        lines.extend(f"- {_md_cell(row[0])}" for row in rows)
+        lines.extend(f"- {cell_text(row[0])}" for row in rows)
     else:
         lines.append(section["body"])
     if section.get("note"):
-        lines.append(f"_{section['note']}_")
+        lines.append(f"_{plain(section['note'])}_")
     lines.append("")
 
 
 def render_frozen_markdown(payload: dict[str, Any]) -> bytes:
     view = publication_view(payload)
     masthead = view["masthead"]
+    version = (payload.get("renderer") or {}).get("version")
+    plain_metadata = version == "caos.deliverable-renderer.v5"
+    plain = _md_text if plain_metadata else str
+    cell_text = _md_text if plain_metadata else _md_cell
     lines = [
-        f"# {masthead.get('issuer', '')} — {masthead.get('report_type', '')}",
+        f"# {plain(masthead.get('issuer', ''))} — {plain(masthead.get('report_type', ''))}",
         "",
-        _masthead_line(masthead, "MASTHEAD"),
+        plain(_masthead_line(masthead, "MASTHEAD")),
         "",
         "| Field | Value |",
         "| --- | --- |",
-        *[f"| {label} | {_md_cell(masthead.get(key, ''))} |" for label, key in MASTHEAD_FIELDS],
+        *[f"| {label} | {cell_text(masthead.get(key, ''))} |" for label, key in MASTHEAD_FIELDS],
         "",
-        f"> {masthead.get('watermark', PENDING_APPROVAL)} — the approver is recorded in the detached filing receipt, never in these bytes.",
+        f"> {plain(masthead.get('watermark', PENDING_APPROVAL))} — the approver is recorded in the detached filing receipt, never in these bytes.",
         "",
     ]
     for index, page in enumerate(view["pages"], start=1):
-        lines.append(f"## {page['name']} · Page {index} of {len(view['pages'])}")
+        lines.append(f"## {plain(page['name'])} · Page {index} of {len(view['pages'])}")
         lines.append("")
         for section in page["sections"]:
-            _md_section(section, 0, lines, charts=(payload.get("renderer") or {}).get("version") == "caos.deliverable-renderer.v4")
+            _md_section(section, 0, lines, charts=version in {"caos.deliverable-renderer.v4", "caos.deliverable-renderer.v5"}, plain_metadata=plain_metadata)
     lines.append("## Revision Record")
-    lines.extend(f"- {label}: {value}" for label, value in view["revision"])
+    lines.extend(f"- {label}: {plain(value)}" for label, value in view["revision"])
     return ("\n".join(lines) + "\n").encode("utf-8")
 # --- END SHARED RENDERER ---

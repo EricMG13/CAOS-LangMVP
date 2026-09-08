@@ -1,7 +1,7 @@
 // Written against a SEEDED production deployment, not a fresh one, and it does
 // not pass against this build. Two of the routes it walks are not served here:
-// GET /api/cases/{id}/runs (only POST exists) and /api/cases/{id}/members (no
-// route at all), and CAOS_CASE_ID defaults to a fixture case id from another
+// GET /api/cases/{id}/runs is absent (only POST exists). Member provisioning is
+// served by POST /api/cases/{id}/members. CAOS_CASE_ID defaults to a fixture case id from another
 // environment. Left in place deliberately — it is the inventory for a deployment
 // that serves those routes, so run it there, not against dev.py or run.py. See
 // the known-gaps ledger in CLAUDE.md.
@@ -39,6 +39,13 @@ const adminHeaders = headersFor(adminUser, "caos-admin");
 const readerHeaders = headersFor(readerUser, "caos-reader");
 const exactURL = (path) => new URL(path, baseURL).href;
 const sleep = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
+const bounded = (promise, message, ms = 10_000) => {
+  let timer;
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(message)), ms); }),
+  ]).finally(() => clearTimeout(timer));
+};
 const expectedPathways = [
   "COVENANT_REFINANCING",
   "DEEP_RESEARCH",
@@ -90,7 +97,7 @@ async function probeLoading(context, role, url, endpoint) {
   });
   try {
     await page.goto(url, { waitUntil: "domcontentloaded" });
-    await seen;
+    await bounded(seen, `${role} loading probe did not request ${endpoint}`);
     await page.getByRole("status", { name: "Loading" }).first().waitFor();
   } finally {
     release();

@@ -143,6 +143,13 @@ MULTIPART = {
     ("POST", "/api/intake"): [("files", ("audit.txt", b"audit evidence line\n", "text/plain"))],
     ("POST", "/api/cases/{case_id}/sources"): [("file", ("audit.txt", b"audit evidence line\n", "text/plain"))],
 }
+# These exact typed failures are expected in this deliberately offline fixture.
+# No generic 500 or unrelated 503 may masquerade as passing authorization.
+EXPECTED_UNAVAILABLE = {
+    ("POST", "/api/cases/{case_id}/runs"): {"detail": {"code": "AGENT_EXECUTION_DISABLED"}},
+    ("POST", "/api/runs/{run_id}/upgrade"): {"detail": {"code": "AGENT_IDENTITY_MISMATCH"}},
+    ("POST", "/api/cases/{case_id}/sources"): {"detail": "malware scanner is not configured"},
+}
 # Actor -> (OIDC groups, stored case standing on case A). "REMOVED" means the
 # membership row existed and was deleted (no route removes members yet, so the
 # audit removes the row directly — the same state an IdP-driven revocation
@@ -451,6 +458,8 @@ def main() -> int:
             if parameter.get("in") == "query"
         }
         expected_queries = {("GET", "/api/cases/{case_id}/models/assumption-registry", "build_id")}
+        expected_queries.update({("GET", "/api/cases", "limit"), ("GET", "/api/cases", "cursor"),
+                                 ("GET", "/api/runs/{run_id}", "include_events")})
         expected_queries.update(("GET", f"/api/cases/{{case_id}}/{route}", field)
                                 for route, fields in (("source-summaries", ("cursor", "limit")),
                                                       ("evidence-search", ("q", "cursor", "limit")))
@@ -532,7 +541,7 @@ def main() -> int:
                     for actor in WRITERS + ("admin-stored-reader",):
                         status = _request(client, method, path, headers[actor]).status_code
                         matrix_cells += 1
-                        if status in {401, 403, 404}:
+                        if status in {401, 403, 404} or status >= 500:
                             failures.append(f"{method} {path}: {actor} -> {status} (a writer must pass the gate)")
                     if path == "/api/intake":
                         # A case_id in the form is a case boundary like any path parameter.
@@ -564,7 +573,7 @@ def main() -> int:
                     failures.append(f"{method} {path}: member {actor} received the unknown-{scope} response")
                 if not is_write:
                     member_reads[actor] = seen
-                    if seen.status_code in {401, 403}:
+                    if seen.status_code in {401, 403} or seen.status_code >= 500:
                         failures.append(f"{method} {path}: member {actor} read -> {seen.status_code}")
                 elif actor in READ_ONLY:
                     if seen.status_code != 403:
@@ -572,7 +581,9 @@ def main() -> int:
                 elif approver_only and actor not in APPROVERS:
                     if seen.status_code != 403:
                         failures.append(f"{method} {path}: {actor} on an approver-only route -> {seen.status_code} (expected 403)")
-                elif seen.status_code in {401, 403}:
+                elif seen.status_code in {401, 403} or (seen.status_code >= 500 and not (
+                    seen.status_code == 503 and seen.json == EXPECTED_UNAVAILABLE.get((method, path))
+                )):
                     failures.append(f"{method} {path}: {actor} write -> {seen.status_code} (a writer must pass the gate)")
             if member_reads:
                 # Every member sees the same read: JSON compared exactly, a binary
@@ -584,6 +595,18 @@ def main() -> int:
                     if visible(seen) != baseline:
                         failures.append(f"{method} {path}: {actor} reads differently from analyst ({seen.status_code} vs {member_reads['analyst'].status_code})")
         store.is_member = real_is_member
+
+        # Authorized actors can still request invalid transitions. Prove typed
+        # refusals and unchanged authority; a generic server error is not a pass.
+        members_before = store.get_case(case_a["id"])["members"]
+        for subject, code in (("matrix-approver", "MEMBER_SELF_ROLE_CHANGE"),
+                              ("matrix-administrator", "MEMBER_LAST_ADMIN_DEMOTION")):
+            seen = _request(client, "POST", "/api/cases/{case_id}/members", headers["approver"],
+                            case_id=case_a["id"], body={"subject": subject, "role": "READER"})
+            if seen.status_code != 409 or seen.json != {"detail": {"code": code}}:
+                failures.append(f"members transition {code}: expected typed 409, got {seen.status_code}")
+        if store.get_case(case_a["id"])["members"] != members_before:
+            failures.append("refused membership transition changed case authority")
 
         # --- IAM-013 / SEC-006: cross-case identifiers in bodies and sub-paths ---
         foreign_source = store.ingest({

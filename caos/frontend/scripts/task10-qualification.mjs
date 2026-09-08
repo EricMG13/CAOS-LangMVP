@@ -105,7 +105,7 @@ try {
   const intake = await json(await api.post("/api/intake", { multipart: form }), 201);
   assert.equal(intake.route.pathway, "FULL_CREDIT");
   assert.equal(intake.route.depth, "full");
-  assert.equal(intake.route.selected_by, "host_classification");
+  assert.equal(intake.documents.length, documents.length, "intake omitted an uploaded document");
   assert.ok(intake.documents.every((document) => document.disposition === "used"));
   const caseId = intake.case.id;
   const runId = intake.run.id;

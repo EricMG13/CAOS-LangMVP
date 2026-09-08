@@ -83,6 +83,25 @@ def test_foreign_cases_ignores_a_refused_listing():
     assert capacity.foreign_cases([{"id": "case-1"}, {"id": "case-2"}], {"case-1"}) == {"case-2"}
 
 
+def test_list_cases_follows_the_cursor_until_the_last_page():
+    requests: list[dict[str, str]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        params = dict(request.url.params)
+        requests.append(params)
+        start = 0 if "cursor" not in params else int(params["cursor"].removeprefix("case-")) + 1
+        return httpx.Response(200, json=[{"id": f"case-{index:03d}"} for index in range(start, min(start + 100, 201))])
+
+    listed = capacity.list_cases(_client(handler), WHO)
+
+    assert [case["id"] for case in listed] == [f"case-{index:03d}" for index in range(201)]
+    assert requests == [
+        {"limit": "100"},
+        {"limit": "100", "cursor": "case-099"},
+        {"limit": "100", "cursor": "case-199"},
+    ]
+
+
 def test_every_seeded_document_of_a_case_is_distinct():
     contents = {capacity.seed_document(7, document) for document in range(capacity.DECLARED["documents"])}
     assert len(contents) == capacity.DECLARED["documents"]

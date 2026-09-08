@@ -83,10 +83,10 @@ def identity_from_request(request: Request, settings: Settings) -> Identity:
     subject_header = _identity_text(_trusted_header(request, "x-forwarded-user", production=production))
     email_header = _identity_text(_trusted_header(request, "x-forwarded-email", production=production))
     groups_header = _trusted_header(request, "x-forwarded-groups", production=production)
-    if production and not hmac.compare_digest(
+    if production and (not settings.edge_proxy_secret or not hmac.compare_digest(
         _edge_bytes(edge_authorization),
         _edge_bytes(settings.edge_proxy_secret),
-    ):
+    )):
         raise HTTPException(status_code=401, detail="trusted edge identity required")
     subject = subject_header or email_header
     email = email_header or subject

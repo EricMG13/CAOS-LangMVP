@@ -122,13 +122,11 @@ export function LoadState({ loading, error, empty, title = "Unable to load this 
   return <EmptyBlock>{empty || "No data available."}</EmptyBlock>;
 }
 
-// The observed-404 presentation: a capability whose route this deployment does not
-// serve. Same idiom as the shell's QA drawer state block (state-block unavailable).
-// Deliberately no Retry — a route that is absent cannot succeed on retry.
+// A 404 deliberately does not reveal whether a capability is absent or forbidden.
 export function Unavailable({ title, context }: { title: string; context?: string }) {
   return <div className="state-block unavailable">
     <strong>{title}</strong>
-    <p>Not available in this deployment.</p>
+    <p>Unavailable or not permitted.</p>
     {context ? <p className="muted">{context}</p> : null}
   </div>;
 }

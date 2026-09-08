@@ -56,7 +56,8 @@ try {
         assert.ok(Math.abs(mark.start - start) < 1e-9, `${name}/${category}/${series} baseline`);
         assert.ok(Math.abs(mark.end - start - mark.value) < 1e-9, `${name}/${category}/${series} endpoint`);
         assert.equal(mark.points.length, 4);
-        assert.ok(mark.points.flat().every(Number.isFinite));
+        const coordinates = mark.points.flat();
+        assert.ok(coordinates.length > 0 && coordinates.every(Number.isFinite));
         if (mark.value < 0) negative += mark.value; else positive += mark.value;
       }
     }

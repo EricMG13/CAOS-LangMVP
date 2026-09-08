@@ -38,7 +38,10 @@ def build(settings: Settings, data: Path) -> tuple[FastAPI, Engine]:
     settings.validate_runtime()
     configure_logging(settings)  # JSON on stdout; registers the secrets to redact
     data.mkdir(parents=True, exist_ok=True)
-    store = DomainStore.from_url(settings.database_url or f"sqlite:///{data / 'caos.db'}")
+    store = DomainStore.from_url(
+        settings.database_url or f"sqlite:///{data / 'caos.db'}",
+        role="app",
+    )
     provider = None
     engine = None
     try:
@@ -107,24 +110,25 @@ async def _close_owned(engine: Engine | None, provider: object | None = None) ->
 
 def run_app(settings: Settings, data: Path, *, host: str) -> None:
     """Own the app from assembly through locked serving and ordered shutdown."""
-    app, engine = build(settings, data)
-    serve_owns_async_resources = False
-    try:
-        # Two guards, one instance: the OS lock over the checkpoint location
-        # (the file a second engine would corrupt) and the PostgreSQL advisory
-        # lock for the app role. Both are held before recovery runs or a
-        # socket is bound; a second instance fails here, typed, serving nothing.
-        with checkpoint_lock(engine.checkpoint_path), engine.store.single_instance("app"):
-            serve_owns_async_resources = True
-            serve(app, engine, host=host, port=settings.port)
-    except BaseException:
-        if not serve_owns_async_resources:
+    settings.validate_runtime()
+    with checkpoint_lock(data / "checkpoints.db"):
+        app, engine = build(settings, data)
+        serve_owns_async_resources = False
+        try:
+            # The store already owns the PostgreSQL app-role lock acquired
+            # before schema initialization. This nested guard also preserves
+            # explicit ownership for injected/test stores.
+            with engine.store.single_instance("app"):
+                serve_owns_async_resources = True
+                serve(app, engine, host=host, port=settings.port)
+        except BaseException:
+            if not serve_owns_async_resources:
+                with suppress(BaseException):
+                    asyncio.run(_close_owned(engine))
             with suppress(BaseException):
-                asyncio.run(_close_owned(engine))
-        with suppress(BaseException):
-            engine.store.close()
-        raise
-    engine.store.close()
+                engine.store.close()
+            raise
+        engine.store.close()
 
 
 def main() -> None:

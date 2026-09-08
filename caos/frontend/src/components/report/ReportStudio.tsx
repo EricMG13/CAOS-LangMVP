@@ -181,7 +181,7 @@ export default function ReportStudio(props: ReportProps) {
       setContextError("");
       if (props.acceptedRunId === null) { setInitialPathway("FULL_CREDIT"); return; }
       try {
-        const run = await request<RunRecord>(`/api/runs/${encodeURIComponent(props.acceptedRunId!)}`, {}, controller.signal);
+        const run = await request<RunRecord>(`/api/runs/${encodeURIComponent(props.acceptedRunId!)}?include_events=false`, {}, controller.signal);
         if (controller.signal.aborted) return;
         if (run.case_id !== props.caseId || run.id !== props.acceptedRunId || !pathwayOptions.some(([id]) => id === run.plan.pathway)) throw new Error("Accepted report context does not match this case.");
         setInitialPathway(run.plan.pathway as Pathway);

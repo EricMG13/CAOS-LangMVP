@@ -5,7 +5,8 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
-from urllib.parse import unquote, urlsplit
+
+from sqlalchemy.engine import make_url
 
 
 def _provider_binding(value: str) -> str:
@@ -77,7 +78,7 @@ class Settings:
     # Every environment variable this reads, once each: `from_env` walks this
     # list and the limits spec pins that no read carries a default of its own.
     ENV_NAMES = (
-        "ENVIRONMENT", "DATABASE_URL", "CAOS_STORAGE_DIR", "EDGE_PROXY_SECRET", "SESSION_SECRET",
+        "ENVIRONMENT", "DATABASE_URL", "POSTGRES_PASSWORD", "CAOS_STORAGE_DIR", "EDGE_PROXY_SECRET", "SESSION_SECRET",
         "PORT", "MAX_UPLOAD_MB", "MAX_SOURCE_MB", "RATE_LIMIT_PER_MINUTE", "MAX_CONCURRENT_STREAMS",
         "MAX_CONCURRENT_PREVIEWS", "CLAMAV_HOST", "CLAMAV_PORT", "ANTHROPIC_API_KEY", "ANTHROPIC_MODEL",
         "OPENROUTER_API_KEY", "OPENROUTER_MODEL", "CAOS_PROVIDER_QUALIFICATION_PATH",
@@ -105,6 +106,10 @@ class Settings:
 
         when_set("ENVIRONMENT", "environment")
         when_set("DATABASE_URL", "database_url")
+        if raw["POSTGRES_PASSWORD"] is not None and chosen.get("database_url"):
+            chosen["database_url"] = make_url(chosen["database_url"]).set(
+                password=raw["POSTGRES_PASSWORD"],
+            ).render_as_string(hide_password=False)
         when_set("CAOS_STORAGE_DIR", "storage_dir", Path)
         when_set("EDGE_PROXY_SECRET", "edge_proxy_secret")
         when_set("SESSION_SECRET", "session_secret")
@@ -194,9 +199,7 @@ class Settings:
         if self.environment == "production":
             if not self.database_url.startswith(("postgresql://", "postgresql+psycopg://")):
                 raise RuntimeError("production requires a PostgreSQL DATABASE_URL")
-            # POSTGRES_PASSWORD never reaches Settings on its own — Compose
-            # interpolates it into DATABASE_URL, which is where we can see it.
-            password = unquote(urlsplit(self.database_url).password or "")
+            password = make_url(self.database_url).password or ""
             if not password.strip():
                 raise RuntimeError("production requires POSTGRES_PASSWORD")
             if password.strip().lower().startswith(self._PLACEHOLDER_PREFIXES):

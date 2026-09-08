@@ -73,7 +73,7 @@ FONT_DIR = Path(__file__).resolve().parent / "fonts"
 # so a render change and its version move together (W12, 2026-09-06 review).
 HISTORICAL_RENDERER_VERSION = "caos.deliverable-renderer.v3"
 CHART_RENDERER_VERSION = "caos.deliverable-renderer.v4"
-RENDERER_VERSION = CHART_RENDERER_VERSION
+RENDERER_VERSION = "caos.deliverable-renderer.v5"
 
 FONT_BUNDLE = {
     "DejaVuSans.ttf": "7da195a74c55bef988d0d48f9508bd5d849425c1770dba5d7bfc6ce9ed848954",
@@ -594,7 +594,7 @@ def render_frozen_pdf(payload: dict[str, Any]) -> bytes:
     with tempfile.TemporaryDirectory(prefix="caos-pdf-") as directory:
         workspace = Path(directory)
         laid_out = _paginate(executable, workspace, masthead, [*view["pages"], revision_page],
-                             charts=(payload.get("renderer") or {}).get("version") == CHART_RENDERER_VERSION)
+                             charts=(payload.get("renderer") or {}).get("version") in {CHART_RENDERER_VERSION, RENDERER_VERSION})
         watermark = _watermark_page(executable, workspace, str(masthead.get("watermark") or PENDING_APPROVAL))
         paper = _white_page(executable, workspace)
         offset_x = (PAGE_WIDTH - float(watermark.mediabox.width)) / 2
@@ -604,7 +604,7 @@ def render_frozen_pdf(payload: dict[str, Any]) -> bytes:
             # Fixed-height Pango layout can omit trailing lines after a tall
             # chart spacer even when the natural measured page fits. Render
             # exactly that measured layout; retain historical v3 shaping.
-            height = None if (payload.get("renderer") or {}).get("version") == CHART_RENDERER_VERSION else BODY_HEIGHT
+            height = None if (payload.get("renderer") or {}).get("version") in {CHART_RENDERER_VERSION, RENDERER_VERSION} else BODY_HEIGHT
             rendered = _shape(executable, workspace, f"page-{index:04d}", markup, height=height)
             content = PdfReader(rendered).pages[0]
             footer = _footer_page(executable, workspace, _footer_markup(masthead, index, len(laid_out)))
@@ -680,7 +680,7 @@ def render_frozen_xlsx(payload: dict[str, Any]) -> bytes:
 
     view = publication_view(payload)
     masthead = view["masthead"]
-    charts = (payload.get("renderer") or {}).get("version") == CHART_RENDERER_VERSION
+    charts = (payload.get("renderer") or {}).get("version") in {CHART_RENDERER_VERSION, RENDERER_VERSION}
     bold = Font(bold=True)
     head_fill = PatternFill("solid", fgColor="E9E7DF")
     wrap = Alignment(wrap_text=True, vertical="top")

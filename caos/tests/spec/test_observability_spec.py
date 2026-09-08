@@ -666,6 +666,34 @@ def test_readiness_actually_checks_store_bundle_and_checkpointer(engine):
     assert checks == {"store": True, "bundle": True, "checkpointer": True}
 
 
+def test_stalled_readiness_is_bounded_and_keeps_one_probe(engine, monkeypatch):
+    import threading
+    import time
+    from concurrent.futures import ThreadPoolExecutor
+    from caos.engine import runtime
+
+    release = threading.Event()
+    calls = []
+
+    def stalled():
+        calls.append(1)
+        release.wait(2)
+
+    monkeypatch.setattr(engine, "_probe_store", stalled)
+    monkeypatch.setattr(runtime, "READINESS_TIMEOUT_SECONDS", 0.05, raising=False)
+    try:
+        with ThreadPoolExecutor(max_workers=8) as workers:
+            started = time.monotonic()
+            results = list(workers.map(lambda _: engine.readiness(), range(8)))
+        assert time.monotonic() - started < 0.5
+        assert all(not all(result.values()) for result in results)
+        engine._readiness = None
+        assert not all(engine.readiness().values())
+        assert calls == [1]
+    finally:
+        release.set()
+
+
 def test_a_checkpoint_database_with_a_stuck_writer_is_not_ready(engine):
     """Readiness cannot distinguish a healthy brief writer from a wedged one,
     so it waits briefly and fails closed if the lock still cannot be acquired."""
@@ -702,7 +730,7 @@ def test_health_serves_the_readiness_checks_on_the_strict_wire_model(client):
 
 def test_readiness_is_rechecked_continuously_but_bounded_for_anonymous_callers(engine):
     """/api/health skips oauth2-proxy auth AND the rate ceiling, so its cost is
-    an anonymous caller's to spend. Hashing 307 bundle files per request is a
+    an anonymous caller's to spend. Hashing 310 bundle files per request is a
     lever; one window's worth is not."""
     from caos.engine.runtime import READINESS_TTL_SECONDS
 
@@ -805,3 +833,29 @@ def test_health_fails_closed_when_the_store_is_unreachable(client, engine, store
     assert response.status_code == 503
     assert response.json() == {"status": "degraded", "store": False, "bundle": True,
                                "checkpointer": True, "scanner": "not_required"}
+
+
+def test_completed_health_probe_is_not_timestamped_by_a_later_reader(engine, monkeypatch):
+    import threading
+    from caos.engine import runtime
+
+    release = threading.Event()
+    now = [0.0]
+    monkeypatch.setattr(engine, "_clock", lambda: now[0])
+    monkeypatch.setattr(runtime, "READINESS_TIMEOUT_SECONDS", 0.01)
+    monkeypatch.setattr(engine, "_probe_store", lambda: release.wait(2))
+    try:
+        assert not all(engine.readiness().values())
+        pending = engine._readiness_pending
+        now[0] = 2.0
+        release.set()
+        pending.result(timeout=2)
+        now[0] = 100.0
+
+        def failed():
+            raise RuntimeError("database is now unavailable")
+
+        monkeypatch.setattr(engine, "_probe_store", failed)
+        assert engine.readiness()["store"] is False
+    finally:
+        release.set()
