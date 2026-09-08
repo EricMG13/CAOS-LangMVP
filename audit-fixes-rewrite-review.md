@@ -437,3 +437,57 @@ reports scanner=unavailable while its store, bundle and checkpointer are ready.
 A broader app-health change would weaken the production contract. The only other
 edit is a declarative FILE_MAP entry for the new harness test, so no rewrite is
 warranted. Local quality coverage and shell/syntax checks pass.
+
+## Follow-up pass: ReportStudio identity/autosave race
+
+Target: `caos/frontend/src/components/report/ReportStudio.tsx`, the `load`,
+`retainRecovery`, and `enqueueSave` paths around lines 272-390. Impact callers
+are the Report editor mount/pathway effect, every draft mutation, autosave,
+conflict recovery, and browser recovery actions. Invariants are unchanged
+signatures, case/pathway generation fencing, subject-scoped recovery, and a
+pending autosave surviving identity resolution.
+
+Incumbent: defend the smallest ref-based fix. It keeps the existing sequential
+tab claim and workspace request, removes only `subject` from the workspace load
+dependencies, and adds one subject-arrival recovery read. The editor still
+restarts for case/pathway changes, while dirty content is never replaced by the
+late recovery read.
+
+Speed challenger: remove the initial recovery read from `load`, overlap tab
+claim and workspace fetch with `Promise.all`, and key one recovery effect on a
+`workspaceLoaded` boolean. This avoids parsing the same localStorage slot after
+every `workspace` replacement, but changes the request ordering and broadens the
+post-edit diff without fixing a measured bottleneck.
+
+Readability challenger: use a single `subjectRef` update effect and a dedicated
+`readRecovery` callback called by `load` and the subject effect. This names the
+operation clearly, but adds an abstraction with two call sites and a callback
+dependency solely to avoid two short existing lines.
+
+Memory challenger: same semantic shape as the speed candidate, with one bounded
+recovery parse per subject/case/pathway scope. Its allocation reduction is
+negligible beside the browser document and it still needs a workspace-loaded
+guard for late identity.
+
+Arbiter: the incumbent beats speed on change surface and preserves the current
+claim-before-load order; speed beats readability and memory only on repeated
+localStorage work. The incumbent therefore wins the bracket: the race is fixed
+at the load-effect dependency, with no new helper or API contract.
+
+**Winner**: Incumbent holds, replacing the subject-dependent load lifecycle and
+rendered-subject recovery accesses in `ReportStudio.tsx` lines 219-390.
+
+**Justification**:
+
+- It prevents `/api/me` subject resolution from clearing the pending autosave
+  timer and resetting draft generations.
+- A ref supplies the current subject to save/conflict/clear paths without
+  recreating the workspace load callback.
+- The separate subject/workspace recovery effect handles either arrival order
+  and refuses to overwrite an unsaved draft.
+
+**Verification**: `npm run test:unit -- --test-name-pattern='report|workbench'`
+passed 195 tests; `node --test scripts/audit-fixes.test.mjs`, ESLint with
+`--max-warnings=0`, TypeScript `--noEmit`, quality-ledger coverage, and
+`git diff --check` passed. Every `load`, `retainRecovery`, and `enqueueSave`
+caller was re-read; their signatures and case/pathway fences remain unchanged.

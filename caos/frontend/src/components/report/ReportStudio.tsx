@@ -219,6 +219,8 @@ function ReportEditor({ caseId, role, subject = "", selectedCase, onDraftStateCh
   const [changeComment, setChangeComment] = useState("");
   const [opinionForm, setOpinionForm] = useState<OpinionForm>(EMPTY_OPINION);
   const opinionFormRef = useRef<OpinionForm>(EMPTY_OPINION);
+  const subjectRef = useRef(subject);
+  useEffect(() => { subjectRef.current = subject; }, [subject]);
   const onDraftStateChange = useCallback((dirty: boolean) => {
     notifyDraftStateChange(dirty || Object.values(opinionFormRef.current).some(Boolean));
   }, [notifyDraftStateChange]);
@@ -290,8 +292,8 @@ function ReportEditor({ caseId, role, subject = "", selectedCase, onDraftStateCh
       setIncludedOptionalSectionIds(optionalSectionIdsRef.current);
       const nextModelSelection = next.current?.content.model_selection || next.model_eligibility.default_model_selection;
       setWorkspace(next); setBlocks(nextBlocks); setModelSelection(nextModelSelection); setSelectedBlockId(nextBlocks[0]?.block_id || ""); setSaveState(next.current ? { kind: "SAVED", version: next.current.version } : { kind: "IDLE" });
-      const recoveryRead = readBrowserRecovery(caseId, pathway, subject);
-      const storedRecovery = parseReportRecovery(recoveryRead.raw, caseId, pathway, subject);
+      const recoveryRead = readBrowserRecovery(caseId, pathway, subjectRef.current);
+      const storedRecovery = parseReportRecovery(recoveryRead.raw, caseId, pathway, subjectRef.current);
       setRecovery(storedRecovery);
       setRecoveryError(recoveryRead.failed ? "Browser recovery is unavailable in this session." : recoveryRead.raw && !storedRecovery ? "A stored recovery copy was unreadable and was not restored." : "");
       const buildId = nextModelSelection?.build_id;
@@ -318,9 +320,15 @@ function ReportEditor({ caseId, role, subject = "", selectedCase, onDraftStateCh
       if (generation !== loadGeneration.current || caught instanceof DOMException && caught.name === "AbortError") return;
       setLoadError(firstErrorMessage(caught, "Unable to load Report."));
     } finally { if (generation === loadGeneration.current) setLoading(false); }
-    // `subject` is a load input: the recovery slot is keyed by it, and it resolves
-    // from /api/me after the first render on a cold deep link.
-  }, [caseId, onDraftStateChange, pathway, subject]);
+  }, [caseId, onDraftStateChange, pathway]);
+
+  useEffect(() => {
+    if (!workspace || !subject || unsavedDraft.current) return;
+    const recoveryRead = readBrowserRecovery(caseId, pathway, subject);
+    const storedRecovery = parseReportRecovery(recoveryRead.raw, caseId, pathway, subject);
+    setRecovery(storedRecovery);
+    setRecoveryError(recoveryRead.failed ? "Browser recovery is unavailable in this session." : recoveryRead.raw && !storedRecovery ? "A stored recovery copy was unreadable and was not restored here." : "");
+  }, [caseId, pathway, subject, workspace]);
 
   useEffect(() => () => notifyDraftStateChange(false), [notifyDraftStateChange]);
 
@@ -338,15 +346,15 @@ function ReportEditor({ caseId, role, subject = "", selectedCase, onDraftStateCh
     const dirty = unsaved || Object.values(opinion).some((value) => value.length > 0);
     onDraftStateChange(dirty);
     if (!dirty) {
-      const cleared = clearBrowserRecovery(caseId, pathway, subject);
+      const cleared = clearBrowserRecovery(caseId, pathway, subjectRef.current);
       setRecovery(null);
       setRecoveryError(cleared ? "" : "The saved work's browser recovery copy could not be cleared.");
     } else if (template) {
-      const copy: ReportRecovery = { subject, caseId, pathway, savedAt: Date.now(), expectedVersion: savedVersion.current, templateId: template.template_id, templateVersion: template.template_version, modelSelection: selection, blocks: nextBlocks, opinionForm: opinion, includedOptionalSectionIds: optionalIds };
+      const copy: ReportRecovery = { subject: subjectRef.current, caseId, pathway, savedAt: Date.now(), expectedVersion: savedVersion.current, templateId: template.template_id, templateVersion: template.template_version, modelSelection: selection, blocks: nextBlocks, opinionForm: opinion, includedOptionalSectionIds: optionalIds };
       if (storeBrowserRecovery(copy)) { setRecovery((current) => current ? copy : null); setRecoveryError(""); }
       else setRecoveryError("Browser recovery could not be updated. Keep this tab open until your work is saved and signed.");
     }
-  }, [caseId, onDraftStateChange, pathway, subject, workspace]);
+  }, [caseId, onDraftStateChange, pathway, workspace]);
 
   const changeOpinion = (patch: Partial<OpinionForm>) => {
     const next = { ...opinionFormRef.current, ...patch };
@@ -373,13 +381,13 @@ function ReportEditor({ caseId, role, subject = "", selectedCase, onDraftStateCh
         if (scope !== currentScope.current) return;
         if (caught instanceof ReportRequestError && caught.status === 409 && typeof caught.detail === "object" && caught.detail) {
           const detail = caught.detail as { code?: string; current?: DraftRevision | null };
-          if (detail.code === "DELIVERABLE_VERSION_CONFLICT") { setRecovery(parseReportRecovery(readBrowserRecovery(caseId, pathway, subject).raw, caseId, pathway, subject)); setConflict(detail.current || null); setSaveState({ kind: "CONFLICT", detail: "A newer shared revision is available." }); return; }
+          if (detail.code === "DELIVERABLE_VERSION_CONFLICT") { setRecovery(parseReportRecovery(readBrowserRecovery(caseId, pathway, subjectRef.current).raw, caseId, pathway, subjectRef.current)); setConflict(detail.current || null); setSaveState({ kind: "CONFLICT", detail: "A newer shared revision is available." }); return; }
         }
-        setRecovery(parseReportRecovery(readBrowserRecovery(caseId, pathway, subject).raw, caseId, pathway, subject));
+        setRecovery(parseReportRecovery(readBrowserRecovery(caseId, pathway, subjectRef.current).raw, caseId, pathway, subjectRef.current));
         setSaveState({ kind: "ERROR", detail: firstErrorMessage(caught, "Autosave failed") });
       }
     });
-  }, [canWrite, caseId, pathway, retainRecovery, subject, workspace]);
+  }, [canWrite, caseId, pathway, retainRecovery, workspace]);
 
   const markChanged = useCallback((nextBlocks: DeliverableBlock[], nextSelection = modelSelection, optionalIds = optionalSectionIdsRef.current) => {
     optionalSectionIdsRef.current = optionalIds;

@@ -268,3 +268,17 @@ health semantics. YAML structure, shell syntax, route coverage and JavaScript
 syntax were checked. The local fixture previously returned the documented 503
 with ready core fields; no production endpoint was weakened. CI must be rerun
 on the pushed correction before merge.
+
+Chromium CI follow-up: the focused fixture gate reached `fault-regressions` and
+timed out waiting for the first report draft PUT after the save button click.
+The report editor's load effect depended on `subject`; `/api/me` resolving on a
+cold deep link therefore cleaned up the pending 850 ms autosave timer and reset
+the editor before the request was emitted. This is a real identity/load race,
+not a server refusal: the preceding fixture assertions passed and no response
+event existed to observe. The root fix keeps subject in a ref for request-time
+recovery operations, removes it from the workspace load lifecycle, and adds a
+subject-change recovery read that does not reset dirty work. Subject changes,
+cross-case/pathway changes, save cleanup, and conflict recovery were traced to
+all callers; lint, TypeScript, focused unit tests, the audit harness, quality
+ledger, and diff checks pass. The pushed CI rerun must confirm the browser gate
+and backend matrix before merge.
