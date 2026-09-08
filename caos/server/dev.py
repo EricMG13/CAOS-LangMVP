@@ -20,7 +20,7 @@ def main() -> None:
     settings = Settings.from_env()
     if settings.environment != "development":
         raise RuntimeError("dev.py requires ENVIRONMENT=development")
-    run_app(settings, Path(os.getenv("CAOS_DATA_DIR", ".dev-data")).resolve(), host="127.0.0.1")
+    run_app(settings, Path(os.getenv("CAOS_DATA_DIR", ".dev-data")).resolve(), host=os.getenv("HOST", "127.0.0.1"))
 
 
 if __name__ == "__main__":

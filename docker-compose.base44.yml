@@ -1,0 +1,43 @@
+# Base44 development compose — runs the cloned source with live reload.
+# Backend: python dev.py (SQLite, no external secrets needed in dev mode)
+# Frontend: next dev (proxies /api/* to the backend via next.config.js rewrites)
+services:
+  backend:
+    image: python:3.12-slim
+    working_dir: /app/caos/server
+    volumes:
+      - .:/app
+      - pip-cache:/root/.cache/pip
+    environment:
+      - ENVIRONMENT=development
+      - HOST=0.0.0.0
+      - PORT=8000
+      - CAOS_DATA_DIR=/app/caos/.dev-data
+    command: sh -c "pip install --no-cache-dir -r requirements.txt && python dev.py"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 300s
+    restart: unless-stopped
+
+  frontend:
+    image: node:22-slim
+    working_dir: /app/caos/frontend
+    volumes:
+      - .:/app
+      - frontend-node-modules:/app/caos/frontend/node_modules
+    environment:
+      - API_PROXY_URL=http://backend:8000
+      - BASE44_PUBLIC_HOST_SUFFIX
+    ports:
+      - "3000:3000"
+    command: sh -c "npm ci && npm run dev -- -H 0.0.0.0"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+volumes:
+  pip-cache:
+  frontend-node-modules:

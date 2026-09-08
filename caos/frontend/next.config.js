@@ -14,8 +14,10 @@ const base = {
 module.exports = (phase) => phase === PHASE_DEVELOPMENT_SERVER
   ? {
       ...base,
+      allowedDevOrigins: ["3000-" + (process.env.BASE44_PUBLIC_HOST_SUFFIX || "localhost")],
       async rewrites() {
-        return [{ source: "/api/:path*", destination: `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/:path*` }];
+        const apiUrl = process.env.API_PROXY_URL || process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+        return [{ source: "/api/:path*", destination: `${apiUrl}/api/:path*` }];
       },
     }
   : base;
