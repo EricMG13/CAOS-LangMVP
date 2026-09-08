@@ -282,3 +282,23 @@ cross-case/pathway changes, save cleanup, and conflict recovery were traced to
 all callers; lint, TypeScript, focused unit tests, the audit harness, quality
 ledger, and diff checks pass. The pushed CI rerun must confirm the browser gate
 and backend matrix before merge.
+
+PDF fixture follow-up: the focused source tests passed with the bounded parser
+timeout raised from 20 to 45 seconds. The CI corpus is a 579-page, 3.9 MiB
+legal PDF whose pypdf extraction takes about 25 seconds on this host; the prior
+CPU and parent wall limits terminated it at 15/20 seconds before the page and
+12 MB text ceilings could be evaluated. The subprocess remains isolated, caps
+CPU and wall time at 45 seconds, caps Linux address space at 512 MiB, rejects
+more than 2,000 pages, and incrementally rejects more than 12 MB of text.
+The timeout change is therefore a confirmed fixture compatibility fix while
+retaining finite resource bounds.
+
+Research lifecycle follow-up: the server failure reproduced because the
+`ScriptedProvider` fixture emitted only the six required H2 sections, while the
+Deep Research layout intentionally requires an exact `### Implications`
+subsection inside `Analysis`. The guard therefore identified a real unavailable
+input. The production guard and its ambiguous/missing-subsection tests were
+left unchanged; the fixture now supplies the CP-DR subsection. The targeted
+research lifecycle and module-wiring tests pass, confirming accepted research
+can be signed, frozen, filed, and reconstructed without relaxing publication
+integrity.

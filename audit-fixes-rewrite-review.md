@@ -491,3 +491,18 @@ passed 195 tests; `node --test scripts/audit-fixes.test.mjs`, ESLint with
 `--max-warnings=0`, TypeScript `--noEmit`, quality-ledger coverage, and
 `git diff --check` passed. Every `load`, `retainRecovery`, and `enqueueSave`
 caller was re-read; their signatures and case/pathway fences remain unchanged.
+
+## Follow-up pass: bounded PDF extraction fixture ceiling
+
+The follow-up changes only the existing subprocess CPU and parent wall
+ceilings in `caos/server/caos/sources/pdf.py` and
+`caos/server/caos/sources/domain.py`; the parser, page cap, text cap, and error
+contract are unchanged. This is a four-line limit adjustment with no new
+branching, so the tournament is skipped as a trivial configuration edit.
+The existing subprocess isolation and incremental extraction remain the
+load-bearing design; a direct in-process parser or an unbounded timeout would
+weaken the trust boundary. The 81 focused source/admission tests passed after
+the adjustment.
+
+The CP-DR fixture change is test-only and adds no production branching, so the
+rewrite tournament is skipped for that edit.

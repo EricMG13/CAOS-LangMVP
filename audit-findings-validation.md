@@ -153,4 +153,3 @@ D58 was checked against the pinned checkout commit: [action defaults](https://ra
 For D20, [RFC 9110 safe-method semantics](https://www.rfc-editor.org/rfc/rfc9110.html#section-9.2.1) explicitly permits incidental effects such as access logging. A policy requiring deliberate user intent for an exported-package audit record would be an additional requirement.
 
 The full suite, browser journeys, live PostgreSQL lock timing, production load/OOM behavior, live providers and current remote CI status were not tested. These limits are carried into the per-ID conclusions.
-

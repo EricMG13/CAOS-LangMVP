@@ -269,7 +269,7 @@ def extract_blocks(filename: str, content: bytes) -> list[dict[str, Any]]:
             result = subprocess.run(
                 [sys.executable, str(Path(__file__).with_name("pdf.py")), str(MAX_SOURCE_TEXT), str(MAX_PDF_PAGES)],
                 input=content, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
-                timeout=20, check=False,
+                timeout=45, check=False,
             )
         except subprocess.TimeoutExpired as exc:
             raise HTTPException(status_code=422, detail=EXTRACTION_LIMIT_DETAIL) from exc
