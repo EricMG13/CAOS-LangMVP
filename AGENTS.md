@@ -1,29 +1,36 @@
 # CAOS — Base44 Development Notes
 
 ## Architecture
-- **Backend**: Python 3.12 FastAPI server in `caos/server/`. Dev entrypoint is `python dev.py` (SQLite under `.dev-data`, no external secrets needed).
-- **Frontend**: Next.js 16 app in `caos/frontend/`. Dev server proxies `/api/*` to the backend via `next.config.js` rewrites.
-- **Single-origin wiring**: Only port 3000 (frontend) is public. The Next.js dev server proxies all `/api/*` requests to the internal backend on port 8000.
+- **Backend**: Python 3.12 FastAPI server in `caos/server/`. Entry point `python dev.py` (ENVIRONMENT=development; SQLite under `caos/.dev-data`, no external secrets needed).
+- **Frontend**: Next.js 16 app in `caos/frontend/`, statically exported (`output: "export"`).
 
-## Running
+## Current topology: combined app (production frontend build)
+`docker-compose.base44.yml` runs:
+1. **frontend-build** (one-shot, exits): `npm ci && npm run build` → static export in `caos/frontend/out/` (gitignored).
+2. **backend**: installs pinned deps from `caos/server/requirements.txt`, runs `python dev.py` on 0.0.0.0:8000, mapped to host **port 3000**.
+
+The backend serves the API and, because `caos/frontend/out/` exists, mounts the static export at `/` (API routes registered first, so `/api/*` wins — see `build()` in `caos/server/run.py`). One origin, no proxy needed.
+
+## Running / rebuilding
 ```bash
-docker compose -f docker-compose.base44.yml up -d --build
+docker compose -f docker-compose.base44.yml up -d --remove-orphans   # build + serve
+docker compose -f docker-compose.base44.yml run --rm frontend-build  # frontend-only rebuild
 ```
-- Backend installs deps from `caos/server/requirements.txt` (pinned with hashes), then runs `python dev.py` binding to `0.0.0.0:8000`.
-- Frontend runs `npm ci && npm run dev -- -H 0.0.0.0` on port 3000.
-- First boot takes several minutes (pip install + npm ci). Subsequent restarts use cached volumes.
+After a frontend rebuild, the running backend serves the new files on the next request (StaticFiles reads from disk per request) — no backend restart needed.
 
-## Key env vars
-- `ENVIRONMENT=development` — required by `dev.py`.
-- `HOST=0.0.0.0` — makes the backend reachable from the frontend container.
-- `API_PROXY_URL=http://backend:8000` — server-side rewrite target in `next.config.js` (not exposed to client code; client uses relative `/api/` URLs).
-- `BASE44_PUBLIC_HOST_SUFFIX` — used for Next.js `allowedDevOrigins`.
+## Key env vars (backend service)
+- `ENVIRONMENT=development` — required by `dev.py`. True production mode (`run.py`) requires PostgreSQL + real edge/session secrets + OIDC identity via oauth2-proxy, none of which exist here.
+- `HOST=0.0.0.0` — binds all interfaces so port mapping works.
+- `CAOS_DATA_DIR=/app/caos/.dev-data` — SQLite store + LangGraph checkpoints.
 
 ## Dev mode identity
-In development, the backend's identity gate is a no-op — requests default to the "analyst" user with ANALYST role. No auth headers needed from the frontend.
+In development the backend's identity gate is a no-op — requests default to the "analyst" user with ANALYST role. No auth headers needed.
 
 ## Agent execution
-LLM agent execution is OFF by default (`AGENT_EXECUTION_ENABLED=false`). Screen runs work without any provider key. To enable agent execution, set `AGENT_EXECUTION_ENABLED=true` and provide a provider key (Anthropic/OpenAI).
+LLM agent execution is OFF by default (`AGENT_EXECUTION_ENABLED=false`). Screen runs work without any provider key. To enable, set `AGENT_EXECUTION_ENABLED=true` plus a provider key (Anthropic/OpenAI/OpenRouter).
+
+## Hot-reload alternative
+The previous dev wiring (Next.js dev server on 3000 proxying `/api/*` to the backend) can be restored; it needs `API_PROXY_URL=http://backend:8000` (server-side rewrite target in `next.config.js`) and `BASE44_PUBLIC_HOST_SUFFIX` for `allowedDevOrigins`. Those code hooks are already in place.
 
 ## No external secrets required
 The dev mode boots without any external credentials. SQLite is used for both the domain store and LangGraph checkpoints.

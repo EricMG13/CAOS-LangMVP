@@ -1,7 +1,18 @@
-# Base44 development compose — runs the cloned source with live reload.
-# Backend: python dev.py (SQLite, no external secrets needed in dev mode)
-# Frontend: next dev (proxies /api/* to the backend via next.config.js rewrites)
+# Base44 compose — production frontend build served by the backend as one
+# combined app. The one-shot frontend-build service runs `next build`
+# (output: "export" -> caos/frontend/out), then the backend serves the API
+# plus that static export on host port 3000 (API routes registered first, so
+# they win; everything else falls through to the static mount).
 services:
+  frontend-build:
+    image: node:22-slim
+    working_dir: /app/caos/frontend
+    volumes:
+      - .:/app
+      - frontend-node-modules:/app/caos/frontend/node_modules
+    command: sh -c "npm ci && npm run build"
+    restart: "no"
+
   backend:
     image: python:3.12-slim
     working_dir: /app/caos/server
@@ -13,29 +24,18 @@ services:
       - HOST=0.0.0.0
       - PORT=8000
       - CAOS_DATA_DIR=/app/caos/.dev-data
-    command: sh -c "pip install --no-cache-dir -r requirements.txt && python dev.py"
+    ports:
+      - "3000:8000"
+    command: sh -c "pip install -r requirements.txt && python dev.py"
+    depends_on:
+      frontend-build:
+        condition: service_completed_successfully
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health')"]
       interval: 10s
       timeout: 5s
       retries: 12
       start_period: 300s
-    restart: unless-stopped
-
-  frontend:
-    image: node:22-slim
-    working_dir: /app/caos/frontend
-    volumes:
-      - .:/app
-      - frontend-node-modules:/app/caos/frontend/node_modules
-    environment:
-      - API_PROXY_URL=http://backend:8000
-      - BASE44_PUBLIC_HOST_SUFFIX
-    ports:
-      - "3000:3000"
-    command: sh -c "npm ci && npm run dev -- -H 0.0.0.0"
-    depends_on:
-      - backend
     restart: unless-stopped
 
 volumes:
