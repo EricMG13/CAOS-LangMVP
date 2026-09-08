@@ -42,6 +42,25 @@ def chart_payload(kinds=("line", "bar", "stacked_bar", "scatter"), version="caos
                 "pages": [{"name": "Financials", "sections": [chart_section(kind) for kind in kinds]}]}}
 
 
+@pytest.mark.parametrize("newline", ["\n", "\r"])
+def test_v5_markdown_metadata_cannot_create_structure_but_narrative_can(newline):
+    from caos.publishing.markdown import render_frozen_markdown
+    from caos.audit.verify_package import render_frozen_markdown as offline_render
+
+    payload = chart_payload((), version="caos.deliverable-renderer.v5")
+    payload["publication"]["masthead"]["issuer"] = f"Issuer{newline}# Forged <b>label</b>"
+    payload["publication"]["pages"][0]["sections"] = [{
+        "kind": "text", "title": f"Notes{newline}# Extra", "body": "**Authored narrative**\n\n- Real list",
+        "origin": {"kind": "ANALYST"}, "editable": True,
+    }]
+    output = render_frozen_markdown(payload)
+    text = output.decode()
+    assert "\n# Forged" not in text and "\r# Forged" not in text
+    assert r"Issuer \# Forged \<b\>label\</b\>" in text
+    assert "**Authored narrative**\n\n- Real list" in text
+    assert output == offline_render(payload)
+
+
 @pytest.mark.parametrize("kind", ["line", "bar", "stacked_bar", "scatter"])
 def test_native_chart_uses_canonical_coordinates_and_retains_exact_table(kind):
     from openpyxl import load_workbook
@@ -319,7 +338,7 @@ def test_new_v1_freezes_select_v4_but_queued_historical_exports_rebuild_as_v3(tm
     sign_min(service, case["id"], next_revision)
     current = service.freeze(case["id"], freeze_request(next_revision), actor="analyst")
     service.run_pending_freezes()
-    assert service.frozen_record_for_job(case["id"], current["job_id"])["payload"]["renderer"]["version"] == "caos.deliverable-renderer.v4"
+    assert service.frozen_record_for_job(case["id"], current["job_id"])["payload"]["renderer"]["version"] == "caos.deliverable-renderer.v5"
 
 
 def test_v2_reviewed_sections_freeze_file_and_retain_all_bytes_after_withdrawal(tmp_path, store, monkeypatch):

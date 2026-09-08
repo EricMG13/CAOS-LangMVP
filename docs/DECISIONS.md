@@ -1083,3 +1083,58 @@ Consolidation note: where §6 conflicts with §10/§11/§12 (output Σ vs Σ+max
     analytical qualification. V2 module completeness and actual PDF/XLSX chart
     drawing are separate gates; this change does not relax publication blockers,
     methodology, execution routes, queued jobs, revision CAS or audit pairing.
+
+28. **Validated audit boundary corrections (2026-09-08).** Source admission
+    applies the request byte cap before multipart/JSON parsing, including
+    chunked bodies and multipart overhead. Intake also bounds retained upload
+    bytes and aggregate extracted UTF-8 text before admitting any case or source.
+    Upload filename/media metadata is normalized, bounded and excludes CR/LF/TAB;
+    general boundary text retains those three formatting controls and rejects
+    other Unicode Cc controls. Derived issuer and case names use the same case
+    request contract. Every XML/rels archive part is streamed through a
+    DOCTYPE-refusing parser before spreadsheet parsing; prefixed ZIPs receive the
+    same archive checks. PDF extraction runs in a disposable process with a
+    20-second wall timeout, 15-second CPU limit, 2,000-page ceiling and incremental
+    text cap. Linux additionally caps child address space at 512 MiB; macOS
+    development does not provide that address-space guarantee.
+
+    Appendix A's 2,000 source-plus-block rows and 256 KiB manifest ceilings
+    apply to the entire canonical manifest array, including preparation and
+    source metadata, brackets and separators. Admission checks before creating a
+    run, while gate/execution still recheck live authority. Case registers use
+    explicit `limit` (1–100) and ascending id `cursor` pages; legacy requests
+    exceeding 100 cases refuse with `CASE_LIST_LIMIT_EXCEEDED`. Full source-list
+    responses refuse above 100 sources or the configured request byte budget;
+    clients use source-summary pages and individual source reads. Size checks
+    share the source-mutation lock within the supported single-app topology.
+
+    New exports use `caos.deliverable-renderer.v5`, which renders metadata as
+    literal inline Markdown text: CR/LF/TAB become spaces and Markdown syntax is
+    escaped. Authored narrative Markdown remains authored content. Existing
+    frozen v3/v4 payloads still re-render with their historical byte rules; the
+    standalone audit verifier carries the same shared implementation.
+
+    Reference oauth2-proxy sessions expire after one hour with refresh disabled;
+    live event tails reconnect at most every five minutes. These limits bound
+    cached edge authority, subject to the deployed IdP's own session and group
+    policy; no live IdP revocation or idle-timeout guarantee is asserted. Existing
+    case membership is checked before each event. Local unsaved-draft recovery
+    remains subject/case/pathway/tab scoped and survives logout deliberately;
+    imposing a new retention/deletion policy is outside this correction.
+
+    App startup owns the checkpoint path, then the PostgreSQL app role, before
+    schema initialization and serving. Worker startup owns its PostgreSQL role
+    before schema initialization and recovery. Ownership lasts until cleanup.
+    Reference Compose passes the database password separately; Settings builds
+    the encoded DSN using SQLAlchemy's URL parser, preserving URL metacharacters.
+    Worker polling accepts finite 0.1–60 second intervals. Failed calculation
+    finalization still propagates a database failure for supervisor restart and
+    recovery; successful snapshot acceptance remains durable if automatic model
+    queueing fails, and logs only the run id and exception class.
+
+    The ten invariants retain their production authority. Budget tests now drive
+    the durable RunStore reservation/charge paths; financial guard tests exercise
+    the actual calculation bundle and serialization boundaries. Unused parallel
+    test-only budget/ratio helpers are removed. The validation/disposition record
+    is `audit-findings-validation.md`; applied fixes and verification limits are
+    recorded in `audit-fixes-status.md`.

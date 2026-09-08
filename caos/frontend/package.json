@@ -14,6 +14,10 @@
     "test:qualification": "node scripts/task10-qualification.mjs",
     "test:incremental-qualification": "node scripts/task10-incremental-qualification.mjs",
     "test:graph-matrix": "node scripts/task10-graph-matrix.mjs",
+    "test:chart-stack": "node scripts/chart-stack-smoke.mjs",
+    "test:draft-history": "node scripts/draft-history-smoke.mjs",
+    "test:fault-regressions": "node scripts/fault-regressions.mjs",
+    "test:run-graph": "node scripts/run-graph-smoke.mjs",
     "test:focus": "node scripts/focus-restoration-smoke.mjs",
     "test:browsers": "node scripts/run-browsers.mjs",
     "test:unit": "node --test 'src/**/*.test.ts' 'scripts/**/*.test.mjs'"

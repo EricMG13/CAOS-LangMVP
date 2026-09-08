@@ -52,10 +52,10 @@ them.
 | Admin | Audit rows, bundle integrity, step-up operations | Routes absent in this deployment (the page probes `GET /api/admin/bundle` and renders its 404) | Unavailable; requirements only |
 
 Unavailability is observed, not configured: a capability call that answers 404
-(or 405 for a POST-only route behind the static catch-all) renders its
-"Not available in this deployment." block. A 404 for a run-scoped route is
-remembered for that run only, because the same 404 also means an unknown or
-unauthorized run.
+(or 405 for a POST-only route behind the static catch-all) renders an
+"Unavailable or not permitted" block. A 404 for a run-scoped route is remembered
+for that run only because the same response can mean absent, unknown, or unauthorized;
+the browser does not claim which cause applies.
 
 No mobile control, layout, breakpoint, fixture, snapshot or acceptance target is
 part of this implementation. The narrow reflow is solely for desktop browser

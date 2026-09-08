@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { ApiRequestError, NETWORK_UNAVAILABLE, NetworkError, api, firstErrorMessage, isUnavailableRoute } from "./api.ts";
+import { ApiRequestError, NETWORK_UNAVAILABLE, NetworkError, UNEXPECTED_RESPONSE, UnexpectedResponseError, api, firstErrorMessage, isUnavailableRoute, listCases } from "./api.ts";
 
 test("api returns parsed JSON from successful responses", async (t) => {
   const originalFetch = globalThis.fetch;
@@ -10,12 +10,61 @@ test("api returns parsed JSON from successful responses", async (t) => {
   assert.deepEqual(await api<{ id: string }>("/api/cases/case_1"), { id: "case_1" });
 });
 
-test("api parses empty 204 responses without a special case", async (t) => {
+test("listCases follows stable id cursors until the server returns a short page", async (t) => {
+  const originalFetch = globalThis.fetch;
+  t.after(() => { globalThis.fetch = originalFetch; });
+  const firstPage = Array.from({ length: 100 }, (_, index) => ({ id: `case_${String(index).padStart(3, "0")}` }));
+  const secondPage = [{ id: "case_100" }, { id: "case_101" }];
+  const calls: { input: string; signal: AbortSignal | null | undefined }[] = [];
+  const controller = new AbortController();
+  globalThis.fetch = async (input, init) => {
+    calls.push({ input: String(input), signal: init?.signal });
+    return new Response(JSON.stringify(calls.length === 1 ? firstPage : secondPage), { status: 200 });
+  };
+
+  const cases = await listCases(controller.signal);
+
+  assert.equal(cases.length, 102);
+  assert.deepEqual(calls.map(({ input }) => input), [
+    "/api/cases?limit=100",
+    "/api/cases?limit=100&cursor=case_099",
+  ]);
+  assert.deepEqual(calls.map(({ signal }) => signal), [controller.signal, controller.signal]);
+});
+
+test("listCases rejects a full page whose cursor cannot advance", async (t) => {
+  const originalFetch = globalThis.fetch;
+  t.after(() => { globalThis.fetch = originalFetch; });
+  const page = Array.from({ length: 100 }, () => ({ id: "case_same" }));
+  globalThis.fetch = async () => new Response(JSON.stringify(page), { status: 200 });
+
+  const caught = await listCases().then(() => null, (rejection: unknown) => rejection);
+
+  assert.ok(caught instanceof UnexpectedResponseError);
+  assert.equal(caught.message, UNEXPECTED_RESPONSE);
+  assert.match(String(caught.cause), /cursor did not advance/);
+});
+
+test("api wraps a successful response with no JSON body", async (t) => {
   const originalFetch = globalThis.fetch;
   t.after(() => { globalThis.fetch = originalFetch; });
   globalThis.fetch = async () => new Response(null, { status: 204 });
 
-  await assert.rejects(api("/api/cases/case_1"), SyntaxError);
+  const caught = await api("/api/cases/case_1").then(() => null, (rejection: unknown) => rejection);
+  assert.ok(caught instanceof UnexpectedResponseError);
+  assert.equal(caught.message, UNEXPECTED_RESPONSE);
+  assert.ok(caught.cause instanceof SyntaxError);
+});
+
+test("api wraps malformed JSON from a successful response", async (t) => {
+  const originalFetch = globalThis.fetch;
+  t.after(() => { globalThis.fetch = originalFetch; });
+  globalThis.fetch = async () => new Response("not-json", { status: 200 });
+
+  const caught = await api("/api/cases/case_1").then(() => null, (rejection: unknown) => rejection);
+  assert.ok(caught instanceof UnexpectedResponseError);
+  assert.equal(caught.message, UNEXPECTED_RESPONSE);
+  assert.ok(caught.cause instanceof SyntaxError);
 });
 
 test("api extracts stable error details", async (t) => {
@@ -26,7 +75,7 @@ test("api extracts stable error details", async (t) => {
   await assert.rejects(api("/api/cases/case_1"), new Error("Case access denied"));
 });
 
-test("api failures carry the HTTP status for observed-404 capability gating", async (t) => {
+test("api failures classify a private 404 only as ambiguous unavailability", async (t) => {
   const originalFetch = globalThis.fetch;
   t.after(() => { globalThis.fetch = originalFetch; });
   globalThis.fetch = async () => new Response(JSON.stringify({ detail: "Not Found" }), { status: 404 });
@@ -74,7 +123,7 @@ test("firstErrorMessage unwraps every served detail shape before the fallback", 
   assert.equal(firstErrorMessage(new Error(""), "fallback"), "fallback");
 });
 
-test("only an observed 404 or 405 reads as an unavailable route", () => {
+test("only an observed 404 or static catch-all 405 reads as unavailable", () => {
   assert.equal(isUnavailableRoute(new ApiRequestError(404, "Not Found")), true);
   // 405: this server mounts StaticFiles(html=True) at "/" as the catch-all for every
   // unrouted path; a non-GET request to an absent path reaches that catch-all and
@@ -112,4 +161,12 @@ test("a request that never reaches the server reads as the network state, never 
   // A served refusal is still a served refusal.
   globalThis.fetch = async () => new Response(JSON.stringify({ detail: "Case access denied" }), { status: 403 });
   await assert.rejects(api("/api/cases/case_1"), new Error("Case access denied"));
+});
+
+test("api preserves abort identity while reading a successful response body", async (t) => {
+  const originalFetch = globalThis.fetch;
+  t.after(() => { globalThis.fetch = originalFetch; });
+  const abort = new DOMException("The response body was aborted.", "AbortError");
+  globalThis.fetch = async () => new Response(new ReadableStream({ start(controller) { controller.error(abort); } }));
+  await assert.rejects(api("/api/cases"), (caught: unknown) => caught === abort);
 });

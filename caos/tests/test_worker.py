@@ -63,6 +63,14 @@ async def _queued_build(models, engine, store):
     return models.queue_build(case["id"], "analyst")
 
 
+@pytest.mark.parametrize("value", ["-1", "0", "nan", "inf", "61", "0.01"])
+def test_invalid_poll_interval_refused_before_store_creation(monkeypatch, value):
+    monkeypatch.setenv("WORKER_POLL_SECONDS", value)
+    monkeypatch.setattr(worker.Settings, "from_env", lambda: pytest.fail("invalid polling reached startup"))
+    with pytest.raises(ValueError, match="WORKER_POLL_SECONDS"):
+        worker.main()
+
+
 def _service_on(engine, settings, store) -> ModelService:
     return ModelService(store=store, vault_dir=settings.storage_dir, engine=engine)
 

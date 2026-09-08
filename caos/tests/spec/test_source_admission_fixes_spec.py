@@ -43,6 +43,43 @@ from test_intake_spec import (  # noqa: E402
 EXE = ("notes.exe", b"MZ\x90\x00", "application/octet-stream")
 
 
+@pytest.mark.parametrize("issuer", ["Northstar\u202e Holdings", "N" * 161 + " Inc", "Northstar\x80 Holdings"])
+async def test_derived_intake_issuer_obeys_case_boundary(store, settings, issuer):
+    from caos.intake.service import IntakeRefused, IntakeService
+
+    with pytest.raises(IntakeRefused):
+        await IntakeService(store=store, engine=None, settings=settings).submit(
+            actor="analyst", case_id=None, uploads=[make_upload("annual.txt", f"{issuer}\namong {issuer}, as Borrower\nCREDIT AGREEMENT\nRevenue 120".encode(), TEXT)],
+        )
+    assert store.list_cases("analyst") == []
+    assert _vault_files(settings) == []
+
+
+async def test_intake_retained_content_is_bounded_before_admission(store, settings):
+    from dataclasses import replace
+    from caos.intake.service import IntakeRefused, IntakeService
+
+    service = IntakeService(store=store, engine=None, settings=replace(settings, max_upload_bytes=1000, max_source_bytes=900))
+    with pytest.raises(IntakeRefused):
+        await service.submit(actor="analyst", case_id=None, uploads=[
+            make_upload("a.txt", b"a" * 600, TEXT), make_upload("b.txt", b"b" * 600, TEXT),
+        ])
+    assert store.list_cases("analyst") == []
+    assert _vault_files(settings) == []
+
+
+def test_intake_http_body_cap_includes_multipart_overhead(store, settings):
+    from dataclasses import replace
+    from fastapi.testclient import TestClient
+    from caos.api import create_app
+
+    bounded = replace(settings, max_upload_bytes=1000, max_source_bytes=900)
+    with TestClient(create_app(settings=bounded, store=store, engine=None)) as client:
+        response = submit(client, [("a.txt", b"a" * 400, TEXT), ("b.txt", b"b" * 400, TEXT)])
+    assert response.status_code == 413, response.text
+    assert store.list_cases("analyst") == [] and _vault_files(settings) == []
+
+
 async def test_failed_pack_cannot_delete_a_concurrent_upload(store, settings):
     from caos.intake.service import IntakeRefused, IntakeService
     from caos.sources.domain import Vault, ingest_upload

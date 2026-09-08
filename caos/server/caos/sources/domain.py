@@ -9,6 +9,8 @@ import os
 import secrets
 import socket
 import struct
+import subprocess
+import sys
 import zipfile
 from contextlib import contextmanager
 from pathlib import Path
@@ -22,6 +24,7 @@ from ..atomic_files import (
     read_verified_vault_bytes,
 )
 from ..config import Settings
+from ..contracts import validate_boundary_text
 from ..storage.store import DomainStore
 from ..storage.store import now_iso
 
@@ -58,6 +61,7 @@ BLOCK_SLACK_DIVISOR = 16
 MAX_XLSX_EXTRACT_WORKSHEETS = 64
 MAX_XLSX_EXTRACT_ROWS = 25_000
 MAX_XLSX_EXTRACT_COLUMNS = 64
+MAX_PDF_PAGES = 2000
 EXTRACTION_LIMIT_DETAIL = "source exceeds safe extraction limits"
 
 
@@ -164,7 +168,7 @@ def scan_content(content: bytes, settings: Settings) -> None:
 
 
 def validate_archive(content: bytes) -> None:
-    if not content[:2] == b"PK":
+    if not content.startswith(b"PK") and not zipfile.is_zipfile(io.BytesIO(content)):
         return
     try:
         with zipfile.ZipFile(io.BytesIO(content)) as archive:
@@ -197,6 +201,17 @@ def validate_archive(content: bytes) -> None:
                         status_code=422,
                         detail="archive compression ratio exceeds limit",
                     )
+            # Validate every part before openpyxl can select its optional XML
+            # backend. Stream through the existing DTD-refusing Expat screen.
+            from ..artifacts.loan_universe import _has_external_relationship
+
+            for info in infos:
+                if info.filename.lower().endswith((".xml", ".rels")):
+                    try:
+                        with archive.open(info) as part:
+                            _has_external_relationship(part)
+                    except Exception as exc:
+                        raise HTTPException(status_code=422, detail="invalid or unsafe archive XML") from exc
     except zipfile.BadZipFile as exc:
         raise HTTPException(status_code=422, detail="invalid archive") from exc
 
@@ -231,7 +246,15 @@ def extract_blocks(filename: str, content: bytes) -> list[dict[str, Any]]:
                 parse_float=reject_overflowing_number,
                 object_pairs_hook=reject_duplicate_keys,
             )
-        except (UnicodeDecodeError, json.JSONDecodeError, ValueError) as exc:
+            pieces: list[str] = []
+            text_length = 0
+            for piece in json.JSONEncoder(sort_keys=True, indent=2).iterencode(data):
+                text_length += len(piece)
+                if text_length > MAX_SOURCE_TEXT:
+                    raise HTTPException(status_code=422, detail=EXTRACTION_LIMIT_DETAIL)
+                pieces.append(piece)
+            text = "".join(pieces)
+        except (UnicodeDecodeError, ValueError, RecursionError) as exc:
             raise HTTPException(status_code=422, detail="invalid JSON source") from exc
         if (
             data is None
@@ -241,23 +264,19 @@ def extract_blocks(filename: str, content: bytes) -> list[dict[str, Any]]:
             raise HTTPException(
                 status_code=422, detail="source contains no extractable evidence"
             )
-        text = json.dumps(data, sort_keys=True, indent=2)
     elif suffix == ".pdf":
         try:
-            from pypdf import PdfReader
-
-            reader = PdfReader(io.BytesIO(content))
-            page_count = len(reader.pages)
-            if not page_count:
-                raise ValueError("PDF contains no pages")
-        except Exception as exc:
-            raise HTTPException(status_code=422, detail="invalid PDF source") from exc
-        try:
-            text = "\n".join(
-                reader.pages[index].extract_text() or "" for index in range(page_count)
+            result = subprocess.run(
+                [sys.executable, str(Path(__file__).with_name("pdf.py")), str(MAX_SOURCE_TEXT), str(MAX_PDF_PAGES)],
+                input=content, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                timeout=120, check=False,
             )
-        except Exception:
-            text = ""
+        except subprocess.TimeoutExpired as exc:
+            raise HTTPException(status_code=422, detail=EXTRACTION_LIMIT_DETAIL) from exc
+        if result.returncode:
+            detail = "invalid PDF source" if result.returncode == 2 else EXTRACTION_LIMIT_DETAIL
+            raise HTTPException(status_code=422, detail=detail)
+        text = result.stdout.decode("utf-8")
         if not text.strip():
             text = "PDF source stored; no text layer was available for safe extraction."
     elif suffix == ".xlsx":
@@ -461,7 +480,15 @@ async def prepare_upload(vault: Vault, upload: UploadFile, max_bytes: int) -> di
     (Task 8) prepares a whole pack through here before admitting any of it, so
     admission stays in one place (the route comment above records the drift a
     second copy caused)."""
-    filename = Path(upload.filename or "source.bin").name
+    try:
+        filename = validate_boundary_text(Path(upload.filename or "source.bin").name)
+        media_type = validate_boundary_text(upload.content_type or "application/octet-stream")
+        if not filename.strip() or len(filename) > 255 or not media_type.strip() or len(media_type) > 160:
+            raise ValueError("source metadata exceeds its bounds")
+        if any(ch in filename + media_type for ch in "\r\n\t"):
+            raise ValueError("source metadata must be single-line")
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail="invalid source metadata") from exc
     suffix = Path(filename).suffix.lower()
     if suffix not in ALLOWED_SUFFIXES:
         raise HTTPException(status_code=415, detail="unsupported source type")
@@ -471,7 +498,7 @@ async def prepare_upload(vault: Vault, upload: UploadFile, max_bytes: int) -> di
     if len(content) > max_bytes:
         raise HTTPException(status_code=413, detail="source exceeds upload limit")
     return await asyncio.to_thread(
-        _admit_content, vault, filename, upload.content_type or "application/octet-stream", content,
+        _admit_content, vault, filename, media_type, content,
     )
 
 

@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 import yaml
+from sqlalchemy.engine import make_url
 
 from caos.atomic_files import (
     VaultFileIntegrityError,
@@ -70,6 +71,22 @@ def test_worker_runtime_rejects_missing_or_encoded_placeholder_password(database
         Settings(environment="production", database_url=database_url).validate_worker_runtime()
 
 
+def test_compose_password_is_encoded_by_sqlalchemy_before_database_url_use(monkeypatch):
+    monkeypatch.setenv("DATABASE_URL", "postgresql+psycopg://caos@db:5432/caos")
+    monkeypatch.setenv("POSTGRES_PASSWORD", "p@ss%word/?#[x]")
+
+    settings = Settings.from_env()
+    parsed = make_url(settings.database_url)
+
+    assert (parsed.username, parsed.password, parsed.host, parsed.port, parsed.database) == (
+        "caos", "p@ss%word/?#[x]", "db", 5432, "caos",
+    )
+    assert settings.database_url == (
+        "postgresql+psycopg://caos:p%40ss%25word%2F%3F%23%5Bx%5D@db:5432/caos"
+    )
+    settings.validate_worker_runtime()
+
+
 def test_deployment_wires_qualification_only_to_the_app_and_documents_empty_values():
     root = Path(__file__).resolve().parents[1]
     services = yaml.safe_load(
@@ -92,6 +109,9 @@ def test_deployment_wires_qualification_only_to_the_app_and_documents_empty_valu
         assert name not in worker
     assert example["CAOS_PROVIDER_QUALIFICATION_PATH"] == ""
     assert example["CAOS_PROVIDER_QUALIFICATION_DIGEST"] == ""
+    for service in (app, worker):
+        assert service["DATABASE_URL"] == "postgresql+psycopg://caos@db:5432/caos"
+        assert service["POSTGRES_PASSWORD"] == "${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}"
 
 
 def test_vault_publish_and_verified_read_round_trip(tmp_path):
@@ -119,3 +139,9 @@ def test_vault_publish_rejects_digest_mismatch(tmp_path):
         publish_hash_addressed_bytes(
             tmp_path, ("models",), "xlsx", b"content", expected_sha256="0" * 64, max_bytes=1024,
         )
+
+
+def test_blank_database_url_retains_development_fallback_with_password_set(monkeypatch):
+    monkeypatch.setenv("DATABASE_URL", "")
+    monkeypatch.setenv("POSTGRES_PASSWORD", "test-only-password")
+    assert Settings.from_env().database_url == ""

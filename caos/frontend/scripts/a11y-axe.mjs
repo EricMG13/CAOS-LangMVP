@@ -6,7 +6,7 @@
 import assert from "node:assert/strict";
 import { chromium, firefox, webkit } from "playwright";
 import AxeBuilder from "@axe-core/playwright";
-import { destinationFromSlug, forwardedRoutes, routeDestinations } from "../src/lib/workbench.ts";
+import { destinationFromSlug, destinationMeta, forwardedRoutes, routeDestinations } from "../src/lib/workbench.ts";
 
 const baseUrl = process.env.CAOS_URL || "http://127.0.0.1:8000";
 const engines = { chromium, firefox, webkit };
@@ -35,6 +35,12 @@ const viewports = [
 ];
 const browser = await engines[browserName].launch({ headless: true });
 const violations = [];
+const incomplete = [];
+const recordAxe = (result, viewport, route) => {
+  assert.equal(result.incomplete.some((finding) => finding.id === "aria-valid-attr-value"), false, `${route} ${viewport} has unresolved ARIA attribute values`);
+  for (const finding of result.violations) violations.push({ viewport, route, id: finding.id, impact: finding.impact, nodes: finding.nodes.map((node) => ({ target: node.target, html: node.html, summary: node.failureSummary })) });
+  for (const finding of result.incomplete) incomplete.push({ viewport, route, id: finding.id, impact: finding.impact, nodes: finding.nodes.map((node) => ({ target: node.target, html: node.html, summary: node.failureSummary })) });
+};
 
 try {
   for (const viewport of viewports) {
@@ -48,8 +54,10 @@ try {
         const landed = new URL(page.url());
         for (const [key, value] of new URL(requested).searchParams) assert.equal(landed.searchParams.get(key), value, `${route} forwarded to ${forwards.get(route)} without its ${key} query`);
       }
+      const destination = destinationFromSlug(new URL(page.url()).pathname.replaceAll("/", ""));
+      await page.getByRole("heading", { name: destinationMeta[destination].title, level: 1 }).waitFor();
       const result = await new AxeBuilder({ page }).analyze();
-      for (const violation of result.violations) violations.push({ viewport: viewport.name, route, id: violation.id, impact: violation.impact, nodes: violation.nodes.map((node) => ({ target: node.target, html: node.html, summary: node.failureSummary })) });
+      recordAxe(result, viewport.name, route);
       // WCAG 1.4.10: wide content (loan table, worksheet grid, artifact tables)
       // must scroll inside its own container, never move the page sideways.
       // clientWidth excludes the scrollbar, so under CLASSIC scrollbars a page
@@ -131,7 +139,7 @@ try {
   assert.equal(await workstreams.first().getByText("Liquidity runway?", { exact: true }).count(), 2, "pending-plan axe fixture did not preserve repeated workstream values");
   assert.equal(pendingConsoleErrors.some((message) => /children with the same key|duplicate key/i.test(message)), false, "pending-plan axe fixture emitted a React duplicate-key warning");
   const pendingResult = await new AxeBuilder({ page: pendingPage }).analyze();
-  for (const violation of pendingResult.violations) violations.push({ viewport: "pending-plan-desktop-200-percent", route: "/run/", id: violation.id, impact: violation.impact, nodes: violation.nodes.map((node) => ({ target: node.target, html: node.html, summary: node.failureSummary })) });
+  recordAxe(pendingResult, "pending-plan-desktop-200-percent", "/run/");
   assert.ok(caseFixtureHits > 0, "pending-plan case fixture was not exercised");
   assert.ok(runFixtureHits > 0, "pending-plan run fixture was not exercised");
   await pendingContext.close();
@@ -152,7 +160,7 @@ try {
     await adminPage.getByRole("button", { name: "Provision member" }).waitFor();
     await adminPage.getByRole("button", { name: "Download audit package" }).waitFor();
     const adminResult = await new AxeBuilder({ page: adminPage }).analyze();
-    for (const violation of adminResult.violations) violations.push({ viewport: `admin-governance-${viewport.name}`, route: "/admin/", id: violation.id, impact: violation.impact, nodes: violation.nodes.map((node) => ({ target: node.target, html: node.html, summary: node.failureSummary })) });
+    recordAxe(adminResult, `admin-governance-${viewport.name}`, "/admin/");
     const adminOverflow = await adminPage.evaluate(() => ({ scrollWidth: document.documentElement.scrollWidth, clientWidth: document.documentElement.clientWidth }));
     if (adminOverflow.scrollWidth > adminOverflow.clientWidth + 1) violations.push({ viewport: `admin-governance-${viewport.name}`, route: "/admin/", id: "page-horizontal-scroll", impact: "serious", nodes: [{ target: ["html"], html: "", summary: `document scrollWidth ${adminOverflow.scrollWidth} exceeds clientWidth ${adminOverflow.clientWidth}` }] });
     await adminContext.close();
@@ -195,7 +203,7 @@ try {
     for (const tabName of ["Credit Snapshot", "Model", "KPIs"]) {
       await builderTabs.getByRole("tab", { name: tabName, exact: true }).click();
       const modelResult = await new AxeBuilder({ page: modelPage }).analyze();
-      for (const violation of modelResult.violations) violations.push({ viewport: `ready-model-${viewport.name}-${tabName.toLowerCase()}`, route: "/model/", id: violation.id, impact: violation.impact, nodes: violation.nodes.map((node) => ({ target: node.target, html: node.html, summary: node.failureSummary })) });
+      recordAxe(modelResult, `ready-model-${viewport.name}-${tabName.toLowerCase()}`, "/model/");
     }
   }
   await modelContext.close();
@@ -281,13 +289,13 @@ try {
     const pathwaySelect = reportPage.getByLabel("Pathway template");
     await pathwaySelect.focus();
     await reportPage.keyboard.press(browserName === "webkit" ? "Alt+Tab" : "Tab");
-    assert.equal(await reportPage.evaluate(() => document.activeElement?.closest(".report-section-nav") !== null), true, `${viewport.name} Report Studio Tab did not move into the section navigator`);
+    assert.equal(await reportPage.evaluate(() => document.activeElement?.closest(".report-section-nav")?.tagName), "NAV", `${viewport.name} Report Studio Tab did not move into the section navigator`);
     const evidenceInspector = reportPage.locator("details.evidence-inspector");
     await evidenceInspector.locator(":scope > summary").click();
     await evidenceInspector.locator(".evidence-source-list > details > summary").filter({ hasText: "earnings.txt" }).click();
     await evidenceInspector.getByText("Liquidity was $210 million at quarter end.", { exact: true }).waitFor();
     const reportResult = await new AxeBuilder({ page: reportPage }).analyze();
-    for (const violation of reportResult.violations) violations.push({ viewport: `ready-report-${viewport.name}`, route: "/report/", id: violation.id, impact: violation.impact, nodes: violation.nodes.map((node) => ({ target: node.target, html: node.html, summary: node.failureSummary })) });
+    recordAxe(reportResult, `ready-report-${viewport.name}`, "/report/");
   }
   await reportContext.close();
 
@@ -301,7 +309,7 @@ try {
   const stateScans = [];
   const scanState = async (state, route) => {
     const result = await new AxeBuilder({ page: statePage }).analyze();
-    for (const violation of result.violations) violations.push({ viewport: `state-${state}`, route, id: violation.id, impact: violation.impact, nodes: violation.nodes.map((node) => ({ target: node.target, html: node.html, summary: node.failureSummary })) });
+    recordAxe(result, `state-${state}`, route);
     stateScans.push(state);
   };
   const frozenPayload = (digestChar) => ({
@@ -381,8 +389,8 @@ try {
 }
 
 if (violations.length) {
-  console.error(JSON.stringify({ violations }, null, 2));
+  console.error(JSON.stringify({ violations, incomplete }, null, 2));
   process.exitCode = 1;
 } else {
-  console.log(JSON.stringify({ browser: browserName, browser_version: browser.version(), routes: routes.length, forwarders: forwardedRoutes.length, viewports: viewports.length, combinations: routes.length * viewports.length + 20, pendingPlanFixture: true, adminGovernanceAxeChecks: 2, readyModelFixture: true, readyReportFixture: true, states: ["empty", "populated", "review", "filed", "loading", "error", "refusal"], modelBuilderAxeChecks: 9, modelBuilderKeyboardTabChecks: 3, reportStudioAxeChecks: 3, reportStudioKeyboardTabChecks: 3, violations: 0 }));
+  console.log(JSON.stringify({ browser: browserName, browser_version: browser.version(), routes: routes.length, forwarders: forwardedRoutes.length, viewports: viewports.length, combinations: routes.length * viewports.length + 20, pendingPlanFixture: true, adminGovernanceAxeChecks: 2, readyModelFixture: true, readyReportFixture: true, states: ["route-sweep", "review", "filed", "loading", "error", "refusal"], modelBuilderAxeChecks: 9, modelBuilderKeyboardTabChecks: 3, reportStudioAxeChecks: 3, reportStudioKeyboardTabChecks: 3, violations: 0, incomplete: incomplete.length, incomplete_results: incomplete }));
 }

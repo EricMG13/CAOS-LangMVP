@@ -153,14 +153,9 @@ export class ApiRequestError extends Error {
   }
 }
 
-// Observed-404 capability gate — no hardcoded capability map. A capability call that
-// returns HTTP 404 means the route is absent on this deployment: the control renders
-// its "Not available in this deployment." block instead of a retryable error, and the
-// gate stays truthful automatically as routes land. Works for any request-helper
-// error that carries a numeric `status` (ApiRequestError, ModelRequestError,
-// ReportRequestError).
-//
-// Also treats 405 as route-absent. This server mounts `StaticFiles(html=True)` at
+// Observed capability gate. A 404 cannot distinguish an absent route from a resource
+// hidden by authorization, so its presentation stays deliberately ambiguous. This
+// server also mounts `StaticFiles(html=True)` at
 // "/" as the catch-all for every path this build does not route: a GET to an absent
 // path falls through to that catch-all and gets a genuine 404, but Starlette's
 // StaticFiles app answers any non-GET method with 405 Method Not Allowed instead —
@@ -168,7 +163,7 @@ export class ApiRequestError extends Error {
 // model XLSX export) hits 405, not 404, when its route isn't served here. All
 // registered routes this frontend calls are invoked with their correct HTTP method,
 // so a genuine method-mismatch 405 is not an expected path — observing one here
-// means the route itself is absent, exactly like a 404.
+// remains an availability signal; neither status establishes resource visibility.
 export function isUnavailableRoute(caught: unknown): boolean {
   if (!(caught instanceof Error) || !("status" in caught)) return false;
   const status = (caught as { status?: unknown }).status;
@@ -190,6 +185,13 @@ export class NetworkError extends Error {
     this.name = "NetworkError";
   }
 }
+export const UNEXPECTED_RESPONSE = "The server returned an unexpected response. Retry the request.";
+export class UnexpectedResponseError extends Error {
+  constructor(cause: unknown) {
+    super(UNEXPECTED_RESPONSE, { cause });
+    this.name = "UnexpectedResponseError";
+  }
+}
 export async function networkFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
   try {
     return await fetch(input, init);
@@ -205,5 +207,29 @@ export async function api<T>(path: string, options: RequestInit = {}, signal?: A
     const body = await response.json().catch(() => ({}));
     throw new ApiRequestError(response.status, body.detail);
   }
-  return response.json() as Promise<T>;
+  try {
+    return await response.json() as T;
+  } catch (caught) {
+    if (caught instanceof DOMException) throw caught;
+    throw new UnexpectedResponseError(caught);
+  }
+}
+
+const CASE_PAGE_LIMIT = 100;
+
+export async function listCases(signal?: AbortSignal): Promise<CaseRecord[]> {
+  const cases: CaseRecord[] = [];
+  let cursor = "";
+  while (true) {
+    const query = new URLSearchParams({ limit: String(CASE_PAGE_LIMIT) });
+    if (cursor) query.set("cursor", cursor);
+    const page = await api<CaseRecord[]>(`/api/cases?${query}`, {}, signal);
+    cases.push(...page);
+    if (page.length < CASE_PAGE_LIMIT) return cases;
+    const nextCursor = page.at(-1)?.id;
+    if (!nextCursor || nextCursor <= cursor) {
+      throw new UnexpectedResponseError(new Error("Case-list cursor did not advance."));
+    }
+    cursor = nextCursor;
+  }
 }

@@ -237,12 +237,11 @@ async def test_manifest_above_the_ceiling_fails_the_run_typed_with_no_provider_c
                     "extractor_version": "builtin-v1", "confidence": "MEDIUM", "untrusted_data": True}
                    for index in range(MAX_MANIFEST_BLOCKS)],
     }, "analyst")
-    # The ordinary provider-backed path: the manifest is bounded inside the first
-    # agent module node, before that node's provider call.
-    run = await engine.start_run(case_id=case["id"], pathway="FULL_CREDIT", depth="screen", actor="analyst")
-    await engine.wait(run["id"])
-    final = engine.get_run(run["id"])
-    assert final["status"] == "failed" and final["error"]["code"] == "AGENT_BUDGET_EXCEEDED", final["error"]
+    # Admission rejects before creating a run or contacting the provider.
+    from caos.engine.runtime import EngineError
+    with pytest.raises(EngineError, match="AGENT_BUDGET_EXCEEDED"):
+        await engine.start_run(case_id=case["id"], pathway="FULL_CREDIT", depth="screen", actor="analyst")
+    assert engine.runs.non_terminal_runs() == []
     assert provider.count_requests == [] and provider.create_requests == [], "refused before any provider contact"
 
 
@@ -321,6 +320,7 @@ CALCULATION_PATHS = (
     "/api/cases/c/models/tornado",
     "/api/cases/c/models/sensitivities/one-way",
     "/api/cases/c/model-revisions/rebase-preview",
+    "/api/cases/c/models/assumption-registry",
 )
 CALCULATION_REFUSAL = "too many model calculations in flight"
 

@@ -288,6 +288,57 @@ def test_sqlite_development_does_not_take_a_postgres_lock(store):
         pass
 
 
+def test_owned_store_holds_role_before_schema_until_close(monkeypatch):
+    events = []
+    engine = SimpleNamespace(dispose=lambda: events.append("engine.dispose"))
+
+    @contextmanager
+    def own_role(_store, role):
+        events.append(f"{role}.enter")
+        try:
+            yield
+        finally:
+            events.append(f"{role}.exit")
+
+    monkeypatch.setattr(store_module.sa, "create_engine", lambda *_args, **_kwargs: engine)
+    monkeypatch.setattr(DomainStore, "single_instance", own_role)
+    monkeypatch.setattr(store_module.metadata, "create_all", lambda _engine: events.append("schema"))
+    monkeypatch.setattr(store_module, "_ensure_audit_schema", lambda _engine: events.append("audit-schema"))
+    from caos.storage import deliverables, models
+    monkeypatch.setattr(models.ModelStore, "__init__", lambda _self, _engine: events.append("model-schema"))
+    monkeypatch.setattr(deliverables.DeliverableStore, "__init__",
+                        lambda _self, _engine: events.append("deliverable-schema"))
+
+    store = DomainStore.from_url("postgresql://caos@db/caos", role="worker")
+    assert events == ["worker.enter", "schema", "audit-schema", "model-schema", "deliverable-schema"]
+
+    store.close()
+    assert events[-2:] == ["worker.exit", "engine.dispose"]
+
+
+def test_owned_store_releases_role_when_schema_initialization_is_interrupted(monkeypatch):
+    events = []
+    engine = SimpleNamespace(dispose=lambda: events.append("engine.dispose"))
+
+    @contextmanager
+    def own_role(_store, role):
+        events.append(f"{role}.enter")
+        try:
+            yield
+        finally:
+            events.append(f"{role}.exit")
+
+    monkeypatch.setattr(store_module.sa, "create_engine", lambda *_args, **_kwargs: engine)
+    monkeypatch.setattr(DomainStore, "single_instance", own_role)
+    monkeypatch.setattr(store_module.metadata, "create_all",
+                        lambda _engine: (_ for _ in ()).throw(KeyboardInterrupt()))
+
+    with pytest.raises(KeyboardInterrupt):
+        DomainStore.from_url("postgresql://caos@db/caos", role="app")
+
+    assert events == ["app.enter", "app.exit", "engine.dispose"]
+
+
 class _LockTracker:
     def __init__(self) -> None:
         self.held: list[str] = []
@@ -660,6 +711,39 @@ def test_app_entrypoint_holds_the_app_lock_while_serving(monkeypatch, tmp_path, 
     entrypoint.main()
 
 
+def test_app_acquires_checkpoint_lock_before_build(monkeypatch, tmp_path):
+    events = []
+    settings = _settings(tmp_path)
+    engine = SimpleNamespace(
+        store=_LockTracker(),
+        provider=None,
+        checkpoint_path=tmp_path / "checkpoints.db",
+        aclose=_noop,
+    )
+
+    @contextmanager
+    def lock(checkpoint_path):
+        assert checkpoint_path == engine.checkpoint_path
+        events.append("checkpoint.enter")
+        try:
+            yield
+        finally:
+            events.append("checkpoint.exit")
+
+    def build(_settings, _data):
+        assert events == ["checkpoint.enter"]
+        events.append("build")
+        return object(), engine
+
+    monkeypatch.setattr(run, "checkpoint_lock", lock)
+    monkeypatch.setattr(run, "build", build)
+    monkeypatch.setattr(run, "serve", lambda *_args, **_kwargs: events.append("serve"))
+
+    run.run_app(settings, tmp_path, host="127.0.0.1")
+
+    assert events == ["checkpoint.enter", "build", "serve", "checkpoint.exit"]
+
+
 @pytest.mark.parametrize("entrypoint", (run, dev))
 def test_app_entrypoint_closes_unserved_resources_when_lock_acquisition_fails(monkeypatch, tmp_path, entrypoint):
     events = []
@@ -707,7 +791,11 @@ def test_worker_entrypoint_holds_the_worker_lock_while_polling(monkeypatch, tmp_
     settings.validate_runtime = lambda: pytest.fail("worker used app validation")
     monkeypatch.setattr(worker.Settings, "from_env", classmethod(lambda cls: settings))
     monkeypatch.setattr(worker, "configure_logging", lambda _settings: None, raising=False)
-    monkeypatch.setattr(worker.DomainStore, "from_url", classmethod(lambda cls, _url: tracker))
+    def open_store(_cls, _url, *, role):
+        assert role == "worker"
+        return tracker
+
+    monkeypatch.setattr(worker.DomainStore, "from_url", classmethod(open_store))
     async def close_engine():
         pass
 
@@ -791,7 +879,7 @@ def test_worker_entrypoint_closes_owned_resources_in_reverse_order(monkeypatch, 
     store = Store()
     monkeypatch.setattr(worker.Settings, "from_env", classmethod(lambda cls: settings))
     monkeypatch.setattr(worker, "configure_logging", lambda _settings: None)
-    monkeypatch.setattr(worker.DomainStore, "from_url", classmethod(lambda cls, _url: store))
+    monkeypatch.setattr(worker.DomainStore, "from_url", classmethod(lambda cls, _url, **_kwargs: store))
     monkeypatch.setattr(worker.Engine, "create", classmethod(lambda cls, **_kwargs: Engine()))
     monkeypatch.setattr(worker, "ModelService", lambda **_kwargs: SimpleNamespace(recover_builds=lambda: 0))
     monkeypatch.setattr(worker, "DeliverableService", lambda **_kwargs: SimpleNamespace(recover_freeze_jobs=lambda: 0))
@@ -955,7 +1043,7 @@ def test_worker_entrypoint_preserves_poll_failure_through_cleanup_failures(monke
     store = Store()
     monkeypatch.setattr(worker.Settings, "from_env", classmethod(lambda cls: settings))
     monkeypatch.setattr(worker, "configure_logging", lambda _settings: None)
-    monkeypatch.setattr(worker.DomainStore, "from_url", classmethod(lambda cls, _url: store))
+    monkeypatch.setattr(worker.DomainStore, "from_url", classmethod(lambda cls, _url, **_kwargs: store))
     monkeypatch.setattr(worker.Engine, "create", classmethod(lambda cls, **_kwargs: Engine()))
     monkeypatch.setattr(worker, "ModelService", lambda **_kwargs: SimpleNamespace(recover_builds=lambda: 0))
     monkeypatch.setattr(worker, "DeliverableService", lambda **_kwargs: SimpleNamespace(recover_freeze_jobs=lambda: 0))
@@ -981,7 +1069,7 @@ def test_app_build_rolls_back_owned_store_and_provider_on_construction_failure(m
 
     settings = _settings(tmp_path)
     monkeypatch.setattr(run, "configure_logging", lambda _settings: None)
-    monkeypatch.setattr(run.DomainStore, "from_url", classmethod(lambda cls, _url: Store()))
+    monkeypatch.setattr(run.DomainStore, "from_url", classmethod(lambda cls, _url, **_kwargs: Store()))
     monkeypatch.setattr(run, "build_provider", lambda _settings: Provider())
     monkeypatch.setattr(run.Engine, "create", classmethod(
         lambda cls, **_kwargs: (_ for _ in ()).throw(RuntimeError("engine construction failed")),
@@ -1013,7 +1101,7 @@ def test_app_build_closes_owned_store_when_provider_qualification_fails(monkeypa
         environment="production",
     )
     monkeypatch.setattr(run, "configure_logging", lambda _settings: None)
-    monkeypatch.setattr(run.DomainStore, "from_url", classmethod(lambda cls, _url: Store()))
+    monkeypatch.setattr(run.DomainStore, "from_url", classmethod(lambda cls, _url, **_kwargs: Store()))
 
     with pytest.raises(AgentError) as excinfo:
         run.build(settings, tmp_path)
@@ -1032,7 +1120,7 @@ def test_worker_construction_failure_closes_its_owned_store(monkeypatch, tmp_pat
     settings = _settings(tmp_path)
     monkeypatch.setattr(worker.Settings, "from_env", classmethod(lambda cls: settings))
     monkeypatch.setattr(worker, "configure_logging", lambda _settings: None)
-    monkeypatch.setattr(worker.DomainStore, "from_url", classmethod(lambda cls, _url: Store()))
+    monkeypatch.setattr(worker.DomainStore, "from_url", classmethod(lambda cls, _url, **_kwargs: Store()))
     monkeypatch.setattr(worker.Engine, "create", classmethod(
         lambda cls, **_kwargs: (_ for _ in ()).throw(RuntimeError("engine construction failed")),
     ))
@@ -1079,8 +1167,8 @@ def _hold_checkpoint_lock_in_another_process(checkpoint: Path):
 @pytest.mark.parametrize("entrypoint", (run, dev))
 def test_app_entrypoint_refuses_startup_while_another_process_holds_the_checkpoint_location(monkeypatch, tmp_path, entrypoint):
     """The proof by a second process: with the lock held elsewhere, `run.main`
-    fails typed before recovery or a socket, serves nothing, and closes what it
-    built. The advisory lock is never even attempted."""
+    fails typed before construction, recovery, or a socket. The advisory lock
+    and schema initialization are never attempted."""
     from caos.instance_lock import InstanceAlreadyRunning
 
     events = []
@@ -1108,12 +1196,13 @@ def test_app_entrypoint_refuses_startup_while_another_process_holds_the_checkpoi
         settings = _settings(tmp_path)
         settings.environment = "development" if entrypoint is dev else "production"
         engine = Engine()
+        monkeypatch.setenv("CAOS_DATA_DIR", str(tmp_path))
         monkeypatch.setattr(run.Settings, "from_env", classmethod(lambda cls: settings))
         monkeypatch.setattr(run, "build", lambda _settings, _data: (object(), engine))
         monkeypatch.setattr(run, "serve", lambda *_args, **_kwargs: pytest.fail("served while another instance holds the checkpoint location"))
         with pytest.raises(InstanceAlreadyRunning, match="INSTANCE_ALREADY_RUNNING"):
             entrypoint.main()
-        assert events == ["engine.close", "store.close"], "nothing served, no advisory lock taken, resources closed"
+        assert events == [], "nothing was constructed, served, or advisory-locked"
     finally:
         holder.stdin.close()
         holder.wait(timeout=10)
@@ -1208,3 +1297,12 @@ def test_a_second_dev_server_on_the_same_data_directory_fails_startup_and_never_
             third.kill()
             third.wait(timeout=10)
         third.stderr.close()
+
+
+def test_invalid_app_configuration_creates_no_checkpoint_lock(tmp_path):
+    from caos.config import Settings
+
+    data = tmp_path / "uncreated"
+    with pytest.raises(RuntimeError, match="PostgreSQL"):
+        run.run_app(Settings(environment="production"), data, host="127.0.0.1")
+    assert not data.exists()

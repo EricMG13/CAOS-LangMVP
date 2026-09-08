@@ -378,11 +378,19 @@ class DomainStore:
         self.engine = engine
         self._owns_engine = owns_engine
         self._closed = False
+        self._instance_owner = None
+        self._instance_role: str | None = None
 
     @classmethod
-    def from_url(cls, url: str) -> "DomainStore":
+    def from_url(cls, url: str, *, role: str | None = None) -> "DomainStore":
         engine = sa.create_engine(url, json_serializer=lambda value: json.dumps(value, sort_keys=True))
+        store = cls(engine, owns_engine=True)
         try:
+            if role is not None:
+                owner = store.single_instance(role)
+                owner.__enter__()
+                store._instance_owner = owner
+                store._instance_role = role
             metadata.create_all(engine)
             _ensure_audit_schema(engine)
             # The whole schema at startup, not on first use: a deployment that
@@ -396,14 +404,18 @@ class DomainStore:
 
             ModelStore(engine)
             DeliverableStore(engine)
-        except Exception:
-            engine.dispose()
+        except BaseException:
+            store.close()
             raise
-        return cls(engine, owns_engine=True)
+        return store
 
     def close(self) -> None:
         if self._closed:
             return
+        if self._instance_owner is not None:
+            self._instance_owner.__exit__(None, None, None)
+            self._instance_owner = None
+            self._instance_role = None
         if self._owns_engine:
             self.engine.dispose()
         self._closed = True
@@ -414,6 +426,9 @@ class DomainStore:
     @contextmanager
     def single_instance(self, role: str) -> Iterator[None]:
         """Hold one PostgreSQL session lock for this process role or fail closed."""
+        if role == self._instance_role:
+            yield
+            return
         if self.engine.dialect.name != "postgresql":
             yield
             return
@@ -601,12 +616,35 @@ class DomainStore:
         case["members"] = {m["subject"]: m["role"] for m in members}
         return case
 
-    def list_cases(self, actor: str) -> list[dict[str, Any]]:
+    def list_cases(self, actor: str, *, cursor: str = "", limit: int | None = None) -> list[dict[str, Any]]:
+        statement = sa.select(cases).join(case_members, cases.c.id == case_members.c.case_id).where(
+            case_members.c.subject == actor, cases.c.id > cursor,
+        ).order_by(cases.c.id)
+        if limit is not None:
+            statement = statement.limit(limit)
         with self.engine.connect() as conn:
-            ids = conn.execute(
-                sa.select(case_members.c.case_id).where(case_members.c.subject == actor)
-            ).scalars().all()
-        return [case for case_id in ids if (case := self.get_case(case_id))]
+            rows = {row["id"]: dict(row) | {"members": {}} for row in conn.execute(statement).mappings()}
+            if rows:
+                for member in conn.execute(sa.select(case_members).where(case_members.c.case_id.in_(rows))).mappings():
+                    rows[member["case_id"]]["members"][member["subject"]] = member["role"]
+        return list(rows.values())
+
+    def case_list_metadata(self, case_ids: list[str]) -> dict[str, dict[str, Any]]:
+        """Batch register metadata without fetching evidence blocks or intake records."""
+        count = sa.select(sa.func.json_array_length(source_sets.c.source_ids)).where(
+            source_sets.c.case_id == cases.c.id,
+        ).order_by(source_sets.c.version.desc()).limit(1).scalar_subquery()
+        live = sa.select(sources.c.id).where(
+            sources.c.case_id == cases.c.id, sources.c.withdrawn.is_(False),
+        ).exists()
+        intake = sa.select(case_intakes.c.id).where(case_intakes.c.case_id == cases.c.id).order_by(
+            case_intakes.c.created_at.desc(), case_intakes.c.id.desc(),
+        ).limit(1).scalar_subquery()
+        with self.engine.connect() as conn:
+            rows = conn.execute(sa.select(cases.c.id, sa.func.coalesce(count, 0).label("source_count"),
+                                          live.label("has_sources"), intake.label("latest_intake_id"))
+                                .where(cases.c.id.in_(case_ids))).mappings()
+            return {row["id"]: dict(row) for row in rows}
 
     def is_member(self, case_id: str, actor: str, roles: set[str] | None = None) -> bool:
         with self.engine.connect() as conn:
@@ -1009,11 +1047,25 @@ class DomainStore:
                 sources.c.case_id == case_id, sources.c.withdrawn.is_(False)
             ).order_by(sources.c.created_at)).scalars())
 
-    def list_sources(self, case_id: str) -> list[dict[str, Any]]:
-        with self.engine.connect() as conn:
-            rows = conn.execute(sa.select(sources).where(
-                sources.c.case_id == case_id, sources.c.withdrawn.is_(False)
-            ).order_by(sources.c.created_at)).mappings().all()
+    def list_sources(self, case_id: str, *, max_bytes: int | None = None, limit: int | None = None) -> list[dict[str, Any]]:
+        condition = sa.and_(sources.c.case_id == case_id, sources.c.withdrawn.is_(False))
+        # The single app admits/withdraws sources under this same lock: the
+        # bounded read must see the same rows as its size check.
+        guard = _AUTHORITY_MUTATION_LOCK if max_bytes is not None else nullcontext()
+        with guard, self.engine.connect() as conn:
+            if max_bytes is not None:
+                serialized = sa.cast(sources.c.blocks, sa.Text)
+                size = (sa.func.octet_length(serialized) if self.engine.dialect.name == "postgresql"
+                        else sa.func.length(sa.cast(serialized, sa.LargeBinary)))
+                count, total = conn.execute(sa.select(sa.func.count(), sa.func.coalesce(sa.func.sum(
+                    size + 4 * (sa.func.length(sources.c.filename) + sa.func.length(sources.c.media_type)) + 1024,
+                ), 0)).where(condition)).one()
+                if total > max_bytes or (limit is not None and count > limit):
+                    raise ValueError("SOURCE_LIST_LIMIT_EXCEEDED")
+            statement = sa.select(sources).where(condition).order_by(sources.c.created_at, sources.c.id)
+            if limit is not None:
+                statement = statement.limit(limit)
+            rows = conn.execute(statement).mappings().all()
         return [_public_source(dict(row)) for row in rows]
 
     def source_summaries(self, case_id: str, *, cursor: str = "", limit: int = 50) -> dict[str, Any]:

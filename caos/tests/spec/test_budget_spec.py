@@ -28,6 +28,16 @@ def test_manifest_caps_literal():
     assert budget.MAX_MANIFEST_LOCATOR_NODES == 500
 
 
+def test_source_manifest_refuses_excess_rows_before_digesting_text(monkeypatch):
+    from caos.engine import budget
+    from caos.engine.provider import AgentError
+
+    monkeypatch.setattr(budget, "digest", lambda value: pytest.fail("oversized source text was digested"))
+    with pytest.raises(AgentError, match="block ceiling"):
+        budget.source_manifest([{"id": "source", "sha256": "a" * 64,
+                                 "blocks": [{}] * budget.MAX_MANIFEST_BLOCKS}])
+
+
 def test_finalization_allowance_and_provider_constants():
     from caos.engine import budget
 
@@ -132,27 +142,38 @@ async def test_timeout_retry_must_be_byte_identical_and_single(engine, store, pr
     assert reservation_digest(one) == reservation_digest(engine.with_timeout_for_tests(one, 10.0)), "timeout is outside the digest"
 
 
-def test_count_tokens_never_charges_a_turn():
-    from caos.engine.budget import BudgetLedger
-
-    ledger = BudgetLedger.for_tests(turns=3)
-    ledger.note_count_tokens()
-    ledger.note_count_tokens()
-    assert ledger.used("turns") == 0, "turns charge on create only (legacy provider.py:326 vs :344)"
+async def test_count_tokens_never_charges_a_turn(engine, store, provider):
+    _, _, run = await start_full_credit_run(engine, store)
+    await engine.wait(run["id"])
+    assert provider.count_requests
+    assert engine.budget_used(run["id"])["turns"] == len(provider.create_requests)
 
 
 # --- ceilings fail before overspend (re-hosted CP-DR rows) ------------------------
 
 
 @pytest.mark.parametrize("dimension", ["turns", "evidence_reads", "evidence_bytes", "input_tokens", "output_tokens", "active_minutes"])
-def test_each_ceiling_refuses_the_next_operation_before_overspend(dimension):
-    from caos.engine.budget import BudgetLedger
+def test_each_ceiling_refuses_the_next_operation_before_overspend(store, dimension):
+    from caos.engine.budget import DIMENSIONS
+    from caos.storage.runs import RunStore, StoreConflict
 
-    ledger = BudgetLedger.for_tests(**{dimension: 1})
-    ledger.exhaust_for_tests(dimension)
-    with pytest.raises(Exception, match="AGENT_BUDGET_EXCEEDED"):
-        ledger.reserve_next_operation(dimension)
-    assert ledger.used(dimension) <= ledger.limit(dimension), "refusal must precede spend, never after"
+    ledger = RunStore(store.engine)
+    run = ledger.create_run("case-budget", "FULL_CREDIT", "full", "analyst")
+    ledger.init_budget(run["id"], dict.fromkeys(DIMENSIONS, 10) | {dimension: 1})
+    if dimension in {"turns", "input_tokens", "output_tokens"}:
+        ledger.reserve_provider(run["id"], "a" * 64, 1, 1, False)
+        ledger.reconcile_provider(run["id"], "a" * 64, 1, 1, 1, 1)
+        def operation():
+            return ledger.reserve_provider(run["id"], "b" * 64, 1, 1, False)
+    else:
+        ledger.charge_budget(run["id"], dimension, 1)
+        def operation():
+            return ledger.charge_budget(run["id"], dimension, 1)
+    before = ledger.get_budget(run["id"])
+    with pytest.raises(StoreConflict, match="AGENT_BUDGET_EXCEEDED"):
+        operation()
+    assert ledger.get_budget(run["id"]) == before
+    assert before["used"][dimension] == 1
 
 
 def test_manifest_bounding_fails_closed_before_provider_contact(store, provider):
@@ -165,13 +186,32 @@ def test_manifest_bounding_fails_closed_before_provider_contact(store, provider)
     assert provider.create_requests == []
 
 
-def test_manifest_exact_boundaries_are_allowed_inclusive():
+def test_manifest_exact_boundaries_are_allowed_inclusive(monkeypatch):
     from caos.engine import budget
     from caos.engine.budget import bound_manifest
+    from caos.contracts import canonical_json
 
     at_cap = [{"source_id": f"s{i}", "filename": "f.txt", "media_type": "text/plain",
                "sha256": "a" * 64, "blocks": []} for i in range(budget.MAX_MANIFEST_BLOCKS)]
-    bound_manifest(at_cap)  # must not raise: ceilings are inclusive
+    monkeypatch.setattr(budget, "MAX_MANIFEST_BYTES", len(canonical_json(at_cap).encode()))
+    bound_manifest(at_cap)  # both ceilings are inclusive
+    monkeypatch.setattr(budget, "MAX_MANIFEST_BYTES", budget.MAX_MANIFEST_BYTES - 1)
+    with pytest.raises(Exception, match="byte ceiling"):
+        bound_manifest(at_cap)
+
+
+async def test_oversized_manifest_refused_before_run_admission(engine, store, provider, monkeypatch):
+    from caos.engine import budget
+    from spec_helpers import seed_case_with_source
+
+    case, _ = seed_case_with_source(store)
+    monkeypatch.setattr(budget, "MAX_MANIFEST_BLOCKS", 1)
+    before = store.audit_trail()
+    with pytest.raises(Exception, match="AGENT_BUDGET_EXCEEDED"):
+        await engine.start_run(case_id=case["id"], pathway="FULL_CREDIT", depth="full", actor="analyst")
+    assert engine.runs.non_terminal_runs() == []
+    assert store.get_case(case["id"])["current_execution_id"] is None
+    assert store.audit_trail() == before and provider.create_requests == []
 
 
 def test_locator_bounding_rejects_structural_bombs_and_nonfinite_floats():

@@ -26,6 +26,13 @@ const poll = async (path, expected) => {
   }
   assert.fail(`Timed out: ${path}`);
 };
+const bounded = (promise, message, ms = 10_000) => {
+  let timer;
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(message)), ms); }),
+  ]).finally(() => clearTimeout(timer));
+};
 
 try {
   const record = await checked(await api.post("/api/cases", { data: {
@@ -65,8 +72,12 @@ try {
   await child.close();
 
   // A reload must reclaim the old document's slot, not strand its recovery.
-  page.on("dialog", (dialog) => dialog.accept());
-  await page.reload();
+  const beforeunloadEvent = page.waitForEvent("dialog");
+  const reload = page.reload();
+  const beforeunload = await bounded(beforeunloadEvent, "reloading the dirty report raised no beforeunload prompt");
+  assert.equal(beforeunload.type(), "beforeunload");
+  await beforeunload.accept();
+  await reload;
   await openPublicationControls(page);
   await page.getByRole("button", { name: "Restore copy", exact: true }).click();
   assert.equal(await page.locator("#opinion-text").inputValue(), "PARENT UNSIGNED OPINION");
@@ -108,7 +119,7 @@ try {
     const receiptStatuses = await receiptPage.locator(".status").allInnerTexts();
     assert.fail(`selecting governed v91 failed before the receipt request; statuses: ${receiptStatuses.join(" | ") || "none"}; page errors: ${errors.join(" | ") || "none"}`);
   }
-  await Promise.race([waitingA, new Promise((_, reject) => setTimeout(() => reject(new Error(`Draft v91 did not request its filing receipt; observed: ${receiptRequests.join(", ") || "none"}`)), 10_000))]);
+  await bounded(waitingA, `Draft v91 did not request its filing receipt; observed: ${receiptRequests.join(", ") || "none"}`);
   assert.ok(requestA, "the held v91 receipt request identity was not retained");
   // Install the exact request's browser-settlement waiter before selecting B:
   // React's AbortController may cancel A during that click, before the held
@@ -167,6 +178,8 @@ try {
   const worksheet = await checked(await api.get(`/api/cases/${caseId}/models/${secondBuild.id}/worksheet`));
   const snapshot = worksheet.payload.tabs.find((tab) => tab.title === "Credit Snapshot");
   const model = worksheet.payload.tabs.find((tab) => tab.title === "Model");
+  assert.ok(snapshot?.cells.length, "worksheet omitted Credit Snapshot cells");
+  assert.ok(model?.cells.length, "worksheet omitted Model cells");
   const revenue = snapshot.cells.find((cell) => cell.address === "B35");
   assert.equal(typeof revenue.value, "number");
   assert.equal(revenue.value, model.cells.find((cell) => cell.address === "K9").value);
@@ -196,7 +209,7 @@ try {
     } finally { calculations--; }
   });
   await modelPage.goto(`/model/?case=${caseId}`);
-  await waitingTornado;
+  await bounded(waitingTornado, "initial tornado request never reached the held route");
   const input = modelPage.locator('input[aria-label*="FY"][aria-label*="BASE"]:enabled').first();
   const original = Number(await input.inputValue());
   const step = Number(await input.getAttribute("step")) || 0.001;
@@ -218,6 +231,7 @@ try {
   assert.equal(signedDraft.parent_revision_id, null);
   assert.equal(signedDraft.expected_head_revision_id, previousHead.id);
   assert.equal(signed.status(), 201, await signed.text());
+  assert.ok(calculationStatuses.length > 0, "no model calculation completed");
   assert.ok(calculationStatuses.every((status) => status === 200), JSON.stringify(calculationStatuses));
   assert.equal(maxCalculations, 1);
   console.log("PASS F8/F9: fresh-build sign-off succeeds; latest preview survives rapid edits without 429");
@@ -264,7 +278,7 @@ try {
   });
   const secondSave = draftResponse();
   await commentary.fill("Updated recovery section.");
-  await waitingSave;
+  await bounded(waitingSave, "autosave request never reached the held route");
   await savedReport.locator("#opinion-text").fill("UNSIGNED DURING AUTOSAVE");
   releaseSave();
   const savedWorkspace = await checked(await secondSave, 201);

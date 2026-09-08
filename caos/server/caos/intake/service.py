@@ -20,7 +20,7 @@ from typing import Any
 
 from fastapi import HTTPException, UploadFile
 
-from ..contracts import digest
+from ..contracts import CreateCaseRequest, digest
 from ..engine.runtime import EngineError
 from ..observability import log_event
 from ..sources.classify import (
@@ -195,13 +195,20 @@ class IntakeService:
         vault = Vault(self.settings)
         prepared: list[dict[str, Any]] = []
         findings: list[dict[str, Any]] = []
+        retained_bytes = retained_text = 0
         for upload in uploads:
             filename = Path(upload.filename or "source.bin").name
             try:
-                source = await prepare_upload(vault, upload, self.settings.max_source_bytes)
+                source = await prepare_upload(vault, upload, min(
+                    self.settings.max_source_bytes, self.settings.max_upload_bytes - retained_bytes,
+                ))
             except HTTPException as exc:
                 findings.append(_finding(filename, str(exc.detail), status=exc.status_code))
                 continue
+            retained_bytes += source["bytes"]
+            retained_text += sum(len(block["text"].encode("utf-8")) for block in source["blocks"])
+            if retained_text > self.settings.max_upload_bytes:
+                raise IntakeRefused("INTAKE_ADMISSION_REFUSED", "The pack exceeds the extracted-evidence limit; split it into smaller intakes.")
             prepared.append(source)
         if findings:
             raise IntakeRefused(
@@ -265,6 +272,10 @@ class IntakeService:
         for document in documents:
             issuer = document["_classification"].get("issuer")
             if issuer:
+                try:
+                    issuer = CreateCaseRequest(name="Intake", issuer=issuer).issuer
+                except ValueError as exc:
+                    raise IntakeRefused("INTAKE_ADMISSION_REFUSED", "A document's derived issuer does not satisfy the case text contract.") from exc
                 key = normalize_issuer(issuer)
                 candidates.setdefault(key, []).append(document["filename"])
                 names.setdefault(key, issuer)
@@ -305,7 +316,12 @@ class IntakeService:
             for document in documents if document["_first"]
         ]
         today = datetime.now(timezone.utc).date().isoformat()
-        return None, {"name": f"{issuer} intake {today}", "issuer": issuer, "sector": suggest_sector(texts)}
+        # The machine label is abbreviated; the governed issuer is preserved.
+        label_suffix = f" intake {today}"
+        return None, CreateCaseRequest(
+            name=f"{issuer[:160 - len(label_suffix)]}{label_suffix}",
+            issuer=issuer, sector=suggest_sector(texts),
+        ).model_dump()
 
     def _apply_existing_sources(self, case: dict[str, Any] | None, documents: list[dict[str, Any]]) -> None:
         if case is None:

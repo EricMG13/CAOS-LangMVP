@@ -22,6 +22,8 @@ jobs:
         working-directory: caos/frontend
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 24
@@ -44,6 +46,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           # test_recorded_review.py::test_the_script_reviews_this_repository_head_
           # without_a_block diffs HEAD~1..HEAD, so this job's checkout needs one
           # parent commit — the default single-commit clone doesn't carry one.
@@ -134,6 +137,8 @@ jobs:
         browser: [chromium, firefox, webkit]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 24
@@ -164,7 +169,11 @@ jobs:
             --scanner-fixture \
             --report-fixtures > server.log 2>&1 &
           for i in $(seq 1 30); do
-            curl -sf http://127.0.0.1:19181/api/health && exit 0
+            health_code="$(curl -sS -o health.json -w '%{http_code}' http://127.0.0.1:19181/api/health || true)"
+            if [ "$health_code" = "200" ] || [ "$health_code" = "503" ]; then
+              python -c 'import json,sys; d=json.load(open("health.json")); assert d.get("store") and d.get("bundle") and d.get("checkpointer") and d.get("scanner") in {"ready","unavailable"}, d'
+              exit 0
+            fi
             sleep 1
           done
           cat server.log
@@ -175,12 +184,20 @@ jobs:
           CAOS_BROWSER: ${{ matrix.browser }}
         run: npm run test:workbench
       - name: Accessibility sweep
-        # WEB-007: axe over every destination and state (empty, loading,
-        # populated, error, refusal, review, filed); axe-core runs in one
-        # engine, the journey above is what differs per engine.
+        # WEB-007: axe after every destination has rendered, plus explicit
+        # loading, error, refusal, review, and filed fixtures. The route sweep
+        # records the requested case or the first accessible/empty result.
         if: matrix.browser == 'chromium'
         working-directory: caos/frontend
         run: npm run a11y
+      - name: Focused fixture browser regressions
+        if: matrix.browser == 'chromium'
+        working-directory: caos/frontend
+        run: |
+          npm run test:chart-stack
+          npm run test:draft-history
+          npm run test:fault-regressions
+          npm run test:run-graph
       - name: Retain the browser report, traces and screenshots
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -196,6 +213,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Shell syntax
         run: bash -n caos/deploy/*.sh caos/scripts/*.sh
       - name: Compose schema and example environment
@@ -231,6 +250,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Build app image
         run: docker build --target app --tag caos-app:ci --file caos/deploy/Dockerfile .
       - name: Build worker image
@@ -356,6 +377,8 @@ jobs:
           --health-retries 12
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.14"
@@ -380,6 +403,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"

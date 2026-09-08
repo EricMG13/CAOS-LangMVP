@@ -39,6 +39,15 @@ def test_workflow_token_is_read_only(path):
 
 
 @pytest.mark.parametrize("path", WORKFLOWS, ids=lambda p: p.name)
+def test_checkout_does_not_persist_job_credentials(path):
+    workflow = yaml.safe_load(path.read_text())
+    for name, step, _ in _runs(workflow):
+        if str(step.get("uses", "")).startswith("actions/checkout@"):
+            assert step.get("with", {}).get("persist-credentials") is False, \
+                f"{path.name}:{name} persists the job token after checkout"
+
+
+@pytest.mark.parametrize("path", WORKFLOWS, ids=lambda p: p.name)
 def test_every_action_is_pinned_to_a_commit(path):
     workflow = yaml.safe_load(path.read_text())
     for name, step, _ in _runs(workflow):

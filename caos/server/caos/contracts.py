@@ -97,7 +97,7 @@ def validate_boundary_text(value: str) -> str:
         value.encode("utf-8")
     except UnicodeEncodeError as exc:
         raise ValueError("text contains unencodable code points") from exc
-    if any(ord(ch) < 32 and ch not in "\n\r\t" for ch in value):
+    if any(unicodedata.category(ch) == "Cc" and ch not in "\n\r\t" for ch in value):
         raise ValueError("text contains control characters")
     if not BIDI_CONTROLS.isdisjoint(value):
         raise ValueError("text contains bidirectional override characters")

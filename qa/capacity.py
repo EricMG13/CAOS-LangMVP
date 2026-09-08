@@ -83,6 +83,27 @@ def client(url: str, timeout: float = 120.0) -> httpx.Client:
     return httpx.Client(base_url=url, timeout=timeout)
 
 
+def list_cases(http: httpx.Client, who: dict[str, str]) -> list[dict]:
+    cases: list[dict] = []
+    cursor = ""
+    while True:
+        params = {"limit": 100}
+        if cursor:
+            params["cursor"] = cursor
+        response = http.get("/api/cases", headers=who, params=params)
+        response.raise_for_status()
+        page = response.json()
+        if not isinstance(page, list):
+            raise RuntimeError(f"case listing returned {response.status_code} {response.text[:120]}")
+        cases.extend(page)
+        if len(page) < 100:
+            return cases
+        next_cursor = page[-1].get("id") if isinstance(page[-1], dict) else None
+        if not isinstance(next_cursor, str) or next_cursor <= cursor:
+            raise RuntimeError("case listing did not advance its cursor")
+        cursor = next_cursor
+
+
 class Stopwatch:
     """Per-class latency samples and error classes, thread-safe."""
 
@@ -352,7 +373,7 @@ def limit_source_size(http: httpx.Client, out: list[dict], case_id: str, who: di
 def limit_intake_files(http: httpx.Client, out: list[dict]) -> None:
     declared = DECLARED["intake_files"]
     who = headers("capacity-intake")
-    before = len(http.get("/api/cases", headers=who).json())
+    before = len(list_cases(http, who))
     results = {}
     for label, count in (("below", declared - 1), ("at", declared), ("above", declared + 1)):
         tag = f"Intake{label.title()}"
@@ -361,7 +382,7 @@ def limit_intake_files(http: httpx.Client, out: list[dict]) -> None:
         detail = response.json().get("detail") if response.status_code >= 400 else None
         results[label] = {"files": count, "status": response.status_code,
                           "code": detail.get("code") if isinstance(detail, dict) else None}
-    after = len(http.get("/api/cases", headers=who).json())
+    after = len(list_cases(http, who))
     out.append({
         "limit": "documents per intake", "declared": declared, **results, "cases_created": after - before,
         "verdict": "PASS" if results["above"]["code"] == "INTAKE_TOO_MANY_FILES" and results["at"]["code"] != "INTAKE_TOO_MANY_FILES"
@@ -526,8 +547,8 @@ def profile(args: argparse.Namespace) -> int:
     def leakage_check() -> None:
         for subject in subjects:
             try:
-                listing = http.get("/api/cases", headers=who[subject]).json()
-            except (httpx.HTTPError, ValueError) as exc:
+                listing = list_cases(http, who[subject])
+            except (httpx.HTTPError, RuntimeError, ValueError) as exc:
                 watch.record("leakage_check", time.perf_counter(), type(exc).__name__)
                 continue
             foreign = foreign_cases(listing, set(seeded[subject]))
@@ -586,7 +607,9 @@ def profile(args: argparse.Namespace) -> int:
         while not stop.is_set():
             cases = seeded[subject]
             case_id = cases[tick % len(cases)] if cases else None
-            kind, call = "list_cases", lambda: http.get("/api/cases", headers=who[subject])
+            # This latency sample intentionally measures one bounded register page;
+            # it makes no decision that depends on a complete case enumeration.
+            kind, call = "list_cases", lambda: http.get("/api/cases", headers=who[subject], params={"limit": 100})
             if case_id and tick % 3 == 1:
                 kind, call = "list_sources", lambda: http.get(f"/api/cases/{case_id}/sources", headers=who[subject])
             elif case_id and tick % 3 == 2:
@@ -664,7 +687,7 @@ def baseline(args: argparse.Namespace) -> int:
     record: dict[str, dict] = {}
     for subject in subjects:
         who = headers(subject)
-        for case in http.get("/api/cases", headers=who).json():
+        for case in list_cases(http, who):
             case_id = case["id"]
             snapshot = http.get(f"/api/cases/{case_id}/snapshot", headers=who).json()
             builds = http.get(f"/api/cases/{case_id}/models", headers=who).json().get("builds", [])

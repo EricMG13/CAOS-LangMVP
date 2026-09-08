@@ -22,6 +22,7 @@ from calculator_fixtures import VALID_CALCULATION_INPUTS as _VALID_CALCULATION_I
 
 CANONICAL_BODY = "\n".join(
     f"## {heading}\n\nscripted"
+    + ("\n\n### Implications\n\nscripted" if heading == "Analysis" else "")
     for heading in ("Audit Summary", "Analysis", "Evidence Trace", "Source Registry", "Gaps & Conflicts", "QA Validation")
 )
 

@@ -61,14 +61,14 @@ async def test_cp2g_emits_handoff_without_fabricated_workbook_values_or_signing_
 
 
 def test_financial_guards_and_rv_signal_bands():
-    """From test_financial_and_rv_guards: None on NaN/inf/zero-denominator; fixed spread bands."""
-    from caos.models.engine import is_finite_number, safe_ratio
+    """Production numeric boundaries reject NaN/inf; spread bands stay fixed."""
+    from caos.contracts import finite_or_none
     from caos.artifacts.relative_value import signal_for_spread
 
-    assert safe_ratio(10.0, 0.0) is None
-    assert safe_ratio(float("nan"), 2.0) is None
-    assert is_finite_number(0) and is_finite_number(False)
-    assert not is_finite_number(float("inf")) and not is_finite_number(float("nan"))
+    assert finite_or_none(0) == 0
+    for value in (float("inf"), float("nan")):
+        with pytest.raises(ValueError, match="non-finite"):
+            finite_or_none(value)
     assert signal_for_spread(300) == "ATTRACTIVE"
     assert signal_for_spread(500) == "FAIR"
     assert signal_for_spread(700) == "UNATTRACTIVE"

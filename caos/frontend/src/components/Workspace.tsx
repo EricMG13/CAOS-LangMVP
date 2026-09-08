@@ -12,7 +12,7 @@ import ModulePresentation from "./analysis/ModulePresentation";
 import ReportStudio from "./report/ReportStudio";
 import RunGraph from "./run/RunGraphView";
 import { EmptyBlock, EmptyPanel, IdentityValue, LoadState, MutationReceipt, StateBlock, StateNote, Unavailable } from "./states";
-import { ApiRequestError, api as request, firstErrorMessage, isIntakeRefusal, isUnavailableRoute, networkFetch, type ArtifactRecord, type CaseRecord, type IntakeRecord, type IntakeRefusal, type LoanFinding, type LoanRow, type LoanUniverseResponse, type ResearchPlan, type RunRecord, type SourceRecord, type SourceSummaryPage, type OperatorCapabilities } from "../lib/api";
+import { ApiRequestError, api as request, firstErrorMessage, isIntakeRefusal, isUnavailableRoute, listCases, networkFetch, type ArtifactRecord, type CaseRecord, type IntakeRecord, type IntakeRefusal, type LoanFinding, type LoanRow, type LoanUniverseResponse, type ResearchPlan, type RunRecord, type SourceRecord, type SourceSummaryPage, type OperatorCapabilities } from "../lib/api";
 import { displayValue, flattenValue, markdownBlocks, normalizeEvidenceRefs, type NormalizedEvidenceRef } from "../lib/artifactReader";
 import { initialAuthorityState, matchesAuthority, requestContext, workspaceAuthorityReducer, type AuthorityEvent, type AuthorityStatus } from "../lib/workspaceAuthority";
 
@@ -117,12 +117,9 @@ export default function Workspace({ destination, children }: { destination?: Des
   const [drawer, setDrawer] = useState<DrawerState | null>(null);
   const [acceptPrompt, setAcceptPrompt] = useState(false);
   const [discardPrompt, setDiscardPrompt] = useState<DraftDiscardRequest | null>(null);
-  // Observed-404 capability memory, scoped to the run it was observed on: a resume
-  // or plan-approval POST answers 404 both when the route is absent on this
-  // deployment and when the run itself is unknown or no longer visible to the
-  // caller (CLAUDE.md auth edge: the same 404). The control renders its
-  // unavailable block for that run only; every other run keeps its action
-  // (FE-A0 F4). Each holds the run id the 404 was observed on.
+  // Capability memory, scoped to the run it was observed on. A private 404 remains
+  // indistinguishable from an absent route or an unknown/hidden run, so the rendered
+  // state names neither cause. The static fallback answers 405 to an unhandled POST.
   const [resumeUnavailable, setResumeUnavailable] = useState("");
   const [approvalUnavailable, setApprovalUnavailable] = useState("");
   // Fallback aftermath state for a server that does not serve run.accepted_snapshot_id:
@@ -384,7 +381,7 @@ export default function Workspace({ destination, children }: { destination?: Des
     const context = requestContext(authorityRef.current);
     setCasesLoading(true);
     try {
-      const next = await request<CaseRecord[]>("/api/cases", {}, signal);
+      const next = await listCases(signal);
       if (requestId !== casesRequest.current || !matchesAuthority(authorityRef.current, context)) return;
       setCases(next);
       setCasesLoading(false);
@@ -452,7 +449,7 @@ export default function Workspace({ destination, children }: { destination?: Des
     setRunLoading(true);
     setRunError("");
     try {
-      const next = await request<RunRecord>(`/api/runs/${id}`);
+      const next = await request<RunRecord>(`/api/runs/${id}?include_events=false`);
       if (requestId !== runRefresh.current || !matchesAuthority(authorityRef.current, context)) return;
       if (next.case_id !== context.caseId) {
         setRun(null);
@@ -1428,7 +1425,7 @@ function SourcesView({ writeAccess, selectedCase, artifactId, sourceId, blockId,
       <aside className="source-register"><div className="source-region-head"><h2>Source register</h2><span className="mono muted">{loading ? "Loading…" : `${inventory.sources.length}${inventory.next_cursor ? "+" : ""} sources`}</span></div>{artifactError ? <StateNote tone="critical" live="alert">{artifactError}</StateNote> : null}
         {search.trim() ? <>{searchResult.loading || searchResult.error || !searchResult.matches.length ? <LoadState loading={searchResult.loading} error={searchResult.error} empty="No documents match this search." /> : null}{searchResult.matches.map((match) => <button className="source-register-row" type="button" key={`${match.source_id}:${match.block_id}`} onClick={() => { setSelectedSourceId(match.source_id); setSelectedBlockId(match.block_id); }}><strong>{match.filename}</strong><span>{match.text}</span><span className="mono">{match.block_id} · {formatBlockLocator(match.locator)}</span></button>)}{searchResult.next_cursor ? <button className="button small" type="button" onClick={() => void searchResult.more()} disabled={searchResult.loading}>More search results</button> : null}</> : <>{inventory.sources.map((source) => <button id={`source-${source.id}`} className={`source-register-row ${selectedSourceId === source.id ? "is-active" : ""}`} type="button" aria-pressed={selectedSourceId === source.id} onClick={() => { setSelectedSourceId(source.id); setSelectedBlockId(""); }} key={source.id}><strong>{source.filename}</strong><span className="mono">{source.id} · {source.block_count} blocks</span><span className={`status ${source.withdrawn || !source.block_count ? "warning" : "success"}`}>{source.withdrawn ? "Withdrawn" : source.block_count ? "Extracted" : "No blocks"}</span></button>)}{inventory.next_cursor ? <button className="button small" type="button" onClick={() => void moreSources()} disabled={moreBusy}>More sources</button> : null}{!inventory.sources.length ? <LoadState loading={loading} error={loadError} empty="No source objects in this credit." /> : loadError ? <StateNote tone="critical" live="alert">{loadError}</StateNote> : null}</>}
       </aside>
-      <section className="source-reader" aria-labelledby="source-reader-title">{selectedSource ? <><div className="meta-label">{selectedSource.id} · immutable source object</div><h2 id="source-reader-title">{selectedSource.filename}</h2>{selectedSource.withdrawn ? <StateNote tone="warning">Withdrawn source · retained for historical review; unavailable as current evidence.</StateNote> : null}{invalidBlock ? <StateNote tone="critical" live="alert">Block {selectedBlockId} is not in this source. No other block was selected.</StateNote> : null}<div className="source-document-blocks">{selectedSource.blocks.slice(0, blockLimit).map((block) => <article tabIndex={-1} className={selectedBlock?.block_id === block.block_id ? "source-document-block is-selected" : "source-document-block"} id={`block-${selectedSource.id}-${block.block_id}`} key={block.block_id}><button type="button" onClick={() => setSelectedBlockId(block.block_id)} aria-pressed={selectedBlock?.block_id === block.block_id}><span className="meta-label">{block.block_id} · {formatBlockLocator(block.locator)}</span><span>{block.text || "No extracted text."}</span></button></article>)}</div>{selectedSource.blocks.length > blockLimit ? <button className="button small" type="button" onClick={() => setBlockLimit((limit) => limit + SOURCE_READER_BLOCK_PREVIEW)}>Show more blocks</button> : null}</> : <LoadState loading={sourceLoading} error={sourceError} empty="Select a source document." />}</section>
+      <section className="source-reader" aria-label={selectedSource?.filename ?? "Source document"}>{selectedSource ? <><div className="meta-label">{selectedSource.id} · immutable source object</div><h2 id="source-reader-title">{selectedSource.filename}</h2>{selectedSource.withdrawn ? <StateNote tone="warning">Withdrawn source · retained for historical review; unavailable as current evidence.</StateNote> : null}{invalidBlock ? <StateNote tone="critical" live="alert">Block {selectedBlockId} is not in this source. No other block was selected.</StateNote> : null}<div className="source-document-blocks">{selectedSource.blocks.slice(0, blockLimit).map((block) => <article tabIndex={-1} className={selectedBlock?.block_id === block.block_id ? "source-document-block is-selected" : "source-document-block"} id={`block-${selectedSource.id}-${block.block_id}`} key={block.block_id}><button type="button" onClick={() => setSelectedBlockId(block.block_id)} aria-pressed={selectedBlock?.block_id === block.block_id}><span className="meta-label">{block.block_id} · {formatBlockLocator(block.locator)}</span><span>{block.text || "No extracted text."}</span></button></article>)}</div>{selectedSource.blocks.length > blockLimit ? <button className="button small" type="button" onClick={() => setBlockLimit((limit) => limit + SOURCE_READER_BLOCK_PREVIEW)}>Show more blocks</button> : null}</> : <LoadState loading={sourceLoading} error={sourceError} empty="Select a source document." />}</section>
       <aside className="source-support"><div className="meta-label">Evidence support</div><h2>Selected source authority</h2>{selectedSource ? <><dl className="state-facts"><dt>Source</dt><dd className="mono">{selectedSource.id}</dd><dt>SHA-256</dt><dd><IdentityValue value={selectedSource.sha256} /></dd><dt>Blocks</dt><dd className="num">{selectedSource.blocks.length}</dd>{selectedBlock ? <><dt>Selected block</dt><dd className="mono">{selectedBlock.block_id}</dd><dt>Locator</dt><dd className="mono">{formatBlockLocator(selectedBlock.locator)}</dd></> : null}</dl><button className="button small" type="button" onClick={(event) => void openEvidence(selectedSource.id, event.currentTarget, selectedBlock?.block_id)}>Open evidence context</button></> : <p className="muted">No source selected.</p>}<div className="source-coverage-gate"><Unavailable title="Claim coverage" context="A normalized claim-to-source map is not served by this deployment. Source blocks remain readable above." /></div></aside>
     </section>
   </div>;

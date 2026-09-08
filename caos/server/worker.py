@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import math
 import os
 import sys
 import time
@@ -37,8 +38,9 @@ def _failure(exc: Exception) -> str:
 def run_pending(service: ModelService, deliverables: Any = None) -> int:
     """One poll pass: execute every QUEUED build, then every QUEUED export, then
     every QUEUED deliverable freeze (Task 10: the frozen record is written here,
-    after every export is published and read back). A crash in one item
-    finalizes that item FAILED and never kills the loop."""
+    after every export is published and read back). Calculation failures are
+    finalized per item; a failed store finalization exits for supervisor restart
+    and startup recovery."""
     processed = deliverables.run_pending_freezes() if deliverables is not None else 0
     work = service.builds.queued_work()
     for build_id in work["builds"]:
@@ -72,12 +74,18 @@ def run_pending(service: ModelService, deliverables: Any = None) -> int:
 
 
 def main() -> None:
+    poll_seconds = float(os.getenv("WORKER_POLL_SECONDS", "2"))
+    if not math.isfinite(poll_seconds) or not 0.1 <= poll_seconds <= 60:
+        raise ValueError("WORKER_POLL_SECONDS must be finite and between 0.1 and 60 seconds")
     settings = Settings.from_env()
     settings.validate_worker_runtime()
     configure_logging(settings)
     data = Path(os.getenv("CAOS_DATA_DIR", str(settings.storage_dir))).resolve()
     data.mkdir(parents=True, exist_ok=True)
-    store = DomainStore.from_url(settings.database_url or f"sqlite:///{data / 'caos.db'}")
+    store = DomainStore.from_url(
+        settings.database_url or f"sqlite:///{data / 'caos.db'}",
+        role="worker",
+    )
     engine = None
     try:
         # The engine here only lends the model service its snapshot/artifact reads
@@ -86,7 +94,6 @@ def main() -> None:
         engine = Engine.create(settings=settings, store=store, checkpoint_path=data / "checkpoints.db")
         service = ModelService(store=store, vault_dir=settings.storage_dir, engine=engine)
         deliverables = DeliverableService(store=store, vault_dir=settings.storage_dir, engine=engine, models=service)
-        poll_seconds = float(os.getenv("WORKER_POLL_SECONDS", "2"))
         once = "--once" in sys.argv[1:]
         with store.single_instance("worker"):
             # Startup recovery: a freeze this worker's predecessor claimed and

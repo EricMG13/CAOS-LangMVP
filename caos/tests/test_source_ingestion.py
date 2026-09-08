@@ -34,10 +34,10 @@ async def ingest(store, vault, case_id, filename, content, content_type="applica
         await upload.close()
 
 
-async def assert_rejected(store, vault, case_id, filename, content, status=422):
+async def assert_rejected(store, vault, case_id, filename, content, status=422, content_type="application/octet-stream"):
     before = store.current_source_set(case_id)
     with pytest.raises(HTTPException) as excinfo:
-        await ingest(store, vault, case_id, filename, content)
+        await ingest(store, vault, case_id, filename, content, content_type)
     assert excinfo.value.status_code == status
     assert store.current_source_set(case_id) == before, "rejection must leave no source-set delta"
     return excinfo.value
@@ -211,6 +211,99 @@ async def test_text_beyond_the_extraction_ceiling_is_still_refused(store, vault,
 
 async def test_eicar_content_is_rejected(store, vault, case_id):
     await assert_rejected(store, vault, case_id, "sig.txt", b"X5O!P%@AP[4\\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*")
+
+
+async def test_prefixed_archive_still_obeys_zip_limits(store, vault, case_id):
+    import io
+    import zipfile
+
+    output = io.BytesIO()
+    with zipfile.ZipFile(output, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr("payload.xml", b"x" * 200_000)
+    error = await assert_rejected(store, vault, case_id, "prefixed.xlsx", b"\0" + output.getvalue())
+    assert "archive" in error.detail and "limit" in error.detail
+
+
+async def test_workbook_dtd_is_refused_before_openpyxl(store, vault, case_id):
+    import io
+    import zipfile
+
+    output = io.BytesIO()
+    with zipfile.ZipFile(io.BytesIO(xlsx_bytes([["evidence"]]))) as original, zipfile.ZipFile(output, "w") as archive:
+        for entry in original.infolist():
+            data = original.read(entry)
+            if entry.filename == "xl/workbook.xml":
+                data = b'<!DOCTYPE workbook [<!ENTITY injected "expanded">]>' + data
+            archive.writestr(entry.filename, data)
+    error = await assert_rejected(store, vault, case_id, "entities.xlsx", output.getvalue())
+    assert "XML" in error.detail
+
+
+async def test_nested_json_is_a_typed_refusal(store, vault, case_id):
+    error = await assert_rejected(store, vault, case_id, "deep.json", b"[" * 200_000 + b"]" * 200_000)
+    assert error.detail == "invalid JSON source"
+
+
+@pytest.mark.parametrize("filename,media", [
+    ("bad\x7f.txt", "text/plain"), ("bad\x85.txt", "text/plain"),
+    ("bad\n.txt", "text/plain"), ("x" * 252 + ".txt", "text/plain"),
+    ("ok.txt", "x" * 161), ("ok.txt", "text/plain\rhidden"),
+])
+async def test_source_metadata_refused_before_persistence(store, vault, case_id, filename, media):
+    await assert_rejected(store, vault, case_id, filename, b"evidence", content_type=media)
+
+
+async def test_source_metadata_normalizes_before_length_limit(store, vault, case_id):
+    source = await ingest(store, vault, case_id, "cafe\u0301.txt", b"evidence")
+    assert source["filename"] == "caf\u00e9.txt"
+
+
+async def test_pdf_page_cap_is_a_refusal_not_no_text_evidence(store, vault, case_id, monkeypatch):
+    import io
+    from pypdf import PdfWriter
+
+    writer = PdfWriter()
+    for _ in range(3):
+        writer.add_blank_page(width=100, height=100)
+    output = io.BytesIO()
+    writer.write(output)
+    monkeypatch.setattr(sources_domain, "MAX_PDF_PAGES", 2, raising=False)
+    error = await assert_rejected(store, vault, case_id, "pages.pdf", output.getvalue())
+    assert error.detail == sources_domain.EXTRACTION_LIMIT_DETAIL
+
+
+def test_pdf_stops_extracting_when_aggregate_text_limit_is_reached(monkeypatch):
+    import io
+    import pypdf
+    from pypdf.generic import DecodedStreamObject, DictionaryObject, NameObject
+
+    writer = pypdf.PdfWriter()
+    for _ in range(3):
+        page = writer.add_blank_page(width=100, height=100)
+        page[NameObject("/Resources")] = DictionaryObject({NameObject("/Font"): DictionaryObject({
+            NameObject("/F1"): DictionaryObject({
+                NameObject("/Type"): NameObject("/Font"), NameObject("/Subtype"): NameObject("/Type1"),
+                NameObject("/BaseFont"): NameObject("/Helvetica"),
+            }),
+        })})
+        content = DecodedStreamObject()
+        content.set_data(b"BT /F1 12 Tf (" + b"evidence " * 10 + b") Tj ET")
+        page[NameObject("/Contents")] = writer._add_object(content)
+    output = io.BytesIO()
+    writer.write(output)
+    calls = []
+    original = pypdf.PageObject.extract_text
+
+    def tracked(page, *args, **kwargs):
+        calls.append(page)
+        return original(page, *args, **kwargs)
+
+    monkeypatch.setattr(pypdf.PageObject, "extract_text", tracked)
+    from caos.sources.pdf import extract_text
+
+    with pytest.raises(ValueError, match="extraction limits"):
+        extract_text(output.getvalue(), max_text=100, max_pages=10)
+    assert len(calls) == 2
 
 
 async def test_duplicate_active_content_rejected_and_withdrawal_reopens(store, vault, case_id):

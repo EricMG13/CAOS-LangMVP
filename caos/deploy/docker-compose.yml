@@ -57,7 +57,8 @@ services:
       clamav: { condition: service_healthy }
     environment:
       ENVIRONMENT: production
-      DATABASE_URL: postgresql+psycopg://caos:${POSTGRES_PASSWORD}@db:5432/caos
+      DATABASE_URL: postgresql+psycopg://caos@db:5432/caos
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
       CAOS_STORAGE_DIR: /vault
       EDGE_PROXY_SECRET: ${EDGE_PROXY_SECRET:?set EDGE_PROXY_SECRET}
       SESSION_SECRET: ${SESSION_SECRET:?set SESSION_SECRET}
@@ -113,7 +114,8 @@ services:
       app: { condition: service_healthy }
     environment:
       ENVIRONMENT: production
-      DATABASE_URL: postgresql+psycopg://caos:${POSTGRES_PASSWORD}@db:5432/caos
+      DATABASE_URL: postgresql+psycopg://caos@db:5432/caos
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
       CAOS_STORAGE_DIR: /vault
     volumes:
       - vault-data:/vault

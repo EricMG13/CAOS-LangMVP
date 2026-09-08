@@ -66,7 +66,7 @@ Standing rules that back them:
   updated → no event), which is what makes terminal events exactly-once.
 - **Boundary text.** Every string that can enter pinned state or events carries
   `BoundaryText`, never a bare `str`: it must UTF-8-encode (lone surrogates
-  rejected), carry no control bytes and no bidirectional override/isolate
+  rejected), carry no Unicode Cc controls except CR/LF/TAB and no bidirectional override/isolate
   controls (CVE-2021-42574 — directional *marks* stay legal for RTL issuer
   names), and it is NFC-normalized *before* the length bound is applied. Bare
   `str` on a field that reaches a revision, a frozen payload or an audit event
@@ -76,10 +76,13 @@ Standing rules that back them:
   groups only — client role headers never escalate (`identity.py`). Unknown
   runs and unauthorized runs return the same 404.
 - **Readiness.** `GET /api/health` serves liveness *and* readiness on one strict
-  model: `{status, store, bundle, checkpointer}`, 200 when all hold and 503
+  model: `{status, store, bundle, checkpointer, scanner}`, 200 when all hold and 503
   otherwise. The probes really run (store `SELECT 1`, full bundle integrity
   verification, the real LangGraph checkpoint schema plus a bounded write-lock
-  acquisition) but at most once per `READINESS_TTL_SECONDS` — the route skips
+  acquisition) but at most once per `READINESS_TTL_SECONDS`. Engine probes share
+  one daemon thread with a one-second deadline. HTTP health callers share one
+  shielded background task for the engine and scanner checks, keeping the serving
+  loop and HTTP request pool free; timeout returns degraded. An unfinished probe prevents further probe threads. The route skips
   both oauth2-proxy auth and the rate ceiling, so its cost is an anonymous
   caller's to spend.
 
@@ -123,8 +126,10 @@ Standing rules that back them:
   in its own transaction.
 - Run progress reaches the UI as graph events: `GET /api/runs/{id}/events` is a
   thin SSE tail of `run_events` (Last-Event-ID resume; stream closes once a
-  terminal run is fully delivered). The frontend never reads event payloads —
-  event names trigger a RunRecord refetch.
+  terminal run is fully delivered). Membership is rechecked before each event;
+  tails close after five minutes for edge reauthentication. The frontend never
+  reads event payloads — event names trigger a RunRecord refetch with
+  `include_events=false`. The default remains true for existing API clients.
 - Publication (DECISIONS §14.19, Task 10). The analyst signs an opinion on the
   exact saved revision (`POST …/deliverables/{pathway}/opinion`, append-only
   `deliverable_opinions`, expected-head CAS); freeze refuses without a current
@@ -473,12 +478,11 @@ engine, the bundle, or the routes.
   (`caos/tests/spec/test_source_admission_fixes_spec.py`). What is still refused: extracted text over
   `MAX_SOURCE_TEXT` (12 MB) and uploads over `max_source_bytes` (25 MB). The unit
   CAOS ingests is one user-provided document, not a multi-document container.
-- `npm run test:production-inventory` does not pass against this build and never
-  could: `caos/frontend/scripts/production-inventory.mjs` walks
-  `GET /api/cases/{id}/runs` (only POST is served) and `/api/cases/{id}/members`
-  (no route at all), and its `CAOS_CASE_ID` default is a fixture case id from a
-  seeded deployment. It is not in CI. Treat it as the inventory for a deployment
-  that serves those routes, not as a check on this one.
+- `npm run test:production-inventory` is a manual check for an explicitly
+  seeded deployment. `GET /api/cases/{id}/runs` and `GET …/members` are absent;
+  both paths have POST routes. Its default case id belongs to its fixture, so
+  it is not a general CI check. A private 404 and an absent route share neutral
+  UI wording: “Unavailable or not permitted.”
 - The `security` job's `python-version: "3.12"` pin is load-bearing. bandit 1.7.10
   reaches for the `ast.Constant.s` alias a newer interpreter no longer provides;
   under 3.14 it skips all 35 server files and still exits 0, so the SAST gate

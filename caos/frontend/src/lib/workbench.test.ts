@@ -130,7 +130,7 @@ test("every pre-Align slug is a static forwarding page to its destination, and t
   assert.doesNotMatch(forwarder, /router\.(?:push|replace)\(|history\.pushState\(/);
   // The accessibility sweep and the smoke walk the same declaration: every destination
   // and every forwarder is swept, and the sweep asserts where each forwarder lands.
-  assert.match(a11y, /import \{ destinationFromSlug, forwardedRoutes, routeDestinations \} from "\.\.\/src\/lib\/workbench\.ts";/);
+  assert.match(a11y, /import \{ destinationFromSlug, destinationMeta, forwardedRoutes, routeDestinations \} from "\.\.\/src\/lib\/workbench\.ts";/);
   assert.match(a11y, /const routes = \[\.\.\.routeDestinations, \.\.\.forwardedRoutes\]\.map\(\(\[slug\]\) => `\/\$\{slug\}\/`\);/);
   for (const [from] of forwardedRoutes) assert.doesNotMatch(workspace + workbenchShell + modelBuilder + reportStudio, new RegExp(`"/${from}[/"?]`), `a link still targets the forwarded slug /${from}/`);
 });
@@ -705,4 +705,14 @@ test("an evidence id resolves whatever this store minted", () => {
   assert.equal(evidenceKind("  src_6b1f2a  "), "source", "the legacy underscore form still resolves");
   assert.equal(evidenceKind("case-6b1f2a"), null);
   assert.equal(evidenceKind("src-"), null);
+});
+
+test("normal UI run reads omit embedded event history", () => {
+  assert.match(workspace, /\/api\/runs\/\$\{id\}\?include_events=false/);
+  assert.match(reportStudio, /\/api\/runs\/\$\{encodeURIComponent\(props\.acceptedRunId!\)\}\?include_events=false/);
+});
+
+test("an authorization-private 404 never claims a deployment fact", () => {
+  assert.match(states, /Unavailable or not permitted\./);
+  assert.doesNotMatch(states, /Not available in this deployment\./);
 });

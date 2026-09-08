@@ -9,13 +9,15 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
+from tempfile import SpooledTemporaryFile
 from time import monotonic
 from typing import Any, AsyncIterator
 
 from fastapi import Body, FastAPI, HTTPException, Query, Request, Response
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator
-from sqlalchemy.exc import OperationalError
+from sqlalchemy.exc import OperationalError, TimeoutError as StoreTimeoutError
 from starlette.datastructures import MutableHeaders
 from starlette.middleware.gzip import DEFAULT_EXCLUDED_CONTENT_TYPES, GZipMiddleware
 
@@ -48,6 +50,7 @@ from ..contracts import (
     SignOpinionRequest,
     StartRunRequest,
     finite_or_none,
+    validate_boundary_text,
 )
 from ..identity import (
     EdgeIdentityGate, identity_from_request, is_enterprise_operator,
@@ -58,6 +61,7 @@ from ..sources.health import ScannerReadiness
 from ..storage.store import DomainStore
 
 WORKSHEET_SCHEMA_VERSION = "caos.model.worksheet.v1"
+STREAM_LIFETIME_SECONDS = 300
 XLSX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 RUNTIME_KEYS = (
     "name", "version", "sha256",
@@ -219,6 +223,7 @@ class RequestCeilings:
         "/models/tornado",
         "/models/sensitivities/one-way",
         "/model-revisions/rebase-preview",
+        "/models/assumption-registry",
     )
 
     def _slot(self, scope: Any) -> tuple[dict[str, int], int, str] | None:
@@ -258,6 +263,48 @@ class RequestCeilings:
                 counters[subject] = remaining
             else:
                 counters.pop(subject, None)
+
+
+class RequestBodyLimit:
+    """Enforce the transport cap before form/JSON parsing, including chunked bodies."""
+
+    def __init__(self, app: Any, *, max_bytes: int) -> None:
+        self.app, self.max_bytes = app, max_bytes
+
+    async def __call__(self, scope: Any, receive: Any, send: Any) -> None:
+        if scope["type"] != "http" or scope["method"] not in {"POST", "PUT", "PATCH", "DELETE"}:
+            await self.app(scope, receive, send)
+            return
+        # ponytail: spool at most one capped body per admitted request; streaming
+        # parser integration if this extra local copy becomes measurable.
+        with SpooledTemporaryFile(max_size=1024 * 1024) as body:
+            size = 0
+            while True:
+                message = await receive()
+                if message["type"] == "http.disconnect":
+                    return
+                chunk = message.get("body", b"")
+                size += len(chunk)
+                if size > self.max_bytes:
+                    await JSONResponse(status_code=413, content={"detail": "request exceeds upload limit"})(scope, receive, send)
+                    return
+                await asyncio.to_thread(body.write, chunk)
+                if not message.get("more_body", False):
+                    break
+            await asyncio.to_thread(body.seek, 0)
+            remaining = size
+            finished = False
+
+            async def replay() -> Any:
+                nonlocal remaining, finished
+                if finished:
+                    return await receive()
+                chunk = await asyncio.to_thread(body.read, 64 * 1024)
+                remaining -= len(chunk)
+                finished = remaining == 0
+                return {"type": "http.request", "body": chunk, "more_body": not finished}
+
+            await self.app(scope, replay, send)
 
 
 class SecurityHeaders:
@@ -350,27 +397,37 @@ def create_app(*, settings: Settings, store: DomainStore, engine: Any) -> FastAP
     )
     # add_middleware PREPENDS, so the last added is the outermost. Execution
     # order is therefore SecurityHeaders -> EdgeIdentityGate -> RequestCeilings
-    # -> GZip -> routes, which is what these three need: headers ride on every
+    # -> RequestBodyLimit -> GZip -> routes: headers ride on every
     # response including the refusals; an unauthenticated caller is refused
     # before FastAPI validates the request shape (so no /api route can answer
     # 422 to a caller it never authenticated); and the ceilings therefore always
     # know a real subject to charge.
+    app.add_middleware(RequestBodyLimit, max_bytes=settings.max_upload_bytes)
     app.add_middleware(RequestCeilings, settings=settings)
     app.add_middleware(EdgeIdentityGate, settings=settings)
     app.add_middleware(SecurityHeaders, production=production)
 
     @app.exception_handler(RequestValidationError)
     async def validation_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
-        # Never echo rejected input: boundary-refused bytes (lone surrogates,
-        # control chars) must not ride back through the response encoder.
+        # Values never echo; field locations retain useful, bounded safe names.
+        def location(value: Any) -> Any:
+            if not isinstance(value, str):
+                return value
+            try:
+                text = validate_boundary_text(value)
+                return text if len(text) <= 160 and not any(ch in text for ch in "\r\n\t") else "<field>"
+            except ValueError:
+                return "<field>"
+
         detail = [
-            {"loc": list(error.get("loc", ())), "msg": str(error.get("msg", "")), "type": str(error.get("type", ""))}
+            {"loc": [location(value) for value in error.get("loc", ())], "msg": str(error.get("msg", "")), "type": str(error.get("type", ""))}
             for error in exc.errors()
         ]
         return JSONResponse(status_code=422, content={"detail": detail})
 
     @app.exception_handler(OperationalError)
-    async def store_unavailable(request: Request, exc: OperationalError) -> JSONResponse:
+    @app.exception_handler(StoreTimeoutError)
+    async def store_unavailable(request: Request, exc: OperationalError | StoreTimeoutError) -> JSONResponse:
         # SIM-010: a database that cannot be reached before a write is a typed
         # 503 the caller can act on, never a bare 500. Every governed write is
         # one transaction, so nothing partial was committed; the driver's
@@ -384,9 +441,9 @@ def create_app(*, settings: Settings, store: DomainStore, engine: Any) -> FastAP
 
     intake_service = IntakeService(store=store, engine=engine, settings=settings)
     scanner_readiness = ScannerReadiness(settings)
+    health_task: asyncio.Task[dict[str, Any]] | None = None
 
-    @app.get("/api/health", response_model=wire.HealthResponse)
-    def health(response: Response) -> dict[str, Any]:
+    def health_checks() -> dict[str, Any]:
         # Liveness is "this answered at all"; readiness includes the engine and scanner.
         # 503 when any subsystem is down, so a probe can stop routing to an
         # instance whose bundle no longer verifies instead of reading a body.
@@ -397,9 +454,19 @@ def create_app(*, settings: Settings, store: DomainStore, engine: Any) -> FastAP
             ("store", "bundle", "checkpointer"), False)
         scanner = scanner_readiness.status()
         ready = all(checks.values()) and scanner != "unavailable"
-        if not ready:
-            response.status_code = 503
         return {"status": "ok" if ready else "degraded", **checks, "scanner": scanner}
+
+    @app.get("/api/health", response_model=wire.HealthResponse)
+    async def health(response: Response) -> dict[str, Any]:
+        nonlocal health_task
+        # One background task serves the whole burst, including cancelled
+        # callers. Neither probe waits on the event loop or HTTP worker pool.
+        if health_task is None or health_task.done():
+            health_task = asyncio.create_task(asyncio.to_thread(health_checks))
+        result = await asyncio.shield(health_task)
+        if result["status"] != "ok":
+            response.status_code = 503
+        return result
 
     @app.get("/api/me", response_model=wire.IdentityResponse)
     def me(request: Request) -> dict[str, Any]:
@@ -446,21 +513,18 @@ def create_app(*, settings: Settings, store: DomainStore, engine: Any) -> FastAP
             raise HTTPException(status_code=503, detail={"code": code}) from None
         return engine.provider_catalog()
 
-    def _wire_case(case: dict[str, Any]) -> dict[str, Any]:
-        # ponytail: two reads per case (N+1 on the list route) — the pinned
-        # current set for source_count, the live non-withdrawn list for the fit
-        # signal. Denormalize both onto the case row if the register ever gets
-        # slow. source_count and pathway_fit deliberately measure different
-        # things: membership of the pinned set versus what is available now.
+    def _wire_case(case: dict[str, Any], *, summary: dict[str, Any] | None = None,
+                   research_availability: tuple[bool, str | None] | None = None) -> dict[str, Any]:
         from ..engine.runtime import MVP_PATHWAYS
-        from ..sources.domain import pathway_fit
-
-        current = store.current_source_set(case["id"])
-        fit = pathway_fit(store, case["id"])
+        if summary is None:
+            summary = store.case_list_metadata([case["id"]])[case["id"]]
+        fit = {"fit": "READY" if summary["has_sources"] else "NEEDS_SOURCE",
+               "message": "Source coverage supports pathway selection." if summary["has_sources"]
+               else "Upload governed source material before selecting a route."}
         # Derived from runtime truth (the cut, the compiled route, the registry,
         # the provider binding), never a literal: an instance that cannot start
         # a Deep Research run says so with the reason (Task 7).
-        research_available, research_reason = (
+        research_available, research_reason = research_availability or (
             engine.deep_research_availability() if engine is not None
             else (False, "The run engine is not attached to this instance.")
         )
@@ -468,7 +532,7 @@ def create_app(*, settings: Settings, store: DomainStore, engine: Any) -> FastAP
             # A projection, not the row: a column a migration adds reaches an
             # extra="forbid" response model and 500s every case route (W13).
             **{key: case.get(key) for key in _CASE_ROW_KEYS},
-            "source_count": len(current["source_ids"]) if current else 0,
+            "source_count": summary["source_count"],
             # One source of truth for the cut: the same set start_run refuses
             # against. A pathway added there lights up in the workbench with no
             # second list to keep in step.
@@ -476,7 +540,7 @@ def create_app(*, settings: Settings, store: DomainStore, engine: Any) -> FastAP
             "deep_research_available": research_available,
             "deep_research_unavailable_reason": research_reason,
             "pathway_fit": {"fit": fit["fit"], "message": fit["message"]},
-            "latest_intake_id": (store.latest_intake(case["id"]) or {}).get("id"),
+            "latest_intake_id": summary["latest_intake_id"],
         }
 
     @app.post("/api/cases", status_code=201, response_model=wire.CaseDetailResponse)
@@ -489,8 +553,14 @@ def create_app(*, settings: Settings, store: DomainStore, engine: Any) -> FastAP
         return _wire_case(store.create_case(body.name, body.issuer, body.sector, who.subject))
 
     @app.get("/api/cases", response_model=list[wire.CaseResponse])
-    def list_cases(request: Request) -> list[dict[str, Any]]:
-        return [_wire_case(case) for case in store.list_cases(identity(request).subject)]
+    def list_cases(request: Request, limit: int | None = Query(None, ge=1, le=100),
+                   cursor: BoundaryText = Query("", max_length=200)) -> list[dict[str, Any]]:
+        rows = store.list_cases(identity(request).subject, cursor=cursor, limit=limit or 101)
+        if limit is None and (len(rows) > 100 or cursor):
+            raise HTTPException(status_code=413, detail={"code": "CASE_LIST_LIMIT_EXCEEDED", "message": "Use limit and cursor to page the case register."})
+        summaries = store.case_list_metadata([case["id"] for case in rows])
+        availability = engine.deep_research_availability() if engine is not None else (False, "The run engine is not attached to this instance.")
+        return [_wire_case(case, summary=summaries[case["id"]], research_availability=availability) for case in rows]
 
     @app.get("/api/cases/{case_id}", response_model=wire.CaseDetailResponse)
     def get_case(case_id: str, request: Request) -> dict[str, Any]:
@@ -591,7 +661,13 @@ def create_app(*, settings: Settings, store: DomainStore, engine: Any) -> FastAP
              response_model_exclude_unset=True)
     def list_sources(case_id: str, request: Request) -> list[dict[str, Any]]:
         require_case(store, case_id, identity(request))
-        return [_wire_source(source) for source in store.list_sources(case_id)]
+        try:
+            sources = store.list_sources(case_id, max_bytes=settings.max_upload_bytes, limit=100)
+        except ValueError as exc:
+            if str(exc) != "SOURCE_LIST_LIMIT_EXCEEDED":
+                raise
+            raise HTTPException(status_code=413, detail={"code": "SOURCE_LIST_LIMIT_EXCEEDED", "message": "Use source-summaries and individual source reads."}) from exc
+        return [_wire_source(source) for source in sources]
 
     @app.get("/api/cases/{case_id}/source-summaries", response_model=wire.SourceSummaryPageResponse)
     def source_summaries(case_id: str, request: Request,
@@ -739,7 +815,7 @@ def create_app(*, settings: Settings, store: DomainStore, engine: Any) -> FastAP
             state["completed_modules"] = completed
         return state
 
-    def _wire_run(run: dict[str, Any]) -> dict[str, Any]:
+    def _wire_run(run: dict[str, Any], *, include_events: bool = True) -> dict[str, Any]:
         nodes = [{key: node.get(key) for key in _RUN_NODE_KEYS} for node in run.get("nodes") or []]
         projected = {
             "id": run["id"],
@@ -748,7 +824,7 @@ def create_app(*, settings: Settings, store: DomainStore, engine: Any) -> FastAP
             "plan": run.get("plan") or {},
             "node_ids": run.get("node_ids") or [node["id"] for node in nodes],
             "nodes": nodes,
-            "events": engine.events_after(run["id"], 0),
+            "events": engine.events_after(run["id"], 0) if include_events else [],
             "current_node_id": next((node["id"] for node in nodes if node["status"] == "running"), None),
             "accepted_snapshot_id": run.get("accepted_snapshot_id"),
             "upgraded_from_run_id": run.get("upgraded_from_run_id"),
@@ -809,8 +885,8 @@ def create_app(*, settings: Settings, store: DomainStore, engine: Any) -> FastAP
         return run
 
     @app.get("/api/runs/{run_id}", response_model=wire.CanonicalRunResponse, response_model_exclude_unset=True)
-    def get_run(run_id: str, request: Request) -> dict[str, Any]:
-        return _wire_run(visible_run(run_id, identity(request)))
+    def get_run(run_id: str, request: Request, include_events: bool = True) -> dict[str, Any]:
+        return _wire_run(visible_run(run_id, identity(request)), include_events=include_events)
 
     @app.get("/api/runs/{run_id}/events")
     async def run_events(run_id: str, request: Request) -> StreamingResponse:
@@ -818,7 +894,8 @@ def create_app(*, settings: Settings, store: DomainStore, engine: Any) -> FastAP
         event names verbatim, `id:` carries the per-run sequence so Last-Event-ID
         reconnects resume without replay. The stream closes once a terminal run is
         fully delivered; live runs hold it open with keepalive comments."""
-        visible_run(run_id, identity(request))
+        who = identity(request)
+        run = visible_run(run_id, who)
         cursor = _event_cursor(request.headers.get("last-event-id"))
 
         # ponytail: per-connection 0.4s DB poll, not a wakeup bus — run_events is
@@ -827,9 +904,14 @@ def create_app(*, settings: Settings, store: DomainStore, engine: Any) -> FastAP
 
         async def tail(after: int) -> AsyncIterator[str]:
             idle = 0.0
-            while not await request.is_disconnected():
+            deadline = monotonic() + STREAM_LIFETIME_SECONDS
+            while monotonic() < deadline and not await request.is_disconnected():
+                if not store.is_member(run["case_id"], who.subject):
+                    return
                 events = engine.events_after(run_id, after)
                 for item in events:
+                    if monotonic() >= deadline or not store.is_member(run["case_id"], who.subject):
+                        return
                     after = item["id"]
                     yield f"id: {item['id']}\nevent: {item['event']}\ndata: {json.dumps(item['data'], separators=(',', ':'))}\n\n"
                 if events:
@@ -890,7 +972,12 @@ def create_app(*, settings: Settings, store: DomainStore, engine: Any) -> FastAP
     async def upgrade_run(run_id: str, request: Request) -> dict[str, Any]:
         who = identity(request)
         visible_run(run_id, who, write=True)
-        return _wire_run(await engine.upgrade(run_id, actor=who.subject))
+        try:
+            return _wire_run(await engine.upgrade(run_id, actor=who.subject))
+        except RuntimeError as exc:
+            code = getattr(exc, "code", "RUN_UPGRADE_FAILED")
+            status = 503 if code in _PROVIDER_PREFLIGHT_CODES else 409
+            raise HTTPException(status_code=status, detail={"code": code}) from exc
 
     def _wire_snapshot(snapshot: dict[str, Any]) -> dict[str, Any]:
         return {
@@ -1108,7 +1195,7 @@ def create_app(*, settings: Settings, store: DomainStore, engine: Any) -> FastAP
         }
 
     @app.get("/api/cases/{case_id}/models/assumption-registry", response_model=wire.ModelAssumptionRegistryResponse)
-    def model_registry(case_id: str, build_id: str, request: Request) -> dict[str, Any]:
+    def model_registry(case_id: str, request: Request, build_id: BoundaryText = Query(min_length=1, max_length=160)) -> dict[str, Any]:
         require_case(store, case_id, identity(request))
         try:
             return models().assumption_registry(case_id, build_id)
@@ -1253,13 +1340,20 @@ def create_app(*, settings: Settings, store: DomainStore, engine: Any) -> FastAP
     @app.post("/api/cases/{case_id}/members", status_code=201, response_model=wire.CaseDetailResponse)
     def add_case_member(case_id: str, request: Request, body: MemberRequest = Body(...)) -> dict[str, Any]:
         """One governed mutation provisions a distinct approver. The store owns
-        the rule: the actor must hold case ADMIN/APPROVER standing or the current
-        global ADMIN role; non-members never learn the case exists."""
+        the rule: the actor must hold case ADMIN/APPROVER standing and a current
+        global writer role; non-members never learn the case exists."""
         # Stored case APPROVER/ADMIN standing plus a current global writer role,
         # exactly like filing: a current global ADMIN never escalates a stored
         # READER or ANALYST on this case (run_sec_audit pins the reader half).
         who = require_case_approver(case_id, request)
-        if not store.add_member(case_id, who.subject, body.subject, body.role.value, actor_role=None):
+        try:
+            added = store.add_member(case_id, who.subject, body.subject, body.role.value, actor_role=None)
+        except ValueError as exc:
+            code = str(exc).split(":", 1)[0]
+            if code not in {"MEMBER_SELF_ROLE_CHANGE", "MEMBER_LAST_ADMIN_DEMOTION"}:
+                raise
+            raise HTTPException(status_code=409, detail={"code": code}) from exc
+        if not added:
             raise HTTPException(status_code=403, detail="case approver or admin authority required")
         return _wire_case(store.get_case(case_id))  # type: ignore[arg-type]
 
@@ -1360,6 +1454,8 @@ def create_app(*, settings: Settings, store: DomainStore, engine: Any) -> FastAP
         if isinstance(exc, OpinionHeadConflict):
             return HTTPException(status_code=409, detail={"code": "OPINION_HEAD_CONFLICT", "current": exc.current})
         code = str(exc).split(":", 1)[0]
+        if re.fullmatch(r"[A-Z][A-Z0-9_]{0,79}", code) is None:
+            code = "DELIVERABLE_REQUEST_INVALID"
         if "NOT_FOUND" in code:
             status = 404
         elif "NOT_INDEPENDENT" in code or "REVOKED" in code:

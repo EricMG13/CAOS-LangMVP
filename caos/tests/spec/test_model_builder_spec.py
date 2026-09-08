@@ -16,7 +16,7 @@ individually with ModuleNotFoundError today):
                            .serialize_workbook, .assumption_registry,
                            .calculation_runtime, .verify_integrity(),
                            .resolve_declared_file(); plus module-level calculate,
-                           is_finite_number, safe_ratio, finite_operand, json_value,
+                           finite_operand, json_value,
                            project_cp2b, CpModelV3Error, ModelInputError.
     caos.models.service  — ModelService(store=..., vault_dir=..., engine=...):
                            queue_build, readiness, build, list_builds, current_build,
@@ -349,16 +349,15 @@ async def _second_build(models, engine, case):
 
 
 def test_finite_guards_reject_non_finite_and_zero_denominators():
-    """NaN/Inf never propagate; falsy-but-real numbers (0, False) are accepted."""
-    from caos.models.engine import is_finite_number, safe_ratio
-
-    assert is_finite_number(0) and is_finite_number(False) and is_finite_number(1e308)
-    for bad in (float("nan"), float("inf"), float("-inf"), "1", None, [1]):
-        assert not is_finite_number(bad)
-    assert safe_ratio(3, 2) == 1.5
-    assert safe_ratio(1, 0) is None
-    assert safe_ratio(float("nan"), 2) is None
-    assert safe_ratio(2, float("inf")) is None
+    """Exercise the vendored calculation guards used by the real model bundle."""
+    calculations = _bundle()._calculations
+    assert calculations._finite_operand(Decimal(0), "debt") == 0
+    for bad in (Decimal("NaN"), Decimal("Infinity"), Decimal("-Infinity"), "1", None, False):
+        assert not calculations.is_finite_number(bad)
+    assert calculations._ratio(Decimal(3), Decimal(2)) == Decimal("1.5")
+    assert calculations._ratio(Decimal(1), Decimal(0)) is None
+    assert calculations._ratio(Decimal("NaN"), Decimal(2)) is None
+    assert calculations._ratio(Decimal(2), Decimal("Infinity")) is None
 
 
 def test_json_value_rejects_decimal_that_overflows_float():
@@ -1350,12 +1349,20 @@ async def test_manual_queue_cannot_repoint_a_newer_accepted_build(models, engine
     assert store.get_case(case["id"])["accepted_snapshot_id"] == snapshot_b["id"]
 
 
-async def test_acceptance_survives_queue_failure_and_manual_retry(models, engine, store):
+async def test_acceptance_survives_queue_failure_and_manual_retry(models, engine, store, caplog):
+    from caos.observability import JsonFormatter
+
+    caplog.set_level("INFO", logger="caos")
     models.fail_next_queue_for_tests()
     case, _run, snapshot = await _accepted_case(engine, store)
     assert store.get_case(case["id"])["accepted_snapshot_id"] == snapshot["id"], "queue failure never rolls back acceptance"
     assert models.list_builds(case["id"]) == []
     assert models.readiness(case["id"])["status"] == "READY_TO_BUILD"
+    errors = [json.loads(JsonFormatter().format(record)) for record in caplog.records
+              if record.getMessage() == "model.auto_queue_failed"]
+    assert len(errors) == 1
+    assert errors[0]["run_id"] == snapshot["run_id"] and errors[0]["error_type"] == "ValueError"
+    assert not ({"error", "message", "exception"} & errors[0].keys())
 
     retried = models.queue_build(case["id"], "analyst")
     assert retried["created"] is True

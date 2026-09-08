@@ -999,23 +999,6 @@ def _default_bundle() -> CpModelBundle:
 _DEFAULT_BUNDLE: CpModelBundle | None = None
 
 
-def is_finite_number(value: object) -> bool:
-    if isinstance(value, Decimal):
-        return value.is_finite()
-    if not isinstance(value, (int, float)):
-        return False
-    try:
-        return math.isfinite(float(value))
-    except (OverflowError, ValueError):
-        return False
-
-
-def safe_ratio(numerator: object, denominator: object) -> float | None:
-    if not is_finite_number(numerator) or not is_finite_number(denominator) or float(denominator) == 0:
-        return None
-    return float(numerator) / float(denominator)
-
-
 def finite_operand(value: object, label: str) -> Decimal:
     bundle = _default_bundle()
     try:

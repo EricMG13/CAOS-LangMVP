@@ -53,6 +53,27 @@ def check(criterion: str, condition: bool, detail: str = "") -> None:
         print(f"  FAIL {criterion} — {detail}")
 
 
+def list_cases(client: httpx.Client, request_headers: dict[str, str]) -> list[dict]:
+    cases: list[dict] = []
+    cursor = ""
+    while True:
+        params = {"limit": 100}
+        if cursor:
+            params["cursor"] = cursor
+        response = client.get("/api/cases", headers=request_headers, params=params)
+        response.raise_for_status()
+        page = response.json()
+        if not isinstance(page, list):
+            raise RuntimeError(f"case listing returned {response.status_code} {response.text[:120]}")
+        cases.extend(page)
+        if len(page) < 100:
+            return cases
+        next_cursor = page[-1].get("id") if isinstance(page[-1], dict) else None
+        if not isinstance(next_cursor, str) or next_cursor <= cursor:
+            raise RuntimeError("case listing did not advance its cursor")
+        cursor = next_cursor
+
+
 def main() -> None:
     client = httpx.Client(base_url=BASE, timeout=60)
 
@@ -71,7 +92,7 @@ def main() -> None:
     check("AC-EDGE-2 wrong edge secret refused", bad_secret.status_code == 401, f"{bad_secret.status_code}")
     check("AC-EDGE-3 health stays public", client.get("/api/health").status_code == 200)
 
-    cases = client.get("/api/cases", headers=head("ANALYST")).json()
+    cases = list_cases(client, head("ANALYST"))
     check("seed present", len(cases) >= 40, f"{len(cases)} cases")
     shared = next((c for c in cases if c["id"]), None)
     assert shared is not None
@@ -84,10 +105,10 @@ def main() -> None:
           unknown.status_code == outsider.status_code == 404,
           f"unknown {unknown.status_code}, outsider {outsider.status_code}")
     check("AC-ROLE-3b outsider list is empty",
-          client.get("/api/cases", headers=head("OUTSIDER")).json() == [])
+          list_cases(client, head("OUTSIDER")) == [])
 
     print("\n== reader is read-only ==")
-    reader_case = next((c["id"] for c in client.get("/api/cases", headers=head("READER")).json()), None)
+    reader_case = next((c["id"] for c in list_cases(client, head("READER"))), None)
     check("reader sees seeded member cases", reader_case is not None, "reader has no case")
     if reader_case:
         for label, response in (
