@@ -284,14 +284,15 @@ ledger, and diff checks pass. The pushed CI rerun must confirm the browser gate
 and backend matrix before merge.
 
 PDF fixture follow-up: the focused source tests passed with the bounded parser
-timeout raised from 20 to 45 seconds. The CI corpus is a 579-page, 3.9 MiB
+timeout raised from 20 to 120 seconds. The CI corpus is a 579-page, 3.9 MiB
 legal PDF whose pypdf extraction takes about 25 seconds on this host; the prior
 CPU and parent wall limits terminated it at 15/20 seconds before the page and
 12 MB text ceilings could be evaluated. The subprocess remains isolated, caps
-CPU and wall time at 45 seconds, caps Linux address space at 512 MiB, rejects
+CPU and wall time at 120 seconds, caps Linux address space at 512 MiB, rejects
 more than 2,000 pages, and incrementally rejects more than 12 MB of text.
 The timeout change is therefore a confirmed fixture compatibility fix while
-retaining finite resource bounds.
+retaining finite resource bounds; the hosted runner's 45-second attempt still
+rejected this file, so 120 seconds supplies measured headroom for that runner.
 
 Research lifecycle follow-up: the server failure reproduced because the
 `ScriptedProvider` fixture emitted only the six required H2 sections, while the

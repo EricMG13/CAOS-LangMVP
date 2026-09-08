@@ -502,7 +502,9 @@ branching, so the tournament is skipped as a trivial configuration edit.
 The existing subprocess isolation and incremental extraction remain the
 load-bearing design; a direct in-process parser or an unbounded timeout would
 weaken the trust boundary. The 81 focused source/admission tests passed after
-the adjustment.
+the adjustment. The hosted runner's corpus log then showed the 45-second
+ceiling was still too low for its 579-page fixture; increasing the same bounded
+ceiling to 120 seconds changes no parser semantics or error contract.
 
 The CP-DR fixture change is test-only and adds no production branching, so the
 rewrite tournament is skipped for that edit.

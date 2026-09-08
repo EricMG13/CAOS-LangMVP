@@ -28,13 +28,13 @@ def extract_text(content: bytes, *, max_text: int, max_pages: int) -> str:
 
 if __name__ == "__main__":
     # Enforced before loading the parser. The parent also kills this process
-    # after 45 wall-clock seconds. No in-process thread can provide these bounds.
+    # after 120 wall-clock seconds. No in-process thread can provide these bounds.
     import resource
 
     # Keep the parser bounded while allowing the 579-page legal fixture to
-    # complete on the slower CI runner; the parent still enforces a 45-second
+    # complete on the slower CI runner; the parent still enforces a 120-second
     # wall-clock timeout for untrusted input.
-    resource.setrlimit(resource.RLIMIT_CPU, (45, 45))
+    resource.setrlimit(resource.RLIMIT_CPU, (120, 120))
     memory = 512 * 1024 * 1024
     if sys.platform == "linux":
         resource.setrlimit(resource.RLIMIT_AS, (memory, memory))
