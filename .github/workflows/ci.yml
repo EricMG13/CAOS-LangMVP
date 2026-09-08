@@ -169,7 +169,11 @@ jobs:
             --scanner-fixture \
             --report-fixtures > server.log 2>&1 &
           for i in $(seq 1 30); do
-            curl -sf http://127.0.0.1:19181/api/health && exit 0
+            health_code="$(curl -sS -o health.json -w '%{http_code}' http://127.0.0.1:19181/api/health || true)"
+            if [ "$health_code" = "200" ] || [ "$health_code" = "503" ]; then
+              python -c 'import json,sys; d=json.load(open("health.json")); assert d.get("store") and d.get("bundle") and d.get("checkpointer") and d.get("scanner") in {"ready","unavailable"}, d'
+              exit 0
+            fi
             sleep 1
           done
           cat server.log

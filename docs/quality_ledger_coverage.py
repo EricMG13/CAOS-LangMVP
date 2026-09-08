@@ -69,6 +69,7 @@ FILE_MAP = {
     r"^caos/frontend/app/": "F-UI-01, F-UI-13, F-UI-14, F-UI-15",
     r"^caos/frontend/src/": "F-UI-01..12",
     r"^caos/frontend/scripts/a11y-axe": "F-UI-14, F-UI-15",
+    r"^caos/frontend/scripts/audit-fixes\.test\.mjs$": "F-UI-14, F-UI-15 (audit harness regression checks)",
     r"^caos/frontend/scripts/workbench-smoke": "F-UI-02, F-UI-04",
     r"^caos/frontend/scripts/fault-regressions\.mjs": "F-UI-02, F-UI-04, F-UI-09, F-UI-11, F-UI-14",
     r"^caos/frontend/scripts/workspace-intake\.test\.mjs": "F-UI-02 (same-case intake authority lifecycle regression)",

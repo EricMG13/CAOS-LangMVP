@@ -430,3 +430,10 @@ Final axe follow-up: skipped the single source-reader ARIA attribute correction
 and test-only gate changes; no material function rewrite is justified. The
 existing source selection and rendering branches are unchanged. Confidence
 review and the rebuilt axe sweep cover the correction.
+
+Post-edit CI check: Incumbent holds for the browser startup probe. The smallest
+correct seam is the workflow's readiness command because the fixture intentionally
+reports scanner=unavailable while its store, bundle and checkpointer are ready.
+A broader app-health change would weaken the production contract. The only other
+edit is a declarative FILE_MAP entry for the new harness test, so no rewrite is
+warranted. Local quality coverage and shell/syntax checks pass.

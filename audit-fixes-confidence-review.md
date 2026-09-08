@@ -257,3 +257,14 @@ These are not asserted defects or silently counted as passes. Full results and
 manual-review limits are in audit-fixes-status.md. All three full browser journeys
 passed; the final ARIA-only correction was then covered by the rebuilt sweep,
 195 Node tests, lint and TypeScript. The disposable server is stopped.
+
+Commit/CI confidence pass: the first GitHub run exposed two confirmed integration
+issues: the newly tracked audit harness lacked a FILE_MAP entry, and the browser
+fixture's intentional scanner-unavailable health response was rejected by
+curl -f. The ledger now maps the harness and passes with 433 tracked product
+files. The browser readiness probe accepts only HTTP 200 or 503 and validates
+store, bundle, checkpointer and scanner fields; it does not change application
+health semantics. YAML structure, shell syntax, route coverage and JavaScript
+syntax were checked. The local fixture previously returned the documented 503
+with ready core fields; no production endpoint was weakened. CI must be rerun
+on the pushed correction before merge.
